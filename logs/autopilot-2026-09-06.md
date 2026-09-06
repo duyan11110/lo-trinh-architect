@@ -49,3 +49,18 @@
 **Bắt đầu:** 2026-09-06 18:18 +07, nhánh `auto/tools` (stacked trên `auto/setup`).
 
 Giao việc cho subagent nền: sinh `tools/src/*.dart` + `tools/pubspec.yaml` + wrapper bash (`validate`, `known-vocab`, `extract-code`, `merge-outline`, `capture-output`, `build`) + bash thuần (`fetch-refs`, `sync-app-content`, `fetch-web-sqlite`, `gen`) theo `tools/SPEC.md` đầy đủ (~70 mã lỗi S/L/M/Q/R/P/T + Phụ lục A thuật toán dùng chung). Điều kiện Done trước khi nhận: `tools/validate --file examples/foundation.l1.http-request-response.en.md --repo-dir examples/don-hang-stage-0` exit 0 chỉ W; `tools/validate --structure-only --no-repo --stage 0` exit 0; `dart test` xanh. Agent không tự commit/push — sẽ kiểm tra rồi commit thủ công khi xong.
+
+**Kết thúc:** 2026-09-06 ~19:15 +07 (thời gian subagent chạy nền ~53 phút). Đã tự kiểm lại cả 3 điều kiện Done (không tin báo cáo của subagent mà không chạy lại):
+- `tools/validate --file .../http-request-response.en.md --repo-dir examples/don-hang-stage-0` → exit 0, không dòng nào (sạch tuyệt đối).
+- `tools/validate --structure-only --no-repo --stage 0` → exit 0, chỉ cảnh báo W S08 (id "hứa trước" chưa outline — đúng như spec cho phép).
+- `cd tools && dart test` → 111 test, tất cả xanh.
+- Kiểm thêm: không còn TODO/FIXME/unimplemented trong `tools/src/*.dart`; mọi wrapper bash qua `bash -n`.
+- Thêm `.gitattributes` gốc (ép LF toàn repo) vì phát hiện script mới tạo có nguy cơ bị Windows checkout đổi thành CRLF, hỏng trên CI Linux — chưa có trong DECISIONS, ghi vào mục 3.
+- Sửa 1 lỗi kỹ thuật thật trong `schemas/content.schema.json` (`path` thiếu bọc `type: object`) — đúng phạm vi DECISIONS B7.
+- Commit `2e588e5` trên `auto/tools`, đã push.
+
+**Bước 2 hoàn tất.** Chưa test tay: `merge-outline`/`known-vocab` wiring CLI đầu-cuối, `build` toàn luồng (repo mới có 1 bài nên `build` dừng đúng ở "70+ bài thiếu .en.md" — hành vi đúng, không phải lỗi), `tools/gen` (không chạy `claude -p` thật để tránh tốn lượt gọi mô hình — chỉ kiểm cú pháp + đối chiếu câu lệnh với SPEC.md). Sẽ lộ ra khi dùng thật ở Bước 3/5.
+
+## Bước 3 — Repo ví dụ stage-0
+
+**Bắt đầu:** 2026-09-06 ~19:20 +07, nhánh `auto/tools` (tiếp tục, chưa tách nhánh riêng — sẽ đổi tên/gộp khi bàn giao).
