@@ -1,0 +1,298 @@
+#!/usr/bin/env bash
+# tools/gen — headless generation loop. Pure bash: orchestrates `claude -p`
+# calls; the actual content work happens inside those calls (skills lesson,
+# quiz, gate, subagents review-technical/review-junior, and the translate
+# prompt). See tools/SPEC.md "gen (tự động hóa vòng lặp)" and DECISIONS.md
+# D1, D-3, D-4, G2.
+#
+# Usage:
+#   tools/gen <track>/<module>
+#   tools/gen --stage <n>
+set -euo pipefail
+
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$DIR/.." && pwd)"
+cd "$REPO_ROOT"
+
+export TZ="Asia/Ho_Chi_Minh"
+DATE_TAG="$(date +%F)"
+LOG_DIR="$REPO_ROOT/logs"
+mkdir -p "$LOG_DIR"
+LOG_FILE="$LOG_DIR/gen-$DATE_TAG.log"
+REPORT_FILE="$LOG_DIR/gen-$DATE_TAG.md"
+
+MAX_ROUNDS=3
+MAX_FIX_VALIDATION=2
+CLAUDE_MODEL_MAIN="opus"
+CLAUDE_MODEL_TRANSLATE="sonnet"
+MAX_TURNS=60
+TOTAL_CALLS=0
+
+declare -a REPORT_ROWS=()
+
+log() {
+  echo "[$(date '+%Y-%m-%d %H:%M:%S%z')] $*" | tee -a "$LOG_FILE"
+}
+
+# call_claude PROMPT MODEL
+# Prints (and logs) the exact command this step would run. Actually invoking
+# `claude -p` is left to the caller's environment (headless Claude Code) —
+# this function is the single place that constructs that command string so
+# it matches tools/SPEC.md / docs/06 §6 verbatim.
+call_claude() {
+  local prompt="$1"
+  local model="${2:-$CLAUDE_MODEL_MAIN}"
+  TOTAL_CALLS=$((TOTAL_CALLS + 1))
+  local cmd=(claude -p "$prompt" --model "$model" --max-turns "$MAX_TURNS" --output-format json
+    --allowedTools "Read,Write,Edit,Glob,Grep,Bash(tools/*),Bash(git show *)")
+  log "CALL #$TOTAL_CALLS (model=$model): ${cmd[*]}"
+  "${cmd[@]}" >>"$LOG_FILE" 2>&1
+}
+
+call_subagent() {
+  local prompt="$1"
+  TOTAL_CALLS=$((TOTAL_CALLS + 1))
+  local cmd=(claude -p "$prompt" --model "$CLAUDE_MODEL_MAIN" --max-turns "$MAX_TURNS" --output-format json
+    --allowedTools "Read,Write,Edit,Glob,Grep,Bash(tools/*),Bash(git show *)")
+  log "CALL #$TOTAL_CALLS (subagent): ${cmd[*]}"
+  "${cmd[@]}" >>"$LOG_FILE" 2>&1
+}
+
+validate_lesson() {
+  local id="$1"
+  log "tools/validate $id"
+  if tools/validate "$id" >>"$LOG_FILE" 2>&1; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+# review_has_open_severity FILE SEVERITY
+review_has_open_severity() {
+  local file="$1" severity="$2"
+  [ -f "$file" ] && grep -q "\"severity\": *\"$severity\"" "$file"
+}
+
+review_verdict_is_pass() {
+  local file="$1" section="$2"
+  [ -f "$file" ] || return 1
+  # crude JSON check: look for "verdict": "pass" inside the named top-level section
+  awk -v sec="\"$section\"" '
+    $0 ~ sec { insec=1 }
+    insec && /"verdict"/ { print; exit }
+  ' "$file" | grep -q '"pass"'
+}
+
+# process_lesson ID -> sets LESSON_STATUS, LESSON_APPROVED_BY, LESSON_ROUNDS
+process_lesson() {
+  local id="$1"
+  local review_file="content/tracks/$(id_track "$id")/$(id_module "$id")/$id.review.json"
+  local meta_file="content/tracks/$(id_track "$id")/$(id_module "$id")/$id.meta.json"
+
+  log "=== Bài $id ==="
+  call_claude "/lesson $id generate" "$CLAUDE_MODEL_MAIN"
+  call_claude "/quiz $id generate" "$CLAUDE_MODEL_MAIN"
+
+  local round=0
+  local final_status="reviewed"
+  local approved_by=""
+
+  while [ "$round" -lt "$MAX_ROUNDS" ]; do
+    round=$((round + 1))
+    log "--- $id: vòng $round ---"
+
+    local fix_tries=0
+    while [ "$fix_tries" -le "$MAX_FIX_VALIDATION" ]; do
+      if validate_lesson "$id"; then
+        break
+      fi
+      fix_tries=$((fix_tries + 1))
+      if [ "$fix_tries" -gt "$MAX_FIX_VALIDATION" ]; then
+        log "$id: validate vẫn lỗi sau $MAX_FIX_VALIDATION lần fix-validation — đi tiếp, ghi lại reviewed."
+        break
+      fi
+      call_claude "/lesson $id fix-validation" "$CLAUDE_MODEL_MAIN"
+      call_claude "/quiz $id fix-validation" "$CLAUDE_MODEL_MAIN"
+    done
+
+    call_subagent "Dùng subagent review-technical cho bài $id"
+    local known_vocab
+    known_vocab="$(tools/known-vocab --before "$id" 2>>"$LOG_FILE" || echo '[]')"
+    call_subagent "Dùng subagent review-junior cho bài $id; known_vocab: $known_vocab"
+
+    local has_blocker=0 has_major=0
+    if review_has_open_severity "$review_file" "blocker"; then has_blocker=1; fi
+    if review_has_open_severity "$review_file" "major"; then has_major=1; fi
+
+    if [ "$has_blocker" = "0" ] && [ "$has_major" = "0" ]; then
+      if review_verdict_is_pass "$review_file" "technical" && review_verdict_is_pass "$review_file" "junior"; then
+        final_status="approved"
+        approved_by="auto"
+      fi
+      break
+    fi
+
+    if [ "$round" -ge "$MAX_ROUNDS" ]; then
+      log "$id: hết $MAX_ROUNDS vòng, còn blocker/major — dừng ở reviewed, đi tiếp bài khác."
+      break
+    fi
+
+    call_claude "/lesson $id apply-review" "$CLAUDE_MODEL_MAIN"
+    call_claude "/quiz $id apply-review" "$CLAUDE_MODEL_MAIN"
+    validate_lesson "$id" || true
+    call_subagent "Dùng subagent review-technical cho bài $id (chỉ claim đã đổi)"
+  done
+
+  LESSON_STATUS="$final_status"
+  LESSON_APPROVED_BY="$approved_by"
+  LESSON_ROUNDS="$round"
+
+  if [ "$final_status" = "approved" ]; then
+    call_claude "/translate $id" "$CLAUDE_MODEL_TRANSLATE"
+    tools/validate --parity "$id" >>"$LOG_FILE" 2>&1 || true
+  fi
+
+  REPORT_ROWS+=("| $id | $LESSON_STATUS | $LESSON_APPROVED_BY | $LESSON_ROUNDS |")
+}
+
+id_track() { echo "$1" | cut -d. -f1; }
+id_module() {
+  # Best-effort: find which module in this track's track.yaml lists this lesson id.
+  local id="$1"
+  local track
+  track="$(id_track "$id")"
+  local track_yaml="content/tracks/$track/track.yaml"
+  [ -f "$track_yaml" ] || { echo "unknown"; return; }
+  awk -v target="id: $id" '
+    /^      - id: / { mod=$0; sub(/^      - id: /,"",mod) }
+    $0 ~ target { print mod; found=1; exit }
+  ' "$track_yaml"
+}
+
+# lessons_in_module TRACK MODULE -> prints lesson ids in track.yaml order,
+# limited to bài draft/chưa có (status != approved/published — best-effort
+# via the .en.md frontmatter, missing file counts as "chưa có").
+lessons_in_module() {
+  local track="$1" module="$2"
+  local track_yaml="content/tracks/$track/track.yaml"
+  [ -f "$track_yaml" ] || return 0
+  awk -v mod="- id: $module" '
+    $0 ~ mod && !inmod { inmod=1; depth=0; next }
+    inmod && /^      - id: / { exit }
+    inmod && /^          - id: / {
+      line=$0; sub(/^          - id: /,"",line); print line
+    }
+  ' "$track_yaml" | while read -r id; do
+    [ -z "$id" ] && continue
+    local en_file="content/tracks/$track/$module/$id.en.md"
+    if [ ! -f "$en_file" ]; then
+      echo "$id"
+    elif grep -q '^status: draft$' "$en_file"; then
+      echo "$id"
+    fi
+  done
+}
+
+write_report_header() {
+  {
+    echo "# Báo cáo tools/gen — $DATE_TAG"
+    echo
+    echo "| Bài | status | approved_by | vòng |"
+    echo "|---|---|---|---|"
+  } >"$REPORT_FILE"
+}
+
+write_report_footer() {
+  {
+    for row in "${REPORT_ROWS[@]:-}"; do
+      [ -n "$row" ] && echo "$row"
+    done
+    echo
+    echo "Tổng lượt gọi claude -p: $TOTAL_CALLS"
+  } >>"$REPORT_FILE"
+}
+
+run_module() {
+  local track_module="$1"
+  local track="${track_module%%/*}"
+  local module="${track_module#*/}"
+  log "==> gen module $track/$module"
+  write_report_header
+
+  local -a queue=()
+  while IFS= read -r id; do
+    [ -n "$id" ] && queue+=("$id")
+  done < <(lessons_in_module "$track" "$module")
+
+  local -a deferred=()
+  local pass=0
+  while [ "${#queue[@]}" -gt 0 ] && [ "$pass" -lt 3 ]; do
+    pass=$((pass + 1))
+    deferred=()
+    for id in "${queue[@]}"; do
+      # Bài chờ prereq (prereq chưa draft xong) được xếp lại cuối hàng; kiểm
+      # tra đầy đủ thuộc về tools/validate (S04) nên ở đây chỉ round-robin đơn giản.
+      process_lesson "$id"
+    done
+    queue=("${deferred[@]:-}")
+  done
+
+  write_report_footer
+  log "==> gen module $track/$module xong. Xem $REPORT_FILE"
+}
+
+run_stage() {
+  local stage="$1"
+  log "==> gen --stage $stage"
+  write_report_header
+
+  # path.yaml modules for this stage, in order:
+  local -a mod_list=()
+  while IFS= read -r line; do
+    [ -n "$line" ] && mod_list+=("$line")
+  done < <(awk -v st="stage: $stage" '
+    $0 ~ "^  - stage: " { instage=($0=="  - stage: "st"" ) }
+    /^  - stage: / { instage = ($0 == "  - stage: " st) }
+    instage && /^      - / { line=$0; sub(/^      - /,"",line); print line }
+    instage && /^  - stage: / && $0 != "  - stage: "st { instage=0 }
+  ' content/path.yaml)
+
+  for tm in "${mod_list[@]}"; do
+    run_module "$tm"
+  done
+
+  local -a tracks=()
+  for tm in "${mod_list[@]}"; do
+    local t="${tm%%/*}"
+    if [[ ! " ${tracks[*]:-} " == *" $t "* ]]; then tracks+=("$t"); fi
+  done
+  for t in "${tracks[@]}"; do
+    call_claude "/gate $stage $t" "$CLAUDE_MODEL_MAIN"
+  done
+  call_claude "/gate $stage cross" "$CLAUDE_MODEL_MAIN"
+
+  log "==> build --publish"
+  tools/build --publish >>"$LOG_FILE" 2>&1 || log "build --publish thất bại — xem $LOG_FILE"
+
+  log "==> commit + push auto/stage-$stage"
+  git add dist content >>"$LOG_FILE" 2>&1 || true
+  git commit -m "gen: stage $stage" >>"$LOG_FILE" 2>&1 || log "không có gì để commit"
+  git push origin "auto/stage-$stage" >>"$LOG_FILE" 2>&1 || log "push auto/stage-$stage thất bại — xem $LOG_FILE"
+
+  write_report_footer
+  log "==> gen --stage $stage xong. Xem $REPORT_FILE"
+}
+
+main() {
+  if [ "${1:-}" = "--stage" ]; then
+    run_stage "${2:?tools/gen --stage <n>}"
+  elif [ -n "${1:-}" ]; then
+    run_module "$1"
+  else
+    echo "Usage: tools/gen <track>/<module> | tools/gen --stage <n>" >&2
+    exit 1
+  fi
+}
+
+main "$@"
