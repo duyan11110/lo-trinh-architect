@@ -1,0 +1,297 @@
+{
+  "id": "foundation.l1.program-to-process",
+  "technical": {
+    "reviewed_at": "2026-09-06T23:40:00+07:00",
+    "reviewer": "claude-opus-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "dotnet docs, Threads and threading: \"A *process* is an executing program. An operating system uses processes to separate the applications that are being executed.\" GC fundamentals: \"Each process has its own, separate virtual address space.\" The id half is confirmed by execution on dotnet 10: `dotnet run --project samples/DonHang.Samples -- hello-process` printed \"process id: 16180\".",
+        "source": "refs/dotnet-docs/docs/standard/threading/threads-and-threading.md:17; refs/dotnet-docs/docs/standard/garbage-collection/fundamentals.md:38"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "\"Each process has its own, separate virtual address space.\" (GC fundamentals) and, for the explicit-sharing half, Memory-Mapped Files: non-persisted files \"are suitable for creating shared memory for inter-process communications (IPC)\" — cross-process sharing goes through an operating-system facility a program must ask for.",
+        "source": "refs/dotnet-docs/docs/standard/garbage-collection/fundamentals.md:38; refs/dotnet-docs/docs/standard/io/memory-mapped-files.md:15,25"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Docker docs on detached mode: \"Docker can run your container in detached mode or in the background. To do this, you can use the `--detach` or `-d` for short. Docker starts your container the same as before but this time will \\\"detach\\\" from the container and return you to the terminal prompt.\" Execution: `docker compose ps` on the example repo returned \"db running / lab running / web running\" long after up.sh had returned, and commands still ran inside that lab box.",
+        "source": "refs/docker-docs/content/guides/rust.md:391; examples/don-hang/scripts/up.sh:8 (docker compose up -d --build --wait)"
+      },
+      {
+        "n": 4,
+        "verdict": "rephrased",
+        "evidence": "Environment.Exit: 'Terminates this process and returns an exit code to the operating system.' main-command-line.md:64: 'your program can send status information to other programs or scripts that run the executable. A return value of 0 usually means success.' exceptions-in-managed-threads.md:15: 'the unhandled exception causes the application to terminate.' Ran in the stage-0 lab box: kill+wait -> 143, kill -9 + wait -> 137, ( exit 3 ) -> 3, undisturbed end -> 0. The 143/137 come from the shell (128+signal), not the OS; and a chosen 'exit 7' is indistinguishable from a crash.",
+        "source": "learn.microsoft.com/dotnet/api/system.environment.exit; refs/dotnet-docs/docs/csharp/fundamentals/program-structure/main-command-line.md:64; refs/dotnet-docs/docs/standard/threading/exceptions-in-managed-threads.md:15",
+        "suggested_text": "A process ends on its own (its main function returns, or it asks to end), it crashes, or something outside it asks the operating system to stop it. Whoever started it reads one number for the run: the exit code the program chose, or, when it was stopped from outside, the number the shell that started it reports for that kind of stop."
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "dotnet docs, Main() return values: \"When you return `int` or `Task<int>`, your program can send status information to other programs or scripts that run the executable. A return value of `0` usually means success, and a nonzero value means there's an error.\" The lesson's hedge (\"The convention is\") matches the doc's \"usually\".",
+        "source": "refs/dotnet-docs/docs/csharp/fundamentals/program-structure/main-command-line.md:64"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Process.Id (net-10.0): \"The system-generated unique identifier of the process that is referenced by this Process instance.\" CA1837 treats `Process.GetCurrentProcess().Id` and `Environment.ProcessId` as the same value: \"This rule locates calls to `System.Diagnostics.Process.GetCurrentProcess().Id` and suggests using `System.Environment.ProcessId` instead.\" Execution on dotnet 10: the sample printed \"process id: 16180\".",
+        "source": "https://learn.microsoft.com/dotnet/api/system.diagnostics.process.id (net-10.0, WebFetch 2026-09-06); refs/dotnet-docs/docs/fundamentals/code-analysis/quality-rules/ca1837.md:30"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "CA1839 describes the property as \"getting the path to the file that launched the process\". Execution on dotnet 10: `dotnet run ... -- hello-process` printed \"started from: ...\\\\bin\\\\Debug\\\\net10.0\\\\DonHang.Samples.exe\" — the executable that was started, not the source file.",
+        "source": "refs/dotnet-docs/docs/fundamentals/code-analysis/quality-rules/ca1839.md:28"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Process.Id: property value is 'The system-generated unique identifier of the process'; Remarks: 'Process identifiers can be reused by the system. The Id property value is unique only while the associated process is running.' Two runs of scripts/computer/list-processes.sh in the stage-0 lab box gave pids 1481/1482 then 1499/1500 for the same sleep program. CA1839: Environment.ProcessPath is 'the path to the file that launched the process', i.e. it names the started file, the same file on every run started the same way.",
+        "source": "learn.microsoft.com/dotnet/api/system.diagnostics.process.id (Remarks); refs/dotnet-docs/docs/fundamentals/code-analysis/quality-rules/ca1839.md:28,40; runs of scripts/computer/list-processes.sh in donhang-lab"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Execution in the stage-0 lab box (procps `ps`, installed by lab/Dockerfile): `ps -o pid=,args= -p $$` printed exactly one line, \"1418 bash -c ...\", with no header and no other column; the two-id form in the script printed exactly two lines. No ps doc root exists in versions.yaml, so this rests on the run.",
+        "source": "examples/don-hang/lab/Dockerfile:5-9; commands run via docker compose exec lab"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Execution in the stage-0 lab box (bash 5.3.9(1)-release): `sleep 20 & p=$!; kill -TERM $p; wait $p 2>/dev/null || echo \"wait status: $?\"` printed \"wait status: 143\", and two full runs of list-processes.sh (which calls `kill` with no signal argument) printed \"the first one ended with exit code 143\". 143 = 128 + SIGTERM(15). versions.yaml pins no shell, so this is established for the stage-0 lab box only, which is what the claim says.",
+        "source": "examples/don-hang/scripts/computer/list-processes.sh:15-16; runs in the stage-0 lab box"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Two runs today inside the running stage-0 lab box printed \"1400 sleep 30 / 1401 sleep 30\" and \"1412 sleep 30 / 1413 sleep 30\", then 143, 0 and 3 — identical to outputs/stage-0/scripts/computer/list-processes.txt except for the ids, which the captured file masks with \"...\".",
+        "source": "examples/don-hang/outputs/stage-0/scripts/computer/list-processes.txt; two runs via docker compose exec lab"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Execution: the script's `wait \"$first\" ... || echo \"... $?\"` printed 143 and `( exit 3 ) || echo \"... $?\"` printed 3, so `$?` carried the status of the thing that had just ended in both branches. No shell doc root exists in versions.yaml, so this rests on the run, not on the Bash manual.",
+        "source": "examples/don-hang/scripts/computer/list-processes.sh:16,21; run in the stage-0 lab box"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Process.Id (net-10.0) Remarks: \"Until the process terminates, the process identifier uniquely identifies the process throughout the system.\" Execution in the lab box: `echo \"self pid: $$\"; ps -o pid=,args= -p $$` printed \"self pid: 1418\" and then \"1418 bash -c ...\" — the id a process reports about itself is the id ps lists it under.",
+        "source": "https://learn.microsoft.com/dotnet/api/system.diagnostics.process.id (net-10.0, WebFetch 2026-09-06); command run via docker compose exec lab"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "Source inspection at stage-0: lines 20-21 are `( exit 0 ) && echo ...` and `( exit 3 ) || echo ...` — subshells of the script itself. The only programs the script starts are the two `sleep`s on lines 7 and 9, both killed on line 15, plus ps/sed on line 13; nothing is started after line 15.",
+        "source": "examples/don-hang/scripts/computer/list-processes.sh:7-21"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "list-processes.sh line 5 is `[ -f /.dockerenv ] || exec \"$(dirname \"$0\")/../lab-run.sh\" \"$0\" \"$@\"`, and lab-run.sh line 18 is `exec docker compose exec -T lab bash -c ...`, which can only attach to a running lab service. Execution confirmed: the script ran only because `docker compose ps` showed the lab service already up.",
+        "source": "examples/don-hang/scripts/computer/list-processes.sh:5; examples/don-hang/scripts/lab-run.sh:18"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "Executed in the stage-0 lab box (bash 5.3.9(1)-release, x86_64-alpine-linux-musl): a script doing 'sleep 5 &' twice reached the next command 14 ms later, and 'ps -o pid=,args= -p $a,$b' listed both ('1444 sleep 5', '1445 sleep 5') while the script continued. No bash documentation mirror exists under refs/ and versions.yaml pins no shell, so this rests on execution in the pinned lab image only, which is what the claim says.",
+        "source": "docker exec donhang-lab bash /tmp/t.sh (T16)"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "Same lab box: after 'sleep 5 & a=$!; sleep 5 & b=$!', $! printed 1445 and ps listed 1445 as the second sleep, so $! is that program's id. Running '( exit 3 )' left $! unchanged at 1445; only the next backgrounded command ('( sleep 1 ) &') moved it to 1450. So a subshell that is not backgrounded does not set $!.",
+        "source": "docker exec donhang-lab bash /tmp/t.sh (T17)"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "Same lab box: 'wait $a' after 'kill $a' returned status 143; 'wait $d' on a sleep that finished normally returned 0. 'wait $b || echo ...' ran the right-hand side and saw 143; '( exit 0 ) && echo' ran, '( exit 0 ) || echo' did not; '( exit 3 ) || echo' ran and saw 3, '( exit 3 ) && echo' did not. The repository script itself prints 'the first one ended with exit code 143', 'a program that succeeds exits with 0' and 'a program that fails exits with 3'.",
+        "source": "docker exec donhang-lab bash /tmp/t.sh (T18); docker exec donhang-lab bash /repo/scripts/computer/list-processes.sh"
+      },
+      {
+        "n": 19,
+        "verdict": "wrong",
+        "evidence": "In the stage-0 lab box the redirect discards nothing. Ran scripts/computer/list-processes.sh with the streams kept apart: stdout as captured in outputs/stage-0, stderr 0 bytes. Ran a copy with ' 2>/dev/null' removed from both wait lines: stdout identical, stderr still 0 bytes. bash 5.3.9 prints no message for a job killed by the default signal of kill; it prints one only for signals it reports, e.g. after 'kill -9': '/tmp/t19b.sh: line 24: 1469 Killed  sleep 30', with wait returning 137.",
+        "source": "docker exec donhang-lab: bash /repo/scripts/computer/list-processes.sh >out 2>err (err = 0 bytes); sed 's| 2>/dev/null||' copy (err = 0 bytes); /tmp/t19b.sh cases A-E",
+        "suggested_text": "The 2>/dev/null on the two wait lines is a precaution: it throws away anything the shell might print about how a stopped program ended. With the stop this script performs, the shell prints nothing, so removing it changes no output."
+      },
+      {
+        "n": 20,
+        "verdict": "verified",
+        "evidence": "dotnet/docs, ContentRootPath for apps launched by Windows Shell: 'This property's value defaults to Environment.CurrentDirectory, which is the current working directory of the application. This behavior allows the same app to be executed under different working directories.' Same page: 'When a Windows process ... is launched without specifying a working directory, the working directory of the process that created it is used ... the ContentRootPath property is set to %windir%\\system32' - i.e. not the folder the executable sits in.",
+        "source": "refs/dotnet-docs/docs/core/compatibility/extensions/7.0/contentrootpath-hosted-app.md:8,10"
+      },
+      {
+        "n": 21,
+        "verdict": "verified",
+        "evidence": "main-command-line.md:64: 'When you return int or Task<int>, your program can send status information to other programs or scripts that run the executable'; :70 'In a batch file or shell script, use %ERRORLEVEL%'. Executed in the stage-0 lab box: a caller that ran a failing script with all output sent to /dev/null still printed 'caller3 learned exit code: 7'; a caller that never checked printed the failure's output, continued past it and itself exited 0. Caveat: a caller that ran 'set -e' stopped at exit 7 without checking explicitly.",
+        "source": "refs/dotnet-docs/docs/csharp/fundamentals/program-structure/main-command-line.md:64,70; docker exec donhang-lab bash /tmp/t21.sh"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "blocker",
+        "section": 5,
+        "kind": "code",
+        "quote": "The `2>/dev/null` on the two `wait` lines only hides a warning message that appears when a program the script started is stopped from outside.",
+        "text": "False about this code in the stage-0 lab box. Removing ' 2>/dev/null' from both wait lines in scripts/computer/list-processes.sh leaves stdout identical and stderr empty (0 bytes, measured twice). bash 5.3.9 prints no message for a job stopped by the signal plain `kill` sends; a message appears only for signals it reports, e.g. 'kill -9' -> '... 1469 Killed  sleep 30' with wait returning 137. The lesson tells the reader to expect a warning that never appears, and attributes it to 'stopped from outside' in general.",
+        "fix": "Replace the sentence with: 'The `2>/dev/null` on the two `wait` lines is a precaution: it throws away anything the shell might print about how a stopped program ended. With the stop this script performs, the shell prints nothing, so removing it changes no output.' Or drop the sentence entirely and say nothing about the redirect."
+      },
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "accuracy",
+        "quote": "or — when it was stopped from outside — a fixed number the operating system uses to mark that kind of stop",
+        "text": "Misattributed. The operating system does not hand the starter a number for a stopped process; the shell that started it turns the stop into one (128 + the signal). Measured in the same lab box: plain `kill` -> 143, `kill -9` -> 137, so the number is not 'fixed' for 'that kind of stop' either. The same words recur in section 5, on the 143. Also 'one number that says which ending it was' is too strong on its own: a program that ends by itself can choose to return 143 or 134, so the number alone does not always separate a crash from a chosen failure.",
+        "fix": "In section 4 write: '... or - when it was stopped from outside - the number the shell that started it reports for that kind of stop, which is fixed for a given way of stopping.' Make the section 5 sentence match ('143 is what the script reports for the first copy after it was stopped from outside: the number the shell reports for that kind of stop'). Keep 0 = success / nonzero = failure as the only thing the number is claimed to say for endings a program chooses itself."
+      },
+      {
+        "severity": "major",
+        "section": "foundation.l1.program-to-process.q6",
+        "kind": "quiz",
+        "quote": "You have read the console sample's output in section 5. / Bạn đã đọc output của chương trình console mẫu ở mục 5.",
+        "text": "The stem's premise is false: section 5 shows the console sample's code but never its output - the only captured output block in the lesson is the one for list-processes.sh. Key option a ('You can write the `started from` path down in advance') is only answerable if the reader has seen that path printed once; from the lesson as written the reader has seen the label, not the value. The keys a, b, e are otherwise right and c, d are right to be wrong (checked against the section 5 prose on ids and paths).",
+        "fix": "Change the stem to refer to what the lesson actually contains, e.g. 'You have read the console sample in section 5 and watched it run once. Before it is run again, you try to predict what that run will print.' (vi: 'Bạn đã đọc chương trình console mẫu ở mục 5 và đã xem nó chạy một lần. Trước khi nó được chạy lại...'). Leave the options and keys unchanged."
+      },
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "accuracy",
+        "quote": "the script that called it carries on, because it never asked",
+        "text": "True only when the calling shell is not checking exit codes on the caller's behalf. In the stage-0 lab box a caller with 'set -e' stopped at a called script's exit code 7 without any explicit check, while a caller without it carried on and itself reported 0. Every script in examples/don-hang starts with 'set -euo pipefail', so a reader who tries this inside the example repository sees the opposite of what the sentence predicts.",
+        "fix": "Add the condition, e.g. '... carries on, because it never asked and nothing asked on its behalf.' No other change needed; the rest of the bullet is supported."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "code",
+        "text": "The quoted sample teaches the discouraged half of a pair. CA1837 (\"Enabled by default in .NET 10: As suggestion\") flags `Process.GetCurrentProcess().Id` in favour of `Environment.ProcessId` and notes the Process instance \"needs to be disposed\" — the sample never disposes it — while the next line already uses `Environment.ProcessPath`, the form CA1839 recommends. A junior copying this file writes code their own build flags.",
+        "quote": "var process = System.Diagnostics.Process.GetCurrentProcess();",
+        "fix": "This is the repo change already recorded in .meta.json repo_changes_needed: replace the two lines with one `Console.WriteLine($\"process id: {Environment.ProcessId}\");`, re-quote the line range, and change the prose to \"`Environment.ProcessId` is the number the operating system assigned to this process\". Until the repo changes, keep the prose descriptive as it is."
+      },
+      {
+        "severity": "minor",
+        "section": 0,
+        "kind": "version",
+        "text": "Front matter declares `versions_used: [dotnet]`, but the half of the lesson carrying the hardest numbers depends on software no key in content/versions.yaml pins: bash (143 = 128 + SIGTERM, `$?`, `$!`, `&`, `wait`) and procps `ps` (`-o pid=,args=`, `-p`). The lab box runs bash 5.3.9(1)-release and procps from lab/Dockerfile, but nothing in the content repo records that, so an image bump would silently invalidate section 5 and the Try it numbers with no version key to trigger the re-review versions.yaml policy requires.",
+        "quote": "versions_used: [dotnet]",
+        "fix": "Add a `shell` (and optionally `procps`) key to content/versions.yaml pinned to the lab image's versions with `check: bash --version`, then list it in this lesson's `versions_used` and as `version_key` on claims 9, 10 and 12. This is the open_question already recorded in .meta.json."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "rewrite"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-06T00:00:00Z",
+    "reviewer": "junior-sim",
+    "issues": [
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "term",
+        "text": "The script's whole point rests on `sleep`, but I am never told what `sleep 30` does. 'One tiny program' does not tell me it stays alive for 30 seconds, and that is exactly why `ps` can still find two copies on the next line. I could not tell whether the two copies survive because of `sleep` or because of `&`.",
+        "fix": "In the sentence 'It starts one tiny program (`sleep`) twice', add: 'a program that does nothing but stay alive for the number of seconds you give it'.",
+        "quote": "It starts one tiny program (`sleep`) twice, shows both copies, stops them with `kill`, then reads what three different endings leave behind."
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "gap",
+        "text": "The prose says 'these four lines' about the C# sample, but the lesson never shows what the sample prints — there is no output block after the C# block, only after the bash script. I cannot check my reading of `process id` / `started from` against anything, and I am left guessing what an id or a path actually looks like.",
+        "fix": "Add a captured output block after the C# block showing the four printed lines (with the id shown as varying), or change 'these four lines' to 'the four lines it prints' and state plainly that the lesson does not show them.",
+        "quote": "while this run is alive — which is only the instant it takes to print these four lines — a system tool would list it under that same id"
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "gap",
+        "text": "The captured output labels 143 an 'exit code', but Core concepts told me an exit code is 'the number a program returns when it ends on its own' and that a stopped program gets a different kind of number instead. So the one line I can actually read on screen calls 143 the thing the lesson says it is not. I stopped here and could not decide which statement to trust.",
+        "fix": "After 'because a process stopped that way never chooses its own ending', add one sentence: 'The script's message still says \"exit code\" because that is the one number it can read, but the number came from the operating system, not from `sleep`.'",
+        "quote": "the first one ended with exit code 143"
+      },
+      {
+        "severity": "major",
+        "section": "Try it",
+        "kind": "example",
+        "text": "Step 1 tells me to start the whole example system because 'the script in step 2 needs it', but everything I was shown about `list-processes.sh` uses only `sleep`, `ps` and `kill` — nothing in it touches the example system. I cannot tell whether I really have to run `up.sh` first, or whether step 2 will just work, so I do not know if a failure means I did step 1 wrong.",
+        "fix": "Either say in step 1 why the script needs the running system (one clause), or drop the dependency and make step 1 'Start the example system with `scripts/up.sh` and leave it running, so that a long-lived process exists while you look'.",
+        "quote": "Start the example system with `scripts/up.sh` and leave it running; the script in step 2 needs it."
+      },
+      {
+        "severity": "major",
+        "section": "quiz",
+        "kind": "quiz",
+        "text": "Q6 opens with 'You have read the console sample's output in section 5' — but I have not: section 5 shows the sample's code and only the bash script's output. Option (a) then asks whether I could 'write the `started from` path down in advance', and option (d) compares against 'the earlier run', neither of which I ever saw. I had to answer from the prose rather than from the stated premise, which made me distrust my answer.",
+        "fix": "Either add the console sample's captured output to section 5, or rewrite Q6's stem as 'You have read the console sample's code in section 5. Predict what a run of it would print.' and change option (d) to compare 'two runs of the same file'.",
+        "quote": "You have read the console sample's output in section 5. Before it is run again, you try to predict what that run will print."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "term",
+        "text": "Several shell spellings appear that I have never seen and that the prose only explains by their effect, not by what they are: `2>/dev/null`, the parentheses in `( exit 0 )` / `( exit 3 )`, the `-o pid=,args= -p` given to `ps`, and `sed 's/^ *//'`. I can follow what each line achieves, but I cannot read the lines themselves, so I could not change or retype them.",
+        "fix": "Add half a sentence for the parentheses form: '`( exit 3 )` runs a tiny throwaway program whose only act is to end with that number.' Leave the others as they are but say once that the exact spellings of `ps`, `sed` and `2>/dev/null` are not the point of this lesson.",
+        "quote": "( exit 0 ) && echo \"a program that succeeds exits with 0\""
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "length",
+        "text": "The paragraph that introduces `&`, `$!`, `$?`, `wait`, `||` and `&&` packs six new notations into two sentences, and the paragraph after the C# block runs to eight clauses. I had to re-read both twice, and by the end of the second one I had lost the thread back to 'a program is a file, a process is a run'.",
+        "fix": "Split the notation sentence into two sentences (starting a new one at '`wait` asks for the number…'), and split the paragraph after the C# block at 'The third line prints the folder this run works in'.",
+        "quote": "In it, `&` starts a program and lets the script carry on without waiting for it, `$!` is the id of the last program the script started that way, and `$?` is the number the last thing to finish left behind."
+      },
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "example",
+        "text": "I would plausibly have believed the first two misconceptions, but the third one's correction lost me: 'because it never asked' does not say what was never asked for, and I had to jump back to the exit-code paragraph to guess that it means the calling script never read the number.",
+        "fix": "Replace 'because it never asked' with 'because it never read that script's number'.",
+        "quote": "You notice this when a script you called fills the screen with a failure and the script that called it carries on, because it never asked."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "text": "In Q4 the correct option restates 'Silence tells you nothing about whether a process is running' almost word for word, and the same idea is repeated as a bullet in 'Beginners often think'. I picked it by recognising the sentence, not by reasoning about the situation, so the question did not test me.",
+        "fix": "Reword option (a) away from the lesson's sentence, e.g. 'Only that it has printed nothing — to know if it is alive I would have to list the processes or ask it for a page'.",
+        "quote": "Nothing about whether it is alive — what it prints and whether it is running are separate things"
+      },
+      {
+        "severity": "minor",
+        "section": 2,
+        "kind": "style",
+        "text": "The situation says the system is 'serving its pages to a browser' and in the same breath that there is 'no window open anywhere'. On first reading I thought the two statements contradicted each other and spent a moment deciding whether the browser counted as the missing window.",
+        "fix": "Change to 'still answering a browser you point at it, with no window of its own anywhere and nothing on screen'.",
+        "quote": "yet minutes later the example system is still serving its pages to a browser, with no window open anywhere and nothing on screen"
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "sleep (the program started twice by the script)",
+        "2>/dev/null",
+        "( exit 0 ) / ( exit 3 ) — the parentheses form",
+        "-o pid=,args= -p (the flags given to ps)",
+        "sed 's/^ *//'"
+      ],
+      "skipped_steps": [
+        "It starts one tiny program (`sleep`) twice — never says that `sleep` stays alive, which is why two copies can be listed at once",
+        "while this run is alive — which is only the instant it takes to print these four lines — the four lines are never shown, so I cannot check what an id or a path looks like",
+        "the first one ended with exit code 143 — the printed words 'exit code' contradict the Core concepts definition and the contradiction is never named",
+        "Start the example system with `scripts/up.sh` and leave it running; the script in step 2 needs it. — nothing shown about `list-processes.sh` uses the example system"
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "fix-required"
+  }
+}

@@ -17,11 +17,22 @@ set -euo pipefail
 # `/repo-stage 0` headless (2026-09-06, DECISIONS.md §3).
 export MSYS_NO_PATHCONV=1
 
+# A subagent call sometimes runs its subagent in the background and returns
+# early ("will report back") — meaningless in headless -p mode, since nothing
+# is left to report back to. The default 600s background-wait ceiling then
+# kills it mid-review, discarding the work. Wait indefinitely instead; the
+# prompt below also asks explicitly for foreground execution.
+export CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0
+
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
-export TZ="Asia/Ho_Chi_Minh"
+# "Asia/Ho_Chi_Minh" needs an IANA zoneinfo database, which this machine's
+# Git-Bash/MSYS `date` does not ship (silently falls back to UTC — confirmed
+# 2026-09-06, DECISIONS.md §3). "ICT-7" is the POSIX fixed-offset form of the
+# same zone (Vietnam has no DST) and needs no database.
+export TZ="ICT-7"
 DATE_TAG="$(date +%F)"
 LOG_DIR="$REPO_ROOT/logs"
 mkdir -p "$LOG_DIR"
@@ -53,16 +64,28 @@ call_claude() {
   local cmd=(claude -p "$prompt" --model "$model" --max-turns "$MAX_TURNS" --output-format json
     --allowedTools "Read,Write,Edit,Glob,Grep,Bash(tools/*),Bash(git show *),Bash(git -C examples/don-hang *)")
   log "CALL #$TOTAL_CALLS (model=$model): ${cmd[*]}"
-  "${cmd[@]}" >>"$LOG_FILE" 2>&1
+  # A call that hits --max-turns (or otherwise errors) exits non-zero; under
+  # `set -e` that would kill the whole gen run and strand every lesson still
+  # in the queue. Treat it as "not finished this round" instead — the
+  # fix-validation / extra-round logic that already exists is what picks
+  # this back up, each with a fresh turn budget (2026-09-06, DECISIONS §3).
+  if ! "${cmd[@]}" >>"$LOG_FILE" 2>&1; then
+    log "CALL #$TOTAL_CALLS: claude -p thoát khác 0 (có thể hết --max-turns) — coi là chưa xong, để vòng lặp round/fix-validation bắt lại."
+  fi
 }
 
 call_subagent() {
-  local prompt="$1"
+  # "chạy foreground, đợi xong hẳn": seen once launching the subagent in the
+  # background and returning immediately ("will report back") — there is no
+  # later turn in a -p session to report back to, and it discards the review.
+  local prompt="$1 (chạy subagent này ở foreground, đợi nó trả kết quả xong hẳn rồi mới trả lời — đừng chạy nền / báo lại sau)"
   TOTAL_CALLS=$((TOTAL_CALLS + 1))
   local cmd=(claude -p "$prompt" --model "$CLAUDE_MODEL_MAIN" --max-turns "$MAX_TURNS" --output-format json
     --allowedTools "Agent,Read,Write,Edit,Glob,Grep,Bash(tools/*),Bash(git show *),Bash(git -C examples/don-hang *)")
   log "CALL #$TOTAL_CALLS (subagent): ${cmd[*]}"
-  "${cmd[@]}" >>"$LOG_FILE" 2>&1
+  if ! "${cmd[@]}" >>"$LOG_FILE" 2>&1; then
+    log "CALL #$TOTAL_CALLS: claude -p thoát khác 0 (có thể hết --max-turns) — coi là chưa xong, để vòng lặp round/fix-validation bắt lại."
+  fi
 }
 
 validate_lesson() {
