@@ -78,19 +78,21 @@ Nhìn vào chuỗi trong `printf`: ba dòng và một dòng thứ tư rỗng, d�
 ```text output=true
 HTTP/1.1 200 OK
 Accept-Ranges: bytes
-Content-Length: 412
+Content-Length: 350
 Content-Type: text/html; charset=utf-8
-Date: ...
 Etag: ...
 Last-Modified: ...
 Server: Caddy
+Vary: Accept-Encoding
+Date: ...
+Connection: close
 
 <!doctype html>
 <html lang="vi">
 ...
 ```
 
-Đọc từ trên xuống: dòng trạng thái, bảy header, một dòng trống, rồi phần thân. `Content-Length: 412` bảo client đọc đúng 412 byte sau dòng trống. Script của đồng nghiệp bạn không sai gì cả; nó chỉ in nguyên cả response thay vì riêng phần thân — thứ mà trình duyệt vẫn giấu đi.
+Đọc từ trên xuống: dòng trạng thái, chín header, một dòng trống, rồi phần thân. `Content-Length: 350` bảo client đọc đúng 350 byte sau dòng trống. Script của đồng nghiệp bạn không sai gì cả; nó chỉ in nguyên cả response thay vì riêng phần thân — thứ mà trình duyệt vẫn giấu đi.
 
 ## Người mới hay nghĩ rằng…
 

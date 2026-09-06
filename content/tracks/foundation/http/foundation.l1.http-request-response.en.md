@@ -78,19 +78,21 @@ Look at the `printf` string: three lines and an empty fourth, each ending in `\r
 ```text output=true
 HTTP/1.1 200 OK
 Accept-Ranges: bytes
-Content-Length: 412
+Content-Length: 350
 Content-Type: text/html; charset=utf-8
-Date: ...
 Etag: ...
 Last-Modified: ...
 Server: Caddy
+Vary: Accept-Encoding
+Date: ...
+Connection: close
 
 <!doctype html>
 <html lang="vi">
 ...
 ```
 
-Read it top to bottom: status line, seven headers, one blank line, then the body. `Content-Length: 412` tells the client to read exactly 412 bytes after the blank line. Your teammate's script was fine; it simply printed the whole response instead of only the body, which is what a browser hides from you.
+Read it top to bottom: status line, nine headers, one blank line, then the body. `Content-Length: 350` tells the client to read exactly 350 bytes after the blank line. Your teammate's script was fine; it simply printed the whole response instead of only the body, which is what a browser hides from you.
 
 ## Beginners often think…
 
