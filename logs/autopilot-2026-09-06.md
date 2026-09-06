@@ -39,7 +39,13 @@
 ### Done Bước 1 (theo RUNBOOK)
 - [x] `content/versions.yaml`, `content/glossary.yaml` tồn tại.
 - [x] `examples/don-hang` tồn tại (repo cục bộ, không phải submodule như kỳ vọng — xem lý do trên).
-- [~] `refs/` tồn tại — đang tải xong nền lúc ghi log; sẽ xác nhận đủ 5 repo + 4 RFC trước khi coi Bước 1 hoàn tất 100%.
-- [ ] `git status` sạch trên `auto/setup`, commit + push — thực hiện ngay sau khi xác nhận `refs/` xong (tránh commit dở dang).
+- [x] `refs/` tồn tại đủ 5 repo (`dotnet-docs`, `aspnetcore-docs`, `kubernetes-website`, `docker-docs`, `flutter-website`) + 4 RFC (`rfc9110.txt` 502 KB, `rfc9111.txt` 84 KB, `rfc9112.txt` 110 KB, `rfc6265.txt` 80 KB) — xác nhận 18:13.
+- [x] `git status` sạch trên `auto/setup` (2 commit), đã push `origin/auto/setup`.
 
-Tiếp tục ở Bước 2 (Tools) trong lúc chờ `refs/` tải xong, vì Bước 2 không phụ thuộc Docker/gh/refs.
+**Kết thúc Bước 1:** 2026-09-06 18:13 +07. **Bước 1 hoàn tất.**
+
+## Bước 2 — Tools
+
+**Bắt đầu:** 2026-09-06 18:18 +07, nhánh `auto/tools` (stacked trên `auto/setup`).
+
+Giao việc cho subagent nền: sinh `tools/src/*.dart` + `tools/pubspec.yaml` + wrapper bash (`validate`, `known-vocab`, `extract-code`, `merge-outline`, `capture-output`, `build`) + bash thuần (`fetch-refs`, `sync-app-content`, `fetch-web-sqlite`, `gen`) theo `tools/SPEC.md` đầy đủ (~70 mã lỗi S/L/M/Q/R/P/T + Phụ lục A thuật toán dùng chung). Điều kiện Done trước khi nhận: `tools/validate --file examples/foundation.l1.http-request-response.en.md --repo-dir examples/don-hang-stage-0` exit 0 chỉ W; `tools/validate --structure-only --no-repo --stage 0` exit 0; `dart test` xanh. Agent không tự commit/push — sẽ kiểm tra rồi commit thủ công khi xong.
