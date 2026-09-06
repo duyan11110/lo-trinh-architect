@@ -73,4 +73,25 @@ Phát hiện quan trọng trước khi chạy được: skill `/repo-stage` (và
 
 **Lần chạy 2 (bị chặn):** thêm `MSYS_NO_PATHCONV=1` + đổi sang `--permission-mode bypassPermissions` (theo đề xuất của chính phiên lần 1) — bị auto-mode classifier chặn (xin phép chủ 2 lần liền, chủ đồng ý cả hai lần, nhưng classifier vẫn chặn — AskUserQuestion không phải cơ chế cấp quyền Bash thật). Rút ra: `--permission-mode bypassPermissions` tự nó là điều bị chặn, không phải toàn bộ hành động.
 
-**Lần chạy 3 (đang chạy):** giữ `MSYS_NO_PATHCONV=1`, bỏ `bypassPermissions`, dùng `--allowedTools` liệt kê tường minh rộng hơn lần 1 (thêm `Bash(mkdir *) Bash(cp *) Bash(mv *) Bash(chmod *) Bash(curl *) Bash(psql *) Bash(ls *) Bash(cat *)` + các lệnh `git` ở gốc repo cần cho A1/A2 và tag/push) — không bị chặn, đang chạy nền. `logs/repo-stage-0-run.json` (+ `.err`).
+**Lần chạy 3 (thành công):** giữ `MSYS_NO_PATHCONV=1`, bỏ `bypassPermissions`, dùng `--allowedTools` liệt kê tường minh rộng hơn lần 1 (thêm `Bash(mkdir *) Bash(cp *) Bash(mv *) Bash(chmod *) Bash(curl *) Bash(psql *) Bash(ls *) Bash(cat *)` + các lệnh `git` ở gốc repo cần cho A1/A2 và tag/push) — không bị chặn.
+
+**Kết quả (396 lượt, ~$47.78, ~54 phút):** `examples/don-hang` từ 6 file hạt giống lên **136 file ở tag `stage-0`** (81/81 file manifest, 3567 dòng thêm). Compose: lab box SSH + Caddy 2.10.0 (`network_mode: service:lab` để mọi route/port thống nhất) + PostgreSQL 17.6. 33 script + git-playground, `samples/DonHang.Samples` (23 file bài học) + `DonHang.Samples.Tests` (7 test), 11 file văn xuôi tiếng Việt, 34 output đã capture ổn định qua 2 lần chạy. Tag `stage-0` + nhánh `auto/stage-0` đã push lên `duyan11110/don-hang`. Chi tiết kỹ thuật (kiến trúc lab box, 3 ngoại lệ script chạy trên host, 4 lỗi chỉ CI phát hiện, việc cập nhật bài mẫu theo A3, việc chủ sửa `ci.yml` giữa chừng) đã ghi vào `DECISIONS.md` §3.
+
+**Tự kiểm lại độc lập trước khi tin (không chỉ tin báo cáo của phiên headless):**
+- `tools/validate foundation.l1.http-request-response` (không `--repo-dir`, dùng tag thật) → exit 0, chỉ W đã biết.
+- Đối chiếu cả 81 đường dẫn trong `tools/validate --manifest 0` với `git -C examples/don-hang show stage-0:<path>` → đủ cả 81, không thiếu file nào.
+- `dotnet test samples/DonHang.Samples.Tests` chạy lại thủ công → 7/7 pass.
+- `git ls-remote --tags/--heads origin` (examples/don-hang) → `stage-0` và `auto/stage-0` đã có trên GitHub thật, đúng SHA.
+- `gh run list --repo duyan11110/don-hang` → 2 run gần nhất (push `auto/stage-0` và push tag `stage-0`) đều `success`.
+- `secrets/` không bị track (kiểm `git ls-files`), có trong `.gitignore` của repo con.
+- `git diff --shortstat` xác nhận đúng 136 file tại tag, khớp báo cáo.
+
+**Bước 3 hoàn tất và đã xác minh.** Lab vẫn đang chạy trên máy (chưa `down.sh`).
+
+## Sửa lỗi tools/gen trước Bước 5
+
+Đọc lại `tools/gen` (sinh ở Bước 2, chưa từng chạy `claude -p` thật) trước khi tin dùng cho việc tốn tiền thật: phát hiện 2 lỗi — thiếu `MSYS_NO_PATHCONV=1` (giống hệt lỗi `/repo-stage 0` lần đầu) và `call_subagent()` thiếu quyền `Agent` (không thể tự gọi review-technical/review-junior). Đã sửa cả hai + thêm `Bash(git -C examples/don-hang *)`, kiểm bằng lệnh thật (`--max-turns 3`, không lỗi, không `permission_denials`). Commit trên `auto/tools`. Chi tiết trong DECISIONS.md §3.
+
+## Bước 5 (pilot trước khi chạy toàn Giai đoạn 0)
+
+**Bắt đầu:** sau khi sửa `tools/gen`. Vì đây là lần đầu tiên `tools/gen` chạy thật (chưa test), và Bước 5 tốn kém nhất (55 bài × sinh+quiz+2 review+dịch), chạy thử **một module nhỏ trước** (`foundation/computer`, 5 bài) thay vì `--stage 0` toàn bộ ngay — rủi ro chi phí nếu còn lỗi ẩn nào khác. Lệnh: `tools/gen foundation/computer`, chạy nền. Nếu module này ra `approved`/`reviewed` hợp lý, sẽ chạy `tools/gen --stage 0` cho toàn Giai đoạn 0.
