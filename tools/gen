@@ -46,10 +46,51 @@ CLAUDE_MODEL_TRANSLATE="sonnet"
 MAX_TURNS=60
 TOTAL_CALLS=0
 
+# Usage-limit vs max-turns: a call that fails because --max-turns ran out
+# should NOT be retried (the round/fix-validation loop already handles that
+# by re-attempting with a fresh turn budget next round). A call that fails
+# because the account hit its Max-plan usage limit is different: retrying
+# immediately just fails again, and skipping ahead (the old behaviour) races
+# through every remaining fix/review call in the same lesson in a few
+# seconds, all failing, and can leave the lesson mislabeled "reviewed" with
+# no real content written. So: detect the limit signature, sleep, retry the
+# SAME call — never move on while limit-blocked. Regex is best-effort (this
+# repo has not yet logged a real limit hit to confirm the exact wording);
+# check the first real occurrence in the log and tighten the pattern if it
+# does not match. 2026-09-07, DECISIONS.md §3.
+RATE_LIMIT_WAIT_SECS=1800
+RATE_LIMIT_MAX_RETRIES=20
+RATE_LIMIT_PATTERN='usage limit|rate.?limit|resets? (at|in)|try again (later|in)|"(code|status)":[[:space:]]*429|quota'
+
 declare -a REPORT_ROWS=()
 
 log() {
   echo "[$(date '+%Y-%m-%d %H:%M:%S%z')] $*" | tee -a "$LOG_FILE"
+}
+
+# run_with_rate_limit_retry CMD... — runs the command, appending its output to
+# $LOG_FILE as before. If it fails AND the output it just produced looks like
+# a usage-limit/rate-limit message, sleep and retry the exact same command
+# (up to RATE_LIMIT_MAX_RETRIES times) instead of returning failure. Any other
+# failure (e.g. --max-turns) returns immediately, unchanged from before.
+run_with_rate_limit_retry() {
+  local attempt=0
+  while true; do
+    local before_lines
+    before_lines="$(wc -l <"$LOG_FILE" 2>/dev/null || echo 0)"
+    if "$@" >>"$LOG_FILE" 2>&1; then
+      return 0
+    fi
+    local chunk
+    chunk="$(tail -n "+$((before_lines + 1))" "$LOG_FILE")"
+    if echo "$chunk" | grep -Eiq "$RATE_LIMIT_PATTERN" && [ "$attempt" -lt "$RATE_LIMIT_MAX_RETRIES" ]; then
+      attempt=$((attempt + 1))
+      log "Đụng usage/rate limit (lần thử lại $attempt/$RATE_LIMIT_MAX_RETRIES) — chờ ${RATE_LIMIT_WAIT_SECS}s rồi thử lại đúng lệnh này, KHÔNG đi tiếp bước khác."
+      sleep "$RATE_LIMIT_WAIT_SECS"
+      continue
+    fi
+    return 1
+  done
 }
 
 # call_claude PROMPT MODEL
@@ -69,7 +110,7 @@ call_claude() {
   # in the queue. Treat it as "not finished this round" instead — the
   # fix-validation / extra-round logic that already exists is what picks
   # this back up, each with a fresh turn budget (2026-09-06, DECISIONS §3).
-  if ! "${cmd[@]}" >>"$LOG_FILE" 2>&1; then
+  if ! run_with_rate_limit_retry "${cmd[@]}"; then
     log "CALL #$TOTAL_CALLS: claude -p thoát khác 0 (có thể hết --max-turns) — coi là chưa xong, để vòng lặp round/fix-validation bắt lại."
   fi
 }
@@ -83,7 +124,7 @@ call_subagent() {
   local cmd=(claude -p "$prompt" --model "$CLAUDE_MODEL_MAIN" --max-turns "$MAX_TURNS" --output-format json
     --allowedTools "Agent,Read,Write,Edit,Glob,Grep,Bash(tools/*),Bash(git show *),Bash(git -C examples/don-hang *)")
   log "CALL #$TOTAL_CALLS (subagent): ${cmd[*]}"
-  if ! "${cmd[@]}" >>"$LOG_FILE" 2>&1; then
+  if ! run_with_rate_limit_retry "${cmd[@]}"; then
     log "CALL #$TOTAL_CALLS: claude -p thoát khác 0 (có thể hết --max-turns) — coi là chưa xong, để vòng lặp round/fix-validation bắt lại."
   fi
 }
