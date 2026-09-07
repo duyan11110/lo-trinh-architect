@@ -47,8 +47,8 @@ Only then open `.meta.json`. Any challengeable sentence **not** in the claims le
 For each claim in the ledger, in order:
 - Locate the governing official document for the claim's `version_key`. Prefer the local documentation mirror under `refs/` (Grep for the
   exact sentence — strongest evidence); otherwise fetch from the `docs` root in `versions.yaml` (WebFetch returns a processed summary, so quote
-  only what you actually see, and prefer `rephrased` over `verified` when the wording you saw is not exact). `source_hint` is a starting point, not evidence. Quote the sentence(s) that decide the matter in `evidence` (≤ 600 chars) and put the
-  page in `source`.
+  only what you actually see, and prefer `rephrased` over `verified` when the wording you saw is not exact). `source_hint` is a starting point, not evidence. Quote the sentence(s) that decide the matter in `evidence` (**aim for ≤ 550 chars, hard cap 600** — a `.review.json` that fails its own schema blocks validate and the lesson skill cannot fix a review file, only the reviewer can) and put the
+  page in `source`; `suggested_text` (when given) also has a cap, 400 chars.
 - For `syntax`/`code`-related claims, additionally run or inspect the code in the repository when a command can settle it
   (`dotnet build`, `kubectl explain`, `helm template`, `psql -c`), and quote the output.
 - Verdict:
@@ -65,6 +65,12 @@ For each code block: confirm it matches the repository source at the tag charact
 (if not: `blocker`, kind `code`). Then judge whether the prose *about* the code is true of *this* code: does the sentence
 "note that X happens on line …" actually describe what the code does? Are names, types, return values, HTTP verbs, table
 names exactly as in the source? Any mismatch is `major`, kind `code`.
+
+`example_tag` (e.g. `stage-0`) is normally an **annotated** Git tag: `git rev-parse <tag>` returns the tag *object's* hash,
+not the commit's, and will differ from `git rev-parse HEAD` even when HEAD is exactly that tag. That is not a mismatch —
+use `git rev-parse <tag>^{commit}` (or just trust `git show <tag>:<path>` / `tools/extract-code --tag <tag>`, which already
+resolve this correctly) before reporting a `code`-kind issue about "the tag and the checked-out commit disagree."
+(Observed as a false-positive minor, tools/gen pilot, 2026-09-07.)
 
 ### Step 4 — Scope
 Check every outline item is established (not merely mentioned) — set `scope.outline_covered`. List anything the lesson teaches

@@ -1,0 +1,274 @@
+{
+  "id": "foundation.l1.threads-and-async-intro",
+  "technical": {
+    "reviewed_at": "2026-09-07T11:58:00+07:00",
+    "reviewer": "claude-opus-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "\"A *thread* is the basic unit to which an operating system allocates processor time. ... Multiple threads can run in the context of a process.\" and \"By default, a .NET program is started with a single thread, often called the *primary* thread. However, it can create additional threads to execute code in parallel or concurrently with the primary thread.\" Both halves of the claim (at least one thread, can ask for more) are stated.",
+        "source": "refs/dotnet-docs/docs/standard/threading/threads-and-threading.md lines 17, 22 (learn.microsoft.com/dotnet/standard/threading/threads-and-threading)"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "\"All threads of a process share its virtual address space. A thread can execute any part of the program code, including parts currently being executed by another thread.\" A shared address space includes the heap the lesson names, and nothing is copied between threads.",
+        "source": "refs/dotnet-docs/docs/standard/threading/threads-and-threading.md line 17"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "API page, defaultMoniker net-10.0, Run(Action): \"Queues the specified work to run on the thread pool and returns a Task object that represents that work.\" Pool side: \"The ThreadPool class provides your application with a pool of worker threads that are managed by the system\". Execution settles the \"calling thread carries on\" half: in 9 runs the caller reached the await and both queued loops ran, losing 44349-99969 increments.",
+        "source": "learn.microsoft.com/dotnet/api/system.threading.tasks.task.run (view=net-10.0), Overloads table; refs/dotnet-docs/docs/standard/threading/the-managed-thread-pool.md line 15; examples/don-hang (9 executed runs)"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "CS1686 guidance: \"The compiler moves captured variables to a heap-allocated closure object, making their address unstable.\" Capture, not copy. The .NET 10 nuance does not apply here: \"Objects 'escape' when assigned to non-local variables or passed to functions not inlined by the JIT. If an object can't escape, it can be allocated on the stack.\" The two closures are passed to Task.Run, so they escape and stay on the heap; execution confirms one shared counter (totals below 200000).",
+        "source": "refs/dotnet-docs/docs/csharp/language-reference/compiler-messages/lambda-expression-errors.md line 171; docs/core/whats-new/dotnet-10/runtime.md line 204; examples/don-hang (9 executed runs)"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "\"A simple example of a race condition is incrementing a field. ... This operation requires loading the value from objCt into a register, incrementing the value, and storing it in objCt.\" \"a thread that has loaded and incremented the value might be preempted by another thread which performs all three steps; when the first thread resumes execution and stores its value, it overwrites objCt without taking into account the fact that the value has changed in the interim.\"",
+        "source": "refs/dotnet-docs/docs/standard/threading/managed-threading-best-practices.md lines 61-63"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Ran `dotnet run --project samples/DonHang.Samples -- threads-vs-async` nine times on SDK 10.0.300. Counters: 148572, 113428, 100031, 153132, 155651, 106078, 118259, 151618, 141380 — all below 200000, no two equal. The upper bound follows from the documented mechanism: every write stores a value that was read plus one, so an increment can be lost but never invented.",
+        "source": "examples/don-hang, samples/DonHang.Samples (9 executed runs); refs/dotnet-docs/docs/standard/threading/managed-threading-best-practices.md lines 61-63"
+      },
+      {
+        "n": 7,
+        "verdict": "rephrased",
+        "evidence": "WhenAll half is documented: \"The Task.WhenAll method asynchronously waits for multiple Task or Task<TResult> objects to finish.\" The \"as any await does\" universal is contradicted on the await page: \"When the await operator is applied to the operand that represents an already completed operation, it returns the result of the operation immediately without suspension of the enclosing method.\" Two 100000-iteration loops can finish before this line is reached, in which case no thread is handed back there.",
+        "source": "refs/dotnet-docs/docs/standard/parallel-programming/task-based-asynchronous-programming.md line 186; docs/csharp/language-reference/operators/await.md line 13",
+        "suggested_text": "await Task.WhenAll(first, second) continues only once both supplied tasks have completed; unless they are already finished when the await is reached, it hands the thread back until then."
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "\"An await expression in an async method doesn't block the current thread while the awaited task is running. Instead, the expression signs up the rest of the method as a continuation and returns control to the caller of the async method.\" That is the claim's two halves: the thread is not held for the wait, and the remainder is recorded as a continuation. Note the docs say control returns to the caller — not that the thread returns to a pool; see the section 3 issue.",
+        "source": "refs/dotnet-docs/docs/csharp/asynchronous-programming/task-asynchronous-programming-model.md line 122"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Word for word: \"The async and await keywords don't cause extra threads to be created. Async methods don't require multithreading because an async method doesn't run on its own thread. ... You can use Task.Run to move CPU-bound work to a background thread\" — which is exactly the exception the claim names for the two Task.Run calls in the sample.",
+        "source": "refs/dotnet-docs/docs/csharp/asynchronous-programming/task-asynchronous-programming-model.md line 124"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "\"The Task.Delay method produces a Task object that finishes after the specified time.\" \"finishes after\" supports the hedge \"about\". Non-blocking half: \"An await expression in an async method doesn't block the current thread while the awaited task is running.\" Nine runs completed the pause and printed the line after it.",
+        "source": "refs/dotnet-docs/docs/standard/parallel-programming/task-based-asynchronous-programming.md line 202; docs/csharp/asynchronous-programming/task-asynchronous-programming-model.md line 122"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "\"Console apps don't install a SynchronizationContext, which means await continuations run on the thread pool.\" \"In a console app, SynchronizationContext.Current returns null. When a method yields at an await, the continuation runs on whatever thread pool thread is available.\" Execution agrees: all nine runs printed \"start, on thread 2\" and then thread 4 or 6.",
+        "source": "refs/dotnet-docs/docs/standard/asynchronous-programming-patterns/synchronizationcontext-console-apps.md lines 19, 23; examples/don-hang (9 executed runs)"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Property page, defaultMoniker net-10.0: \"Gets a unique identifier for the current managed thread.\" Property Value: \"A unique identifier for this managed thread.\" The claim is that sentence.",
+        "source": "learn.microsoft.com/dotnet/api/system.environment.currentmanagedthreadid (view=net-10.0)"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "`git -C examples/don-hang show stage-0:samples/DonHang.Samples/Program.cs` contains [\"threads-vs-async\"] = ThreadsVsAsync.RunAsync and the usage line \"dotnet run --project samples/DonHang.Samples -- <sample>\"; the command in the lesson ran and printed the three lines described. Against `git show stage-0:...ThreadsVsAsync.cs`, block 1 is lines 6-15 and block 2 is lines 17-19, character for character (last round's caveat about not being able to run git is now closed).",
+        "source": "git -C examples/don-hang show stage-0:samples/DonHang.Samples/Program.cs and :Samples/Computer/ThreadsVsAsync.cs; executed run"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "At tag stage-0, line 15 is Console.WriteLine($\"two threads added 200000 and the counter says {counter}\"); — only {counter} is interpolated, so the words are fixed text. Nine runs printed that sentence in front of nine different counters, none of them 200000.",
+        "source": "git -C examples/don-hang show stage-0:samples/DonHang.Samples/Samples/Computer/ThreadsVsAsync.cs line 15; 9 executed runs"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "\"the thread doesn't block while the eggs or hash browns are cooking, but the code also doesn't start other tasks until the current work completes. You still put the bread in the toaster and stare at the toaster until the bread pops up\" — awaits written in turn happen in turn, so their durations add; starting the tasks before awaiting them is presented as the separate technique that overlaps them.",
+        "source": "refs/dotnet-docs/docs/csharp/asynchronous-programming/index.md line 50"
+      },
+      {
+        "n": 16,
+        "verdict": "unverified",
+        "evidence": "The mechanism is documented: \"If any process is blocked in a synchronous application, all are blocked. Your application stops responding, and you might conclude that it failed when instead it's just waiting.\" The frequency word \"often\" is not: grepped refs/dotnet-docs for any ranking or share of causes of unresponsive UIs — nothing. Kind is opinion and the sentence carries its condition (programs with a screen), so no issue is raised.",
+        "source": "refs/dotnet-docs/docs/csharp/asynchronous-programming/task-asynchronous-programming-model.md line 28"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "Execution settles the overlap: nine runs lost 44349-99969 increments, which is only possible if the two loops ran at the same time on a machine running them simultaneously. Docs give the mechanism and the reason for \"usually\": \"The ThreadPool class provides your application with a pool of worker threads that are managed by the system\"; \"If all thread pool threads are busy, additional work items are queued until threads to execute them become available.\"",
+        "source": "examples/don-hang (9 executed runs); refs/dotnet-docs/docs/standard/threading/the-managed-thread-pool.md lines 15, 37"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "\"When you write server programs, you don't want to block threads that might be serving other requests. Using synchronous code when asynchronous alternatives exist hurts your ability to scale out less expensively. You pay for blocked threads.\" With the pool side: \"the thread pool limits the number of threads that can be active in the process simultaneously. If all thread pool threads are busy, additional work items are queued until threads to execute them become available.\" The claim carries the condition those quotes describe.",
+        "source": "refs/dotnet-docs/docs/csharp/asynchronous-programming/index.md line 33; docs/standard/threading/the-managed-thread-pool.md line 37"
+      },
+      {
+        "n": 19,
+        "verdict": "verified",
+        "evidence": "\"If your code implements I/O-bound scenarios to support network data requests, database access, or file system read/writes, asynchronous programming is the best approach\" — the lesson's three examples are exactly that category, set against CPU-bound work; and \"Should the code wait for a result or action, such as data from a database? — I/O-bound: Use the async modifier and await expression without the Task.Run method.\" Nothing is computed while such a wait is in flight, which is the sense the claim uses.",
+        "source": "refs/dotnet-docs/docs/csharp/asynchronous-programming/async-scenarios.md lines 10, 72"
+      },
+      {
+        "n": 20,
+        "verdict": "rephrased",
+        "evidence": "First half exact: \"You can use the await operator only in a method, lambda expression, or anonymous method that is modified by the async keyword.\" Second half too strong: the async page lists Task, Task<TResult>, void and \"Any type that has an accessible GetAwaiter method\", and only advises \"Use Task if the method returns no meaningful value when it completes.\" A value-less async method may be async void, whose caller \"can't await it\" — the case the claim's last clause denies.",
+        "source": "refs/dotnet-docs/docs/csharp/language-reference/operators/await.md line 28; docs/csharp/language-reference/keywords/async.md lines 67-76",
+        "suggested_text": "A method must carry the async modifier for await to appear in its body; an async method that produces no value normally returns a Task standing for the work in flight, which its caller can await (async void exists for event handlers and cannot be awaited)."
+      }
+    ],
+    "issues": [
+      {
+        "severity": "major",
+        "section": 3,
+        "kind": "accuracy",
+        "text": "Unlisted claim: the Core concepts entry says await hands the thread back \"to the pool it came from\". The thread that reaches the sample's first await did not come from a pool: a probe run of the same shape of code on SDK 10.0.300 printed \"start id=2 pool=False\" then \"mid id=6 pool=True\", so the entry thread reports IsThreadPoolThread false. The docs put it differently: await \"signs up the rest of the method as a continuation and returns control to the caller of the async method\" — no pool. Also false for a UI thread. No ledger claim covers it.",
+        "fix": "Drop the unconditional pool: \"**async/await** — a way of writing a wait so the thread running the method is handed back — to the pool, if it came from one — while nothing is happening, and the rest of the method continues once the answer arrives.\" Add it to the ledger as a behavior claim sourced to task-asynchronous-programming-model.md line 122.",
+        "quote": "a way of writing a wait so the thread is handed back to the pool it came from while nothing is happening"
+      },
+      {
+        "severity": "major",
+        "section": 6,
+        "kind": "accuracy",
+        "text": "Unlisted claim: \"slightly below\" is contradicted by running the sample, and \"never the same twice\" is an absolute the ledger does not carry. Nine runs printed 148572, 113428, 100031, 153132, 155651, 106078, 118259, 151618, 141380 — losses of 22% to 50%, one run at almost exactly half. Claim 6 only says \"usually below it\" and \"need not be the same on two runs\"; the body states more than the ledger and more than the runs support.",
+        "fix": "Replace with what the runs show: \"You notice this when a total lands below what you expect — sometimes far below — and is rarely the same twice.\" Either extend claim 6 to cover the size of the loss or keep the body inside claim 6's wording.",
+        "quote": "You notice this when a total lands slightly below what you expect and is never the same twice."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "\"the method continues on whatever thread is free\" is stated without condition. It holds because this is a console program: \"Console apps don't install a SynchronizationContext, which means await continuations run on the thread pool\", whereas \"UI frameworks like Windows Forms, WPF, and .NET MAUI install a SynchronizationContext on their UI thread. When you await a task in those environments, the continuation automatically posts back to the UI thread.\" The lesson invokes programs with a screen one section later. Claim 11 carries the console condition; the body does not.",
+        "fix": "Condition the sentence on this program: \"When the wait ends, the method continues on whatever thread is free — in a program like this one, with no screen — which is why the last line can print a different number.\"",
+        "quote": "When the wait ends, the method continues on whatever thread is free, which is why the last line can print a different number."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "Claim 7 in .meta.json still ends \"and hands the thread back until then, as any await does\", carried over unfixed from the previous round. The await page contradicts the universal: \"When the await operator is applied to the operand that represents an already completed operation, it returns the result of the operation immediately without suspension of the enclosing method.\" Two 100000-iteration loops can be finished before the await is reached. The body sentence is defensible for this sample; the ledger's universal is not.",
+        "fix": "Reword claim 7 as: \"await Task.WhenAll(first, second) continues only once both supplied tasks have completed; unless they are already finished when the await is reached, it hands the thread back until then.\" No body change needed.",
+        "quote": "and hands the thread back until then, as any await does."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "\"A method is written `async` so that it may contain `await`, and it gives back a `Task`\" reads as a general rule, and as a general rule it is wrong: the async page lists Task, Task<TResult>, void and \"Any type that has an accessible GetAwaiter method\" as return types, and only advises \"Use Task if the method returns no meaningful value when it completes.\" Claim 20 states the same over-general rule; it was flagged last round and is unchanged in .meta.json.",
+        "fix": "Tie the second half to this method: \"A method is written `async` so that it may contain `await`, and this one gives back a `Task`: the same kind of value that stands for work in flight, so whoever called it can wait on it too.\" Apply the suggested_text for claim 20 in the ledger.",
+        "quote": "A method is written `async` so that it may contain `await`, and it gives back a `Task`"
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "fix-required"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-07T23:59:00+07:00",
+    "reviewer": "junior-sim",
+    "issues": [
+      {
+        "severity": "major",
+        "section": 3,
+        "kind": "term",
+        "text": "\"the pool\" arrives in the definition of the second term I am supposed to learn, and nothing before it has said there is such a thing. I know a process has threads; I do not know threads are kept anywhere or that one can be \"handed back\". Section 4 does explain the pool, but by then I have already read the definition of async/await twice without being able to picture the receiver.",
+        "fix": "Name it where it first appears, using words already in section 4: \"...so the thread is handed back to the pool of ready threads the runtime keeps, while nothing is happening...\" — or move the sentence \"A thread is borrowed from that pool for a piece of work and given back when it ends\" up into this entry.",
+        "quote": "**async/await** — a way of writing a wait so the thread is handed back to the pool it came from while nothing is happening"
+      },
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "term",
+        "text": "`Task` is never said to be anything. It first turns up here as `Task.Delay(50)`, then as the return type on the method line, and the prose only ever explains the three calls (`Task.Run`, `Task.Delay`, `Task.WhenAll`) by what each does. I read `Task.` as a prefix I was meant to ignore, so when section 5 later says the method \"gives back a `Task`\" I had no idea what kind of thing that was.",
+        "fix": "Say what it is at its first use, in one clause: \"`Task.Delay(50)` gives back a `Task` — a value that stands for work that has not finished yet — and this one is a wait, not work.\"",
+        "quote": "`Task.Delay(50)` is a wait, not work: with nothing to compute, a thread sitting inside it would be blocking"
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "gap",
+        "text": "\"the same kind of value\" points at something I have not been told. Up to this sentence nothing in the lesson has named a value that stands for work; the sentence that does — \"`Task.Run` ... gives back a value that stands for that running work\" — is after the code block. So I had to read forward, find that sentence, and come back. \"work in flight\" is also a phrase I do not have.",
+        "fix": "Turn the pointer around: either move the `Task.Run` sentence above the code block, or write here \"...and it gives back a `Task`: a value that stands for work that is still running, so whoever called it can wait on it too.\"",
+        "quote": "it gives back a `Task`: the same kind of value that stands for work in flight, so whoever called it can wait on it too"
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "gap",
+        "text": "I cannot get from the first half of this sentence to the second. I have been told a held thread means the program does nothing meanwhile; I have not been told that a program with a screen has one particular thread that keeps the screen answering, so I cannot see why a held thread and a frozen screen are the same event. Every program in the lesson prints three lines and has no screen.",
+        "fix": "Add the missing middle in one clause, e.g. \"...in programs with a screen, one thread is the one that answers the screen, and a program that stops responding is often that thread held where it could have been handed back\" — or cut the clause and keep only the sentence before it.",
+        "quote": "in programs with a screen, one that stops responding is often such a thread, held where it could have been handed back"
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "diagram",
+        "text": "I can narrate the picture, but only by adding two things the prose has and the picture does not. The prose says the loops go to a pool and a thread is borrowed from it; in the picture RunAsync speaks straight to Thread A and Thread B, with no pool anywhere. The prose also insists adding one is three steps, while the picture shows two per thread (read, write) and the add is invisible.",
+        "fix": "Label the arrows to match the prose: \"R->>A: loop handed over, thread borrowed from the pool\" and \"A->>C: add one, write 501\" (same for B), so the three steps the prose counts are the steps I can see.",
+        "quote": "R->>A: count to 100000"
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "style",
+        "text": "A word is defined here and used a paragraph and a half later. When I hit \"free below\" I had nothing to attach it to, and when I later read \"the method continues on whatever thread is free\" I had to scroll back to check that this was the \"free\" I had been warned about.",
+        "fix": "Attach it where it is used and drop it here: end this sentence at \"...given back when it ends.\", and in the last paragraph write \"the method continues on whatever thread is free — back in the pool and not holding anything\".",
+        "quote": "A thread is borrowed from that pool for a piece of work and given back when it ends; free below means back in the pool."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "length",
+        "text": "I re-read this paragraph twice. In six sentences it explains `Task.Run`, then `await Task.WhenAll`, then why `counter` is on the heap, then a general rule about which locals can live in a call frame, then a reading trick about fixed text in the printed line. The general rule is the one thing I needed to slow down on, and it is sitting in the middle of four other things.",
+        "fix": "Split after \"...rather than on the call frame of one of them.\" and start a new paragraph with \"A local that only the method itself uses can live in the call frame...\", keeping the fixed-text sentence as its own short paragraph.",
+        "quote": "`Task.Run` hands a piece of code to the runtime, which queues it to the pool of worker threads to run there while this thread carries on"
+      },
+      {
+        "severity": "minor",
+        "section": "quiz q4",
+        "kind": "quiz",
+        "text": "I picked the right option by recognising a sentence, not by thinking. Option b is section 5's sentence with \"on the heap\" swapped for \"not in one call frame\"; I matched the words \"where both threads can reach it\" and stopped. Option c also repeats a lesson sentence, which slowed me down for a moment, but the words \"without the compiler doing anything\" gave it away.",
+        "fix": "Reword option b so it states the reason instead of echoing the sentence, e.g. \"Code running outside the method's own flow uses that local, so it cannot live in a call frame that dies with the call, and one copy sits where every thread reaches it.\"",
+        "quote": "There is one `counter`, and because both loops use it the compiler puts it where both threads can reach it, not in one call frame"
+      },
+      {
+        "severity": "minor",
+        "section": "quiz q1",
+        "kind": "quiz",
+        "text": "I could have ordered these five without knowing what a thread is. \"before anything has been written back\" puts b among the reads, \"over the value already there\" puts e after a, and \"so one of them is gone\" is plainly the end; d is then the only thing left to start with. The wording sorts itself.",
+        "fix": "Remove the redundant cue from option e — \"Thread B adds one to the 500 it read and writes 501 back\" — and keep the one cue in option b that is needed to fix the order.",
+        "quote": "Thread B adds one to the 500 it read and writes 501 over the value already there"
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "pool / pool of worker threads (used in the Core concepts definition of async/await, explained only in section 4)",
+        "Task (the bare type; only `Task.Run`, `Task.Delay` and `Task.WhenAll` are explained, by what they do)",
+        "work in flight",
+        "programs with a screen / a program that stops responding"
+      ],
+      "skipped_steps": [
+        "\"**async/await** — a way of writing a wait so the thread is handed back to the pool it came from\" — no pool has been mentioned at this point in the lesson",
+        "\"it gives back a `Task`: the same kind of value that stands for work in flight\" — the same kind as what? The sentence naming such a value comes after the code block",
+        "\"in programs with a screen, one that stops responding is often such a thread\" — nothing has said a program with a screen has a thread that keeps it answering",
+        "\"free below means back in the pool\" — a word is defined a paragraph and a half before it is used"
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "fix-required"
+  }
+}

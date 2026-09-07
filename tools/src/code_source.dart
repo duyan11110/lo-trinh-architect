@@ -3,6 +3,7 @@
 /// Also the normalization + matching algorithms from Phụ lục A.6/A.7.
 library code_source;
 
+import 'dart:convert';
 import 'dart:io';
 import 'package:path/path.dart' as p;
 
@@ -57,7 +58,10 @@ class CodeSource {
     if (result.exitCode != 0) return null;
     final bytes = result.stdout;
     if (bytes is List<int>) {
-      return String.fromCharCodes(bytes);
+      // The repo is UTF-8 (see .gitattributes); decoding byte-per-code-unit
+      // would turn "xin chào" into mojibake and no block with a non-ASCII
+      // character could ever match its file.
+      return utf8.decode(bytes, allowMalformed: true);
     }
     return bytes.toString();
   }

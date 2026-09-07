@@ -15,57 +15,53 @@ vocab: []
 example_tag: stage-0
 versions_used: [dotnet]
 content_version: 1
-status: draft
+status: reviewed
 approved_by: null
-reviewed_at: null
+reviewed_at: "2026-09-07T13:02:10+07:00"
 ---
 
 ## Before you start
 
-- [[foundation.l1.program-to-process]] — you saw the operating system build a process around a file on disk; this lesson is about two more things it attaches to that process: a folder to start from and a user to act as.
+- [[foundation.l1.program-to-process]] — you saw that running a program creates a process with its own memory and its own id. This lesson adds the other thing the operating system remembers for every run: where that run is standing on disk.
 
 ## The situation
 
-You want a Đơn Hàng console sample to read a settings file, so you write `app.conf` into `samples/DonHang.Samples`, next to the `.cs` file that reads it. From the top of the example repository — the folder holding `samples/` and `scripts/` — you run `dotnet run --project samples/DonHang.Samples -- read-config-file`: this builds and runs the console project in that folder, and the word after `--` tells the program which sample to run. The answer is `not found`, and the full path it prints is that top folder, not the folder you put the file in, and not the one holding the compiled program. Your editor opens `app.conf` on the first try. When you hand a program a bare file name, where does it look?
+You are reading through the Đơn Hàng scripts and run `scripts/computer/permissions.sh`. It creates a small file called `app.conf`, prints what is in it, and everything looks ordinary. Two lines further down, the same script asks for `app.conf` again — same name, same run — and the answer is `No such file or directory`. Nothing deleted it: the last line prints the file in full. The only thing that changed was where the run was standing. Why does one name mean a file at one moment and nothing at the next?
 
 ## Core concepts
 
-- path — the text you give the operating system to name a file; it is absolute when it names its own starting point, such as `/tmp/demo/app.conf` on Linux or `C:\demo\app.conf` on Windows, and relative when it does not.
-- working directory — one folder the operating system attaches to every process, and the folder every relative path in that process is measured from.
-- owner and permissions — every file and folder records who owns it and, for each kind of user, which of reading, writing and executing is allowed.
-- the user a process runs as — a process acts as some user, and the operating system compares that user against the owner and permissions each time the process opens a file.
-- bytes — a file holds bytes; text is bytes read under a rule the writer and the reader must share, including the rule for where a line ends.
+- path — the text a program hands to the operating system to say which file it means.
+- absolute path — a path that starts at the top of the file tree, written `/` on a Linux machine, so it names the same file from anywhere.
+- relative path — a path that does not start at the top, and names nothing until the operating system finishes it.
+- working directory — the folder the operating system remembers for each process, and the one its relative paths are finished from.
+- owner and permissions — what a file or folder records about who may use it: the user that owns it, the group that owns it — a named set of users the machine keeps — and what reading, writing and running each is allowed.
 
 ## How it works
 
 ```mermaid
 flowchart LR
-  R["A program asks to open a name"] --> A{"Does the name say where to start?"}
-  A -->|no| W["Measure it from the process's working directory"]
-  A -->|yes| F["The full path to try"]
-  W --> F
-  F --> E{"Is anything there?"}
-  E -->|no| N["Not found; the message names this path"]
-  E -->|yes| P["Compare the process's user with the owner and permissions: opened or refused"]
+  R["app.conf"] --> C["Finished with the working directory"]
+  C --> A["/tmp/demo/app.conf"]
+  A --> Q1{"Anything there?"}
+  Q1 -->|no| N["Not found"]
+  Q1 -->|yes| Q2{"Allowed for this user?"}
+  Q2 -->|yes| B["The file's contents"]
+  Q2 -->|no| D["Refused"]
 ```
 
-In the situation above, `app.conf` is a relative path: it names a file without saying where to start, so the operating system starts at the process's working directory. Whoever launches a process hands it a working directory, and a terminal — the window where you type commands — hands over the folder it is sitting in. That is why the program printed a path at the top of the repository: the folder you ran the command from.
+In the situation above, `app.conf` is a relative path: on its own it names nothing, and the operating system finishes it with the working directory of the run — in the script below, `/tmp/demo`. Every process has one, and it can change mid-run. Standing in `/tmp/demo`, the run turns `app.conf` into `/tmp/demo/app.conf` and reads it; standing in `/`, the same name becomes `/app.conf` and finds nothing. An absolute path skips all this and works from anywhere.
 
-A path that names its own starting point is absolute and means the same file whatever the working directory is: `/tmp/demo/app.conf` on Linux, `C:\demo\app.conf` on Windows. Any other path is relative, and the operating system measures it from the working directory before it looks.
+The working directory is not the folder the program file sits in; a program can print both and get different answers. A run starts with the working directory of whatever started it: a program launched from a terminal begins where that terminal stood. This is what happened in the situation above: the name was right, the place it was finished from was not.
 
-If the folder can be searched and nothing is there, the answer is `not found`, and the message names the path tried. If something is there — or if the folder itself is closed to this process — one more check happens: the operating system compares the user your process runs as against the file's owner and permissions, and refuses if that user is not allowed what the program asked for, here reading. So one line of code has two common ways to fail, and the message says which.
+Once the name is right, two things can still surprise you: who may open the file, and how its lines end. A file or folder records who owns it and what reading, writing and running are allowed for the owner, the group and everyone else. A process normally acts with the permissions of the user that started it and does not pick that user; a few programs are set up to act as another user, and none here is. So a file can exist, be named correctly, and still refuse to open — a different failure from absence.
 
-Text is bytes, and the rule for where a line ends is not the same on every system: a file copied from one to another arrives with the writer's line endings. A program that runs a script takes the first word of each command line as the name of the thing to run, so that extra byte stays glued to the last word on the line — the command name itself when the line holds one word, and then the name looked up is not the name you can see.
+Windows tools traditionally end a line of text with two bytes, a carriage return then a line feed; Linux and macOS use the line feed alone, so a Windows line carries one byte more. Those bytes are stored in the file, so the difference travels with it, glued to the last word of each line.
 
 ## In the Đơn Hàng system
 
-One sample's whole job is to say where it looked and what happened.
+Start the console sample under `samples/DonHang.Samples/` from the top folder of the example system with `dotnet run --project samples/DonHang.Samples -- read-config-file`. It prints that folder, then the folder the program file sits in, then that first folder with `app.conf` added, then `not found:` with that same path. The `--project` argument is itself a relative path, so the command runs only from that top folder; from `samples/DonHang.Samples`, `dotnet run --project . -- read-config-file` runs the sample there and changes the first line. `RelativePath`, declared just above the part shown here, is `app.conf`.
 
-```csharp file=samples/DonHang.Samples/Samples/Computer/ReadConfigFile.cs tag=stage-0 lines=6-26
-    private const string RelativePath = "app.conf";
-
-    public static void Run()
-    {
+```csharp file=samples/DonHang.Samples/Samples/Computer/ReadConfigFile.cs tag=stage-0 lines=10-25
         Console.WriteLine($"working directory: {Directory.GetCurrentDirectory()}");
         Console.WriteLine($"this program lives in: {AppContext.BaseDirectory}");
         Console.WriteLine($"'{RelativePath}' therefore means '{Path.GetFullPath(RelativePath)}'");
@@ -82,14 +78,11 @@ One sample's whole job is to say where it looked and what happened.
         {
             Console.WriteLine($"found, but not allowed to read: {exception.Message}");
         }
-    }
 ```
 
-`RelativePath` is a bare name, so its three printed lines answer three questions: `Directory.GetCurrentDirectory()` is the working directory of this run, `AppContext.BaseDirectory` is where the compiled program sits, and `Path.GetFullPath` shows what the bare name comes to, always measured against the first of those, never the second. Run it from the top of the repository and the name resolves there; run it from inside `samples/DonHang.Samples` and it resolves there instead, from the same compiled files. The two `catch` blocks are the two failures from the diagram: `FileNotFoundException` when the folder exists but the file does not, `UnauthorizedAccessException` when this process may not open what is there.
+The first two lines print two different folders: `Directory.GetCurrentDirectory()` is the working directory of this run, `AppContext.BaseDirectory` the base directory of the application, here the folder holding the built program files. The third line shows the answer in advance: `Path.GetFullPath` finishes a relative path the same way opening it would, so printing the full path shows where the run actually looked. The two `catch` blocks keep the failures apart: `FileNotFoundException` when nothing sits at that path, its `FileName` holding that path in full; `UnauthorizedAccessException` when something does sit there and this user may not read it.
 
-The script under `scripts/computer/` makes the same two points from outside any program, without a line of C#. It runs on the small Linux machine the example repository starts for you with `scripts/up.sh`, and you need not run it yourself — the block after it is exactly what it prints.
-
-In it, `rm -rf` removes a folder and everything in it, `mkdir -p` creates one, and `printf` with `>` writes the file. `stat` reports what the file system records about that file, with the letters after `-c` asking for the permissions, the owner, the group and the name; `chmod` changes that record. `whoami` names the user the script runs as, `cd` moves the working directory, `pwd` prints it, and `$( )` puts a command's output into the line being printed. `cat` prints a file's contents, `2>&1` sends its failure message to the same place as ordinary output, and `|| echo` prints a note after it.
+The script under `scripts/computer/` makes the same two points from outside a program, on a file it creates. Its commands: `rm -rf` deletes a folder and everything in it, `mkdir -p` creates one, `printf` with `>` writes the file, `whoami` prints the user this run acts as, `cat` prints what is in a file, and `chmod` changes what a file allows — `600` asking for reading and writing for the owner and nothing for anyone else. `stat` prints what the file records — the permissions, the owner, the group and the name, in that order — which is where each `-rw-r--r-- root:root app.conf` line comes from. In such a string, the nine characters after the first are three groups of three — owner, then group, then everyone else — each showing reading, writing and running, with `-` for what is not allowed.
 
 ```bash file=scripts/computer/permissions.sh tag=stage-0 lines=7-26
 rm -rf /tmp/demo
@@ -128,34 +121,33 @@ the same relative path now finds nothing
 port=8080
 ```
 
-Those two `stat` lines are that record: they say what the owner may do, then what other users may do, using `r` for reading, `w` for writing, `x` for executing and a dash where it is not allowed. On this machine the file the script has just created prints as `-rw-r--r--`, owned by `root`; `chmod 600` narrows it to `-rw-------`, which leaves the owner reading and writing and every other ordinary user nothing. This run still reads the file afterwards not because `root` owns it, but because `whoami` says the process runs as `root`, the one user a Linux machine does not check against these permissions when it reads or writes a file. The second half of `root:root` names a grouping of users this lesson does not use.
+Read the output in two halves. The first three lines are about permissions: the run acts as `root`, the user a Linux machine gives every permission to; the file it just created is owned by the user `root` and the group `root`, the pair in `root:root`; and the two strings beginning `-rw` are the same file before and after `chmod`. Those permissions do not stop this run from reading the file, which is why the read further down still succeeds; the refusal happens to a run acting as an ordinary user. So this output never shows a refusal; what one looks like is the `found, but not allowed to read:` line of the sample above.
 
-The rest of the script changes nothing on disk and only moves: the same `cat app.conf` prints the file while the working directory is `/tmp/demo`, finds nothing from `/`, and the absolute path works from both. Nothing about the file differed between those two attempts; only where the process was standing did.
+The second half is about paths: `cd` moves the run and `pwd` prints where it is standing, so the same `cat app.conf` succeeds from `/tmp/demo` and fails from `/`. On that failing line, `2>&1` puts the failure message into the same output as everything else, and `||` adds the note only when `cat` fails. The file did not move: from `/`, the whole path from the top opens it.
 
 ## Beginners often think…
 
-- **"A relative path is relative to where my source file is."** → Actually it is measured from the working directory of the running process, which whoever starts it decides and which has nothing to do with your source tree. You notice this when the same program finds the file from one folder and not from another, without a line of code changing.
-- **"If I can open the file in my editor, my program can open it too."** → Actually your editor and your program are two processes, possibly running as different users and starting from different folders, so each gets its own answer for the same name. You notice this when a program on another machine cannot read a file you open over your own login without trouble.
-- **"A file that works on my laptop works the same on a Linux server."** → Actually a text file written by a Windows tool that follows the Windows convention ends each line with one byte more than a Linux tool writes, and a plain copy carries those bytes across unchanged. You notice this when a script copied across fails naming a command you can see is spelled correctly, and the message prints that word with something extra after it, which a genuinely missing command would not have.
+- **"A relative path is relative to where my source file is."** → Actually it is finished with the working directory of the run, which whoever started the run chose. You notice this when a file your program reads is found from your editor and not found when a colleague starts it from another folder.
+- **"If I can open the file in my editor, my program can open it too."** → Actually opening depends on the user the run acts as and on what the file allows that user; your editor may act as a different user from the one your program gets. You notice this when something that works on your laptop reports on a server that it may not read a file that is plainly there.
+- **"A text file is a text file; copying it between Windows and Linux changes nothing."** → Actually the bytes at the end of every line differ, and they travel with the file. You notice this when a script written on Windows is run on Linux and stops on a line whose first word it treats as the name of a program to run: the extra byte is glued to that word, so the name it reports is one character longer than the one you typed.
 
 ## Try it (3 minutes)
 
-1. From the top of the example repository, run `dotnet run --project samples/DonHang.Samples -- read-config-file` and read the third line it prints.
-2. Delete `samples/DonHang.Samples/app.conf` if you created it while reading The situation. Create `app.conf` at the top of the repository containing the single line `port=8080`, and run the same command again.
-3. Run `cd samples/DonHang.Samples` to move there, then run `dotnet run -- read-config-file`; `--project` can be left out once you stand in the project's own folder.
+1. Start the example system with `scripts/up.sh` — it starts a small Linux machine — then run `scripts/computer/permissions.sh` from the same terminal; the script puts itself on that machine, which is why its output shows `root` and `/tmp/demo`.
+2. Read the output in two passes: first the two lines beginning `-rw`, then the two lines beginning `working directory:` with what follows each.
 
-Expected result: the first run ends with `not found`, the second prints `port=8080`, and the third ends with `not found` again with a path inside `samples/DonHang.Samples` — the same compiled program, three answers, decided only by the folder you ran it from.
+Expected result: the two `-rw` lines describe one file before and after its permissions change, the second allowing the owner what the first allowed and nobody else anything. Below them, `app.conf` is read from `/tmp/demo`, the same name finds nothing from `/`, and the last line reads it anyway by naming it from the top.
 
 ## Connections
 
-- [[foundation.l1.program-to-process]] — the same creation moment one step further: the working directory and the user are attached to a process exactly when the operating system builds it.
-- [[foundation.l1.terminal-basics]] — the practical half of this one: the commands that move you between folders, so you can put a process where its paths make sense.
-- [[foundation.l1.env-and-config]] — the other route settings take into a program, for when a file at a fixed place is the wrong answer.
+- [[foundation.l1.program-to-process]] — the same run from the other side: that lesson gave each process its memory and its id, this one a place to stand on disk.
+- [[foundation.l1.env-and-config]] — the other road settings take into a program: values the operating system hands the run at startup, instead of a file it has to find.
+- [[foundation.l1.terminal-basics]] — the same commands to type rather than ideas: moving the working directory and looking at files.
 
 ## Five-line summary
 
-1. A relative path is measured from the working directory of the running process, never from your source file or the compiled program's folder.
-2. Whoever starts a process decides its working directory, so the same program finds a file from one folder and not from another.
-3. Every file has an owner and permitted actions; a process runs as a user, and the operating system compares them on each open.
-4. "Not found" and "not allowed" are different failures, and the path in the message tells you where the program actually looked.
-5. A file is bytes, so text moved between systems keeps its line endings, which is how a working script breaks on another machine.
+1. A relative path names nothing on its own: the operating system finishes it with the working directory of the process that asked.
+2. The working directory belongs to the run, not to the folder the program file or your source file sits in.
+3. A "file not found" can be a correct name finished from an unexpected place, so printing the whole path shows where the run looked.
+4. Every file and folder records an owner and what reading, writing and running it allows owner, group and others; a run uses its user's permissions.
+5. The bytes that end a line of text differ between Windows and Linux, and they travel with the file.
