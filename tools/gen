@@ -54,13 +54,24 @@ TOTAL_CALLS=0
 # through every remaining fix/review call in the same lesson in a few
 # seconds, all failing, and can leave the lesson mislabeled "reviewed" with
 # no real content written. So: detect the limit signature, sleep, retry the
-# SAME call — never move on while limit-blocked. Regex is best-effort (this
-# repo has not yet logged a real limit hit to confirm the exact wording);
-# check the first real occurrence in the log and tighten the pattern if it
-# does not match. 2026-09-07, DECISIONS.md §3.
+# SAME call — never move on while limit-blocked.
+#
+# First guess at the regex (2026-09-07) missed the real wording entirely —
+# confirmed 2026-09-08 running 3 modules in parallel: every one hit
+# `"api_error_status":429` / `"result":"You've hit your session limit ·
+# resets 12:40am (Asia/Ho_Chi_Minh)"`, none of which the old pattern matched
+# ("usage limit" != "session limit", "resets 12:40am" has no "at"/"in",
+# `"api_error_status"` != `"status"`). All three processes raced through
+# every remaining lesson in seconds and mislabeled them "reviewed" in the
+# .md report despite writing no .en.md at all (source-of-truth files were
+# NOT corrupted — set_lesson_status skips when the file is missing, and
+# lessons_in_module() re-queues anything without a file — but the report
+# lied). Pattern below is now anchored to the confirmed real text plus the
+# generic forms as a hedge; if it ever misses again, check
+# logs/gen-*.log for the exact `"result":"..."` string and extend it.
 RATE_LIMIT_WAIT_SECS=1800
 RATE_LIMIT_MAX_RETRIES=20
-RATE_LIMIT_PATTERN='usage limit|rate.?limit|resets? (at|in)|try again (later|in)|"(code|status)":[[:space:]]*429|quota'
+RATE_LIMIT_PATTERN='session limit|usage limit|rate.?limit|resets? [0-9:apm ]*\(|resets? (at|in)|try again (later|in)|"api_error_status":[[:space:]]*429|"(code|status)":[[:space:]]*429|quota'
 
 declare -a REPORT_ROWS=()
 
@@ -236,6 +247,19 @@ process_lesson() {
     validate_lesson "$id" || true
     call_subagent "Dùng subagent review-technical cho bài $id (chỉ claim đã đổi)"
   done
+
+  # Second, independent line of defense against the 2026-09-08 incident: even
+  # if every call above silently failed (rate limit, network, whatever) and
+  # the retry logic in call_claude/call_subagent did not catch it, the
+  # lesson never got a real .en.md — do not report "reviewed" for a lesson
+  # with no content on disk. lessons_in_module() already re-queues anything
+  # without a file on the next run; this only fixes what the report SAYS.
+  local en_file="content/tracks/$(id_track "$id")/$(id_module "$id")/$id.en.md"
+  if [ ! -f "$en_file" ]; then
+    final_status="failed"
+    approved_by=""
+    log "$id: không có $en_file sau $round vòng — mọi lệnh phía trên có thể đã fail (limit/mạng) mà không được bắt đúng. Ghi 'failed', KHÔNG 'reviewed'; lần chạy sau sẽ tự làm lại bài này."
+  fi
 
   LESSON_STATUS="$final_status"
   LESSON_APPROVED_BY="$approved_by"
