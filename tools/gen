@@ -98,6 +98,28 @@ validate_lesson() {
   fi
 }
 
+# set_lesson_status ID STATUS APPROVED_BY
+# Writes status/approved_by/reviewed_at into the lesson's frontmatter. Neither
+# the lesson skill nor the review subagents do this (lesson/SKILL.md: "Keep
+# status: draft. Do not set approved yourself") — SPEC.md's gen section
+# assigns that job to gen, per DECISIONS.md D1. Without this, a lesson stays
+# "draft" forever even after a clean review, and /translate (which requires
+# status: approved) always refuses. Found missing 2026-09-07 (DECISIONS §3).
+set_lesson_status() {
+  local id="$1" status="$2" approved_by="${3:-}"
+  local file="content/tracks/$(id_track "$id")/$(id_module "$id")/$id.en.md"
+  if [ ! -f "$file" ]; then
+    log "$id: không thấy $file, bỏ qua set_lesson_status"
+    return
+  fi
+  local ts
+  ts="$(date '+%Y-%m-%dT%H:%M:%S%:z')"
+  sed -i -E "s/^status: .*/status: $status/" "$file"
+  sed -i -E "s/^approved_by: .*/approved_by: ${approved_by:-null}/" "$file"
+  sed -i -E "s/^reviewed_at: .*/reviewed_at: \"$ts\"/" "$file"
+  log "$id: frontmatter -> status=$status approved_by=${approved_by:-null} reviewed_at=$ts"
+}
+
 # review_has_open_severity FILE SEVERITY
 review_has_open_severity() {
   local file="$1" severity="$2"
@@ -177,6 +199,8 @@ process_lesson() {
   LESSON_STATUS="$final_status"
   LESSON_APPROVED_BY="$approved_by"
   LESSON_ROUNDS="$round"
+
+  set_lesson_status "$id" "$final_status" "$approved_by"
 
   if [ "$final_status" = "approved" ]; then
     call_claude "/translate $id" "$CLAUDE_MODEL_TRANSLATE"
