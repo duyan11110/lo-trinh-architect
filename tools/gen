@@ -73,8 +73,6 @@ RATE_LIMIT_WAIT_SECS=1800
 RATE_LIMIT_MAX_RETRIES=20
 RATE_LIMIT_PATTERN='session limit|usage limit|rate.?limit|resets? [0-9:apm ]*\(|resets? (at|in)|try again (later|in)|"api_error_status":[[:space:]]*429|"(code|status)":[[:space:]]*429|quota'
 
-declare -a REPORT_ROWS=()
-
 log() {
   echo "[$(date '+%Y-%m-%d %H:%M:%S%z')] $*" | tee -a "$LOG_FILE"
 }
@@ -272,7 +270,15 @@ process_lesson() {
     tools/validate --parity "$id" >>"$LOG_FILE" 2>&1 || true
   fi
 
-  REPORT_ROWS+=("| $id | $LESSON_STATUS | $LESSON_APPROVED_BY | $LESSON_ROUNDS |")
+  # Written straight to disk, not just kept in REPORT_ROWS: write_report_footer
+  # only flushes REPORT_ROWS at the very end of run_module/run_stage, so a
+  # process killed mid-run (observed 2026-09-08: OS sleep during the
+  # rate-limit wait) loses every completed lesson's row even though the real
+  # .en.md/.meta.json files were written correctly. The report is a log, not
+  # a source of truth, but it should still reflect what actually happened.
+  local row="| $id | $LESSON_STATUS | $LESSON_APPROVED_BY | $LESSON_ROUNDS |"
+  echo "$row" >>"$REPORT_FILE"
+  REPORT_ROWS+=("$row")
 }
 
 id_track() { echo "$1" | cut -d. -f1; }
@@ -323,10 +329,10 @@ write_report_header() {
 }
 
 write_report_footer() {
+  # Rows themselves are now written as each lesson finishes (process_lesson);
+  # this only adds the closing total, so a mid-run kill loses at most that
+  # one summary line, never the per-lesson rows already on disk.
   {
-    for row in "${REPORT_ROWS[@]:-}"; do
-      [ -n "$row" ] && echo "$row"
-    done
     echo
     echo "Tổng lượt gọi claude -p: $TOTAL_CALLS"
   } >>"$REPORT_FILE"
