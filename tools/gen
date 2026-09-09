@@ -73,6 +73,17 @@ RATE_LIMIT_WAIT_SECS=1800
 RATE_LIMIT_MAX_RETRIES=20
 RATE_LIMIT_PATTERN='session limit|usage limit|rate.?limit|resets? [0-9:apm ]*\(|resets? (at|in)|try again (later|in)|"api_error_status":[[:space:]]*429|"(code|status)":[[:space:]]*429|quota'
 
+# Opt-in (off by default — keep the wait-and-retry above as the safe default
+# for short/attended runs): GEN_SHUTDOWN_ON_LIMIT=1 tools/gen ... shuts the
+# machine down instead of sleeping when the limit hits. Chosen explicitly by
+# the owner 2026-09-09 over waiting: an unattended run has already been
+# killed once by OS sleep during the 1800s wait (DECISIONS.md §3), so a
+# deliberate shutdown (which also stops the OS from idling into sleep on its
+# own) is preferred over hoping the wait survives. Trade-off, accepted:
+# the process does NOT resume on its own when the limit resets — the owner
+# has to power the machine back on and re-run tools/gen by hand.
+SHUTDOWN_ON_RATE_LIMIT="${GEN_SHUTDOWN_ON_LIMIT:-0}"
+
 log() {
   echo "[$(date '+%Y-%m-%d %H:%M:%S%z')] $*" | tee -a "$LOG_FILE"
 }
@@ -92,11 +103,19 @@ run_with_rate_limit_retry() {
     fi
     local chunk
     chunk="$(tail -n "+$((before_lines + 1))" "$LOG_FILE")"
-    if echo "$chunk" | grep -Eiq "$RATE_LIMIT_PATTERN" && [ "$attempt" -lt "$RATE_LIMIT_MAX_RETRIES" ]; then
-      attempt=$((attempt + 1))
-      log "Đụng usage/rate limit (lần thử lại $attempt/$RATE_LIMIT_MAX_RETRIES) — chờ ${RATE_LIMIT_WAIT_SECS}s rồi thử lại đúng lệnh này, KHÔNG đi tiếp bước khác."
-      sleep "$RATE_LIMIT_WAIT_SECS"
-      continue
+    if echo "$chunk" | grep -Eiq "$RATE_LIMIT_PATTERN"; then
+      if [ "$SHUTDOWN_ON_RATE_LIMIT" = "1" ]; then
+        log "Đụng usage/rate limit — GEN_SHUTDOWN_ON_LIMIT=1: tắt máy sau 60s (huỷ bằng lệnh 'shutdown /a' trong 60s tới nếu cần). Dừng tools/gen ở đây, KHÔNG tự chạy lại khi limit reset — phải bật máy và chạy lại tools/gen bằng tay."
+        shutdown /s /t 60 /c "tools/gen: het usage limit, tu dong tat may" >>"$LOG_FILE" 2>&1 \
+          || log "Gọi 'shutdown /s' thất bại (không phải Windows, hoặc đã có shutdown khác đang chờ) — xem log phía trên."
+        exit 1
+      fi
+      if [ "$attempt" -lt "$RATE_LIMIT_MAX_RETRIES" ]; then
+        attempt=$((attempt + 1))
+        log "Đụng usage/rate limit (lần thử lại $attempt/$RATE_LIMIT_MAX_RETRIES) — chờ ${RATE_LIMIT_WAIT_SECS}s rồi thử lại đúng lệnh này, KHÔNG đi tiếp bước khác."
+        sleep "$RATE_LIMIT_WAIT_SECS"
+        continue
+      fi
     fi
     return 1
   done
