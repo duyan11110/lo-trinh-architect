@@ -1,0 +1,366 @@
+{
+  "id": "foundation.l1.tls-and-https",
+  "technical": {
+    "reviewed_at": "2026-09-14T23:12:00+07:00",
+    "reviewer": "claude-opus-5 (prompt 04, fresh full review of the 22:33 .en.md / 22:36 .meta.json / 22:42 .quiz.json. Read order: versions.yaml, .en.md, stage-0 sources (git show, tools/extract-code), track.yaml entry, own challenge list, then .meta.json, then .quiz.json. Opened: refs/rfc/rfc9110.txt s4.2.2, s4.3.3-4.3.4; RFC 8446 via WebFetch (visible to s4.2.x, s6.2 unreachable); caddyserver.com/docs automatic-https, caddyfile/directives/tls, caddyfile/concepts. Ran in the live lab (donhang-lab, stage-0 checkout, OpenSSL 3.5.8): inspect-cert.sh; s_client -msg, -verify_return_error, -CAfile Caddy root.crt, -attime, -verify_hostname, -noservername; docker logs donhang-web.)",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "RFC 8446 s1 (fetched): \"the only requirement from the underlying transport is a reliable, in-order data stream.\" s2: \"Application Data MUST NOT be sent prior to sending the Finished message, except as specified in Section 2.3\" (s2.3: \"TLS 1.3 allows clients to send data on the first flight\", i.e. early data, not the full handshake). The lesson draws the full handshake of Figure 1, certificate included, so the page request after step 4 holds as drawn.",
+        "source": "https://www.rfc-editor.org/rfc/rfc8446 s1, s2, s2.3"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "RFC 8446 s1 (fetched): \"Authentication: The server side of the channel is always authenticated\"; \"Confidentiality: Data sent over the channel after establishment is only visible to the endpoints.\" Figure 1 (fetched): key_share rides in ClientHello and ServerHello, outside the {} that mark protected messages; s2: the ServerHello carries \"the server's ephemeral Diffie-Hellman share\". Both shares cross unprotected, yet data stays endpoint-only: seeing both does not yield the keys.",
+        "source": "https://www.rfc-editor.org/rfc/rfc8446 s1, s2 (Figure 1)"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Execution in the lab box, live certificate of donhang.local:8443 through `openssl x509 -noout -text`: `Validity`, `Not Before: Sep 14 15:39:20 2026 GMT`, `Not After : Sep 15 03:39:20 2026 GMT`, `Public Key Algorithm: id-ecPublicKey`, `DNS:donhang.local`. RFC 8446 s2 (fetched): CertificateVerify uses \"the private key corresponding to the public key in the Certificate message\". RFC 5280 is not pinned; execution decides.",
+        "source": "docker exec donhang-lab (stage-0); https://www.rfc-editor.org/rfc/rfc8446 s2"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "refs/rfc/rfc9110.txt:1328-1330 (grep): \"The client usually relies upon a chain of trust, conveyed from some prearranged or configured trust anchor, to deem a certificate trustworthy\"; :1398-1399 \"requires that a client be configured with a set of trust anchors.\" Execution in the lab box: default store gives `verify error:num=20:unable to get local issuer certificate`; the same connection with `-CAfile` set to Caddy's root.crt gives `Verify return code: 0 (ok)`.",
+        "source": "refs/rfc/rfc9110.txt s4.3.3-4.3.4; docker exec donhang-lab openssl s_client"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "refs/rfc/rfc9110.txt:1129-1131 (verbatim): \"If the port subcomponent is empty or not given, TCP port 443 (the reserved port for HTTP over TLS) is the default.\" :1117-1119: an https origin server is one \"capable of establishing a TLS ([TLS13]) connection that has been secured for HTTP communication\".",
+        "source": "refs/rfc/rfc9110.txt s4.2.2"
+      },
+      {
+        "n": 6,
+        "verdict": "unverified",
+        "evidence": "No admissible source for what a browser displays or calls it: versions.yaml pins no browser and refs/ holds no browser docs. The substance matches refs/rfc/rfc9110.txt:1325-1328: authority rests on \"the ability of a server to use the private key corresponding to a certificate that the client considers to be trustworthy\"; nothing in s4.3.3-4.3.4 concerns who runs the site. Kind fact: not blocking.",
+        "source": "refs/rfc/rfc9110.txt s4.3.3-4.3.4; content/versions.yaml (no browser key)"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "RFC 8446 s4.2 extension table (fetched): `server_name [RFC6066] | CH, EE`: the name rides in the ClientHello. Execution in the lab box: `openssl s_client -connect 127.0.0.1:8443 -noservername` gets `tlsv1 alert internal error ... SSL alert number 80` and `Cipher is (NONE)`: without the name Caddy picks no certificate; with `-servername donhang.local` the handshake completes.",
+        "source": "https://www.rfc-editor.org/rfc/rfc8446 s4.2; docker exec donhang-lab openssl s_client"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Caddy automatic-https (fetched): \"Normally, TLS handshakes involve sending the ClientHello, including the Server Name Indicator (SNI; the domain being connected to), in plaintext.\" ECH is off unless configured; `git show stage-0:Caddyfile` global block holds only `admin off` and `auto_https disable_redirects`. Lab box `s_client -msg`: `>>> TLS 1.3, Handshake [length 0605], ClientHello` goes out as a plain record, before any InnerContent (protected) record.",
+        "source": "https://caddyserver.com/docs/automatic-https (ECH); Caddyfile @stage-0; docker exec donhang-lab"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "rfc9110.txt:1394-1399: client MUST verify the identity and hold \"a set of trust anchors\"; :1423-1425: a user agent \"MUST either obtain confirmation from the user before proceeding ... or terminate the connection with a bad certificate error\". Lab box, each check failed alone with -verify_return_error: default store, num=20, fatal unknown_ca; Caddy root + -attime now+1d, num=10 expired, fatal certificate_expired; -verify_hostname other.local, num=62, fatal bad_certificate. Exhaustiveness: see issue s7.",
+        "source": "refs/rfc/rfc9110.txt s4.3.4; docker exec donhang-lab openssl s_client; https://www.rfc-editor.org/rfc/rfc8446 s2"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "RFC 8446 s2 (fetched): \"CertificateVerify: A signature over the entire handshake using the private key corresponding to the public key in the Certificate message.\" Figure 1: key_share under both ClientHello and ServerHello. rfc9110.txt:1325-1327: authority rests on \"the ability of a server to use the private key\". Public: the lab box is handed the certificate three times with no credentials (live inspect-cert.sh). \"not the certificate's pair\" is not in this claim: see issue s4.",
+        "source": "https://www.rfc-editor.org/rfc/rfc8446 s2 (Figure 1); refs/rfc/rfc9110.txt s4.3.3"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "RFC 8446 s2 (fetched): \"Finished: A MAC (Message Authentication Code) over the entire handshake. This message provides key confirmation, binds the endpoint's identity to the exchanged keys\". Figure 1: the client's {Finished} precedes its [Application Data].",
+        "source": "https://www.rfc-editor.org/rfc/rfc8446 s2"
+      },
+      {
+        "n": 13,
+        "verdict": "rephrased",
+        "evidence": "RFC 8446 s1.2 (fetched): \"All handshake messages after the ServerHello are now encrypted.\" Claim and lesson say \"everything\". Lab box `openssl s_client -msg`: right after `<<< TLS 1.3, Handshake ... ServerHello` comes `<<< TLS 1.3, ChangeCipherSpec [length 0001]` with no InnerContent (unprotected); EncryptedExtensions, Certificate, CertificateVerify, Finished then arrive as InnerContent. The visible parts hold: rfc9110.txt:1368-1370; Caddy automatic-https, SNI \"in plaintext\".",
+        "source": "https://www.rfc-editor.org/rfc/rfc8446 s1.2; docker exec donhang-lab openssl s_client -msg; refs/rfc/rfc9110.txt s4.3.3",
+        "suggested_text": "In TLS 1.3 every handshake message the server sends after its key material, the certificate included, is encrypted; the destination address and port, and normally the name asked for, stay visible, so an observer can usually list the sites opened but not the pages read."
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "Caddy tls directive (fetched): `internal` \"means to use Caddy's internal, locally-trusted CA to produce certificates for this site\"; automatic-https: an intermediate \"will be used for signing leaf (individual site) certificates\". Caddyfile @stage-0 lines 93-99 equal the lesson block (tools/extract-code). Live run prints `issuer=CN=Caddy Local Authority - ECC Intermediate`, identical to outputs/stage-0/scripts/network/inspect-cert.txt line 3.",
+        "source": "https://caddyserver.com/docs/caddyfile/directives/tls; https://caddyserver.com/docs/automatic-https; Caddyfile:93-99 @stage-0"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "Caddy automatic-https (fetched): installing the root into local trust stores \"isn't guaranteed to work, especially if containers are being used\". `docker logs donhang-web`: \"installing root certificate\", then \"certificate installed properly in linux trusts\": the web container's own store. Lab box default store: `verify error:num=20`. `git grep -i -E \"trust|root\\.crt|pki|update-ca|certutil\" stage-0`: no match; STAGE.md asks only for the hosts line.",
+        "source": "https://caddyserver.com/docs/automatic-https; docker logs donhang-web; examples/don-hang @stage-0"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "`git show stage-0:Caddyfile`: `:8080 {` sets `root * /srv/www` (line 12) and ends its route with `handle { file_server }` (87-89); the HTTPS block repeats `root * /srv/www` (97) and `file_server` (98) and none of the :8080 handlers (/api/v1/orders*, /login.html, /admin, /cached.html, /redirect, /conflict, /slow). docker-compose.yml @stage-0: `web` mounts `./www:/srv/www:ro`.",
+        "source": "examples/don-hang Caddyfile:11-99, docker-compose.yml @stage-0"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "docker-compose.yml @stage-0: `lab` has extra_hosts \"donhang.local:127.0.0.1\" and publishes 8443:8443; `web` has network_mode \"service:lab\". Execution in the lab box: /etc/hosts holds `127.0.0.1 donhang.local`; netstat shows `:::8443 LISTEN` though the lab box runs no web server, and a TLS connection there returns Caddy's certificate.",
+        "source": "docker-compose.yml @stage-0; docker exec donhang-lab"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "Execution: `docker exec donhang-lab bash /repo/scripts/network/inspect-cert.sh` (stage-0 checkout, OpenSSL 3.5.8) printed only subject=/issuer=/notBefore=/notAfter=, then the SAN heading and `DNS:donhang.local`, then only `    Protocol  : TLSv1.3` and `    Cipher    : TLS_AES_128_GCM_SHA256`; identical to outputs/stage-0/scripts/network/inspect-cert.txt except the two masked dates. openssl has no versions.yaml key; behaviour is the lab image's.",
+        "source": "scripts/network/inspect-cert.sh:7-19, outputs/stage-0/scripts/network/inspect-cert.txt @stage-0; live run"
+      },
+      {
+        "n": 19,
+        "verdict": "verified",
+        "evidence": "Live run and inspect-cert.txt: `subject=` empty; `X509v3 Subject Alternative Name: critical` / `DNS:donhang.local`. refs/rfc/rfc9110.txt:1405-1408: the reference identity \"is a DNS-ID\"; \"A reference identity of type CN-ID MUST NOT be used by clients.\" outputs/unstable.regex @stage-0 masks `^ *notBefore=\\K.*$` and notAfter in captured outputs only; the live run printed `notBefore=Sep 14 15:39:20 2026 GMT`.",
+        "source": "refs/rfc/rfc9110.txt s4.3.4; outputs/unstable.regex, outputs/stage-0/scripts/network/inspect-cert.txt @stage-0; live run"
+      },
+      {
+        "n": 20,
+        "verdict": "verified",
+        "evidence": "RFC 8446 s4.1.3 (fetched): cipher_suite is \"The single cipher suite selected by the server from the list in ClientHello.cipher_suites.\" s4.2.1: \"A server which negotiates TLS 1.3 MUST respond by sending a 'supported_versions' extension containing the selected version value\". Live run: `Protocol  : TLSv1.3`, `Cipher    : TLS_AES_128_GCM_SHA256`.",
+        "source": "https://www.rfc-editor.org/rfc/rfc8446 s4.1.3, s4.2.1; live run of inspect-cert.sh"
+      },
+      {
+        "n": 21,
+        "verdict": "verified",
+        "evidence": "inspect-cert.sh @stage-0 lines 7-19: no -verify_return_error, no -CAfile. Execution in the lab box with stderr kept: `verify error:num=20:unable to get local issuer certificate`, then `verify return:1`, and the handshake goes on; the script (set -euo pipefail, line 3) still printed all three parts. Nothing stops on the signer, and the lab box's list lacks Caddy's authority.",
+        "source": "scripts/network/inspect-cert.sh:3,7-19 @stage-0; docker exec donhang-lab openssl s_client"
+      },
+      {
+        "n": 22,
+        "verdict": "verified",
+        "evidence": "RFC 8446 s6.2 unreachable (WebFetch of rfc8446, .txt and .html#section-6.2 all end in s4.2.x). Execution in the lab box, TLS 1.3: `-verify_return_error` with the default store sends `>>> TLS 1.3, Alert [length 0002], fatal unknown_ca`; with Caddy's root as -CAfile and `-attime` now+1d it sends `fatal certificate_expired`: two distinct codes, sent to the other end (`>>>`). rfc9110.txt:1423-1426: the user agent terminates \"with a bad certificate error\".",
+        "source": "docker exec donhang-lab openssl s_client -msg; refs/rfc/rfc9110.txt s4.3.4"
+      },
+      {
+        "n": 23,
+        "verdict": "verified",
+        "evidence": "refs/rfc/rfc9110.txt:1325-1328 (verbatim): \"associates authority based on the ability of a server to use the private key corresponding to a certificate that the client considers to be trustworthy for the identified origin server.\" :1396-1398: verification is \"used to prevent server impersonation\". Nothing in s4.3.3-4.3.4 concerns who operates the site; the lab box's verify errors (num=10, 20, 62) all concern the certificate.",
+        "source": "refs/rfc/rfc9110.txt s4.3.3, s4.3.4"
+      },
+      {
+        "n": 24,
+        "verdict": "verified",
+        "evidence": "Caddy tls directive (fetched): `lifetime` \"sets the validity period for internally issued leaf certificates. Default: 12h.\" Live certificate: Not Before Sep 14 15:39:20, Not After Sep 15 03:39:20 2026 GMT. Execution: same connection with Caddy's root trusted and `-attime` now+1d gives `verify error:num=10:certificate has expired` and `fatal certificate_expired`: only the date changed.",
+        "source": "https://caddyserver.com/docs/caddyfile/directives/tls; docker exec donhang-lab openssl s_client"
+      },
+      {
+        "n": 25,
+        "verdict": "verified",
+        "evidence": "refs/rfc/rfc9110.txt:1423-1426 (verbatim): \"If the certificate is not valid for the target URI's origin, a user agent MUST either obtain confirmation from the user before proceeding (see Section 3.5) or terminate the connection with a bad certificate error.\"",
+        "source": "refs/rfc/rfc9110.txt s4.3.4"
+      },
+      {
+        "n": 26,
+        "verdict": "verified",
+        "evidence": "Caddy automatic-https, ACME challenges (fetched): \"Obtaining a publicly-trusted TLS certificate requires validation from a publicly-trusted, third-party authority.\" HTTP challenge: the CA \"requests a temporary cryptographic resource over port 80 using HTTP. If the CA sees the expected resource, a certificate is issued\", which only whoever controls the name can serve. \"is expected to\" is no stronger than the source; the tie to the key is rfc9110.txt:1325-1328.",
+        "source": "https://caddyserver.com/docs/automatic-https (ACME challenges); refs/rfc/rfc9110.txt s4.3.3"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Unlisted claim: the key material is \"made up for this connection, not the certificate's pair\". No ledger claim says the key material is fresh per connection and separate from the certificate's key pair: claim 11 says only \"each side contributes key material\", claim 2 only that it crosses readable. It is supportable and version-bound: RFC 8446 s1.2 (fetched) \"Static RSA and Diffie-Hellman cipher suites have been removed; all public-key based key exchange mechanisms now provide forward secrecy\"; s2 calls the ServerHello share \"the server's ephemeral Diffie-Hellman share\".",
+        "fix": "Ledger only, no lesson change. Add claim 27: text \"In TLS 1.3 the key material each side sends is made for this connection and is not the certificate's key pair.\", kind behavior, section 4, version_key tls, source_hint \"RFC 8446 s1.2 - static RSA and DH removed, all key exchange gives forward secrecy; s2 - ServerHello key_share is the server's ephemeral Diffie-Hellman share\", needs_verification true.",
+        "quote": "values made up for this connection, not the certificate's pair, that its keys will be built from"
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "\"everything after the server's key material is encrypted\" is stronger than RFC 8446 s1.2 (\"All handshake messages after the ServerHello are now encrypted\") and than the lab: `openssl s_client -msg` in the lab box shows `<<< TLS 1.3, ChangeCipherSpec [length 0001]` sent unprotected right after the ServerHello, before the protected EncryptedExtensions and Certificate. A reader who later opens a packet capture of this lab sees that record in the clear.",
+        "fix": "Section 4 paragraph 2: replace \"In TLS 1.3 everything after the server's key material is encrypted.\" with \"In TLS 1.3 every handshake message after the server's key material is encrypted.\" (+2 words). Ledger claim 13: use the suggested_text given in claim_verdicts.",
+        "quote": "In TLS 1.3 everything after the server's key material is encrypted."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "version",
+        "text": "The diagram and section 4 paragraphs 1-2 give the TLS 1.3 order (server key material first, then the certificate already protected) without naming the version; TLS 1.3 is named only one sentence later. In other TLS versions the certificate is not protected, so the note below is version-dependent. The pinned tls root is RFC 8446 and the lab prints `TLSv1.3`, so only the label is missing.",
+        "fix": "In the mermaid block, insert after the line `  B->>S: TCP connection, as in the previous lesson` the line `  Note over B,S: TLS 1.3, the version the lab prints` (diagram only, no prose words). No ledger change: claim 13 already names TLS 1.3.",
+        "quote": "Note over B,S: after the server's key material, only these two can read the bytes, the certificate included"
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "accuracy",
+        "text": "\"its three checks\" presents name, signer and dates as everything a browser checks, and the deduction leans on that. The sources do not bound the list: refs/rfc/rfc9110.txt:1401-1402 hands the name check to \"the verification process defined in Section 6 of [RFC6125]\". The conclusion itself holds in the lab: with Caddy's root as -CAfile the same connection gives `Verify return code: 0 (ok)`, so the signer is the only failure.",
+        "fix": "Section 7: replace \"Two of its three checks pass, name and dates, so the one that failed is who signed.\" with \"Of the three checks above, name and dates pass, so the one that failed is who signed.\" (0 words net).",
+        "quote": "Two of its three checks pass, name and dates, so the one that failed is who signed."
+      },
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "accuracy",
+        "text": "The sentence puts the address and port in the same class as the name: visible until encryption starts. They are never encrypted: refs/rfc/rfc9110.txt:1368-1370, TCP and the connected port \"are outside the secured communication\". Claim 13 and summary line 4 (\"stay visible\") say it right; this sentence invites the reading that the address is hidden once encryption starts.",
+        "fix": "Section 6 bullet 2: replace \"Actually the address, the port and, normally, the name in the first message travel before any encryption starts.\" with \"Actually the address and port are never encrypted, and normally the name in the first message goes out before encryption.\" (+2 words).",
+        "quote": "Actually the address, the port and, normally, the name in the first message travel before any encryption starts."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "scope",
+        "text": "Outline item 4 is established only in its supportable part: expiry on a fixed date, a failing check stops the page, separate TLS codes for expired and unknown signer. \"One of the most common production incidents\" is not established and no pinned source counts incidents. The outline's \"error messages name exactly which check failed\" is too strong at the TLS level: a name mismatch in the lab box (`-verify_hostname other.local`) sends the generic `fatal bad_certificate`. The lesson's own wording is correct.",
+        "fix": "No lesson change. Owner: reword track.yaml item 4 to \"A certificate can stop a working site on a day nobody changed anything, and the program that ran the checks knows which one failed; TLS itself has separate codes for an expired certificate and an unknown signer.\" (already raised in .meta.json open_questions).",
+        "quote": "and the browser that ran the checks knows which one failed"
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "fix-required"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-14T23:59:00+07:00",
+    "reviewer": "claude-opus-5 (junior reader simulation, prompt 05; known_vocab = process, stack, heap, garbage-collector, environment-variable, thread, async-await, shell, pipe, ip-address, port, dns, tcp + five-line summaries of foundation.l1.tcp-vs-udp, foundation.l1.dns)",
+    "issues": [
+      {
+        "severity": "major",
+        "section": 3,
+        "kind": "term",
+        "quote": "checks the server is the one the name stands for",
+        "text": "'server' is used from Core concepts onward, some twenty times, and is never tied to anything I know. From the diagram I guess it is whatever listens on donhang.local:8443, i.e. Caddy, but neither known_vocab nor the prerequisite summaries give the word.",
+        "fix": "At first use in Core concepts add one clause: 'the server, the process listening on the port you connect to (in the lab, Caddy)'."
+      },
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "gap",
+        "quote": "The two sets become the keys both ends use; how is a later lesson, but seeing both sets on the way is not enough to build those keys.",
+        "text": "Both sets of key material travel before encryption starts, so anything in between sees them. The sentence says that is not enough to build the keys but gives no reason, so I cannot see why 'only these two can read the bytes' holds. I have to take the hiding half of the lesson on faith.",
+        "fix": "Add one sentence right after this one saying what each side keeps to itself and never sends, which an onlooker would need to build the keys; the 'how' can stay for the later lesson."
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "gap",
+        "quote": "Caddy runs on a second small machine the lab starts, which shares the lab box's addresses and ports: on the lab box, `127.0.0.1` port 8443 is Caddy listening",
+        "text": "I learned an IP address identifies one machine, so two machines 'sharing' addresses contradicts it, and 'a machine the lab starts' is unexplained. Worse, the situation and Try it have the browser on my own machine reach Caddy at 127.0.0.1:8443, yet Caddy runs on a different machine. I cannot reconstruct how my machine's 127.0.0.1 leads to it.",
+        "fix": "Add one sentence saying how port 8443 on your own machine leads to Caddy once scripts/up.sh has started the lab, and replace 'shares the lab box's addresses and ports' with a plain statement of which machine answers on which address."
+      },
+      {
+        "severity": "major",
+        "section": 7,
+        "kind": "example",
+        "quote": "then open `donhang.local` on port 8443 in a browser, using the `https` form of the address.",
+        "text": "The lesson never shows what 'the https form' of an address looks like; the situation and the HTTPS entry only say it exists. Every address I have seen is written like `localhost:8080`. I would type `donhang.local:8443`, and if the page fails I could not tell the expected refusal from a wrongly typed address.",
+        "fix": "In the HTTPS entry of Core concepts say in one sentence how that form is written (the letters https and :// placed before the name and port), and repeat that wording in Try it step 2."
+      },
+      {
+        "severity": "minor",
+        "section": 3,
+        "kind": "gap",
+        "quote": "a signature that does not lead back to that list counts for nothing",
+        "text": "'Lead back to' suggests the signature reaches the list in several steps rather than being on it directly, and the output later shows an authority called 'Intermediate'. The steps are never described, so I am unsure whether 'the signer is on the list' is the whole check.",
+        "fix": "Either write 'whose signer is not on that list', or add one clause that an authority on the list may sign for another authority, which then signs the certificate."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "quote": "In TLS 1.3 everything after the server's key material is encrypted.",
+        "text": "This is the first hint that TLS has versions. I do not yet know which version the lab uses (it only appears in section 5's output) or whether the diagram's note holds otherwise, so I stop to wonder whether the certificate is hidden in my case.",
+        "fix": "After 'In TLS 1.3' add 'the version the lab uses, as the script output below shows'."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "quote": "In the usual setup, which the lab uses, that name travels before anything is encrypted",
+        "text": "'The usual setup' implies another setup where the name is hidden, and 'normally' comes back in Beginners often think and summary line 4. The other setup is never named, so I cannot tell when 'normally' does not apply.",
+        "fix": "Add one clause saying a less common setup also hides the name and is not covered in this lesson, so 'usual' and 'normally' have something to contrast with."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "quote": "At step 4 the browser sends back proof it saw the same messages, so nothing in between changed them.",
+        "text": "I do not see what the proof is or why it would catch a change: if something in between altered a message, why could it not alter the proof too?",
+        "fix": "Add one clause saying the proof is built with the keys only the two ends have, so something in between cannot forge it."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "style",
+        "quote": "At step 3 the browser checks the server's signature over the exchange with the public key in the certificate",
+        "text": "This paragraph has two different signatures: the server's over the exchange and the authority's on the certificate, both just 'signature' within three sentences. I re-read it to separate them, more so because the diagram's step-3 note says only 'that signature, and name, signer, dates'.",
+        "fix": "Name the two apart on every use ('the server's signature over the exchange', 'the authority's signature on the certificate') and use the same two phrases in the diagram note."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "code",
+        "quote": "openssl s_client -connect donhang.local:8443 -servername donhang.local",
+        "text": "The name appears twice; the prose explains what s_client does but not `-servername`. I stopped to wonder why. I guess it is the name sent in step 1, but the text never says so, and this is the one place I could see step 1 happen.",
+        "fix": "Add one sentence: '`-servername donhang.local` is the name sent in the first message, step 1 of the drawing.'"
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "gap",
+        "quote": "The browser, which does refuse, ran the checks and knows which failed; TLS also has separate error codes for an expired certificate and for a signer it does not accept.",
+        "text": "Summary line 5 rests on this sentence, but I never see where the browser tells me which check failed; Try it has me deduce it instead. The error codes appear nowhere else and I do not know where I would read one.",
+        "fix": "In Try it step 2 say where in the browser's warning the failed check is named, so 'Read what the browser says' has a target."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "length",
+        "quote": "the trailing `critical` you can pass over",
+        "text": "Section 5 carries the Caddyfile, a three-machine lab layout, a script and a field-by-field reading of its output with four things to skip or defer ('pass over' twice, 'a later lesson' twice) plus masked dates. It felt like two lessons; I read the output paragraph twice to separate what matters from what to skip.",
+        "fix": "Cut the output paragraph to the three fields the lesson uses (issuer, the name under Subject Alternative Name, the version) and gather the skip notes into one short sentence."
+      },
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "example",
+        "quote": "You notice this when a network you do not control can list the sites a laptop opened, but not one page from any of them.",
+        "text": "The other two 'you notice this' lines describe something I would see myself. Here I cannot picture how I would ever notice a network listing sites; it is a claim, not a moment.",
+        "fix": "Replace it with a moment the reader can meet, e.g. a workplace network that blocks one site by its name even though every page on that site is encrypted."
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "gap",
+        "quote": "Two of its three checks pass, name and dates, so the one that failed is who signed.",
+        "text": "Section 4 has the browser check four things at step 3: the server's signature over the exchange plus three read off the certificate. 'Two of its three checks' drops the first, so I must work out alone why it cannot be the one that failed.",
+        "fix": "Write 'Two of the three checks on the certificate pass' and add 'and Caddy holds the private key, so its signature over the exchange passes too'."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz: q1, q2, q4",
+        "kind": "quiz",
+        "quote": "The names your browser matches against the one you typed, a key that checks the server's signature, and when it may be used.",
+        "text": "In q1, q2 and q4 the correct option is the longest by roughly 15 to 25 characters and the only one carrying an extra justifying clause. Picking the longest option wins three of the five one-answer questions without the lesson.",
+        "fix": "In each of q1, q2 and q4, shorten the correct option or lengthen one distractor so the four options are within a few characters of each other."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz: q2",
+        "kind": "quiz",
+        "quote": "nothing put that authority on your browser's list",
+        "text": "q2's correct option d repeats section 5's 'Nothing in the lab puts that authority on your browser's list' almost word for word, so I can pick it by recognising the wording rather than reasoning from the two checks that pass.",
+        "fix": "Reword option d, e.g. 'The certificate was signed by an authority your browser does not already accept.'"
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "server"
+      ],
+      "skipped_steps": [
+        "\"seeing both sets on the way is not enough to build those keys\" — no reason given why an onlooker cannot build them",
+        "\"shares the lab box's addresses and ports\" — how port 8443 on my own machine's 127.0.0.1 reaches Caddy on another machine",
+        "\"using the `https` form of the address\" — the form is never shown, so I do not know what to type",
+        "\"so nothing in between changed them\" — what the step-4 proof is and why it cannot be altered too",
+        "\"Two of its three checks pass, name and dates, so the one that failed is who signed\" — the server's signature over the exchange is dropped from the count",
+        "\"ran the checks and knows which failed\" — where the browser shows which check failed is never shown"
+      ],
+      "situation_connects": true,
+      "try_it_feasible": false,
+      "summary_matches": true
+    },
+    "verdict": "fix-required"
+  }
+}

@@ -1,0 +1,357 @@
+{
+  "id": "foundation.l1.ssh-and-remote",
+  "technical": {
+    "reviewed_at": "2026-09-14T22:52:00+07:00",
+    "reviewer": "claude-opus-5 (prompt 04, full re-review; execution evidence from the stage-0 lab box, docker engine started for this review)",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Run (OpenSSH_10.3p1 in the box to its own server on :2222, script's options plus -v): \"kex: server->client cipher: chacha20-poly1305@openssh.com\", \"kex: client->server cipher: chacha20-poly1305@openssh.com\"; \"Authenticated to localhost ([::1]:2222) using \"publickey\".\"; \"Sending command: hostname; whoami; ...\" then donhang-lab, dev. Ciphered both ways; the server checks the key, then runs what was asked. No versions.yaml root covers OpenSSH; execution only.",
+        "source": "execution 2026-09-14: docker exec donhang-lab ssh -v -p 2222 -i /keys/lab_key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null dev@localhost '...'"
+      },
+      {
+        "n": 2,
+        "verdict": "unverified",
+        "evidence": "The -v run shows SSH2_MSG_KEXINIT sent/received, \"kex: algorithm: mlkem768x25519-sha256\", SSH2_MSG_KEX_ECDH_REPLY, then SSH2_MSG_NEWKEYS before any authentication: an exchange precedes the ciphered traffic. It cannot show that the shared secret is never itself sent. RFC 4253 governs; it is not a docs root in versions.yaml and not in refs/rfc. Kind behavior; not blocking.",
+        "source": "execution 2026-09-14 (ssh -v in donhang-lab); content/versions.yaml; refs/rfc"
+      },
+      {
+        "n": 3,
+        "verdict": "unverified",
+        "evidence": "The -v run shows the diagram's order: \"Offering public key: /keys/lab_key ED25519 SHA256:/WwGJ...\", then \"Server accepts key: /keys/lab_key ...\", then \"Authenticated to localhost ([::1]:2222) using \"publickey\".\" What the signature covers (data of this session) is not visible at debug1, and RFC 4252 s.7 is neither a permitted root nor mirrored in refs/rfc. Kind behavior; not blocking.",
+        "source": "execution 2026-09-14 (ssh -v in donhang-lab); content/versions.yaml"
+      },
+      {
+        "n": 4,
+        "verdict": "unverified",
+        "evidence": "Partial: cryptographic-services.md:90 \"data that is signed with the private key can be verified only with the public key\"; :128 the verifier \"is assured that the message came from the possessor of the private key and that the data has not been modified\". Not found under any permitted root: that the private half cannot be worked out from the public one (:76 speaks of brute force being \"infeasible\" for encryption only), or that SSH never sends the private key. Kind fact; not blocking.",
+        "source": "refs/dotnet-docs/docs/standard/security/cryptographic-services.md:76,90,128"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "No command, with a terminal (ssh -tt): \"Welcome to OpenSSH Server\", prompt \"donhang-lab:~$\", the typed line ran, \"exit\" answered \"logout\". With a command: `echo $0` printed \"shell=bash\", `tty` printed \"not a tty\" (no prompt), and the client logged \"client_input_channel_req: channel 0 rtype exit-status\" then \"channel 0: free: client-session\" as soon as the line ended.",
+        "source": "execution 2026-09-14: docker exec donhang-lab ssh [-tt] -p 2222 -i /keys/lab_key ... dev@localhost"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "With a command, remote `env` names were HOME LOGNAME MAIL PATH PWD SHELL SHLVL SSH_CLIENT SSH_CONNECTION TZ USER _ (all set by the box; pwd printed /config), and `ls -1 /repo/db` read the box's /repo. With -tt and the client's TERM=xterm-review, the remote shell printed \"TERM=xterm-review\": one variable carried across from the client. Matches 'mostly that machine's, plus a few ssh may carry across'.",
+        "source": "execution 2026-09-14 in donhang-lab (ssh ... 'env'; ssh -tt with TERM=xterm-review)"
+      },
+      {
+        "n": 7,
+        "verdict": "unverified",
+        "evidence": "scp half shown by a run in the box: \"Executing: program /usr/bin/ssh host localhost, user dev, command sftp\", \"Authenticated to localhost ([::1]:2222) using \"publickey\".\", file copied; scp rides an SSH connection and gives no shell. rsync half: `which rsync` in the box prints nothing (not installed) and no versions.yaml root covers rsync(1). Kind fact; not blocking.",
+        "source": "execution 2026-09-14: docker exec donhang-lab scp -v -P 2222 -i /keys/lab_key ... dev@localhost:/repo/db/schema.sql /tmp/"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "`git -C examples/don-hang show stage-0:scripts/terminal/ssh-into-lab.sh | cat -A`: lines 6-9 end in \" \\\", line 6 \"ssh -p 2222 -i secrets/lab_key \\\", line 10 \"dev@localhost 'hostname; whoami; ls -1 /repo/db'\". The lesson's block equals lines 1-10 byte for byte. stage-0:outputs/stage-0/scripts/terminal/ssh-into-lab.txt is one run's five lines.",
+        "source": "examples/don-hang stage-0 (ff911b0): scripts/terminal/ssh-into-lab.sh; outputs/stage-0/scripts/terminal/ssh-into-lab.txt"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "stage-0:outputs/stage-0/scripts/terminal/ssh-into-lab.txt is exactly donhang-lab, dev, queries, schema.sql, seed.sql; the lesson's text output block matches it. A fresh run of the same command in the box printed the same five lines in the same order.",
+        "source": "examples/don-hang stage-0: outputs/stage-0/scripts/terminal/ssh-into-lab.txt; execution 2026-09-14"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "stage-0:scripts/dev-secrets.sh: `if [ ! -f secrets/lab_key ]; then` `ssh-keygen -t ed25519 -N '' -C 'donhang-lab-dev' -f secrets/lab_key` (writes lab_key and lab_key.pub; no lab-run line, so it runs on the host). stage-0:scripts/up.sh line 6 `./scripts/dev-secrets.sh`, before `docker compose up -d --build --wait`.",
+        "source": "examples/don-hang stage-0: scripts/dev-secrets.sh, scripts/up.sh"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "compose lab: USER_NAME \"dev\", PUBLIC_KEY_FILE \"/keys/lab_key.pub\", PASSWORD_ACCESS \"false\". In the box: /config/sshd/sshd_config \"PasswordAuthentication no\"; /config/.ssh/authorized_keys equals lab_key.pub. Keyless run (PreferredAuthentications=keyboard-interactive,password): no prompt, \"dev@localhost: Permission denied (publickey,keyboard-interactive).\" lab-run.sh ends `exec docker compose exec -T lab bash -c ...`.",
+        "source": "examples/don-hang stage-0: docker-compose.yml, scripts/lab-run.sh; execution 2026-09-14 in donhang-lab"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "bind-mounts.md:11 \"a file or directory on the host machine is mounted from the host into a container\"; :56 \"You can use the `readonly` or `ro` option to prevent the container from writing to the mount.\" compose: `./:/repo:ro`. Box /proc/mounts: \"/repo ro\". Run: \"touch: cannot touch '/repo/x': Read-only file system\". `ls /` at the box's prompt lists repo.",
+        "source": "refs/docker-docs/content/manuals/engine/storage/bind-mounts.md:11,56; examples/don-hang stage-0 docker-compose.yml; execution 2026-09-14"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Without the two options, no tty: \"Host key verification failed.\"; with a tty: \"The authenticity of host '[localhost]:2222 ([::1]:2222)' can't be established. ... Are you sure you want to continue connecting (yes/no/[fingerprint])?\". With them: login proceeds; -v shows \"Warning: Permanently added '[localhost]:2222' (ED25519) to the list of known hosts.\", absent from the capture made with LogLevel=ERROR. In the box `echo data > /dev/null; wc -c < /dev/null` prints 0.",
+        "source": "execution 2026-09-14 in donhang-lab (ssh with and without StrictHostKeyChecking/UserKnownHostsFile/LogLevel)"
+      },
+      {
+        "n": 14,
+        "verdict": "rephrased",
+        "evidence": "hostname gives donhang-lab (compose `hostname: donhang-lab`), whoami gives dev, ls -1 prints one name per line: all in the run. But db/queries is a folder: `git ls-tree stage-0 db/` gives \"040000 tree ... db/queries\", and `ls -ld /repo/db/queries` in the box starts with \"d\". \"the three files of db\" is wrong for one of the three.",
+        "source": "examples/don-hang stage-0: git ls-tree db/, docker-compose.yml; execution 2026-09-14",
+        "suggested_text": "hostname prints the name of the machine it runs on, whoami prints the user the process runs as, and ls -1 lists one name per line, which is why the answers name the lab box, dev and the three entries of db (two files and the folder queries)."
+      },
+      {
+        "n": 15,
+        "verdict": "unverified",
+        "evidence": "A judgment; the lesson states it with its condition (\"fine only because that machine is on your own laptop\"), so it is not opinion-as-fact. Its mechanism is shown by runs: with a recorded key that differs, default ssh prints \"WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!\" and does not log in; with the two options any key is accepted. Whether that is 'acceptable' no document or run can settle. Kind opinion; not blocking.",
+        "source": "execution 2026-09-14 in donhang-lab (known_hosts holding a different key, BatchMode=yes)"
+      },
+      {
+        "n": 16,
+        "verdict": "unverified",
+        "evidence": "No permitted source: versions.yaml has no root for scp, rsync or the history of putting software on machines, and refs/ holds nothing on it. The scp run only shows a file can be copied over SSH, not how common the practice was or is. Kind history; not blocking, but see the minor on sections 5, 8 and 9.",
+        "source": "content/versions.yaml; refs/"
+      },
+      {
+        "n": 17,
+        "verdict": "unverified",
+        "evidence": "That the user-auth signature covers session-unique data is RFC 4252 s.7 material; not a permitted root, not in refs/rfc. debug1 output does not show the signed data, and a replay test would need capturing and re-injecting packets, which this review could not do. Kind behavior; not blocking.",
+        "source": "content/versions.yaml; refs/rfc; execution 2026-09-14 (ssh -v)"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "stage-0:scripts/dev-secrets.sh runs `ssh-keygen ... -N '' ...` (empty passphrase). In the box `ssh-keygen -y -P \"\" -f /keys/lab_key` prints the public key at once (not locked). A key made with `-N review-pass` gives, with an empty passphrase, \"Load key \\\"/tmp/review_rk\\\": incorrect passphrase supplied to decrypt private key\": the file alone cannot be loaded to sign.",
+        "source": "examples/don-hang stage-0: scripts/dev-secrets.sh; execution 2026-09-14 in donhang-lab (throwaway key, removed)"
+      },
+      {
+        "n": 19,
+        "verdict": "verified",
+        "evidence": "compose lab: LISTEN_PORT \"2222\", ports \"2222:2222\". publishing-ports.md:20 \"Publishing a port ... setting up a forwarding rule. As an example, you can indicate that requests on your host's port 8080 should be forwarded to the container's port 80.\" -v: \"Connecting to localhost [::1] port 2222.\" The capture came from running the script on the host (DECISIONS s.3, 2026-09-06) and printed donhang-lab: localhost:2222 on the laptop reached the box.",
+        "source": "refs/docker-docs/content/get-started/docker-concepts/running-containers/publishing-ports.md:20; examples/don-hang stage-0 docker-compose.yml; outputs/.../ssh-into-lab.txt"
+      },
+      {
+        "n": 20,
+        "verdict": "verified",
+        "evidence": "stage-0 ssh-into-lab.sh line 1 \"#!/usr/bin/env bash\", line 3 \"set -euo pipefail\", line 4 `cd \"$(dirname \"$0\")/../..\"`: two levels up from scripts/terminal is the repository root, where db/ holds the same three entries the box lists under /repo/db.",
+        "source": "examples/don-hang stage-0: scripts/terminal/ssh-into-lab.sh lines 1-4; git ls-tree stage-0 db/"
+      },
+      {
+        "n": 21,
+        "verdict": "verified",
+        "evidence": "stage-0 scripts/terminal/tour.sh line 5: `[ -f /.dockerenv ] || exec \"$(dirname \"$0\")/../lab-run.sh\" \"$0\" \"$@\"`; ssh-into-lab.sh lines 1-10 have no such line; lab-run.sh's last line is `exec docker compose exec -T lab ...`. DECISIONS s.3 (2026-09-06) lists ssh-into-lab.sh as the script that runs on the host.",
+        "source": "examples/don-hang stage-0: scripts/terminal/tour.sh, scripts/terminal/ssh-into-lab.sh, scripts/lab-run.sh; DECISIONS.md line 89"
+      },
+      {
+        "n": 23,
+        "verdict": "rephrased",
+        "evidence": "First connection, default settings, with a tty: \"The authenticity of host '[localhost]:2222 ([::1]:2222)' can't be established. ED25519 key fingerprint is: SHA256:UZQI8/... Are you sure you want to continue connecting (yes/no/[fingerprint])?\"; without a tty: \"Host key verification failed.\" So ssh records the key only once you accept it. Recorded key differs: \"WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!\", no login. The signing itself is not visible at debug1 (RFC 4253 s.8, no permitted root).",
+        "source": "execution 2026-09-14 in donhang-lab (UserKnownHostsFile pointed at throwaway files, removed)",
+        "suggested_text": "During key exchange the server signs the exchange with the private half of its host key pair; the first time, ssh normally shows that key's fingerprint and records the public half only once you accept it, and on later connections it refuses a machine whose key differs from the record."
+      },
+      {
+        "n": 24,
+        "verdict": "verified",
+        "evidence": "stage-0 docker-compose.yml lab: volumes `./secrets:/keys`, PUBLIC_KEY_FILE \"/keys/lab_key.pub\"; in the box `ls -la /keys` lists lab_key and lab_key.pub. The claim is right as written. Note: no `:ro`, and /proc/mounts shows \"/keys rw\"; the lesson's \"the same way\" contradicts this (see the section 5 major).",
+        "source": "examples/don-hang stage-0 docker-compose.yml; execution 2026-09-14 (ls -la /keys; /proc/mounts)"
+      },
+      {
+        "n": 25,
+        "verdict": "verified",
+        "evidence": "RFC 9110 s.4.3.3: \"The \"https\" scheme (Section 4.2.2) associates authority based on the ability of a server to use the private key corresponding to a certificate that the client considers to be trustworthy for the identified origin server. The client usually relies upon a chain of trust, conveyed from some prearranged or configured trust anchor, to deem a certificate trustworthy\". \"usually\" matches the lesson's hedge.",
+        "source": "refs/rfc/rfc9110.txt:1323-1330"
+      },
+      {
+        "n": 26,
+        "verdict": "verified",
+        "evidence": "Run in the box: `bash -c 'set -euo pipefail; false; echo after-false'` prints nothing and exits 1: the failing, unhandled `false` stopped the script before the next line. bash(1) has no permitted docs root; execution only.",
+        "source": "execution 2026-09-14 in donhang-lab"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "code",
+        "text": "Prose contradicts the compose file. The paragraph before says /repo is shown \"to read only\" and \"a write into /repo is refused\"; then secrets/ is shown \"the same way\". stage-0 docker-compose.yml mounts `./secrets:/keys` with no :ro; in the box /proc/mounts reads \"/keys rw\"; bind-mounts.md:48 \"Bind mounts have write access to files on the host by default.\" A reader concludes the private key sits in a read-only folder.",
+        "quote": "The box is shown your `secrets/` folder the same way, private half included",
+        "fix": "Replace \"the same way\" with \"too, but writable\" (same word count): \"The box is shown your `secrets/` folder too, but writable, private half included, so it can find `lab_key.pub`: ...\". Optionally add \"(read-write, no :ro)\" to claim 24."
+      },
+      {
+        "severity": "major",
+        "section": "foundation.l1.ssh-and-remote.q3",
+        "kind": "quiz",
+        "text": "Ambiguous key. Option a (the key) says the names came \"From the other machine's disk\"; section 5 says \"the box itself reads your laptop's folder whenever something opens a path under `/repo`: nothing was copied\". A learner who read section 5 can argue the names came from the laptop's folder, which makes a partly false. explanation.correct repeats \"reading that machine's disk\".",
+        "quote": "From the other machine's disk, where a shell opened for `dev` ran all three commands and sent the output back",
+        "fix": "q3 option a en: \"From `/repo/db` as the other machine sees it, opened by a shell started for `dev` there, which ran all three commands and sent the output back\"; vi: \"Từ `/repo/db` theo cách máy bên kia nhìn thấy, do một shell mở cho `dev` ở đó mở ra; shell ấy chạy cả ba lệnh rồi gửi output ngược về\". explanation.correct: \"reading that machine's disk\" -> \"opening that machine's paths\"; vi \"đọc ổ đĩa của chính máy đó\" -> \"mở các đường dẫn của chính máy đó\"."
+      },
+      {
+        "severity": "minor",
+        "section": 2,
+        "kind": "accuracy",
+        "text": "`queries` is a folder, not a file: `git ls-tree stage-0 db/` gives \"040000 tree ... db/queries\"; `ls -ld /repo/db/queries` in the box starts with \"d\". Claim 14 repeats the slip (\"the three files of db\").",
+        "quote": "and the names of the files inside a `db` folder",
+        "fix": "Change to \"and the names of what is inside a `db` folder\" (+1 word) and replace claim 14's text with its suggested_text."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Missing condition. On a first connection with default settings ssh does not just record the key; it asks: \"The authenticity of host '[localhost]:2222 ([::1]:2222)' can't be established. ... Are you sure you want to continue connecting (yes/no/[fingerprint])?\" (run in the box without the two -o options). The learner's first ssh to any real machine will show this question, which the lesson never mentions.",
+        "quote": "`ssh` normally records the public half the first time and checks the signature against it on every later connection",
+        "fix": "Replace with \"`ssh` normally records the public half once you accept it the first time, and checks the signature against it on every later connection.\" (+3 words; section 4 is near its cap). Replace claim 23's text with its suggested_text."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "opinion-as-fact",
+        "text": "Frequency and history stated as fact with no permitted source (claim 16 unverified): section 5 \"has long been a common way software reached such machines\"; section 8 \"is how software was often put there, before tools automated it\"; section 9 line 4 \"which has long been a common way to reach machines that are not yours\" (there the clause also attaches to the connection, not to copying).",
+        "quote": "has long been a common way software reached such machines",
+        "fix": "Section 5: \"... and copying files over, then running commands on them, is one way software gets onto such machines.\" Section 8: \"where this leads: copying files to a far machine and running commands on them is one way to put software there, and tools can automate it.\" Section 9 line 4: \"`scp` and `rsync` carry files over the same kind of connection, one way to get software onto machines that are not yours.\" Adjust claim 16 to match."
+      },
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "accuracy",
+        "text": "Unconditional here, hedged in section 7 (\"which your laptop's top folder normally lacks\"). A Linux or macOS laptop can have a /repo folder.",
+        "quote": "which your laptop's top folder lacks",
+        "fix": "Change to \"which your laptop's top folder normally lacks\" (+1 word)."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "Option meanings in section 5 are syntax claims filed as kind fact (claims 8, 19): \"`-p 2222` says which numbered entrance to knock at\", \"`-i secrets/lab_key` names the private key file\", \"The last line names who to be and where\". They pass this round only through the -v run (\"Connecting to localhost [::1] port 2222.\", \"identity file /keys/lab_key\", \"Authenticating to localhost:2222 as 'dev'\"); filed as fact, a later re-review without Docker would leave them unverified without the D1 block kind syntax carries.",
+        "quote": "`-p 2222` says which numbered entrance to knock at on the machine named at the end",
+        "fix": "In .meta.json only (ledger is at 25, so no new n): set claim 19's kind to syntax and extend its text with \"-i names the private key file, and user@host the user and machine\"; source_hint the three ssh -v lines quoted here. No lesson text changes."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "fix-required"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-14T23:30:00+07:00",
+    "reviewer": "claude-opus-5 (junior reader simulation, prompt 05, independent re-read of the current text; known_vocab = process, stack, heap, garbage-collector, environment-variable, thread, async-await, shell, pipe + five-line summary of foundation.l1.terminal-basics; lesson vocab is empty)",
+    "issues": [
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "term",
+        "quote": "its working directory and every path it opens are that machine's",
+        "text": "'working directory' is not in known_vocab and not defined in Core concepts. The prerequisite summary lists `pwd` and `cd` but never names the idea, so I cannot tell whether it means something other than 'the folder the shell is in'.",
+        "fix": "Replace 'its working directory and every path it opens' with 'the folder it starts in and every path it opens'."
+      },
+      {
+        "severity": "major",
+        "section": 3,
+        "kind": "gap",
+        "quote": "both ends scramble what they send, so anything carrying it in between cannot read it.",
+        "text": "Neither the prerequisite nor this lesson says that text travelling between two machines passes through anything else. So 'anything carrying it in between' (Core concepts) and 'a machine in between could make the agreement with you itself' (section 4) describe a threat I cannot picture; in this lab both ends are on my own laptop. The whole reason SSH scrambles rests on this.",
+        "fix": "Add one sentence to the SSH line in Core concepts: on its way between two machines, text usually passes through other machines that forward it, and any of them could read or change it."
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "gap",
+        "quote": "The `-o StrictHostKeyChecking` and `-o UserKnownHostsFile` lines switch off the machine check described above",
+        "text": "The prose explains only what the second option does. Section 4 said `ssh` 'records the public half the first time' but never what `ssh` does on that first time, so I cannot work out what `StrictHostKeyChecking=no` changes, or what I would see if I removed these two lines. 'Host' in both option names is also never tied to 'machine'.",
+        "fix": "After 'switch off the machine check described above', add one sentence saying what `ssh` normally does when it meets a machine whose key it has not recorded, that `StrictHostKeyChecking=no` skips that step, and that 'host' in the option names means the machine."
+      },
+      {
+        "severity": "major",
+        "section": 6,
+        "kind": "example",
+        "quote": "Actually the command runs as a process on the far machine, so every path it opens is a path over there.",
+        "text": "Section 5 just told me 'the box itself reads your laptop's folder whenever something opens a path under /repo', and the only files the lesson's command read were exactly those. So in this lab the misconception looks half true and the correction seems to contradict section 5; I end up unsure whose files `ls -1 /repo/db` read.",
+        "fix": "Add one sentence to the correction: the path is always looked up on the far machine; `/repo` shows your folder only because the box was set up that way when it started (section 5), not because SSH reached back to your laptop."
+      },
+      {
+        "severity": "major",
+        "section": "quiz.q3",
+        "kind": "quiz",
+        "quote": "From the other machine's disk, where a shell opened for `dev` ran all three commands and sent the output back",
+        "text": "Section 5 says the box 'reads your laptop's folder whenever something opens a path under /repo: nothing was copied'. So 'from the other machine's disk' reads as wrong to me and 'from your own db folder' feels right. I pick (a) only because (b) and (c) give wrong reasons, not because the lesson supports 'the other machine's disk'.",
+        "fix": "Reword option a to 'Through the other machine: a shell there, opened for `dev`, opened the path `/repo/db` on that machine and sent the output back', and replace 'reading that machine's disk' in the correct explanation the same way."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "quote": "agree, in the open, on a secret only the two of them end up holding, without ever sending the secret itself",
+        "text": "I stop here: agreeing in the open on a secret that is never sent sounds impossible, and the lesson gives no hint how. I can accept it as a fact, but I re-read to check I had not missed an explanation.",
+        "fix": "Add after this sentence: 'How that works is beyond this lesson; what matters here is that no one watching the exchange ends up with the secret.'"
+      },
+      {
+        "severity": "minor",
+        "section": 2,
+        "kind": "gap",
+        "quote": "Which machine ran those three commands, and why did it let you in?",
+        "text": "Until this question the situation mentions one script and three answers, never three commands; I have to guess that the script sends three commands somewhere.",
+        "fix": "Say earlier in the situation that the script runs three commands, e.g. 'Three answers come back, one per command in the script:'."
+      },
+      {
+        "severity": "minor",
+        "section": 2,
+        "kind": "example",
+        "quote": "the lab box has been running on your laptop since — a machine of its own, with its own name, its own users and its own disk",
+        "text": "I cannot picture how a separate machine runs on my laptop. The lesson later leans on this (localhost passing entrance 2222 to the box; quiz q4 option c) without ever saying what the box is, on my laptop.",
+        "fix": "Add one clause here saying the lab box is something `scripts/up.sh` started on your laptop that behaves like a separate computer, so from inside it you see its name, users and disk, not your laptop's."
+      },
+      {
+        "severity": "minor",
+        "section": 3,
+        "kind": "style",
+        "quote": "- remote shell — the same read-a-line, run-it, show-the-output loop as before",
+        "text": "None of the Core concepts terms are in bold, so when I meet 'key pair' or 'SSH server' later I cannot quickly find where it was defined. The definitions themselves are clear.",
+        "fix": "Bold each term at the start of its Core concepts line (remote shell, SSH, SSH server, key pair, public key and private key, `scp` and `rsync`)."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "diagram",
+        "quote": "`ssh` normally records the public half the first time and checks the signature against it on every later connection",
+        "text": "The diagram shows the server checking my signature (S->>S) but no step where `ssh` checks the server's signature, although the prose makes that check the reason the first exchange is safe. Narrating from the diagram, I would leave it out.",
+        "fix": "Add one arrow right after the second message: `L->>L: check the server's signature against the key recorded for this machine`."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "length",
+        "quote": "The last line names who to be and where: `localhost` is the name a machine uses for itself, so this line knocks on your own laptop, which passes what arrives at entrance 2222 on to the lab box's SSH server, an arrangement made when the box was started.",
+        "text": "I re-read this paragraph twice: it packs the host-check options, LogLevel, localhost forwarding to the box and the `;` separator into one block, and the localhost part at first seems to contradict section 4, where `ssh` 'dials the SSH server on the lab box'. Section 5 as a whole reads like a second lesson on how the lab is wired.",
+        "fix": "Split the paragraph at 'The last line names who to be and where' so the localhost and entrance-2222 explanation stands as its own paragraph."
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "example",
+        "quote": "Run `ssh -p 2222 -i secrets/lab_key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR dev@localhost` with nothing after it, so no command is given.",
+        "text": "Step 2 uses the relative path `secrets/lab_key`, but only step 1's comparison commands say 'in the example folder'; from another folder the key would not be found and I would not know why. Nothing tells me how to recognise that the prompt I get is the box's and not mine.",
+        "fix": "Start step 2 with 'From the example folder,' and add to Expected result one sign that you are on the box, e.g. that `hostname` at that prompt prints `donhang-lab`."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz.q2",
+        "kind": "quiz",
+        "quote": "To let a colleague reach the lab box, you copy the file `secrets/lab_key` onto that machine and file it under the user `dev`.",
+        "text": "The lesson never says how a second person gets in (whose key pair, whose `.pub` goes on file), so the colleague framing makes me wonder whether the colleague would need my private key on their side. I can still answer (c) from 'the public half is the one you hand out', but the premise adds a situation the lesson did not cover.",
+        "fix": "Drop the colleague: 'Statement: \"For you to log in to the lab box as `dev`, the box must have the file `secrets/lab_key` on file for that user.\"'"
+      },
+      {
+        "severity": "minor",
+        "section": "quiz.q6",
+        "kind": "quiz",
+        "quote": "the signature they send matches none of the keys kept under that user",
+        "text": "Section 4 says the server first looks for the public half on file for `dev` and only then asks for a signature. A signature that 'matches none of the keys' does not fit that order, so I pause over which step failed. The answer (a) is still clear.",
+        "fix": "Reword the premise to 'but the public key they show is not on file for that user, so the connection is turned away and no shell starts'."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "working directory"
+      ],
+      "skipped_steps": [
+        "Core concepts / section 4: 'anything carrying it in between' and 'a machine in between' — nothing says what sits between two machines, so the reason for scrambling cannot be pictured",
+        "Section 5: 'switch off the machine check described above' — what StrictHostKeyChecking=no does, and what ssh normally does on a first connection, is never said",
+        "Section 4: 'agree, in the open, on a secret ... without ever sending the secret itself' — no hint how, not even that it is out of scope",
+        "Section 2: 'Which machine ran those three commands' — three commands were never mentioned before this question"
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "fix-required"
+  }
+}
