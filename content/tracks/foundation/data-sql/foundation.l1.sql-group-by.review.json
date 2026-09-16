@@ -1,0 +1,263 @@
+{
+  "id": "foundation.l1.sql-group-by",
+  "technical": {
+    "reviewed_at": "2026-09-16T23:55:00+07:00",
+    "reviewer": "claude-opus-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "db/seed.sql@stage-0 inserts orders with ids 1-12 and payments whose order_id values are 1,2,3,5,7,8,10,11 — eight distinct order_ids, so no order carries two payment rows. customers holds ids 1-5 and id 5 occurs in no orders row. customers LEFT JOIN orders LEFT JOIN payments therefore yields 12 order rows plus one NULL-extended row = 13. Not executed: docker version fails here (open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified), so this is inspection of the fixed seed data at the tag, which is deterministic.",
+        "source": "examples/don-hang@stage-0 db/seed.sql l.23-59, db/schema.sql l.11-40"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "db/seed.sql@stage-0: customers row (1, 'Trần Minh Anh', ...); orders (1,1,...), (2,1,...), (10,1,...) all carry customer_id 1; payments (1, 1, ..., 2150000, 'card'), (2, 2, ..., 890000, 'card'), (7, 10, ..., 1730000, 'card'). Exactly the three amounts §2 asks the reader to add, and they total 4770000, the figure §5 prints for him.",
+        "source": "examples/don-hang@stage-0 db/seed.sql l.16-59"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "PostgreSQL 17 §9.21, Table 9.60 General-Purpose Aggregate Functions lists all five: \"count ( * ) → bigint — Computes the number of input rows.\"; \"sum ( integer ) → bigint — Computes the sum of the non-null input values.\"; \"avg — Computes the average (arithmetic mean) of all the non-null input values.\"; \"min ( see text ) — Computes the minimum of the non-null input values.\"; \"max ( see text ) — Computes the maximum of the non-null input values.\"",
+        "source": "https://www.postgresql.org/docs/17/functions-aggregate.html"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "PostgreSQL 17, Table 9.60: \"count ( * ) → bigint — Computes the number of input rows.\" and \"count ( \"any\" ) → bigint — Computes the number of input rows in which the input value is not null.\" That is exactly the split §3 states and §5 applies to count(*) versus count(p.id).",
+        "source": "https://www.postgresql.org/docs/17/functions-aggregate.html"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "PostgreSQL 17, Conditional Expressions: \"The COALESCE function returns the first of its arguments that is not null. Null is returned only if all arguments are null.\" §3's wording (\"a function returning its first argument that is not NULL\") matches, and coalesce(sum(p.amount_vnd), 0) in the quoted query is that case.",
+        "source": "https://www.postgresql.org/docs/17/functions-conditional.html"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "PostgreSQL 17 SELECT, Description, numbered processing order: \"2. All elements in the FROM list are computed… 3. If the WHERE clause is specified, all rows that do not satisfy the condition are eliminated… 4. If the GROUP BY clause is specified… the output is combined into groups… and the results of aggregate functions are computed. If the HAVING clause is present, it eliminates groups that do not satisfy the given condition… 8. If the ORDER BY clause is specified, the returned rows are sorted.\" The claim's second half disclaims rather than asserts server behaviour.",
+        "source": "https://www.postgresql.org/docs/17/sql-select.html"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "PostgreSQL 17 tutorial 2.7: \"WHERE selects input rows before groups and aggregates are computed (thus, it controls which rows go into the aggregate computation), whereas HAVING selects group rows after groups and aggregates are computed.\" and \"Thus, the WHERE clause must not contain aggregate functions; it makes no sense to try to use an aggregate to determine which rows will be inputs to the aggregates.\" The docs state the prohibition; they quote no error text, and the claim asserts only rejection. No live run (Docker daemon unreachable).",
+        "source": "https://www.postgresql.org/docs/17/tutorial-agg.html"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "PostgreSQL 17 §7.2.3: \"The GROUP BY clause is used to group together those rows in a table that have the same values in all the columns listed.\" and \"The effect is to combine each set of rows having common values into one group row that represents all rows in the group.\" Table 9.60 defines each aggregate over its input rows, which after grouping are the rows of the group.",
+        "source": "https://www.postgresql.org/docs/17/queries-table-expressions.html, https://www.postgresql.org/docs/17/functions-aggregate.html"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "PostgreSQL 17 SELECT, GROUP BY: \"it is not valid for the SELECT list expressions to refer to ungrouped columns except within aggregate functions or when the ungrouped column is functionally dependent on the grouped columns… A functional dependency exists if the grouped columns (or a subset thereof) are the primary key of the table containing the ungrouped column.\" The same page adds that PostgreSQL recognizes functional dependency only when a table's primary key is in the GROUP BY list — so §4's \"one relaxation\" is right for 17.",
+        "source": "https://www.postgresql.org/docs/17/sql-select.html"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "PostgreSQL 17 §7.2.3: \"the HAVING clause can be used, much like a WHERE clause, to eliminate groups from the result\" and \"Expressions in the HAVING clause can refer both to grouped expressions and to ungrouped expressions (which necessarily involve an aggregate function).\" SELECT ref: each referenced column \"must unambiguously reference a grouping column, unless the reference appears within an aggregate function\". Tutorial 2.7: HAVING acts after groups and aggregates are computed.",
+        "source": "https://www.postgresql.org/docs/17/queries-table-expressions.html, https://www.postgresql.org/docs/17/sql-select.html"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Computed from db/seed.sql@stage-0 per customer: c4 Phạm Thu Hà 6400000 (payment 6 on order 8, her only payment); c2 3520000+1350000=4870000; c1 2150000+890000+1730000=4770000; c3 1010000+2140000=3150000; c5 no payment → sum NULL → coalesce 0. ORDER BY paid_vnd DESC, c.id gives exactly 6400000, 4870000, 4770000, 3150000, 0 and five rows, with no ties to make the order ambiguous. Inspection only, no run: the Docker daemon is unreachable on this machine.",
+        "source": "examples/don-hang@stage-0 db/queries/revenue-by-customer.sql l.5-14 + db/seed.sql l.16-59"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "db/seed.sql@stage-0: customer 2 owns orders 3, 4 and 11; payments exist for order 3 (3520000, 'bank_transfer') and order 11 (1350000, 'cod') but not for order 4. The LEFT JOIN keeps order 4 with p.id NULL, so count(*) = 3 and count(p.id) = 2 per Table 9.60's count(\"any\") definition. Matches §5's \"rows_in_group 3 and payments_made 2\".",
+        "source": "examples/don-hang@stage-0 db/seed.sql l.23-59"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "db/seed.sql@stage-0: customer 5 ('Vũ Gia Khánh') appears in no orders row, so customers LEFT JOIN orders emits one NULL-extended row for him and the second LEFT JOIN keeps it: count(*)=1, count(p.id)=0, sum(p.amount_vnd)=NULL, coalesce(...,0)=0. An INNER JOIN to orders would drop that row at the join step, before any group exists.",
+        "source": "examples/don-hang@stage-0 db/seed.sql l.16-35, db/queries/revenue-by-customer.sql l.7-9"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "PostgreSQL 17 §9.21: \"It should be noted that except for count, these functions return a null value when no rows are selected. In particular, sum of no rows returns null, not zero as one might expect.\" Same page: \"All these functions ignore null values in their aggregated input\" and sum \"Computes the sum of the non-null input values\" — so a group whose only value is NULL has no non-null input and yields null too, which is Vũ Gia Khánh's case.",
+        "source": "https://www.postgresql.org/docs/17/functions-aggregate.html"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "Card payments at stage-0: 2150000 (order 1, c1), 890000 (order 2, c1), 1730000 (order 10, c1), 2140000 (order 7, c3). With both INNER JOINs and WHERE p.method='card' the groups are Trần Minh Anh 4770000 and Lê Quốc Dũng 2140000; both clear HAVING > 2000000, so two rows, sorted DESC. His first-query total is 1010000 (payment 4, 'cod', order 5) + 2140000 = 3150000, a difference of exactly 1010000. Inspection only; no Docker daemon to run it.",
+        "source": "examples/don-hang@stage-0 db/queries/revenue-by-customer.sql l.16-24 + db/seed.sql l.51-59"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "db/seed.sql@stage-0: orders 3 and 11 carry customer_id 2 and their payments are (3,…,3520000,'bank_transfer') and (8,…,1350000,'cod'). Customer 4 owns orders 8, 9 and 12; payments name order_ids 1,2,3,5,7,8,10,11, so only order 8 matches — (6, 8, …, 6400000, 'bank_transfer') is her only payment. Neither customer has a 'card' row, so after the INNER JOINs (2 rows for c2, 1 for c4) WHERE removes every one and no group is formed for either.",
+        "source": "examples/don-hang@stage-0 db/seed.sql l.23-59"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "PostgreSQL 17 SELECT. ORDER BY: \"Each expression can be the name or ordinal number of an output column (SELECT list item), or… an arbitrary expression formed from input-column values.\" GROUP BY: an expression \"can be an input column name, or the name or ordinal number of an output column\". HAVING: \"condition is the same as specified for the WHERE clause\", and each referenced column \"must unambiguously reference a grouping column, unless the reference appears within an aggregate function\". HAVING is granted no output name — documented by contrast, not by an explicit ban; no run was possible.",
+        "source": "https://www.postgresql.org/docs/17/sql-select.html"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "PostgreSQL 17 SELECT, HAVING: \"Each column referenced in condition must unambiguously reference a grouping column, unless the reference appears within an aggregate function or the ungrouped column is functionally dependent on the grouping columns.\" The second query groups by c.full_name only; payments.method is not grouped, not inside an aggregate, and not functionally dependent (dependency requires the grouped columns to be payments' primary key), so the condition is rejected.",
+        "source": "https://www.postgresql.org/docs/17/sql-select.html"
+      },
+      {
+        "n": 19,
+        "verdict": "verified",
+        "evidence": "PostgreSQL 17 §7.2.3: \"In general, if a table is grouped, columns that are not listed in GROUP BY cannot be referenced except in aggregate expressions.\" SELECT/GROUP BY: \"A functional dependency exists if the grouped columns (or a subset thereof) are the primary key of the table containing the ungrouped column.\" The first query groups c.id, c.full_name — customers' primary key (db/schema.sql l.12), not orders' — so o.status is neither grouped, nor aggregated, nor functionally dependent, and the query is rejected. §6 asserts rejection only, no error text.",
+        "source": "https://www.postgresql.org/docs/17/queries-table-expressions.html, https://www.postgresql.org/docs/17/sql-select.html"
+      },
+      {
+        "n": 21,
+        "verdict": "verified",
+        "evidence": "psql 17 reference, title line: \"psql — PostgreSQL interactive terminal\"; \\pset footer: \"it must be either on or off which will enable or disable display of the table footer (the (n rows) count)\" — the footer is on by default and --no-psqlrc in the script rules out a user override. scripts/sql/run-query.sh@stage-0 l.7-11: query=\"${1:-select-basics}\" then psql --host db --username donhang --dbname donhang --no-psqlrc --echo-queries --set ON_ERROR_STOP=on --file \"/repo/db/queries/${query}.sql\".",
+        "source": "examples/don-hang@stage-0 scripts/sql/run-query.sh l.7-11, https://www.postgresql.org/docs/17/app-psql.html"
+      },
+      {
+        "n": 22,
+        "verdict": "verified",
+        "evidence": "Line 23 of db/queries/revenue-by-customer.sql is indeed \"HAVING sum(p.amount_vnd) > 2000000\". Card totals at stage-0 are 4770000 (Trần Minh Anh) and 2140000 (Lê Quốc Dũng), so a threshold of 3000000 keeps one group. The first query (l.5-14) is a separate statement with no threshold, hence unchanged. Two inferences, not runs: psql prints the singular \"(1 row)\" footer, and the edit behaves as the arithmetic says — the Docker daemon is unreachable, so nothing was executed.",
+        "source": "examples/don-hang@stage-0 db/queries/revenue-by-customer.sql l.16-24, db/seed.sql l.51-59"
+      },
+      {
+        "n": 23,
+        "verdict": "verified",
+        "evidence": "PostgreSQL 17 §7.2.2: \"each row of the derived virtual table is checked against the search condition. If the result of the condition is true, the row is kept in the output table, otherwise (i.e., if the result is false or null) it is discarded.\" §9.2: \"Ordinary comparison operators yield null (signifying \"unknown\"), not true or false, when either input is null.\" So p.method = 'card' over a NULL p.method yields null and WHERE discards that row, exactly as quiz q5's explanation b says.",
+        "source": "https://www.postgresql.org/docs/17/queries-table-expressions.html, https://www.postgresql.org/docs/17/functions-comparison.html"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "accuracy",
+        "text": "Unlisted claim: \"Start Đơn Hàng's PostgreSQL with `scripts/up.sh`\". Claim 21 covers scripts/sql/run-query.sh and psql's footer, but nothing in the ledger records that scripts/up.sh is what brings the database up. It happens to be true — up.sh runs ./scripts/dev-secrets.sh then `docker compose up -d --build --wait` and prints \"database postgres://donhang@localhost:5432/donhang\" — but it is a concrete assertion about the example repo that a later stage could invalidate with no claim flagging it.",
+        "fix": "Extend claim 21 in .meta.json to cover it, e.g. append \"and scripts/up.sh starts the lab's containers, the database among them\", with source_hint \"examples/don-hang@stage-0: scripts/up.sh l.6-8\". No change to the lesson text.",
+        "quote": "Start Đơn Hàng's PostgreSQL with `scripts/up.sh`, then run `scripts/sql/run-query.sh revenue-by-customer`"
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": [
+        "The primary-key functional-dependency exception to outline item 2 (§4 one sentence, §6 bullet 1 clause, summary line 2 clause). Recorded, not raised as an issue: PostgreSQL 17 documents the exception and the quoted query groups customers' primary key, so the flat outline rule would itself be a false statement about that query. depth_notes excludes only window functions and ROLLUP, neither of which appears.",
+        "coalesce and sum-over-no-values returning NULL (§3, §5, summary line 5) — not an outline item, but forced by the mandated example file, whose select list contains coalesce(sum(p.amount_vnd), 0).",
+        "ORDER BY accepts an output column name while HAVING does not (§5, quiz q6 explanation) — not an outline item, but forced by line 23 of the same mandated file repeating sum(p.amount_vnd)."
+      ]
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-16T00:00:00+07:00",
+    "reviewer": "claude-opus-5 (junior reader simulation, prompt 05, independent round 3; known_vocab = the 27 terms through foundation.l1.sql-join + that lesson's five-line summary; lesson vocab is empty)",
+    "issues": [
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "gap",
+        "text": "This result is the answer to the shop's question in section 2, but two of the five totals carry no name. In section 2 I added 2150000 + 890000 + 1730000 = 4770000 for Trần Minh Anh and wanted to check it here; I had to redo the arithmetic to guess which bare number is his, and 4870000 stays anonymous until the next paragraph hints it is Nguyễn Bảo Châu's.",
+        "fix": "Name the two middle rows: replace \"then `4870000`, `4770000`\" with \"then Nguyễn Bảo Châu's `4870000` and Trần Minh Anh's `4770000`\".",
+        "quote": "psql answers `(5 rows)`: Phạm Thu Hà first with `6400000` from one payment, then `4870000`, `4770000`, Lê Quốc Dũng's `3150000` and `0`."
+      },
+      {
+        "severity": "major",
+        "section": 7,
+        "kind": "gap",
+        "text": "Expected result says only Trần Minh Anh survives the 3000000 threshold, but section 5 never names the second row of the second result nor its total; it says only \"both pass\". Nothing in the lesson tells me Trần Minh Anh is in that result at all, let alone that his card total is above 3000000. I can reach it only by collecting all five customer names from three separate paragraphs and eliminating.",
+        "fix": "In section 5, replace \"then tests the two finished totals; both pass\" with a sentence naming both rows, e.g. \"then tests the two finished totals, Trần Minh Anh's `4770000` and Lê Quốc Dũng's `2140000`; both pass\".",
+        "quote": "After the edit, the second result ends with `(1 row)` and only Trần Minh Anh is left, while the first result is unchanged."
+      },
+      {
+        "severity": "major",
+        "section": "quiz.q4",
+        "kind": "quiz",
+        "text": "Option e names `o.placed_at`, a column that appears nowhere in the lesson; the query shows `c.id`, `c.full_name`, `p.id`, `p.amount_vnd`, `o.customer_id`, `o.id`, and section 6 adds `o.status`. I hesitated over whether the option is wrong because that column does not exist. I selected it only by trusting that `max(...)` is an aggregate, not from anything the lesson told me about `orders`.",
+        "fix": "In option e use a column the lesson shows: change it to \"`max(p.amount_vnd)`, the largest payment in the group\" (in both vi and en; the answer stays b, c, e).",
+        "quote": "`max(o.placed_at)`, the most recent order date in the group"
+      },
+      {
+        "severity": "minor",
+        "section": 3,
+        "kind": "term",
+        "text": "\"clause\" carries the definitions of both `GROUP BY` and `HAVING`, and returns in section 4 and in quiz q6 (\"In either clause\"), but nothing says what a clause is. I decided it means \"the line of the query starting with that keyword\", which worked, yet I was guessing exactly where the two central terms get defined.",
+        "fix": "In Core concepts write \"`GROUP BY` — the line of the query naming those columns…\" and \"`HAVING` — the line of the query that drops whole groups…\", keeping the rest of both sentences.",
+        "quote": "`GROUP BY` — the clause naming those columns, after which the result has one row per group instead of one row per input row."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "text": "\"a group of three rows\" arrives with no group of three rows in sight: section 2 speaks of thirteen rows and five customers, and the first concrete group of three (Nguyễn Bảo Châu's) appears only in section 5. I stopped to check whether I had missed a three earlier.",
+        "fix": "Replace \"three different values for a group of three rows\" with \"several different values for a group of several rows\".",
+        "quote": "Anything else would leave the database choosing between three different values for a group of three rows."
+      },
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "style",
+        "text": "\"the relaxation of section 4\" points at a numbered section, but the headings carry no numbers, so I counted headings from the top to find which one is section 4. No other cross-reference in the lesson works this way.",
+        "fix": "Replace \"the relaxation of section 4\" with \"the relaxation described under \"How it works\"\".",
+        "quote": "the relaxation of section 4 does not apply, because that query groups `customers`' primary key, not `orders`'."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "style",
+        "text": "I read this sentence three times. It carries four things at once: which line repeats what, what `AS` does, what `ORDER BY` accepts, what `HAVING` does not, plus a comparison with `WHERE`. It is also the first place the lesson says `AS` names an output column, although `AS rows_in_group` sat in the code block well above.",
+        "fix": "Split it: \"`AS paid_vnd` gives the output column a shorter name, and `ORDER BY` accepts that name. `HAVING` does not: like `WHERE`, it is written in terms of the input columns, so line 23 repeats `sum(p.amount_vnd)`.\"",
+        "quote": "because `ORDER BY` accepts the name `AS` gives a column, here `paid_vnd`, and `HAVING` does not — like `WHERE`, it is written in terms of the input columns."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "length",
+        "text": "This paragraph is one long chain covering four customers and three different reasons for disappearing (the `WHERE`, the `INNER JOIN` on payments, the `INNER JOIN` on orders). I re-read it twice to keep straight who left for which reason.",
+        "fix": "Break it after \"leave the result entirely\" and give the `INNER JOIN` cases their own sentences, one reason per sentence.",
+        "quote": "Lê Quốc Dũng's falls from `3150000` to `2140000`, because his `cod` payment — `cod` is another value of `p.method` in this data — was dropped before his group was formed, and Nguyễn Bảo Châu and Phạm Thu Hà leave the result entirely"
+      },
+      {
+        "severity": "minor",
+        "section": 8,
+        "kind": "term",
+        "text": "\"a one-to-many\" is used as a noun and never explained here. I can half-guess it from the sentence, but every other term in this lesson is defined in Core concepts and this one is left to me.",
+        "fix": "Replace \"folds the rows of a one-to-many back into one row per customer\" with \"folds the repeated rows back into one row per customer\".",
+        "quote": "the fix for the repeated rows it ends on: grouping folds the rows of a one-to-many back into one row per customer."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz.q4",
+        "kind": "term",
+        "text": "The English question says \"its select list\", a phrase the lesson never uses; the lesson says \"`SELECT` may name only a column that is listed in `GROUP BY`\". The Vietnamese version (\"hiện thêm một cột nữa\") is clear, so only the English reader stops here.",
+        "fix": "In the English question replace \"Which additions to its select list\" with \"Which extra columns on its `SELECT` lines\".",
+        "quote": "Which additions to its select list does PostgreSQL 17 accept with no other change to the query?"
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "clause (carries the Core-concepts definitions of GROUP BY and HAVING)",
+        "one-to-many (Connections, used as a noun)",
+        "select list (quiz q4, English question only)",
+        "`o.placed_at` (quiz q4 option e — a column the lesson never shows)"
+      ],
+      "skipped_steps": [
+        "\"then `4870000`, `4770000`\" — two of the five totals are never attached to a customer, so the answer to section 2's question is half anonymous",
+        "\"then tests the two finished totals; both pass\" → Try it's \"only Trần Minh Anh is left\": the second passing row is never named or valued anywhere in the lesson",
+        "\"choosing between three different values for a group of three rows\" — no group of three rows has been shown at that point"
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "fix-required"
+  }
+}

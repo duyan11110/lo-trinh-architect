@@ -1,0 +1,336 @@
+{
+  "id": "foundation.l1.sql-write",
+  "technical": {
+    "reviewed_at": "2026-09-17T14:40:00+07:00",
+    "reviewer": "claude-opus-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "db/seed.sql l.1: \"Fixed data for the lab: 8 products\"; l.5-13 inserts exactly 8 rows with explicit ids, l.10 being \"(5, 'Giá đỡ laptop', 320000)\". No seeded row is named 'Túi đựng laptop'; the only INSERT of that name is db/queries/write-basics.sql l.10-12, inside the BEGIN/ROLLBACK pair.",
+        "source": "examples/don-hang: db/seed.sql l.1, l.5-13; db/queries/write-basics.sql l.10-12"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "PG17 INSERT, Parameters: \"Each column not present in the explicit or implicit column list will be filled with a default value, either its declared default value or null if there is none.\" Synopsis: INSERT INTO table_name [ ( column_name [, ...] ) ] ... VALUES ( { expression | DEFAULT } [, ...] ) — one expression per named column.",
+        "source": "https://www.postgresql.org/docs/17/sql-insert.html"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "PG17 UPDATE, Description: \"UPDATE changes the values of the specified columns in all rows that satisfy the condition.\" Parameters: \"Only rows for which this expression returns true will be updated.\" PG17 DELETE, Description: the clauses documented are USING, WHERE, WHERE CURRENT OF and RETURNING — there is no SET clause in the DELETE synopsis, and \"The optional RETURNING clause causes DELETE to compute and return value(s) based on each row actually deleted.\"",
+        "source": "https://www.postgresql.org/docs/17/sql-update.html ; https://www.postgresql.org/docs/17/sql-delete.html"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "PG17 6.2 (Updating Data), on the UPDATE WHERE clause: \"If it is omitted, it means that all rows in the table are updated. If it is present, only those rows that match the WHERE condition are updated.\" PG17 DELETE reference: \"If the WHERE clause is absent, the effect is to delete all rows in the table. The result is a valid, but empty table.\" Both describe acceptance, not an error.",
+        "source": "https://www.postgresql.org/docs/17/dml-update.html ; https://www.postgresql.org/docs/17/sql-delete.html"
+      },
+      {
+        "n": 5,
+        "verdict": "rephrased",
+        "evidence": "The tag forms are right: INSERT Outputs \"INSERT oid count … The count is the number of rows inserted or updated. oid is always 0\"; UPDATE \"UPDATE count\"; DELETE \"DELETE count … the number of rows deleted\". But the restriction to statements returning no rows is contradicted by the protocol page's CommandComplete list: \"For a SELECT or CREATE TABLE AS command, the tag is SELECT rows where rows is the number of rows retrieved.\" Every command returns a tag; what differs is that psql shows a tuple result as a table with a \"(n rows)\" footer.",
+        "source": "https://www.postgresql.org/docs/17/protocol-message-formats.html (CommandComplete) ; sql-insert.html, sql-update.html, sql-delete.html (Outputs) ; app-psql.html (\\pset footer)",
+        "suggested_text": "Every statement ends with a command tag; psql shows it under statements whose result is not a table: 'UPDATE n' and 'DELETE n' give the number of rows affected, and 'INSERT 0 n' has an oid field that is always 0 followed by that number. A SELECT also has a tag, but psql prints its rows and a '(n rows)' footer instead."
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "PG17 INSERT Outputs: \"If the INSERT command contains a RETURNING clause, the result will be similar to that of a SELECT statement containing the columns and values defined in the RETURNING list, computed over the row(s) inserted or updated by the command.\" UPDATE: \"The optional RETURNING clause causes UPDATE to compute and return value(s) based on each row actually updated.\" DELETE: same sentence for \"each row actually deleted\". Columns filled by the table's identity default are available to RETURNING (INSERT Parameters, default values).",
+        "source": "https://www.postgresql.org/docs/17/sql-insert.html ; sql-update.html ; sql-delete.html"
+      },
+      {
+        "n": 7,
+        "verdict": "rephrased",
+        "evidence": "First half verified: UPDATE \"changes the values of the specified columns in all rows that satisfy the condition\"; DELETE \"If the WHERE clause is absent, the effect is to delete all rows in the table.\" The absolute is not: PG17 ROLLBACK TO SAVEPOINT — \"Roll back all commands that were executed after the savepoint was established and then start a new subtransaction at the same transaction level\" — is a second undo the database itself offers, and no page consulted says ROLLBACK is the only one.",
+        "source": "https://www.postgresql.org/docs/17/sql-update.html ; sql-delete.html ; https://www.postgresql.org/docs/17/sql-rollback-to.html",
+        "suggested_text": "In PostgreSQL 17 an UPDATE or DELETE affects exactly the rows its WHERE keeps, and runs without asking first. Afterwards the undo the database offers is a ROLLBACK of the surrounding transaction (or a ROLLBACK to a savepoint inside it); outside a transaction the statement commits on its own, and the old values have to be put back by hand or restored from a backup."
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "PG17 5.5.5 Foreign Keys: \"NO ACTION means that if any referencing rows still exist when the constraint is checked, an error is raised; this is the default behavior if you do not specify anything\", and the same list gives CASCADE (\"row(s) referencing it should be automatically deleted as well\") and SET NULL. A statement that raises an error applies nothing: PG17 3.4 says each statement outside an explicit transaction has an implicit BEGIN and, if successful, COMMIT wrapped around it.",
+        "source": "https://www.postgresql.org/docs/17/ddl-constraints.html ; https://www.postgresql.org/docs/17/tutorial-transactions.html"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Of the eight rows in db/seed.sql l.5-13 exactly three have price_vnd < 500000: (2,'Chuột không dây',450000), (5,'Giá đỡ laptop',320000), (8,'Đèn bàn LED',280000). write-basics.sql l.7 is SELECT id, name, price_vnd FROM products WHERE price_vnd < 500000, with no ORDER BY, and the lesson asserts no order. Derived from the seed, not run: the Docker Desktop Linux engine is not running on this machine, so the lab cannot be started.",
+        "source": "examples/don-hang: db/seed.sql l.5-13; db/queries/write-basics.sql l.7"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "db/schema.sql l.5: \"id integer GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY\". db/seed.sql l.71: \"SELECT setval(pg_get_serial_sequence('products', 'id'), 8);\". PG17 9.17: \"The two-parameter form sets the sequence's last_value field to the specified value and sets its is_called field to true, meaning that the next nextval will advance the sequence before returning a value.\" write-basics.sql l.10-12 omits id, so the identity default supplies the next value: 9.",
+        "source": "examples/don-hang: db/schema.sql l.5, db/seed.sql l.71 ; https://www.postgresql.org/docs/17/functions-sequence.html"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Upgraded from r1/r2 'unverified' on new evidence. PG17 INSERT Outputs: with RETURNING \"the result will be similar to that of a SELECT statement containing the columns and values defined in the RETURNING list\". PG17 psql \\pset footer: \"footer — If value is specified it must be either on or off which will enable or disable display of the table footer (the (n rows) count)\", i.e. on by default. The same page shows psql normally prints the command status too (it notes \\copy … to stdout as the case where it is suppressed). Not run.",
+        "source": "https://www.postgresql.org/docs/17/sql-insert.html ; https://www.postgresql.org/docs/17/app-psql.html"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "db/seed.sql l.5-13 has exactly one row named 'Giá đỡ laptop' (id 5), so write-basics.sql l.14-16 matches one row; l.18-19 deletes by name the single row inserted at l.10-12. PG17 Outputs define the tag counts as \"the number of rows updated, including matched rows whose values did not change\" and \"the number of rows deleted\", giving UPDATE 1 and DELETE 1. No BEFORE triggers exist in db/schema.sql, which is the documented way the count could be lower. Derived, not run.",
+        "source": "examples/don-hang: db/seed.sql l.5-13, db/queries/write-basics.sql l.14-19 ; sql-update.html, sql-delete.html (Outputs)"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "PG17 9.17: \"the value obtained by nextval is not reclaimed for re-use if the calling transaction later aborts. This means that transaction aborts or database crashes can result in gaps in the sequence of assigned values\" and \"sequence state changes made by setval are immediately visible to other transactions, and are not undone if the calling transaction rolls back.\" write-basics.sql l.37 is SELECT setval(…, 8), a SELECT returning one bigint, which psql prints as a one-row table (\\pset footer on by default).",
+        "source": "https://www.postgresql.org/docs/17/functions-sequence.html ; app-psql.html ; examples/don-hang: db/queries/write-basics.sql l.35-37"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "db/seed.sql l.24, l.25 and l.33: ( 1, 1, …), ( 2, 1, …) and (10, 1, …) — orders 1, 2 and 10 carry customer_id 1, and no other row in l.23-35 references customer 1.",
+        "source": "examples/don-hang: db/seed.sql l.23-35"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "db/schema.sql l.20: \"customer_id integer NOT NULL REFERENCES customers (id)\" — no ON DELETE clause appears anywhere in schema.sql. PG17 5.5.5: \"NO ACTION means that if any referencing rows still exist when the constraint is checked, an error is raised; this is the default behavior if you do not specify anything.\" The handler name used at write-basics.sql l.28 is the condition name for that error class.",
+        "source": "examples/don-hang: db/schema.sql l.18-24 ; https://www.postgresql.org/docs/17/ddl-constraints.html"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "PG17 43.9: NOTICE is one of the RAISE levels, and levels other than EXCEPTION \"only generate messages of different priority levels\"; \"Inside the format string, % is replaced by the string representation of the next optional argument's value.\" PG17 43.6.8: \"The special variable SQLERRM contains the error message associated with the exception\", and a block with an EXCEPTION clause traps the error so execution continues after it.",
+        "source": "https://www.postgresql.org/docs/17/plpgsql-errors-and-messages.html ; https://www.postgresql.org/docs/17/plpgsql-control-structures.html"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "ROLLBACK at write-basics.sql l.21 discards the INSERT (l.10-12) and the DELETE (l.18-19); the DO block's DELETE at l.27 is undone by its own handler — PG17 43.6.8: \"When an error is caught by an EXCEPTION clause … all changes to persistent database state within the block are rolled back.\" So at l.33 products still holds the 8 rows of db/seed.sql l.5-13. Derived, not run.",
+        "source": "examples/don-hang: db/queries/write-basics.sql l.21, l.25-33 ; https://www.postgresql.org/docs/17/plpgsql-control-structures.html"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "Line 16 of write-basics.sql is \"WHERE name = 'Giá đỡ laptop';\"; replacing it with a bare ';' leaves \"UPDATE products SET price_vnd = 300000 ;\", a complete statement, so ON_ERROR_STOP (run-query.sh l.10) is not triggered. PG17 6.2: with WHERE omitted \"all rows in the table are updated\". At l.14 the table holds the 8 seeded rows plus the row inserted at l.10-12 inside the open transaction; 300000 passes CHECK (price_vnd > 0), so 9 rows change and the tag is UPDATE 9. Derived, not run.",
+        "source": "examples/don-hang: db/queries/write-basics.sql l.10-16, db/schema.sql l.7, scripts/sql/run-query.sh l.10 ; https://www.postgresql.org/docs/17/dml-update.html"
+      },
+      {
+        "n": 19,
+        "verdict": "verified",
+        "evidence": "scripts/up.sh exists at stage-0. scripts/sql/run-query.sh l.7-11: query=\"${1:-select-basics}\" then psql --host db --username donhang --dbname donhang --no-psqlrc --echo-queries --set ON_ERROR_STOP=on --file \"/repo/db/queries/${query}.sql\" — the argument names the file under db/queries and --echo-queries echoes each statement, as the captured outputs/stage-0/scripts/sql/run-query.txt shows for select-basics.",
+        "source": "examples/don-hang: scripts/sql/run-query.sh l.7-11; scripts/up.sh; outputs/stage-0/scripts/sql/run-query.txt"
+      },
+      {
+        "n": 20,
+        "verdict": "verified",
+        "evidence": "PG17 UPDATE: \"UPDATE changes the values of the specified columns in all rows that satisfy the condition\", and Outputs: the count is \"the number of rows updated, including matched rows whose values did not change\" — so the tag counts the matched set. DELETE: \"the number of rows deleted\". The same WHERE over the same table therefore selects the same set in both statements; the claim's own condition (\"nothing else writes to it in between\") covers the concurrent case.",
+        "source": "https://www.postgresql.org/docs/17/sql-update.html ; https://www.postgresql.org/docs/17/sql-delete.html"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "Unlisted claim: whether an uncaught error stops the file is not a property of PostgreSQL but of the lab's psql invocation. scripts/sql/run-query.sh l.10 passes --set ON_ERROR_STOP=on; with psql's default the error would be reported and the remaining statements would still run, so the sentence is false outside this script. PG17 psql documents the flag ('execution of the remaining queries continues unless ON_ERROR_STOP is set'; exit code '3 if an error occurred in a script and the variable ON_ERROR_STOP was set'). No claim covers it - claim 19 stops at --echo-queries.",
+        "quote": "Without the block around it, the refusal would stop the file with an error",
+        "fix": "Name the cause and add it to the ledger: \"Without the block around it, the refusal would stop the run, because the lab's script tells psql to stop at the first error.\" Add a claim citing scripts/sql/run-query.sh l.10 (--set ON_ERROR_STOP=on) and the psql page."
+      },
+      {
+        "severity": "major",
+        "section": "foundation.l1.sql-write.q6",
+        "kind": "quiz",
+        "text": "The stem asks which statement makes `Đèn bàn LED` \"gone from `products` altogether\", and key a is DELETE FROM products WHERE name = 'Đèn bàn LED';. In the lab that statement is refused: `Đèn bàn LED` is product 8 and db/schema.sql l.28 declares \"product_id integer NOT NULL REFERENCES products (id)\", while db/seed.sql l.42 and l.47 hold order_items rows (5, 8, …) and (10, 8, …). A reader who applies §5 and q5 correctly concludes no option does the job, so the key is right only as a statement shape, not as an outcome.",
+        "quote": "`DELETE FROM products WHERE name = 'Đèn bàn LED';` — `DELETE` removes whole rows, so it has no `SET`",
+        "fix": "Point the question at the row nothing references: change the stem (en and vi) to the laptop bag the `INSERT` just added — \"The shop decides the `Túi đựng laptop` row the `INSERT` just added should go again\" — and make options a, c and d use name = 'Túi đựng laptop'. The shapes being tested are unchanged, and the statement then really does remove the row, as line 18-19 of the file shows."
+      },
+      {
+        "severity": "minor",
+        "section": 3,
+        "kind": "accuracy",
+        "text": "The definition restricts command tags to statements that return no rows. PG17's CommandComplete list gives a tag for every command, SELECT included: \"For a SELECT or CREATE TABLE AS command, the tag is SELECT rows where rows is the number of rows retrieved.\" What is true is that psql shows a tuple result as a table with a \"(n rows)\" footer rather than the tag. Claim 5 carries the same over-restriction and is rephrased above.",
+        "quote": "the short answer PostgreSQL returns for a statement that produces no rows, which psql shows under it, such as `UPDATE 1`",
+        "fix": "Rewrite the bullet: \"command tag — the short answer PostgreSQL returns for every statement; psql shows it under the ones whose result is not a table, such as `UPDATE 1`, and it gives the number of rows the statement touched.\""
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Carried over from r2 and not applied. \"every change\" is contradicted twelve lines later by §5 (\"takes all three changes back, except the counter — a rollback does not wind that back\") and by PG17 9.17: \"sequence state changes made by setval are immediately visible to other transactions, and are not undone if the calling transaction rolls back.\" Claim 13 says only that row changes come back.",
+        "quote": "the only undo the database itself offers is a `ROLLBACK`: it takes back every change made since the matching `BEGIN`",
+        "fix": "One word: \"…is a `ROLLBACK`: it takes back every row change made since the matching `BEGIN`, which is why the lab file opens one.\" §5's exception then stops contradicting §4."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "opinion-as-fact",
+        "text": "Carried over from r2 and not applied; two absolutes in one paragraph (\"the only undo the database itself offers\", \"only writing the old values back undoes it\"). PG17 offers a second in-database undo — ROLLBACK TO SAVEPOINT: \"Roll back all commands that were executed after the savepoint was established\" — and in the §2 shop scenario restoring a backup is the usual answer to a committed mistake. Claim 7 stops at \"outside one, the statement commits on its own\".",
+        "quote": "Outside such a pair the change stands, and only writing the old values back undoes it.",
+        "fix": "Drop the absolute: \"Outside such a pair the change stands, and getting the old values back means writing them back yourself or restoring a backup.\""
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "example",
+        "text": "The numbered list is presented as what the run prints \"in this order\", but it omits the `INSERT 0 1` tag that §4 itself tells the reader to expect after an INSERT: psql prints the RETURNING table and the command status (PG17 psql notes suppression only for \\copy … to stdout). The reader comparing the screen with the list finds a line that is not in it, right at the step where the id 9 is checked. Not run (no Docker engine), so the exact spacing is undetermined; the tag's presence is documented.",
+        "quote": "2. the inserted row, with `id` 9;\n3. `UPDATE 1`, then `DELETE 1`;",
+        "fix": "Extend item 2: \"the inserted row, with `id` 9, then `INSERT 0 1`;\" — or say before the list \"the lines that matter, in this order\" so the list is not read as everything psql prints."
+      },
+      {
+        "severity": "minor",
+        "section": "foundation.l1.sql-write.q6",
+        "kind": "quiz",
+        "text": "Carried over from r2 and not applied. Option b's explanation says PostgreSQL \"aims it at all eight rows\" and only afterwards adds the hedge \"in a table nothing references\"; in the lab every product 1-8 appears in db/seed.sql l.37-49, so DELETE FROM products; is refused by the order_items foreign key of db/schema.sql l.28. A reader takes away that the eight rows would be gone, which cuts against q5.",
+        "quote": "PostgreSQL accepts `DELETE FROM products;` and aims it at all eight rows — in a table nothing references, every row would be gone.",
+        "fix": "Put the refusal first (en and vi): \"PostgreSQL accepts `DELETE FROM products;` — no `WHERE` is not a syntax error — and aims it at all eight rows; here a rule declared where the tables are declared refuses it, and in a table nothing references, every row would be gone.\""
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": [
+        "Identity columns and the counter behind products.id (§5) — required by outline item 3 (RETURNING hands back the generated id) and by the file's last line; no scope issue filed.",
+        "Sequence state is not rolled back, the DO … EXCEPTION block, count(*), pg_get_serial_sequence and setval in the second code block (§5) — quoted but explicitly handed off (\"for a reason a later lesson gives\", \"this lesson does not ask you to write them\"); no scope issue filed."
+      ]
+    },
+    "verdict": "fix-required"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-17T16:20:00+07:00",
+    "reviewer": "claude-opus-5",
+    "issues": [
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "term",
+        "text": "`BEGIN` and `ROLLBACK` arrive in the middle of a sentence and are not in Core concepts. Section 2 told me there is no undo button, so \"the only undo the database itself offers is a ROLLBACK\" read as a contradiction. \"The lab file\" is also new here: section 2 called the database the lab, not a file. I had to read on into section 5 to learn that the pair is lab-only scaffolding and that the shop's statements are not wrapped in one.",
+        "quote": "once the statement has run the only undo the database itself offers is a `ROLLBACK`: it takes back every change made since the matching `BEGIN`, which is why the lab file opens one",
+        "fix": "Move the explanation that already exists in section 5 up to this first use: after \"since the matching `BEGIN`\" add \"The lab's file `db/queries/write-basics.sql` wraps its statements in that pair so it can be run again; the shop's three statements are not wrapped in one, and a later lesson is about the pair.\""
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "term",
+        "text": "\"identity column\" is a term I have not met. The clause after the colon tells me what happens - PostgreSQL takes the next number from the table's own counter - but not whether an identity column is something I write, something the shop's tables already carry, or a property every `id` has. Quiz question 4 asks me to reject \"Naming `id` there is what tells PostgreSQL to fill the column in\", and that needs exactly this distinction.",
+        "quote": "because `products.id` was declared an identity column when the table was created",
+        "fix": "Say in that same sentence who does the declaring, e.g. \"because the table was created with `products.id` as a column the table fills itself (an identity column): PostgreSQL takes the next number from the table's own counter\"."
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "term",
+        "text": "The last code line and the comment above it use `sequence`, `setval` and `pg_get_serial_sequence`; the prose names none of them, it says only \"the counter\" and \"line 37 sets it to 8 again\". I cannot tell that the counter, the sequence and that line are the same thing, and \"Try it\" then expects me to recognise \"a one-row `setval` result of `8`\" in the output I read.",
+        "quote": "a rollback does not wind that back, for a reason a later lesson gives; that is why line 37 sets it to 8 again",
+        "fix": "Add one sentence after that clause: \"The code calls that counter a sequence: the last line asks PostgreSQL for the counter behind `products.id`, sets it back to 8, and prints that 8 as a one-row answer.\""
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "example",
+        "text": "The one worked example does not do what the diagram just taught, and the file's own comment says it does. I read `(3 rows)` under the `SELECT`, then `UPDATE 1`, and following section 4 I concluded \"the WHERE was wrong: stop and look\" - until the last sentence of the paragraph took the rule back. The exception arrives after the two numbers, so I applied the lesson's main habit wrongly on its only demonstration.",
+        "quote": "The two numbers only have to match when the `SELECT` carries the same `WHERE` as the write",
+        "fix": "Put that sentence before the numbers: begin the paragraph after the block with \"The `SELECT` on line 7 is a wider look at the price range, not the check for this `UPDATE`; the two numbers only have to match when the `SELECT` carries the same `WHERE` as the write\", then give `(3 rows)` and `UPDATE 1`."
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "example",
+        "text": "\"Expected result\" lists `(3 rows)` and then `UPDATE 1` with nothing between them. By the diagram, two numbers that differ are the signal to stop and look, so while checking my own run I could not tell whether I had reproduced the lesson or broken something.",
+        "quote": "1. `(3 rows)` under the first `SELECT`;",
+        "fix": "Extend that line: \"`(3 rows)` under the first `SELECT` - a wider `WHERE` than the `UPDATE`'s, so this is not the number to compare with `UPDATE 1`\"."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "text": "\"the rejected statement leaves nothing behind\" - I first read this as \"the rows are gone\", which is the opposite of what the sentence is about. I had to re-read the paragraph to settle on \"no part of the change is kept\".",
+        "quote": "PostgreSQL rejects a `DELETE` that would break it, unless the tables were declared with a rule for that case; the rejected statement leaves nothing behind",
+        "fix": "Replace \"leaves nothing behind\" with \"changes nothing at all: not one row is removed\"."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "term",
+        "text": "`DO $$`, `EXCEPTION WHEN foreign_key_violation`, `RAISE NOTICE` and `SQLERRM` are all new words. Being told I do not have to write them helps, but \"Try it\" still asks me to recognise a `NOTICE` line in the output, and nothing says which of those words puts it there.",
+        "quote": "the lines around it are PostgreSQL's way of catching an error, where the `%` is the place the database's own message lands, and this lesson does not ask you to write them",
+        "fix": "Extend that sentence: \"...does not ask you to write them; the `NOTICE` line you will see in the output comes from this block, which is why the refusal is printed instead of stopping the file.\""
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "term",
+        "text": "`SELECT count(*) AS products_after_rollback FROM products;` uses two things the previous lesson's summary does not cover: asking for a number of rows instead of the rows, and giving that answer a name. The prose says the line \"counts the products and answers 8\", which is enough to follow the story but not enough for me to write such a line.",
+        "quote": "Line 33 then counts the products and answers `8`, the same eight the file started with.",
+        "fix": "Add half a sentence: \"Line 33 then counts the products - `count(*)` asks for how many rows there are instead of the rows themselves - and answers 8, the same eight the file started with.\""
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "code",
+        "text": "The prose points at line 7, lines 14-16, lines 18-19, line 33 and line 37, and \"Try it\" tells me to replace line 16, but the two blocks are shown without line numbers. Each time I had to count lines, blanks and comments included, from the `lines=4-21` label to find the one meant.",
+        "quote": "The `UPDATE` on lines 14-16 then uses a narrower `WHERE` than that `SELECT`",
+        "fix": "Name the code as well as the number, e.g. \"The `UPDATE` (`SET price_vnd = 300000`, lines 14-16)\", and in Try it step 2 quote the line: \"replace the line `WHERE name = 'Giá đỡ laptop';` with a single `;`\"."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "length",
+        "text": "Section 5 holds two different lessons: the three writes and their counts, and a foreign key refusing a delete inside a block of code I am told to ignore. By the second code block I had lost the thread of the look-before-you-change habit and went back to re-read the first paragraph.",
+        "quote": "The statement after the rollback asks for something the shop cannot have.",
+        "fix": "Open that part with one sentence that names the turn, e.g. \"The rest of the file shows the other way a write can end: not with a count, but with a refusal. The statement after the rollback asks for something the shop cannot have.\""
+      },
+      {
+        "severity": "minor",
+        "section": "quiz.q6",
+        "kind": "quiz",
+        "text": "The correct option repeats the Core concepts line almost word for word, and the other three contradict things stated plainly in that same list. I picked it by matching wording, without reasoning about the shop's request at all.",
+        "quote": "`DELETE` removes whole rows, so it has no `SET`",
+        "fix": "Reword option a so it does not echo the definition, e.g. \"...the row goes as a whole, so there is nothing left that could take a new value\"."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz.q3",
+        "kind": "quiz",
+        "text": "This is the same scenario as the second \"Beginners often think\" bullet, down to `UPDATE 9` and the eight-plus-one count, and it is also what Try it step 2 made me do. I answered from memory of that bullet rather than by applying the rule.",
+        "quote": "Replacing the `WHERE` line of the `UPDATE` in `db/queries/write-basics.sql` with a bare `;` makes PostgreSQL reject the statement, since it cannot tell which rows you meant.",
+        "fix": "Use a case the lesson has not already counted for me, e.g. a bare `DELETE FROM products;` run before the `INSERT`, so the number has to be worked out from the table rather than recalled."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "term",
+        "text": "The explanations of q3 and q4 call the starting rows \"the eight seeded ones\". \"Seeded\" appears nowhere in the lesson; I guessed it means the rows the lab starts with, which slowed down the sentence that was supposed to confirm my answer.",
+        "quote": "the eight seeded ones plus the row the `INSERT` added",
+        "fix": "Replace \"the eight seeded ones\" with the lesson's own wording, \"the eight the lab starts with\", in both explanations."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "BEGIN",
+        "ROLLBACK",
+        "identity column",
+        "sequence",
+        "setval",
+        "pg_get_serial_sequence",
+        "DO $$ ... $$",
+        "EXCEPTION WHEN foreign_key_violation",
+        "RAISE NOTICE",
+        "SQLERRM",
+        "NOTICE (as a kind of output line)",
+        "count(*)",
+        "AS (naming a result column)",
+        "seeded (quiz explanations)"
+      ],
+      "skipped_steps": [
+        "once the statement has run the only undo the database itself offers is a `ROLLBACK` ... which is why the lab file opens one - first mention of the pair, and of 'the lab file', after section 2 said there is no undo",
+        "The two numbers only have to match when the `SELECT` carries the same `WHERE` as the write - the exception to the diagram's rule comes after I have already compared (3 rows) with UPDATE 1",
+        "that is why line 37 sets it to 8 again - the counter, the code's 'sequence' and that line are never joined up",
+        "the rejected statement leaves nothing behind - reads as 'the rows are gone' on first pass",
+        "The `UPDATE` on lines 14-16 ... - the blocks carry no line numbers, so every line reference has to be counted out"
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "fix-required"
+  }
+}

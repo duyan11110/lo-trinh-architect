@@ -1,0 +1,253 @@
+{
+  "id": "foundation.l1.transaction-intro",
+  "technical": {
+    "reviewed_at": "2026-09-17T23:40:00+07:00",
+    "reviewer": "claude-opus-5 (independent round: lesson read before the ledger; every claim re-fetched from postgresql.org/docs/17 in this session; code re-extracted with tools/extract-code at stage-0)",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "db/schema.sql at stage-0, CREATE TABLE order_items: \"order_id integer NOT NULL REFERENCES orders (id),\" and \"quantity integer NOT NULL CHECK (quantity > 0),\". So an item row cannot exist without its orders row, and quantity 0 fails the CHECK. Extracted with tools/extract-code db/schema.sql --tag stage-0.",
+        "source": "examples/don-hang@stage-0 db/schema.sql (CREATE TABLE order_items)"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "db/seed.sql at stage-0 header: \"Fixed data for the lab: 8 products, 5 customers (one of whom never ordered), 12 orders.\" The orders INSERT lists ids 1..12 and every customer_id in it is 1, 2, 3 or 4 — never 5; customers has \"(5, 'Vũ Gia Khánh', 'khanh.vu@example.com', 'Cần Thơ')\"; products has \"(3, 'Tai nghe', 890000)\"; the file ends with setval(pg_get_serial_sequence('orders','id'), 12).",
+        "source": "examples/don-hang@stage-0 db/seed.sql"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "PG17 Tutorial 3.4: \"PostgreSQL actually treats every SQL statement as being executed within a transaction. If you do not issue a BEGIN command, then each individual statement has an implicit BEGIN and (if successful) COMMIT wrapped around it.\" A statement that succeeds is therefore already committed when a later, separate statement fails.",
+        "source": "postgresql.org/docs/17/tutorial-transactions.html"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "PG17 BEGIN, Description: \"all statements after a BEGIN command will be executed in a single transaction until an explicit COMMIT or ROLLBACK is given.\" Notes add: \"Issuing BEGIN when already inside a transaction block will provoke a warning message. The state of the transaction is not affected.\"",
+        "source": "postgresql.org/docs/17/sql-begin.html"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "PG17 COMMIT, Description: \"COMMIT commits the current transaction. All changes made by the transaction become visible to others and are guaranteed to be durable if a crash occurs.\" For the other ending, Tutorial 3.4: \"we can issue the command ROLLBACK instead of COMMIT, and all our updates so far will be canceled.\"",
+        "source": "postgresql.org/docs/17/sql-commit.html ; /docs/17/tutorial-transactions.html"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "PG17 13.2.1 (Read Committed is the default level): a SELECT \"sees only data committed before the query began; it never sees either uncommitted data or changes committed by concurrent transactions during the query's execution\" and \"However, SELECT does see the effects of previous updates executed within its own transaction, even though they are not yet committed.\" Tutorial 3.4: \"The updates made so far by an open transaction are invisible to other transactions until the transaction completes.\"",
+        "source": "postgresql.org/docs/17/transaction-iso.html ; /docs/17/tutorial-transactions.html"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "PG17 COMMIT, Description: changes \"are guaranteed to be durable if a crash occurs.\" Glossary, Durability: \"The assurance that once a transaction has been committed, the changes remain even after a system failure or crash.\" The lab sets no asynchronous-commit option, so the default guarantee applies.",
+        "source": "postgresql.org/docs/17/sql-commit.html ; /docs/17/glossary.html"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "PG17 protocol, ReadyForQuery status byte: \"'E' if in a failed transaction block (queries will be rejected until block is ended)\" — that is the 'rejects every further command' half. For the other half: Glossary, Atomicity: \"The property of a transaction that either all its operations complete as a single unit or none do\"; §53.2.2.1 notes an error leaves \"the session ... inside a failed regular transaction block\", which no ending can keep. The savepoint exception recorded in the claim is correct (SAVEPOINT/ROLLBACK TO exist for exactly this) and is not taught in the lesson.",
+        "source": "postgresql.org/docs/17/protocol-message-formats.html ; /docs/17/glossary.html ; /docs/17/protocol-flow.html"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "PG17 protocol, Termination (53.2.9): \"For either normal or abnormal termination, any open transaction is rolled back, not committed.\" psql, Exit Status: it returns \"3 if an error occurred in a script and the variable ON_ERROR_STOP was set\" — psql leaves at that error without sending ROLLBACK, so the block still open is rolled back by the server when the connection goes.",
+        "source": "postgresql.org/docs/17/protocol-flow.html ; /docs/17/app-psql.html"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "PG17 13.3.2 Row-Level Locks: \"other transactions that attempt UPDATE, DELETE, SELECT FOR UPDATE, SELECT FOR NO KEY UPDATE, SELECT FOR SHARE or SELECT FOR KEY SHARE of these rows will be blocked until the current transaction ends\", and \"Row-level locks are released at transaction end or during savepoint rollback, just like table-level locks.\"",
+        "source": "postgresql.org/docs/17/explicit-locking.html"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "PG17 Glossary, ACID: \"Atomicity, Consistency, Isolation, and Durability. This set of properties of database transactions is intended to guarantee validity in concurrent operation and even in event of errors, power failures, etc.\"",
+        "source": "postgresql.org/docs/17/glossary.html"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Derived from the pinned files, not executed — Docker Desktop is not running on this machine and no psql client is installed, so the lab could not be started. db/seed.sql puts exactly 12 rows in orders (ids 1..12), so orders_before is 12; the block inserts orders id 13 and counts on the same connection, which by 13.2.1 \"does see the effects of previous updates executed within its own transaction\" → 13; ROLLBACK discards it (Tutorial 3.4: \"all our updates so far will be canceled\") → 12.",
+        "source": "examples/don-hang@stage-0 db/seed.sql ; db/queries/transaction-place-order.sql ; postgresql.org/docs/17/transaction-iso.html"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "scripts/sql/run-query.sh at stage-0: \"psql --host db --username donhang --dbname donhang --no-psqlrc --echo-queries --set ON_ERROR_STOP=on --file \\\"/repo/db/queries/${query}.sql\\\"\" — one psql invocation, one --file. PG17 psql states the effect of the variable: \"If any individual query fails, execution of the remaining queries continues unless ON_ERROR_STOP is set\", and Exit Status \"3 if an error occurred in a script and the variable ON_ERROR_STOP was set.\"",
+        "source": "examples/don-hang@stage-0 scripts/sql/run-query.sh ; postgresql.org/docs/17/app-psql.html"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "PG17 BEGIN, Notes: \"Statements are executed more quickly in a transaction block, because transaction start/commit requires significant CPU and disk activity.\" 14.4.1 Disable Autocommit: \"When using multiple INSERTs, turn off autocommit and just do one commit at the end... If you allow each insertion to be committed separately, PostgreSQL is doing a lot of work for each row that is added.\"",
+        "source": "postgresql.org/docs/17/sql-begin.html ; /docs/17/populate.html"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "Both halves hold. 13.3.2: other transactions attempting UPDATE/DELETE/SELECT FOR UPDATE etc. on those rows \"will be blocked until the current transaction ends\"; and \"Row-level locks do not affect data querying; they block only writers and lockers to the same row\" — so a plain reader is answered at once. The 'keep it short' half carries its condition (a block held open waiting for something outside the database), so it is not an unconditioned recommendation.",
+        "source": "postgresql.org/docs/17/explicit-locking.html"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "db/queries/write-basics.sql at stage-0: BEGIN; then INSERT INTO products ... RETURNING, UPDATE products SET price_vnd = 300000, DELETE FROM products WHERE name = 'Túi đựng laptop'; then ROLLBACK. Three writes, all between BEGIN and ROLLBACK. Extracted with tools/extract-code db/queries/write-basics.sql --tag stage-0.",
+        "source": "examples/don-hang@stage-0 db/queries/write-basics.sql"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "Unlisted claim. The clause \"so it needs no clean-up line at the end\" only follows from a PostgreSQL behaviour the lesson never states and the ledger no longer carries (the sequence claim was removed in r2): a generated id consumes a sequence value that ROLLBACK does not give back, which is why the previous lesson's file ends in setval. The sentence is true — PG17 CREATE SEQUENCE, Notes: \"Because nextval and setval calls are never rolled back, sequence objects cannot be used if 'gapless' assignment of sequence numbers is needed\" — but it is a hidden claim.",
+        "quote": "This file writes the id `13` itself instead of asking the table for the next generated one, so it needs no clean-up line at the end.",
+        "fix": "Add a claim to .meta.json (section 5, kind behavior, version_key postgresql): \"In PostgreSQL 17 a sequence value taken by a generated id is not returned by ROLLBACK, so a file that writes ids explicitly needs no setval clean-up line\", source_hint postgresql.org/docs/17/sql-createsequence.html Notes. Lesson text needs no change."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "Unlisted claim, carried over from the r2 edit and still not in the ledger: claim 13 covers only ON_ERROR_STOP, not the one-connection property that the count of 13 depends on. The statement is true — scripts/sql/run-query.sh is a single psql invocation with one --file, so the whole file runs on one connection — but it is the ledger, not the lesson, that must record it.",
+        "quote": "`scripts/sql/run-query.sh` sends the whole file over one connection, so all three counts come from the same connection as the two `INSERT`s.",
+        "fix": "Extend claim 13's text in .meta.json to \"scripts/sql/run-query.sh runs the named file in a single psql invocation (--file, ON_ERROR_STOP=on), so the whole file runs on one connection and the run stops at the first statement the server refuses\", and change its section to 5."
+      },
+      {
+        "severity": "minor",
+        "section": "foundation.l1.transaction-intro.q6",
+        "kind": "quiz",
+        "text": "The explanation for distractor b attributes to the lesson a sentence that r2 deleted: \"The lesson does say a `ROLLBACK` does not move a counter back\" / \"Bài đúng là có nói `ROLLBACK` không kéo bộ đếm lùi lại\". §5 now says only that the file writes id 13 itself. The key (a, 13) is correct and b is genuinely wrong, so this is not a keying error — the explanation asserts something the lesson never says.",
+        "quote": "The lesson does say a `ROLLBACK` does not move a counter back, so thinking of counters here is reasonable.",
+        "fix": "Drop the back-reference in b (en and vi): \"Counters behind generated ids are a real thing, so thinking of them here is reasonable. But `orders_before` counts rows in the table, and after a `COMMIT` those rows are there.\" / \"Bộ đếm sau các id do bảng sinh ra là chuyện có thật, nên nghĩ tới nó là hợp lý. Nhưng `orders_before` đếm số dòng trong bảng, và sau một `COMMIT` thì những dòng ấy có mặt.\""
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-17T23:55:00+07:00",
+    "reviewer": "claude-opus-5 (junior reader simulation, prompt 05, fresh round on the current text; known_vocab = the 28 terms through foundation.l1.sql-index-intro plus foundation.l1.sql-write's five-line summary; lesson vocab = [transaction])",
+    "issues": [
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "gap",
+        "text": "The last line of section 5 goes from A to C for me. The file ends in ROLLBACK, which the lesson has just spent four paragraphs saying undoes everything, so I cannot see why a clean-up line would ever be needed, nor what asking the table for a generated id would leave behind that a rollback does not remove. I read it twice and skipped it.",
+        "fix": "After that sentence add one sentence: \"The number a table generates for an id keeps moving forward even after a `ROLLBACK`, so a file that asked for one would leave that number changed; writing 13 by hand does not.\"",
+        "quote": "This file writes the id `13` itself instead of asking the table for the next generated one, so it needs no clean-up line at the end."
+      },
+      {
+        "severity": "major",
+        "section": "foundation.l1.transaction-intro.q6",
+        "kind": "quiz",
+        "text": "The explanation for wrong option b tells me the lesson said something I cannot find in it. I went back to section 5: the only mention of a generated id is the one sentence about writing 13 by hand, and nothing anywhere says what a ROLLBACK does or does not do to a counter. It also asks me to picture \"the counter behind orders.id\", which the lesson never introduces. I finished the question less sure than before whether ROLLBACK really undoes everything.",
+        "fix": "In q6 explanation b (en and vi), delete the opening clause about the lesson saying a ROLLBACK does not move a counter back, and start the explanation at \"`orders_before` counts rows in the table, and after a `COMMIT` those rows are there.\"",
+        "quote": "The lesson does say a `ROLLBACK` does not move a counter back, so thinking of counters here is reasonable."
+      },
+      {
+        "severity": "minor",
+        "section": "foundation.l1.transaction-intro.q6",
+        "kind": "quiz",
+        "text": "I answered q6 by recognising a sentence, not by understanding COMMIT. Section 5 states almost exactly the correct option: \"A file that ends in COMMIT instead would leave both rows, and this file would then print 13 the next time it ran.\" The question tested whether I still had the page in front of me.",
+        "fix": "Ask instead what the next run prints for `orders_after_rollback` (13), so the answer has to be worked out from what the COMMIT kept rather than matched to the sentence in section 5.",
+        "quote": "13, because the block ended by keeping both rows, and they are now part of the shop's own data"
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "text": "The diagram is the first place a number of orders appears, and nothing before it tells me the lab holds twelve. On first read I could not tell whether 12 was the count before my INSERT or a number I was supposed to already know. It only settled one section later, at \"The first answers 12, the lab's own orders.\"",
+        "fix": "Say the size of the lab once in section 2: change \"the lab database you start with `scripts/up.sh`\" to \"the lab database of twelve orders you start with `scripts/up.sh`\".",
+        "quote": "D-->>O: 12 — your new row is not there"
+      },
+      {
+        "severity": "minor",
+        "section": "foundation.l1.transaction-intro.q2",
+        "kind": "quiz",
+        "text": "The explanation for option a tells me a snapshot is a real idea and then never says what one is. I have not met the word in this lesson or before it, so the question ended by handing me a new open question instead of closing one.",
+        "fix": "In q2 explanation a (en and vi), replace \"A snapshot is a real idea in databases, so picturing a copy taken at `BEGIN` is close to how people describe it.\" with \"Picturing a copy taken at `BEGIN` is close to how people often describe this.\"",
+        "quote": "A snapshot is a real idea in databases, so picturing a copy taken at `BEGIN` is close to how people describe it."
+      },
+      {
+        "severity": "minor",
+        "section": 3,
+        "kind": "term",
+        "text": "Three of the four ACID words — consistency, isolation, durability — are named with no meaning attached. The bullet warns me they come later, so I was not stuck, but they never reappear in the lesson and I could not tell whether I was meant to carry away three words or three ideas.",
+        "fix": "End the ACID bullet with what is actually being asked of me, e.g. \"only the word ACID and the letter A are yours today; the other three letters each get their own lesson.\"",
+        "quote": "the other three are named here so you recognise the word when you meet it, and come in later lessons"
+      },
+      {
+        "severity": "minor",
+        "section": 1,
+        "kind": "gap",
+        "text": "\"Before you start\" tells me I have already run a file that wraps three writes between BEGIN and ROLLBACK. What I carried out of the previous lesson is INSERT/UPDATE/DELETE, the WHERE, command tags and RETURNING — not that file. BEGIN and ROLLBACK are also used here before Core concepts defines them, so I opened the lesson thinking I had missed a page.",
+        "fix": "After \"between `BEGIN` and `ROLLBACK`\" add \"two statements defined below\", so the sentence works whether or not the reader remembers that file.",
+        "quote": "you have run a file that wraps three writes between `BEGIN` and `ROLLBACK` so the lab ends as it started"
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "term",
+        "text": "\"The runner\" is a name the lesson never gave me; I guessed it means `scripts/sql/run-query.sh`, which section 5 described only as something that sends the whole file over one connection. That it stops at the first error is stated only here, inside the answer, so I could not have predicted the second run before reading what it prints.",
+        "fix": "In \"Expected result\", replace \"the runner\" with \"`scripts/sql/run-query.sh`\".",
+        "quote": "the runner ends the file at the first error and prints the refusal message"
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "code",
+        "text": "The prose never says which number in the VALUES lines is Khánh and which is the Tai nghe. To be sure the `1` that Try it asks me to change is the quantity and not the product, I had to count the column names on one line and match them by position against the values on the next.",
+        "fix": "In the paragraph after the code add one sentence: \"The second `INSERT` gives, in order, the order id 13, the product Tai nghe, the quantity 1, and the price 890,000.\"",
+        "quote": "INSERT INTO order_items (order_id, product_id, quantity, unit_price_vnd) VALUES (13, 3, 1, 890000);"
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "term",
+        "text": "`count(*)` is new to me — the previous lesson left me with INSERT, UPDATE, DELETE and the WHERE, not with counting rows. The prose (\"a count inside the block answers 13 orders\") carried me through, but I was assuming rather than knowing that count(*) gives the number of rows in the table.",
+        "fix": "In the paragraph after the code in section 5, add: \"Each `SELECT count(*)` answers with how many rows `orders` holds at that moment.\"",
+        "quote": "O->>D: SELECT count(*) FROM orders"
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "style",
+        "text": "The closing sentence of \"Expected result\" carries three causes in one line, and I read it three times to see which clause causes which — whether the block was discarded because the run stopped, because the connection closed, or because the server decided.",
+        "fix": "Split it: \"The third run prints 12 again. The second run stopped at the refusal, so its connection closed with the block still open, and the server rolls such a block back.\"",
+        "quote": "the interrupted block left nothing behind, because the run stopped at the refusal and the connection closed with the block still open, and the server rolls such a block back"
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "PostgreSQL (the name of the database from the diagram on; never introduced)",
+        "connection / another connection (glossed mid-prose as \"another person connected to the same database from their own terminal\", never defined)",
+        "count(*)",
+        "consistency, isolation, durability (named in the ACID bullet, no meaning given)",
+        "the runner (section 7)",
+        "scripts/up.sh, scripts/sql/run-query.sh",
+        "orders, order_items and the columns customer_id, product_id, unit_price_vnd, placed_at, status",
+        "snapshot (quiz q2, explanation a)",
+        "the counter behind orders.id (quiz q6, explanation b)"
+      ],
+      "skipped_steps": [
+        "why writing the id 13 by hand means \"no clean-up line\", when the file already ends in ROLLBACK",
+        "the number 12 arrives in the diagram before anything says the lab holds twelve orders",
+        "\"the runner ends the file at the first error\" is new behaviour stated only inside Expected result, not where the script is introduced",
+        "\"Before you start\" assumes I remember running a BEGIN/ROLLBACK file, which the previous lesson's summary does not mention"
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "fix-required"
+  }
+}

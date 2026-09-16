@@ -1,0 +1,269 @@
+{
+  "id": "foundation.l1.sql-index-intro",
+  "technical": {
+    "reviewed_at": "2026-09-17T23:30:00+07:00",
+    "reviewer": "claude-opus-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "db/seed.sql at stage-0: \"INSERT INTO orders (id, customer_id, placed_at, status) VALUES\" lists exactly ids 1..12, among them \"( 2, 1, '2026-03-05 14:40:00+07', 'shipped')\"; the file header says \"12 orders\" and it ends with \"SELECT setval(pg_get_serial_sequence('orders', 'id'), 12);\". So the lesson's \"the table holds twelve rows\" and \"placed at 14:40 on 5 March\" are both exact.",
+        "source": "examples/don-hang@stage-0: db/seed.sql lines 1-3, 23-35, 73"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "db/queries/index-demo.sql: \"CREATE TEMPORARY TABLE order_log AS SELECT g AS id, (g % 5) + 1 AS customer_id, timestamptz '2026-01-01 00:00:00+07' + (g * interval '1 minute') AS placed_at FROM generate_series(1, 200000) AS g;\". g is unique per row, so placed_at is unique; '2026-01-02 03:04:00+07' is 1440+184 = 1624 minutes after the origin, i.e. g=1624, inside 1..200000 — exactly one row. The captured run prints \"SELECT 200000\".",
+        "source": "examples/don-hang@stage-0: db/queries/index-demo.sql lines 5-9; outputs/stage-0/scripts/sql/explain.txt line 8"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "PostgreSQL 17, CREATE TABLE, TEMPORARY|TEMP: \"If specified, the table is created as a temporary table. Temporary tables are automatically dropped at the end of a session, or optionally at the end of the current transaction (see ON COMMIT below).\" The script gives no ON COMMIT clause, so the session rule applies, and one psql invocation is one session; hence \"lasts until psql exits, so the script rebuilds it on every run\".",
+        "source": "https://www.postgresql.org/docs/17/sql-createtable.html"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "PostgreSQL 17 §11.1: \"With no advance preparation, the system would have to scan the entire test1 table, row by row, to find all matching entries.\" §14.1 shows the printed shape, e.g. \"Filter: (stringu1 = 'xxx'::name)\" on a scan node, the condition being applied to the rows the node retrieves. Execution agrees: before CREATE INDEX the captured plan is \" Seq Scan on order_log\" / \"   Filter: (placed_at = '2026-01-02 03:04:00+07'::timestamp with time zone)\". See the minor issue on the §3 wording \"first row to its last\" under LIMIT.",
+        "source": "https://www.postgresql.org/docs/17/indexes-intro.html; https://www.postgresql.org/docs/17/using-explain.html; outputs/stage-0/scripts/sql/explain.txt"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "§11.2: \"By default, the CREATE INDEX command creates B-tree indexes, which fit the most common situations.\" and \"B-tree indexes can also be used to retrieve data in sorted order.\" §11.9: \"All indexes in PostgreSQL are secondary indexes, meaning that each index is stored separately from the table's main data area (which is called the table's heap ...)\" and \"the index entries that match a given indexable WHERE condition are usually close together in the index, the table rows they reference might be anywhere in the heap\" — separate structure, ordered, entries referencing rows.",
+        "source": "https://www.postgresql.org/docs/17/indexes-types.html; https://www.postgresql.org/docs/17/indexes-index-only-scans.html"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "§11.9: \"in an ordinary index scan, each row retrieval requires fetching data from both the index and the heap\" — only rows whose entries were found are fetched. §14.1 prints exactly the claimed shape: \"Index Scan using tenk1_unique1 on tenk1  (cost=...)\" / \"   Index Cond: (unique1 = 42)\". The captured run of index-demo.sql matches: \" Index Scan using order_log_placed_at_idx on order_log\" / \"   Index Cond: (placed_at = '2026-01-02 03:04:00+07'::timestamp with time zone)\".",
+        "source": "https://www.postgresql.org/docs/17/indexes-index-only-scans.html; https://www.postgresql.org/docs/17/using-explain.html; outputs/stage-0/scripts/sql/explain.txt"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "§14.1, on the same query carrying both kinds of condition: \"the stringu1 clause cannot be applied as an index condition, since this index is only on the unique1 column. Instead it is applied as a filter on the rows retrieved using the index.\" A Filter therefore runs over rows the node already retrieved (only passing rows are output), while an Index Cond is what limits which entries — and so which table rows — are reached at all. Matches the lesson's contrast between the two lines.",
+        "source": "https://www.postgresql.org/docs/17/using-explain.html"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "§11.1: \"After an index is created, the system has to keep it synchronized with the table. This adds overhead to data manipulation operations. Therefore indexes that are seldom or never used in queries should be removed.\" Routine vacuuming: \"In PostgreSQL, an UPDATE or DELETE of a row does not immediately remove the old version of the row\" and \"The standard form of VACUUM removes dead row versions in tables and indexes and marks the space available for future reuse\" — the DELETE half (entries cleaned up later) is exact.",
+        "source": "https://www.postgresql.org/docs/17/indexes-intro.html; https://www.postgresql.org/docs/17/routine-vacuuming.html"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "EXPLAIN, Description: \"This command displays the execution plan that the PostgreSQL planner generates for the supplied statement.\" and \"The ANALYZE option causes the statement to be actually executed, not only planned.\" COSTS: \"Include information on the estimated startup and total cost of each plan node, as well as the estimated number of rows and the estimated width of each row. This parameter defaults to TRUE.\" Note the option also governs estimated rows/width, which the claim text omits; the lesson's looser \"drops the estimated numbers\" is the safer wording and is what the body says.",
+        "source": "https://www.postgresql.org/docs/17/sql-explain.html"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "CREATE INDEX, Synopsis: \"CREATE [ UNIQUE ] INDEX ... name ON ... table_name [ USING method ] ( { column_name | ( expression ) } ...)\"; Description: \"CREATE INDEX constructs an index on the specified column(s) of the specified relation\". ANALYZE: \"ANALYZE collects statistics about the contents of tables ... Subsequently, the query planner uses these statistics to help determine the most efficient execution plans for queries.\" §14.2 covers both halves of the gloss: \"the total number of entries in each table and index\" (pg_class.reltuples) plus most-common-values/histogram in pg_statistic.",
+        "source": "https://www.postgresql.org/docs/17/sql-createindex.html; https://www.postgresql.org/docs/17/sql-analyze.html; https://www.postgresql.org/docs/17/planner-stats.html"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "§11.7: \"An index column need not be just a column of the underlying table, but can be a function or scalar expression computed from one or more columns of the table.\" and, for \"SELECT * FROM test1 WHERE lower(col1) = 'value';\", \"This query can use an index if one has been defined on the result of the lower(col1) function\" — the expression itself must be indexed. Execution settles it: the third captured plan is \" Seq Scan on order_log\" / \"   Filter: (date(placed_at) = '2026-01-02'::date)\" although order_log_placed_at_idx exists.",
+        "source": "https://www.postgresql.org/docs/17/indexes-expressional.html; outputs/stage-0/scripts/sql/explain.txt lines 31-37"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "§11.2: \"The optimizer can also use a B-tree index for queries involving the pattern matching operators LIKE and ~ if the pattern is a constant and is anchored to the beginning of the string — for example, col LIKE 'foo%' or col ~ '^foo', but not col LIKE '%bar'.\" The lesson asserts only the negative half, so the locale/operator-class caveat in the same paragraph (\"if your database does not use the C locale you will need to create the index with a special operator class\") can only strengthen it.",
+        "source": "https://www.postgresql.org/docs/17/indexes-types.html"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "outputs/stage-0/scripts/sql/explain.txt holds, in order: \" Seq Scan on order_log\" + Filter on placed_at + \"(2 rows)\"; \" Index Scan using order_log_placed_at_idx on order_log\" + \"   Index Cond: (placed_at = '2026-01-02 03:04:00+07'::timestamp with time zone)\" + \"(2 rows)\"; \" Seq Scan on order_log\" + \"   Filter: (date(placed_at) = '2026-01-02'::date)\" + \"(2 rows)\". Every non-elided line of the lesson's output block matches that file character for character, including the echoed CREATE INDEX statement.",
+        "source": "examples/don-hang@stage-0: outputs/stage-0/scripts/sql/explain.txt"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "scripts/sql/explain.sh line 5: \"[ -f /.dockerenv ] || exec \\\"$(dirname \\\"$0\\\")/../lab-run.sh\\\" \\\"$0\\\" \\\"$@\\\"\"; scripts/lab-run.sh ends with \"exec docker compose exec -T lab bash -c 'exec bash \\\"$0\\\" \\\"$@\\\" 2>&1' \\\"/repo/$rel\\\" \\\"$@\\\"\"; docker-compose.yml mounts \"- ./:/repo:ro\". Lines 7-9 quoted in the lesson match the file exactly, including --host db, --echo-queries, --set ON_ERROR_STOP=on and --file /repo/db/queries/index-demo.sql.",
+        "source": "examples/don-hang@stage-0: scripts/sql/explain.sh, scripts/lab-run.sh, docker-compose.yml line 24"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "psql reference, -e / --echo-queries: \"Copy all SQL commands sent to the server to standard output as well. This is equivalent to setting the variable ECHO to queries.\" The docs state the copying, not the ordering; the ordering the lesson relies on is visible in the captured run, where each \"EXPLAIN (COSTS OFF) / SELECT ...\" pair stands above its QUERY PLAN block and \"CREATE INDEX order_log_placed_at_idx ...\" above the \"CREATE INDEX\" tag.",
+        "source": "https://www.postgresql.org/docs/17/app-psql.html; outputs/stage-0/scripts/sql/explain.txt lines 11-29"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "§5.4: \"Adding a primary key will automatically create a unique B-tree index on the column or group of columns listed in the primary key, and will force the column(s) to be marked NOT NULL.\"; \"Adding a unique constraint will automatically create a unique B-tree index on the column or group of columns listed in the constraint.\"; on foreign keys: \"the declaration of a foreign key constraint does not automatically create an index on the referencing columns\" and \"it is often a good idea to index the referencing columns too\".",
+        "source": "https://www.postgresql.org/docs/17/ddl-constraints.html"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "db/schema.sql at stage-0, CREATE TABLE orders: \"customer_id integer NOT NULL REFERENCES customers (id),\" with \"id integer GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY\". Reading the whole 48-line file: it contains only PRIMARY KEY, UNIQUE (customers.email), REFERENCES and CHECK clauses, and no CREATE INDEX statement anywhere, so nothing indexes orders.customer_id.",
+        "source": "examples/don-hang@stage-0: db/schema.sql lines 18-24 and whole file"
+      },
+      {
+        "n": 18,
+        "verdict": "unverified",
+        "evidence": "Could not run it: the Docker engine is not up on this machine (\"docker ps\" → \"open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified\"), so scripts/sql/explain.sh could not be executed and no capture of a fourth plan exists in outputs/. From the source the conclusion is structural rather than measured: order_log is built by CREATE TEMPORARY TABLE ... AS (no constraints), the only index is order_log_placed_at_idx ON order_log (placed_at) at line 16, and line 3 is \"SET max_parallel_workers_per_gather = 0;\". No verdict upgrade without a run.",
+        "source": "examples/don-hang@stage-0: db/queries/index-demo.sql lines 3, 5-9, 16; local docker engine unavailable"
+      },
+      {
+        "n": 19,
+        "verdict": "verified",
+        "evidence": "The recommendation carries its condition, and both halves are in the docs. §11.1: \"After an index is created, the system has to keep it synchronized with the table. This adds overhead to data manipulation operations. Therefore indexes that are seldom or never used in queries should be removed.\" §5.4, for the join/foreign-key case: \"it is often a good idea to index the referencing columns too.\" Neither the lesson body nor the summary states it without a condition.",
+        "source": "https://www.postgresql.org/docs/17/indexes-intro.html; https://www.postgresql.org/docs/17/ddl-constraints.html"
+      },
+      {
+        "n": 20,
+        "verdict": "verified",
+        "evidence": "§15.2, on when a parallel plan can be generated: \"max_parallel_workers_per_gather must be set to a value that is greater than zero.\" Line 3 of db/queries/index-demo.sql — above the excerpt, which starts at line 13 — is \"SET max_parallel_workers_per_gather = 0;\", so no plan the file prints can carry Gather/worker lines. The captured run confirms all three plans are two lines and each ends \"(2 rows)\".",
+        "source": "https://www.postgresql.org/docs/17/when-can-parallel-query-be-used.html; examples/don-hang@stage-0: db/queries/index-demo.sql line 3; outputs/stage-0/scripts/sql/explain.txt"
+      },
+      {
+        "n": 21,
+        "verdict": "verified",
+        "evidence": "ANALYZE: \"ANALYZE collects statistics about the contents of tables in the database, and stores the results in the pg_statistic system catalog. Subsequently, the query planner uses these statistics to help determine the most efficient execution plans for queries.\" — statistics only, no access path. CREATE INDEX \"constructs an index on the specified column(s) of the specified relation\", and the captured second plan reads \"Index Scan using order_log_placed_at_idx\", the object line 16 creates. The claim asserts no counterfactual about omitting ANALYZE, so nothing untested is stated.",
+        "source": "https://www.postgresql.org/docs/17/sql-analyze.html; https://www.postgresql.org/docs/17/sql-createindex.html; outputs/stage-0/scripts/sql/explain.txt"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 3,
+        "kind": "accuracy",
+        "text": "The definition is stated without the exception the prerequisite lesson already taught. A sequential scan under a LIMIT stops as soon as the query needs no more rows, so \"from its first row to its last\" is not true of every plan a junior will meet; foundation.l1.sql-select teaches LIMIT, so the reader can construct the counter-example immediately. Claim 4 is correct for the queries in this lesson (none has a LIMIT), but the core-concept line is written as a general definition.",
+        "quote": "sequential scan — the plan step that reads a table from its first row to its last and keeps the rows the test accepts.",
+        "fix": "Bound the definition to the lesson's case, e.g. \"sequential scan — the plan step that reads the table's rows in order, keeping the rows the test accepts; with nothing to stop it early it reaches the last row.\""
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "diagram",
+        "text": "The diagram node is stronger than the prose two paragraphs below it, which says \"every UPDATE that changes an indexed column\" and \"every row a DELETE removes leaves an entry the database cleans up later\". As drawn, the node tells a reader that any UPDATE rewrites every index and that a DELETE changes the indexes at once; neither is true (an UPDATE that touches no indexed column need not write into the index, and a DELETE leaves the entry for VACUUM).",
+        "quote": "W[\"INSERT, UPDATE, DELETE: rows added, changed, removed\"] --> K[Change the table and every index on it]",
+        "fix": "Relabel node K to match the prose, e.g. K[\"Change the table, and the indexes on the columns they touch\"]."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Unlisted claim: this sentence states a mechanism (a join predicate is indexable like a filter predicate) and has no entry in .meta.json — claim 19 records only the index-candidate judgement. It is supportable in principle but the equality is stronger than the docs: an index on the join column is used only when the planner picks a join method that can use it (a nested loop or merge join), not by a hash join.",
+        "quote": "A join condition tests one column against another, so a column you join on counts as one you filter on.",
+        "fix": "Record it in .meta.json (kind behavior, version_key postgresql, section 4, source \"PostgreSQL 17 §11.1 — indexes can be used in join searches\") and soften \"counts as\" to \"can be searched the same way\"."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "Unlisted claim: the ledger records only the conclusion (claim 12: LIKE '%webcam%' cannot use the index), not this statement about how the comparison proceeds. §11.2 gives the condition on the pattern, not a character-by-character rule, and outside the C locale values are compared by collation rules — which is why that same paragraph requires a special operator class for pattern matching.",
+        "quote": "searching ordered entries means comparing values from their first characters",
+        "fix": "Either add the sentence to .meta.json with source PostgreSQL 17 §11.2, or keep to what the docs state: \"a search of ordered entries has to start from a known beginning of the value, and `LIKE '%webcam%'` says nothing about how the value starts, so the search has nowhere to begin\"."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-17T23:55:00+07:00",
+    "reviewer": "claude-opus-5 (junior reader simulation, prompt 05, round 2; known_vocab = the 27 terms through foundation.l1.sql-join, plus foundation.l1.sql-select's five-line summary; lesson vocab = [index])",
+    "issues": [
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "gap",
+        "text": "This is the sentence the whole lesson rests on, and it is the one step I cannot reconstruct. I am told the entries are in order and that order makes them searchable without reading each one, but not how order helps. Everything after it — the second plan, the `Index Cond` line, even why `date(placed_at)` defeats the index — follows from a fact I have to take on trust. I know `WHERE` and `SELECT`; nothing I have been taught says why sorted things are quicker to find.",
+        "quote": "Its entries hold the values of `placed_at` in order, each with the place of its row, and ordered values can be searched without reading them one by one.",
+        "fix": "Add one sentence right after it, using no new term: \"Because the entries are in order, PostgreSQL can tell from one entry that whole stretches of them cannot hold the value it wants, and skip those instead of testing each one.\""
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "style",
+        "text": "I read this clause three times. \"the helpers PostgreSQL can split one scan across\" is a thing I have never met, described by what can be done to it, and the lines that switch it off are above line 13, so they are not in the block I was shown. The payoff sentence does tell me what to expect (two lines per plan), so I kept going, but the first half only made me look for something I could not find.",
+        "quote": "Above this excerpt the file switches off the helpers PostgreSQL can split one scan across, so no plan here grows the extra lines those helpers add",
+        "fix": "Cut the unfindable half: \"Above this excerpt the file switches off a setting of PostgreSQL's, so each plan below is exactly two lines: the scan step and its condition.\""
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "term",
+        "text": "\"mounted\" is a word I have not met in this course. The end of the sentence rescues me — \"so this is the same file you opened\" — so I did not stop for long, but the word itself told me nothing and I was guessing at what it describes.",
+        "quote": "Inside the lab the repository is mounted at `/repo` and the database answers on the host name `db`, so this is the same file you opened.",
+        "fix": "Replace \"the repository is mounted at `/repo`\" with \"your repository folder appears as `/repo`\", keeping the rest of the sentence."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "term",
+        "text": "The lesson never says what `date(placed_at)` produces. The argument survives — whatever it is, the index did not store it — but when I compared the third plan's `Filter: (date(placed_at) = '2026-01-02'::date)` with the query, I had nothing to check the value against, and I could not tell whether the third query asks a different question or the same one written differently.",
+        "quote": "The third query tests `date(placed_at)` instead of `placed_at`.",
+        "fix": "Add three words: \"The third query tests `date(placed_at)`, the day part of the column, instead of `placed_at`.\""
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "length",
+        "text": "I re-read this sentence twice. It carries two plan line names, what each is used for, when each is checked and what happens to rejected rows, and the clause \"so that only passing rows are output\" sits far from the `Filter` it belongs to, so on the first pass I attached it to the index.",
+        "quote": "In the plan the test moves from a `Filter` line, checked for each row the step scans so that only passing rows are output, to an `Index Cond` line, used to search the index",
+        "fix": "Split it in two: \"Without the index the test appears as a `Filter` line, tried on every row the step reads, so only the rows that pass are output. With the index it appears as an `Index Cond` line, used to search the index, so the rows it rejects are never read from the table.\""
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "style",
+        "text": "This sentence closes a paragraph about `Filter` and `Index Cond` lines, and nothing before it mentions a join; I stopped to check whether I had missed one in the plans. The step itself I can follow, and summary line 4 needs it, but it lands with no lead-in and no join appears anywhere else in the lesson.",
+        "quote": "A join condition tests one column against another, so a column you join on counts as one you filter on.",
+        "fix": "Give it a lead-in tying it to the sentence before, e.g. start it \"The same reading covers a `JOIN`: a join condition tests one column against another, so …\"."
+      },
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "style",
+        "text": "The last clause reads as if a word had dropped out — \"it returns\" what? I paused, then took from the next bullet sentence that the meaning is that the answer comes back at once however large the table.",
+        "quote": "Actually `EXPLAIN` on its own prints the plan and does not execute the statement, which is why it returns whatever the table's size.",
+        "fix": "Replace \"which is why it returns whatever the table's size\" with \"which is why it answers at once whatever the table's size\"."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "gap",
+        "text": "The paragraph has finished explaining the three plans, then jumps to a text column that belongs to no table shown in this lesson, and to `webcam`, a word that appears nowhere in Đơn Hàng here. The reasoning is given, but I could not picture which query or which column this is about, so I could not connect it to anything I had just read.",
+        "quote": "The same holds for a text column searched in the middle: searching ordered entries means comparing values from their first characters",
+        "fix": "Name the column it is about, e.g. \"The same holds for a text column such as a product name, searched in the middle: …\", so the sentence points at something in Đơn Hàng."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz q1",
+        "kind": "quiz",
+        "text": "I put the four steps in order without using the lesson: b is plainly the start of anything, a is plainly the end, and \"decide whether an index exists\" has to precede \"search the index\". Options b and a are also the prose's and the diagram's own words, so I recognised them rather than thought about them.",
+        "quote": "A query arrives with a test on one column, `placed_at`",
+        "fix": "Reword options b and a away from the lesson's sentences (e.g. b: \"PostgreSQL is handed a test on one column, `placed_at`\"; a: \"Fetch the table rows named by the entries that were found\"), keeping the same steps and the same answer."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "the helpers PostgreSQL can split one scan across (section 5 — never named, and the lines that switch them off are outside the excerpt)",
+        "mounted (section 5, \"the repository is mounted at `/repo`\")",
+        "date(placed_at) (section 5 — what the function produces is never said)",
+        "`LIKE '%webcam%'` (section 5 — the meaning is glossed, the `%` is not, and no column is named)"
+      ],
+      "skipped_steps": [
+        "\"ordered values can be searched without reading them one by one\" — why order makes a search possible is never said, and the rest of the lesson depends on it",
+        "\"Above this excerpt the file switches off the helpers PostgreSQL can split one scan across\" — I cannot see those lines or tell what they switch off",
+        "\"A join condition tests one column against another…\" — arrives inside a paragraph about `Filter` and `Index Cond`, with no join anywhere else in the lesson"
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "fix-required"
+  }
+}
