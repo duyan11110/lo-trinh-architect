@@ -1,0 +1,236 @@
+{
+  "id": "foundation.l1.oop-encapsulation",
+  "technical": {
+    "reviewed_at": "2026-09-15T22:10:00+07:00",
+    "reviewer": "claude-opus-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "public.md: \"Public access is the most permissive access level. The following example shows that you can access public members without any restrictions\". fields.md: \"You can declare `public` fields, but then you can't prevent code that uses your type from setting that field to an invalid value\". Run: probe compiling OrderExposed.cs@stage-0 (Compile Include); another class wrote `exposed.Status = \"paid\"; exposed.TotalVnd = -1;` with no error (the build's only 3 errors were on the OrderEncapsulated lines).",
+        "source": "refs/dotnet-docs/docs/csharp/language-reference/keywords/public.md; programming-guide/classes-and-structs/fields.md; dotnet build of scratch probe, SDK 10.0.300"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "private.md: \"You can access private members only within the body of the class or the struct where you declare them\" ... \"Nested types in the same body can also access those private members.\" ... \"If you reference a private member outside the class or the struct where you declare it, the compiler returns an error.\" A nested type is code declared inside the class, so \"code declared inside the same class\" holds.",
+        "source": "refs/dotnet-docs/docs/csharp/language-reference/keywords/private.md l.19, 29, 31"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "using-properties.md: \"The code block for the `get` accessor is executed when the property is read; the code block for the `set` or `init` accessor is executed when the property is assigned a value.\" restricting-accessor-accessibility.md: \"By default these accessors have the same visibility or access level of the property or indexer to which they belong.\" properties.md: \"The `FirstName` property can be read from any code, but it can be assigned only from code in the `Person` class.\"",
+        "source": "refs/dotnet-docs/docs/csharp/programming-guide/classes-and-structs/using-properties.md l.12; restricting-accessor-accessibility.md l.15; properties.md l.64"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Run: probe compiling OrderEncapsulated.cs@stage-0 verbatim plus an outside class: `order.Status = \"paid\";` -> \"error CS0272: The property or indexer 'OrderEncapsulated.Status' cannot be used in this context because the set accessor is inaccessible\"; `order.lines.Count` -> \"error CS0122: 'OrderEncapsulated.lines' is inaccessible due to its protection level\". cs0272.md and cs0122.md give the same messages.",
+        "source": "dotnet build of scratch ProbeOriginal (SDK 10.0.300); refs/dotnet-docs/docs/csharp/misc/cs0272.md; language-reference/compiler-messages/cs0122.md"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "OrderEncapsulated.cs@stage-0 (36 lines): l.6 `private readonly List<OrderLineExposed> lines`, l.8 ctor `(int id)`, l.10 `public int Id { get; }`, l.11 `Status { get; private set; }`, l.12 expression-bodied `TotalVnd`, l.14 `AddLine`, l.29 `MarkPaid`; no other member. Outside assignment rejected in the probe: Status CS0272, lines CS0122, TotalVnd CS0200.",
+        "source": "examples/don-hang samples/DonHang.Samples/Samples/Oop/OrderEncapsulated.cs (working tree = stage-0^{commit} ff911b0, git diff stage-0 empty); scratch probe build"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Code l.16-19: `if (quantity <= 0) throw new ArgumentOutOfRangeException(...)`, `if (unitPriceVnd <= 0) throw ...`, both before `lines.Add` on l.21. exception-handling-statements.md: \"When an exception is thrown, the common language runtime (CLR) looks for the `catch` block that can handle this exception. If the currently executed method doesn't contain such a `catch` block, the CLR looks at the method that called the current method\". AddLine has no catch, so l.21 does not run.",
+        "source": "OrderEncapsulated.cs@stage-0 l.14-27; refs/dotnet-docs/docs/csharp/language-reference/statements/exception-handling-statements.md l.47"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Code l.31-34: `if (lines.Count == 0) throw new InvalidOperationException(\"an order with no lines cannot be paid\");` then `Status = \"paid\";`. No member removes lines and l.34 is the only assignment besides the l.11 initializer, so an empty order still has \"new\". SamplesTests.cs l.40-45 AnEmptyOrderCannotBePaid: `Assert.Throws<InvalidOperationException>(order.MarkPaid);` -- passed in the claim 18 run.",
+        "source": "OrderEncapsulated.cs@stage-0 l.11, 29-35; samples/DonHang.Samples.Tests/SamplesTests.cs@stage-0 l.39-45"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "properties.md: \"The `Name` property is a computed property. There's no backing field for `Name`. The property computes it each time.\" Probe: `order.TotalVnd = 5;` outside -> \"error CS0200: Property or indexer 'OrderEncapsulated.TotalVnd' cannot be assigned to -- it is read only\". Note (not an issue, prose claims no more): AddLine(1, 50_000, 50_000) passes both checks and TotalVnd reads -1794967296 (probe test passed), so the class does not prevent a negative total.",
+        "source": "refs/dotnet-docs/docs/csharp/programming-guide/classes-and-structs/properties.md l.56; scratch probe build + OverflowProbe test, SDK 10.0.300"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "OrderExposed.cs@stage-0 l.10 `public int TotalVnd;`, l.11 `public List<OrderLineExposed> Lines = new();`. The class body (l.8-11) has only fields, no methods or properties, so nothing ties TotalVnd to Lines; the claim 1 probe stored -1 with zero lines.",
+        "source": "examples/don-hang samples/DonHang.Samples/Samples/Oop/OrderExposed.cs at stage-0"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "properties.md: \"Properties appear as public data members, but they're implemented as special methods called *accessors*. ... A field defines a storage location\". using-properties.md: the `set` code block \"is executed when the property is assigned a value\". fields.md: \"By using these constructs for indirect access to internal fields, you can guard against invalid input values.\"",
+        "source": "refs/dotnet-docs/docs/csharp/programming-guide/classes-and-structs/properties.md l.13; using-properties.md l.12; fields.md l.14"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "OrderEncapsulated.cs@stage-0: Status is assigned only by the l.11 initializer `= \"new\";` and by `Status = \"paid\";` on l.34 inside MarkPaid (l.29-35); the l.8 ctor assigns only Id. Block `lines=11-35` counted: l.11 Status, l.12 TotalVnd, l.34 the assignment -- the prose line numbers are exact.",
+        "source": "examples/don-hang samples/DonHang.Samples/Samples/Oop/OrderEncapsulated.cs at stage-0"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "restricting-accessor-accessibility.md: \"By default these accessors have the same visibility or access level of the property or indexer to which they belong.\" Run: stage-0 OrderEncapsulated.cs with only `private` removed from l.11; another class did `new OrderEncapsulated(3).Status = \"paid\"` with no AddLine -- compiled, test asserting \"paid\" passed.",
+        "source": "refs/dotnet-docs/docs/csharp/programming-guide/classes-and-structs/restricting-accessor-accessibility.md l.15; dotnet test of scratch LibEdited/Tests, SDK 10.0.300"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "OrderEncapsulated.cs@stage-0: l.1 namespace, l.3 comment, l.4 `public sealed class OrderEncapsulated`, l.6 `private readonly List<OrderLineExposed> lines = new();`, l.8 `public OrderEncapsulated(int id) => Id = id;`, l.10 `public int Id { get; }`. The only `new OrderLineExposed` is in AddLine (l.21); no member returns `lines` or an element (TotalVnd returns int). The claim is exact; the prose \"an `Id` that can only be read\" is looser (issue 2).",
+        "source": "examples/don-hang samples/DonHang.Samples/Samples/Oop/OrderEncapsulated.cs l.1-36 at stage-0"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "reference-types.md: \"Variables of reference types store references to their data (objects) ... With reference types, two variables can reference the same object. Therefore, operations on one variable can affect the object referenced by the other variable.\" fields.md: \"To access a field in an instance, add a period after the instance name, followed by the name of the field\". Instance members are reached only through an expression denoting the object; reflection/unsafe excluded by the claim.",
+        "source": "refs/dotnet-docs/docs/csharp/language-reference/keywords/reference-types.md l.14; programming-guide/classes-and-structs/fields.md l.22"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "private.md: \"If you reference a private member outside the class or the struct where you declare it, the compiler returns an error.\" Probe: outside Status assignment -> CS0272, `lines` -> CS0122 (claim 4); AnEmptyOrderCannotBePaid passed (MarkPaid throws on an empty order). The prose limits itself to code \"which can use only its public members\"; the reflection caveat is in the ledger.",
+        "source": "refs/dotnet-docs/docs/csharp/language-reference/keywords/private.md l.31; scratch probe build; dotnet test at stage-0"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "fields.md: \"By using these constructs for indirect access to internal fields, you can guard against invalid input values.\" ... \"You can declare `public` fields, but then you can't prevent code that uses your type from setting that field to an invalid value\". A pass-through setter guards nothing; the lesson states the condition (\"a public setter that just stores what it is given\", summary 3 \"only stores\"). Claim 12 run: such a setter let another class set \"paid\" on an empty order.",
+        "source": "refs/dotnet-docs/docs/csharp/programming-guide/classes-and-structs/fields.md l.14; claim 12 run"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "access-modifiers.md: \"All types and type members have an accessibility level. The accessibility level controls whether other code in your assembly or other assemblies can use them.\" The rule is about code using members; nothing in it concerns reading source files.",
+        "source": "refs/dotnet-docs/docs/csharp/programming-guide/classes-and-structs/access-modifiers.md l.11"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "Run 2026-09-15 in examples/don-hang (HEAD = stage-0^{commit} ff911b0, `git diff stage-0 -- samples/...Oop samples/DonHang.Samples.Tests` empty), SDK 10.0.300, xunit 2.9.2 via VSTest: `dotnet test samples/DonHang.Samples.Tests --filter OrderEncapsulatedTests` built DonHang.Samples and DonHang.Samples.Tests, then \"Passed!  - Failed:     0, Passed:     2, Skipped:     0, Total:     2\".",
+        "source": "dotnet test in examples/don-hang at stage-0; samples/DonHang.Samples.Tests/SamplesTests.cs l.27-46"
+      },
+      {
+        "n": 19,
+        "verdict": "verified",
+        "evidence": "Run on a scratch copy: stage-0 OrderExposed.cs and OrderEncapsulated.cs with only `private` deleted from l.11, the OrderEncapsulatedTests class verbatim, same package versions (Directory.Packages.props). Build succeeded; `--filter OrderEncapsulatedTests` -> \"Passed!  - Failed:     0, Passed:     2, Skipped:     0, Total:     2\". Grep at stage-0: OrderEncapsulated is referenced only in SamplesTests.cs, so the edit cannot break another file.",
+        "source": "dotnet test of scratch LibEdited/Tests, SDK 10.0.300; grep OrderEncapsulated examples/don-hang/samples"
+      },
+      {
+        "n": 20,
+        "verdict": "verified",
+        "evidence": "SamplesTests.cs@stage-0 l.27-46, class OrderEncapsulatedTests: TotalFollowsTheLines calls AddLine twice and asserts `order.TotalVnd` == 2_150_000; AnEmptyOrderCannotBePaid calls `order.MarkPaid` through Assert.Throws. Neither test assigns Status.",
+        "source": "examples/don-hang samples/DonHang.Samples.Tests/SamplesTests.cs at stage-0"
+      },
+      {
+        "n": 21,
+        "verdict": "verified",
+        "evidence": "OrderExposed.cs@stage-0 l.14-19: `public sealed class OrderLineExposed { public int ProductId; public int Quantity; public int UnitPriceVnd; }`. The line refers to its product by id; \"a product with a quantity and a unit price\" is a fair L1 rendering.",
+        "source": "examples/don-hang samples/DonHang.Samples/Samples/Oop/OrderExposed.cs l.14-19 at stage-0"
+      },
+      {
+        "n": 22,
+        "verdict": "rephrased",
+        "evidence": "STAGE.md l.5: \"No application yet.\"; l.20-21: \"`samples/DonHang.Samples`, a console project with one file per lesson under `Samples/<Module>/`\"; csproj `<OutputType>Exe</OutputType>`; ls-tree stage-0 has no application project. But OrderExposed.cs:3 and OrderEncapsulated.cs:3 both read `// lesson: foundation.l1.oop-encapsulation` (also NamingBefore/After, PlaceOrderLong/Split, INotifier/NotifierBase). \"one file per lesson\" is contradicted by this lesson's own two blocks.",
+        "source": "examples/don-hang STAGE.md l.5, 20-21; samples/DonHang.Samples/DonHang.Samples.csproj; grep '// lesson:' samples/DonHang.Samples; git ls-tree stage-0",
+        "suggested_text": "At stage-0 Đơn Hàng has no application yet; samples/DonHang.Samples is a console project that keeps each lesson's code under Samples/<Module>/, and this lesson's two classes, OrderExposed and OrderEncapsulated, sit side by side in Samples/Oop/."
+      },
+      {
+        "n": 23,
+        "verdict": "verified",
+        "evidence": "dotnet-test-vstest.md: \"The `dotnet test` command builds the solution and runs a test host application for each test project ... and reports the success or failure of each test.\" selective-unit-tests.md: \"An expression without any **operator** is interpreted as a **contains** on the `FullyQualifiedName` property. For example, `dotnet test --filter xyz` is the same as `dotnet test --filter FullyQualifiedName~xyz`.\" dotnet-test.md: VSTest \"is the current default\"; repo global.json sets no test runner.",
+        "source": "refs/dotnet-docs/docs/core/tools/dotnet-test-vstest.md l.57; core/testing/selective-unit-tests.md l.27; core/tools/dotnet-test.md l.35; examples/don-hang/global.json"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "quote": "The samples project, a console program with one file per lesson, holds both versions of the order side by side.",
+        "text": "\"one file per lesson\" is false for this very lesson: OrderExposed.cs:3 and OrderEncapsulated.cs:3 both read `// lesson: foundation.l1.oop-encapsulation`, and the two blocks that follow quote both files. STAGE.md uses the same loose wording, but the lesson's own excerpts contradict it (claim 22 rephrased).",
+        "fix": "Replace the sentence with: \"The samples project, a console program that holds the code for each lesson, keeps both versions of the order side by side, in two files.\" Update claim 22 to its suggested_text."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "quote": "a constructor that takes only the id, and an `Id` that can only be read",
+        "text": "`Id` (l.10 `public int Id { get; }`) is assigned by the constructor on l.8 (`=> Id = id`). property-declaration-errors.md: read-only properties \"can only be assigned in the declaring type's constructor or field initializer\". \"can only be read\" states no exception, while the same sentence names the constructor that sets it.",
+        "fix": "Replace \"and an `Id` that can only be read\" with \"which sets an `Id` that code outside the class can only read\"."
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "accuracy",
+        "quote": "then runs the tests in `DonHang.Samples.Tests`, small pieces of code that call `OrderEncapsulated` and check what happens",
+        "text": "The appositive says the tests in DonHang.Samples.Tests call OrderEncapsulated. SamplesTests.cs@stage-0 holds 7 tests; ShippingFeeTests, PlaceOrderTests and WrongTotalTests (5 tests) never touch OrderEncapsulated. Only the two in OrderEncapsulatedTests do, which is what `--filter` then selects.",
+        "fix": "Replace \"small pieces of code that call `OrderEncapsulated` and check what happens\" with \"small pieces of code that call the sample classes, such as `OrderEncapsulated`, and check what happens\"."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-15T12:00:00+07:00",
+    "reviewer": "claude-opus-5 (junior reader simulation, prompt 05; known_vocab = process, stack, heap, garbage-collector, environment-variable, thread, async-await, shell, pipe, ip-address, port, dns, tcp, tls, request, response, header, status-code, http-method, idempotent, cookie, cache, json, encoding, primary-key, foreign-key, join, index, transaction + vocab encapsulation + five-line summary of foundation.l1.memory-stack-heap)",
+    "issues": [
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "term",
+        "quote": "Đơn Hàng has no application yet at this tag, so no running service has an order class.",
+        "text": "\"tag\" is not in what I know and the lesson never says what it is. I cannot tell whether \"this tag\" is a version, a folder or a label in the code, so I do not know what \"no application yet at this tag\" limits. Not needed for the main idea, but I stopped here.",
+        "fix": "Replace \"at this tag\" with words I already have, e.g. \"in the version of the example repository this lesson uses\", or drop the phrase."
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "term",
+        "quote": "Đơn Hàng has no application yet at this tag, so no running service has an order class.",
+        "text": "\"running service\" is not in known_vocab and is not defined. From process and server I can guess it means some program that runs, but I cannot tell what a service is in Đơn Hàng or why it would own an order class.",
+        "fix": "Replace \"no running service has an order class\" with \"no running program has an order class yet\", or delete the clause; the next sentence already says where the order classes live."
+      },
+      {
+        "severity": "minor",
+        "section": 2,
+        "kind": "example",
+        "quote": "You are asked to add one rule to Đơn Hàng: an order with no lines cannot be marked paid. You are handed `OrderExposed` from the samples project.",
+        "text": "The situation puts me inside Đơn Hàng but hands me a class from \"the samples project\", which is only explained in section 5, where I also learn Đơn Hàng has no application yet. Until then I pictured adding the rule to a running app and wondered what the samples project was. The picture still works, so minor.",
+        "fix": "After \"from the samples project\" add one clause: \", the console program in the example repository that holds one file per lesson, since Đơn Hàng has no application yet\"."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "diagram",
+        "quote": "S[(\"Status, private set\")]",
+        "text": "Two nodes, \"Status, private set\" and \"private list of lines\", are drawn in a different shape from the others (a cylinder) and the prose never says why. Coming straight from lessons on tables and primary keys, I first read them as database storage. The prose does make clear they are members of the object, so I recovered.",
+        "fix": "Add one sentence after \"Follow the diagram from the left.\": \"The two round-ended boxes are the order's own private state, inside the object, not a database.\" Or draw them with the same box shape as the other nodes."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "style",
+        "quote": "Line 11 is where the decision moves.",
+        "text": "I stopped here: which decision, and moving from where to where? The next two sentences answer it (the decision about the status moves from any caller into the class), but the opening sentence reads like a riddle before them.",
+        "fix": "Replace with \"Line 11 moves the decision about the status into the class.\" and keep the rest of the paragraph."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "tag",
+        "running service"
+      ],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "fix-required"
+  }
+}
