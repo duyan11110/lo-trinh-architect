@@ -1,0 +1,306 @@
+{
+  "id": "foundation.l2.reading-stack-traces",
+  "technical": {
+    "reviewed_at": "2026-09-21T17:05:00+07:00",
+    "reviewer": "claude-opus-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Source at the tag: line 6 `public static void Run()`, line 10 `LoadOrder(999);` inside `try` (line 8) with lines 12-15 `catch (InvalidOperationException exception) { Console.WriteLine(exception); }`; line 18 `LoadOrder(int orderId) => ReadRow(orderId);`; line 20 `ReadRow(int orderId) => ParseTotal(orderId, null);`; line 22 `ParseTotal(int orderId, string? rawTotal)`; line 26 `_ = int.Parse(rawTotal!);`; line 30 `throw new InvalidOperationException($\"order {orderId} has no total\", cause);`. Exactly four methods.",
+        "source": "git -C examples/don-hang show stage-0:samples/DonHang.Samples/Samples/Debug/ThrowsDeep.cs (lines 1-33)"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Execution on the pinned SDK (dotnet --version -> 10.0.300), `dotnet run --project samples/DonHang.Samples -- throws-deep`, line 2: `System.ArgumentNullException: Value cannot be null. (Parameter 's')`, line 3: `at System.Int32.Parse(String s)` — the parameter of Int32.Parse is named `s` and the message carries that name. Docs mirror shows the same message shape for another paramName: `// Throws ArgumentNullException: \"Value cannot be null. (Parameter 'inputType')\".`",
+        "source": "execution, examples/don-hang @ stage-0 sources; refs/dotnet-docs/docs/core/compatibility/serialization/5.0/jsonserializer-serialize-throws-argumentnullexception-for-null-type.md:27"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Best practices for exceptions, \"Capture and rethrow exceptions properly\": \"The stack trace is a list of the method call hierarchy that starts with the method that throws the exception and ends with the method that catches the exception.\" Execution agrees: `System.Int32.Parse` (thrower) is printed above `ParseTotal`, above `ReadRow`, above `LoadOrder`, above `Run` (the catcher).",
+        "source": "refs/dotnet-docs/docs/standard/exceptions/best-practices-for-exceptions.md:159; execution of scripts/debug/run-throws-deep.sh"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Exception class and properties, InnerException row: \"it is sometimes desirable for a method to catch an exception thrown by a helper routine and then throw an exception more indicative of the error that has occurred. A new and more meaningful exception can be created, where the inner exception reference can be set to the original exception.\" Execution confirms it for this constructor: line 30 passes `cause` as second argument and the run prints the ArgumentNullException behind ` ---> `.",
+        "source": "refs/dotnet-docs/docs/standard/exceptions/exception-class-and-properties.md:24; execution"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Exception.ToString (defaultMoniker net-10.0) Remarks: \"The default implementation of ToString obtains the name of the class that threw the current exception, the message, the result of calling ToString on the inner exception, and the result of calling Environment.StackTrace.\" Examples: ToString \"is called implicitly when the Exception class instance appears in the argument list of the Console.WriteLine method.\" The docs add \"there are no exact requirements for the format\"; the literal ` ---> ` and `--- End of inner exception stack trace ---` come from execution on 10.0.300.",
+        "source": "learn.microsoft.com/dotnet/api/system.exception.tostring?view=net-10.0 (Remarks, Examples); execution"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Execution produced exactly nine lines: 1 outer type+message, 2 ` ---> ` inner type+message, 3-4 and 6-9 the six `at` frames, 5 the marker. Frames name ThrowsDeep.cs lines 26, 30, 20, 18, 10; the source at the tag has `int.Parse` on 26, the `throw` on 30, `ReadRow` on 20, `LoadOrder` on 18, `LoadOrder(999);` on 10. Five frames carry a file and a line; `System.Int32.Parse` carries none. The committed capture outputs/stage-0/scripts/debug/run-throws-deep.txt is byte-identical to the run apart from the `...` path redaction.",
+        "source": "execution; examples/don-hang @ stage-0 outputs/stage-0/scripts/debug/run-throws-deep.txt"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Execution, above the marker: `at System.Int32.Parse(String s)` and `at DonHang.Samples.Debug.ThrowsDeep.ParseTotal(Int32 orderId, String rawTotal) in ...ThrowsDeep.cs:line 26` — two inner frames. Below the marker: ParseTotal line 30, ReadRow line 20, LoadOrder line 18, Run line 10 — four outer frames. Exactly the split the claim states.",
+        "source": "execution; capture lines 3-9"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Exception class and properties: \"The stack trace includes the source file name and program line number if debugging information is available.\" Line number only — no column, no expression identity. Execution agrees: every frame ends `:line <n>`, and line 26 is the whole statement `_ = int.Parse(rawTotal!);`; nothing in the frame distinguishes which argument or subexpression was at fault.",
+        "source": "refs/dotnet-docs/docs/standard/exceptions/exception-class-and-properties.md:27; execution"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "outputs/unstable.regex at the tag, header: \"Whatever a line matches is replaced by \\\"...\\\" in every captured output, so that a re-run of the same script produces the same file.\" Last line: ` in \\K[^\\n]*[/\\\\](?=[A-Za-z0-9_]+\\.cs:line )` — it consumes everything between ` in ` and the last separator before `<Name>.cs:line `. Execution here printed the unredacted directory `F:\\SourceCode\\...\\Samples\\Debug\\ThrowsDeep.cs:line 26`, which the committed capture stores as `...ThrowsDeep.cs:line 26`.",
+        "source": "examples/don-hang @ stage-0 outputs/unstable.regex; execution"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "scripts/debug/run-throws-deep.sh at the tag, line 4 `cd \"$(dirname \"$0\")/../..\"`, line 6 `dotnet run --project samples/DonHang.Samples --verbosity quiet -- throws-deep`. Program.cs line 22 is `[\"throws-deep\"] = Sync(ThrowsDeep.Run),` in the `samples` dictionary (entries start at line 11), dispatched at line 27 via `samples.TryGetValue(args[0], out var run)`. Running that exact command produced the ThrowsDeep output.",
+        "source": "examples/don-hang @ stage-0: scripts/debug/run-throws-deep.sh; samples/DonHang.Samples/Program.cs lines 9-27; execution"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "C# reference, exception-handling statements: \"When an exception occurs, the runtime checks catch clauses in the specified order, from top to bottom. At most, only one `catch` block runs for any thrown exception.\" ThrowsDeep.cs lines 28-31 catch ArgumentNullException and throw InvalidOperationException with `cause`. Execution confirms the exception reaching Run's catch is the InvalidOperationException, with the ArgumentNullException printed as its inner one.",
+        "source": "refs/dotnet-docs/docs/csharp/language-reference/statements/exception-handling-statements.md:79; execution"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "C# reference, ! (null-forgiving) operator: \"use the null-forgiving operator to suppress all nullable warnings for the preceding expression... The null-forgiving operator has no effect at run time. It only affects the compiler's static flow analysis by changing the null state of the expression. At run time, expression `x!` evaluates to the result of the underlying expression `x`.\" So `rawTotal!` hands int.Parse the same `null` ReadRow supplied on line 20 — which execution shows, since ArgumentNullException is thrown.",
+        "source": "refs/dotnet-docs/docs/csharp/language-reference/operators/null-forgiving.md:13; execution"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "First half documented: the trace \"starts with the method that throws the exception\", so the top frame is the detection point — here `System.Int32.Parse`, library code with no file or line. Second half is a heuristic and is hedged with \"usually\" in both the ledger and section 4; execution bears it out for this sample: line 26 is the last statement of repository code that chose the argument handed to the failing call.",
+        "source": "refs/dotnet-docs/docs/standard/exceptions/best-practices-for-exceptions.md:159; execution, capture lines 3-4"
+      },
+      {
+        "n": 14,
+        "verdict": "not-needed",
+        "evidence": "A reading habit plus its reason, not a factual assertion about the runtime. Its only checkable component — that the message names the refused argument and the outer message names the order — is claim 2 plus execution, verified there. No official source can settle \"read this before searching\". The lesson's superlative phrasing of it is reported separately as an opinion-as-fact issue.",
+        "source": "n/a — guidance; checkable content covered by claim 2"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "Exception class and properties, InnerException: \"To improve the caller's ability to determine the reason an exception is thrown, it is sometimes desirable for a method to catch an exception thrown by a helper routine and then throw an exception more indicative of the error that has occurred... Note that with this functionality, you can create a series of linked exceptions that ends with the exception that was thrown first.\" That is the wrapper/cause split the claim describes.",
+        "source": "refs/dotnet-docs/docs/standard/exceptions/exception-class-and-properties.md:24"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "Execution: the outer exception's first frame (output line 6) is `ParseTotal ... in ...ThrowsDeep.cs:line 30`, and line 30 at the tag is `throw new InvalidOperationException($\"order {orderId} has no total\", cause);` — reporting code, not the failing call. The failing call `_ = int.Parse(rawTotal!);` on line 26 is named only by output line 4, an inner-exception frame above the marker.",
+        "source": "execution; examples/don-hang @ stage-0 ThrowsDeep.cs lines 26, 30"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "Execution line 6: `at DonHang.Samples.Debug.ThrowsDeep.ParseTotal(Int32 orderId, String rawTotal) in F:\\...\\ThrowsDeep.cs:line 30` — namespace.type.method, parameter types and names, then ` in <file>:line <n>`; `int orderId` prints `Int32 orderId`, `string? rawTotal` prints `String rawTotal`. Line 3 `at System.Int32.Parse(String s)` has no file or line. Docs give the condition: \"The stack trace includes the source file name and program line number if debugging information is available.\"",
+        "source": "execution; refs/dotnet-docs/docs/standard/exceptions/exception-class-and-properties.md:27"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "Best practices for exceptions: \"The stack trace begins at the statement where the exception is thrown and ends at the `catch` statement that catches the exception\" and \"...ends with the method that catches the exception.\" Execution agrees: Program.cs line 22 calls ThrowsDeep.Run, Run catches at lines 12-15, and the last printed frame is `Run() in ...:line 10` — no caller of Run appears, although it was still unfinished.",
+        "source": "refs/dotnet-docs/docs/standard/exceptions/best-practices-for-exceptions.md:269 and :159; execution, capture line 9"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "style",
+        "text": "Section 4 opens with a broken fragment: \"In the sample under In the Đơn Hàng system, the calls ran downward\". The heading name is not set off, so \"under In the\" reads as a duplication error and stops the reader at the first sentence of the section that does the explaining. This was reported in the previous technical round and is still in the file.",
+        "quote": "In the sample under In the Đơn Hàng system, the calls ran downward",
+        "fix": "Set the heading off or drop the pointer: \"In the sample under **In the Đơn Hàng system**, the calls ran downward: `Run` called `LoadOrder`, …\" or simply \"In the sample, the calls ran downward: `Run` called `LoadOrder`, …\"."
+      },
+      {
+        "severity": "major",
+        "section": "Try it",
+        "kind": "accuracy",
+        "text": "Unlisted claim: \"the first run is slow while the project is built\" asserts that `dotnet run` builds before it runs — a behaviour of the pinned toolchain, not of the script. It is true (dotnet run: \"The command depends on the `dotnet build` command to build the code\"), but claim 10 covers only the command line the script issues, so the ledger does not carry this statement.",
+        "quote": "the first run is slow while the project is built",
+        "fix": "Add a claim of kind `behavior`, version_key `dotnet`, text \"`dotnet run` builds the project before running it unless --no-build is passed\", source_hint \".NET CLI, dotnet run: 'The command depends on the dotnet build command to build the code'\" — or delete the clause from step 1."
+      },
+      {
+        "severity": "major",
+        "section": "foundation.l2.reading-stack-traces.q4",
+        "kind": "quiz",
+        "text": "The marked answer states a false ground. Above the line-26 frame the block holds three lines: the outer message `order 999 has no total` (written by line 30 of the repository), the inner message, and one .NET frame. \"everything above it came with .NET\" is false of the first of those. The question asks \"Which line, and on what grounds?\", so the false clause is part of the key; only the `at`-line count keeps the key unique.",
+        "quote": "Line 26 — the highest `at` line that carries a file of the repository; everything above it came with .NET.",
+        "fix": "Restrict the clause to frames: \"Line 26 — the highest `at` line that carries a file of the repository; the only `at` line above it is code that came with .NET.\" Mirror the change in the `vi` option text."
+      },
+      {
+        "severity": "minor",
+        "section": 2,
+        "kind": "accuracy",
+        "text": "The situation says none of the nine lines shows a value belonging to the order, but line 1 is `System.InvalidOperationException: order 999 has no total`, which names the order id — and sections 5 and 6 rely on exactly that (\"the message names the order\", \"`order 999 has no total` names the order it happened to\"), as does q5's explanation of option e.",
+        "quote": "None of the nine shows a value belonging to the order, not the total nor anything you could check",
+        "fix": "Narrow it to the data the reader wanted: \"None of the nine shows the order's data — not the total, not any value you could compare against.\" Keep the order id out of the denial so section 6 and q5 still hold."
+      },
+      {
+        "severity": "minor",
+        "section": 3,
+        "kind": "accuracy",
+        "text": "The frame definition states the wrong condition for a file and line appearing. The documented condition is debugging information, not being built with your project: \"The stack trace includes the source file name and program line number if debugging information is available.\" Claim 17 states the documented condition; section 3 does not.",
+        "quote": "for code built together with your own project as it is here, the file and the line it was on",
+        "fix": "Use a condition that is true without naming PDBs (depth_notes forbids that): \"and, when the code was built with the information needed for it — as the project's own code is here — the file and the line it was on\"."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "\"Each number in a box\" is false of the last numbered box. Box W is `ParseTotal line 30 wraps it in InvalidOperationException`, whose arrow leads to the console box; line 30 is the `throw`, not a call ParseTotal was waiting on. The rule holds for the four boxes above it, which the preceding sentence has just separated from the last two arrows.",
+        "quote": "Each number in a box is the line that method was on when it made the call below it.",
+        "fix": "Scope the sentence to the call arrows: \"In the first four boxes the number is the line that method was on when it made the call below it; line 30 is the throw itself.\""
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "opinion-as-fact",
+        "text": "A superlative stated as fact with no source and no condition. The documentation nowhere ranks the exception type against other descriptions of a failure; claim 14 registers this as an opinion, but the lesson prints it as an unqualified fact.",
+        "quote": "The type is the most precise name .NET has for this failure",
+        "fix": "Attach the condition instead of the ranking: \"The type is the name .NET gives this kind of failure, and it is usually narrower than anything you would write yourself; the message was written by whoever wrote the check that fired.\""
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "version",
+        "text": "The printed shape is runtime-version-dependent and the lesson names no version. `Value cannot be null. (Parameter 's')` and `--- End of inner exception stack trace ---` are the .NET (Core) format — Exception.ToString's own docs say \"there are no exact requirements for the format of the returned string\" — yet the lesson teaches the layout as if it were fixed.",
+        "quote": "System.ArgumentNullException: Value cannot be null. (Parameter 's')",
+        "fix": "Name the pinned runtime once where the output is introduced, e.g. \"the repository keeps its output, produced on .NET 10\" (dotnet 10.0 is in versions.yaml), so the exact wording of the message and the marker is tied to a version."
+      },
+      {
+        "severity": "minor",
+        "section": "foundation.l2.reading-stack-traces.q5",
+        "kind": "quiz",
+        "text": "The explanation of option c states a frame \"names a method, a file and a line, never a value\", but section 3 defines a frame as naming \"the method that was running, its parameters' types and names\", and the printed frame does contain `rawTotal`. So option c's ground (\"the frame for line 26 names it\") is literally true; only its inference is wrong, and the explanation denies the wrong half.",
+        "quote": "But a frame names a method, a file and a line, never a value",
+        "fix": "Correct the explanation to the real distinction: \"But a frame names parameter types and names, never the values they held — `String rawTotal` tells you what the parameter is called, not that it was empty; you learn that by opening line 26.\" Mirror in `vi`."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "fix-required"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-21T18:10:00+07:00",
+    "reviewer": "review-junior (prompt 05, claude-opus-5; fresh session; inputs limited to .en.md, .quiz.json, the 41 known_vocab terms process..conflict with definitions, and the five-line summary of prereq foundation.l2.debugging-method; lesson vocab = stack-trace; replaces the earlier junior block, written against a previous draft)",
+    "issues": [
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "style",
+        "text": "The first sentence of section 4 does not parse: \"In the sample under In the Đơn Hàng system\" reads as a phrase repeated by accident. I stopped and re-read it three times before guessing it means \"the sample shown in the section In the Đơn Hàng system\".",
+        "quote": "In the sample under In the Đơn Hàng system, the calls ran downward",
+        "fix": "Replace that opening with \"In the sample shown in \"In the Đơn Hàng system\" below, the calls ran downward\"."
+      },
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "diagram",
+        "text": "The prose's rule for the numbers does not fit two boxes. The box \"ParseTotal line 30 wraps it in InvalidOperationException\" carries a number but calls nothing below it (the next box is the console printing), and \"int.Parse throws ArgumentNullException\" carries no number at all. I could not tell whether 30 means the same kind of thing as 10, 18, 20 and 26.",
+        "quote": "Each number in a box is the line that method was on when it made the call below it.",
+        "fix": "After that sentence add: \"In the last two boxes, 30 is the line of the throw itself, and `int.Parse` shows no line because it is library code.\""
+      },
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "diagram",
+        "text": "`ParseTotal` is two boxes (line 26 and line 30) in one downward chain. Because the prose says the calls ran downward, I read the last boxes as further calls and thought `ParseTotal` had been called again after `int.Parse`. Nothing says the line-30 box is the same `ParseTotal` call as the line-26 box, now catching what came back.",
+        "quote": "the last two are what happened next — `int.Parse` throws an `ArgumentNullException`, `ParseTotal` wraps it in an `InvalidOperationException`",
+        "fix": "In that sentence write \"the same `ParseTotal` call wraps it in an `InvalidOperationException`\" so the reader knows no new call is made."
+      },
+      {
+        "severity": "major",
+        "section": 3,
+        "kind": "gap",
+        "text": "Core concepts defines a stack trace as the calls still unfinished at the throw; section 4 then says a call that was already running when the catching method was entered is never printed, \"unfinished or not\". Read in order the two contradict and I could not tell which to use. Quiz q5 needs both halves: option a is true because all four calls were unfinished, option f is false because whatever called `Run` is missing.",
+        "quote": "the list of calls that were still unfinished when the exception was thrown, printed one per line, innermost call first",
+        "fix": "Add the limit to the Core concepts line: \"...still unfinished when the exception was thrown, down to the method that catches it, printed one per line, innermost call first.\""
+      },
+      {
+        "severity": "major",
+        "section": "quiz q5",
+        "kind": "quiz",
+        "text": "I could not decide option d. The lesson says the top frame is where the failure was detected and calls line 30 \"correct reporting code\", which makes \"int.Parse is the only method whose own code produced the failure\" read as true — `ParseTotal` reports, it does not fail. The explanation's reason (`ParseTotal` throws too, so \"only\" is wrong) undoes the distinction the lesson spent two paragraphs building.",
+        "quote": "`System.Int32.Parse` is the only method named in the trace whose own code produced the failure.",
+        "fix": "Reword option d to a claim the lesson plainly refutes, e.g. \"The frames say which method was at fault, because the method at fault is named first.\""
+      },
+      {
+        "severity": "minor",
+        "section": 2,
+        "kind": "style",
+        "text": "Section 2 counts lines I have not seen. \"the second, behind an arrow\", \"a marker\", \"Five name a method, a file and a line number\" — I re-read the paragraph twice and still could not picture the nine lines, because the printed block only arrives in section 5. The closing question is clear and the lesson does answer it.",
+        "quote": "The first names a type and a sentence; the second, behind an arrow, names another of each.",
+        "fix": "After \"the console answers with nine lines\", add \"printed in full further down\", so the reader knows this description is a preview and not something to decode now."
+      },
+      {
+        "severity": "minor",
+        "section": 3,
+        "kind": "gap",
+        "text": "Core concepts promises all five terms come back, but \"your first frame\" never appears again by that name; sections 4 and 5 say \"the first line naming a file of your own project\" and \"the topmost frame naming a file of the project\". I had to work out that these are the same thing.",
+        "quote": "All five come back in the printed trace below.",
+        "fix": "Use the name once in section 5: after \"The topmost frame naming a file of the project is `ParseTotal` at line 26\", add \"that is your first frame\"."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "code",
+        "text": "Line 26 reads `_ = int.Parse(rawTotal!);`. The prose explains the `!` but says nothing about `_ =`, so I stopped to wonder whether the underscore was part of why the call failed.",
+        "quote": "The `!` after `rawTotal` only stops the compiler warning about it; at run time the value is still `null`.",
+        "fix": "Extend that sentence: \"...at run time the value is still `null`, and `_ =` only throws the parsed number away.\""
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "length",
+        "text": "The paragraph starting \"Read it in the order it is printed.\" explains all nine printed lines, the `Int32`/`int` naming, the bracketed parameter name and the marker in one block. I re-read it twice to keep line 26 and line 30 apart.",
+        "quote": "Read it in the order it is printed.",
+        "fix": "Split that paragraph after \"not of anything you wrote.\", so the two message lines and the six frames are explained in separate paragraphs."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "gap",
+        "text": "\"so the value is obvious\" does not say which value. I had to open the code block and count the arguments on line 26 myself to see that it can only be `rawTotal`.",
+        "quote": "Line 26 holds one call with one argument, so the value is obvious; with three values on it the frame would still name only the line.",
+        "fix": "Replace \"so the value is obvious\" with \"so the empty value can only be `rawTotal`\"."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz q1",
+        "kind": "quiz",
+        "text": "I ordered q1's five pieces without understanding anything. The diagram's last box and the section 5 paragraph both state the order in the same words (\"outer, inner + its frames, marker, outer frames\"), so matching the options to that one sentence is enough.",
+        "quote": "Console prints outer, inner + its frames, marker, outer frames",
+        "fix": "Reword q1's options to name what each piece contains (the order number, `(Parameter 's')`, line 26, line 30) instead of the words \"inner\", \"outer\" and \"marker\" that the lesson's own sentence uses in that order."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "`_ =` (the discard in `_ = int.Parse(rawTotal!);`) — the `!` is explained, this is not"
+      ],
+      "skipped_steps": [
+        "In the sample under In the Đơn Hàng system, the calls ran downward",
+        "Each number in a box is the line that method was on when it made the call below it.",
+        "so a call that was already running when that method was entered is never printed, unfinished or not",
+        "All five come back in the printed trace below.",
+        "Line 26 holds one call with one argument, so the value is obvious"
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "fix-required"
+  }
+}
