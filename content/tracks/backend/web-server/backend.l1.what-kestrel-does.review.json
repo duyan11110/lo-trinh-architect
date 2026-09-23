@@ -1,0 +1,316 @@
+{
+  "id": "backend.l1.what-kestrel-does",
+  "technical": {
+    "reviewed_at": "2026-09-23T23:45:00+07:00",
+    "reviewer": "claude-opus-5[1m]",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "wrong",
+        "evidence": "kestrel.md (moniker >= aspnetcore-10.0): \"Kestrel is the recommended server for ASP.NET Core, and it's configured by default in ASP.NET Core project templates.\" — recommended/default, not universal. servers/index.md lists the alternatives: \"IIS HTTP Server is an in-process server for IIS.\", \"HTTP.sys server is a Windows-only HTTP server based on the HTTP.sys kernel driver\", and under Hosting models: \"HTTP.sys self-hosting is an alternative to Kestrel.\" With IIS in-process hosting the app runs \"In the same process as the IIS worker process ... with the IIS HTTP Server\", i.e. not on Kestrel.",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/servers/kestrel.md; refs/aspnetcore-docs/aspnetcore/fundamentals/servers/index.md",
+        "suggested_text": "Kestrel is the default web server for ASP.NET Core apps — the one project templates configure and the one Đơn Hàng will run on."
+      },
+      {
+        "n": 2,
+        "verdict": "rephrased",
+        "evidence": "servers/index.md: \"The server implementation listens for HTTP requests and surfaces them to the app as a set of request features composed into an HttpContext.\" — the bytes-to-request-object half is right. But TCP is not the only transport: kestrel.md lists \"HTTP/1.1, HTTP/2 and HTTP/3\"; http3.md: \"`HTTP/3` uses QUIC instead of TCP.\" endpoints.md also documents ListenUnixSocket and \"Customize Kestrel named pipe endpoints\". So \"a TCP connection\" holds for the HTTP/1.1 traffic this lab uses, not for Kestrel in general.",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/servers/index.md; .../kestrel.md; .../kestrel/http3.md; .../kestrel/endpoints.md",
+        "suggested_text": "it turns the bytes arriving on a connection — a TCP connection for the HTTP/1.1 traffic in this course — into a request your C# code can read, and turns your code's decision back into response bytes."
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "servers/index.md: \"An ASP.NET Core app runs with an in-process HTTP server implementation. The server implementation listens for HTTP requests and surfaces them to the app as a set of request features composed into an HttpContext.\" Listening plus surfacing an HttpContext is the whole described responsibility; routing and business logic belong to the app/middleware above it (kestrel.md lists \"Integration with ASP.NET Core: Seamless integration with other ASP.NET Core components, such as the middleware pipeline\").",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/servers/index.md; .../kestrel.md"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "`git -C examples/don-hang show stage-0:Caddyfile` lines 36-40: `handle @postOrder {` / `header Content-Type \"application/json; charset=utf-8\"` / `header Location \"/api/v1/orders/13\"` / \"respond `{\\\"id\\\":13,\\\"customer_id\\\":1,\\\"status\\\":\\\"new\\\"}` 201\". Matcher at lines 14-17: `@postOrder { method POST  path /api/v1/orders }`. Body and status are literals in the config, so every matching request gets them.",
+        "source": "examples/don-hang Caddyfile @ stage-0, lines 14-17 and 36-40"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "`git -C examples/don-hang show stage-0:Caddyfile` lines 41-44: `handle @getOrder {` / `header Content-Type \"application/json; charset=utf-8\"` / \"respond `{\\\"id\\\":1,\\\"customer_id\\\":1,\\\"status\\\":\\\"paid\\\"}` 200\". Matcher lines 18-21: `@getOrder { method GET  path /api/v1/orders/1 }`. Confirmed by outputs/stage-0/scripts/http/methods.txt, which prints the same body twice for two GETs.",
+        "source": "examples/don-hang Caddyfile @ stage-0, lines 18-21 and 41-44; outputs/stage-0/scripts/http/methods.txt"
+      },
+      {
+        "n": 6,
+        "verdict": "rephrased",
+        "evidence": "Caddy docs, respond directive: \"<body> is the response body to write.\" Nothing there promises a constant body. Caddyfile Concepts states placeholders may be used as \"arguments to directives and subdirectives\" (\"not all config fields support placeholders, but most do where you would expect it\"), so a respond body can vary per request. The constancy in Đơn Hàng comes from the literal string in this Caddyfile, not from the directive itself.",
+        "source": "https://caddyserver.com/docs/caddyfile/directives/respond; https://caddyserver.com/docs/caddyfile/concepts",
+        "suggested_text": "In the stage-0 Caddyfile, each respond line's body is a literal string, so every matching request gets that same body back."
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "examples/don-hang outputs/stage-0/scripts/http/methods.txt @ stage-0 contains: \"POST creates, so it also says where the new thing lives:\" / \"HTTP/1.1 201 Created\" / \"Location: /api/v1/orders/13\". scripts/http/methods.sh pipes the POST response through `grep -Ei '^(HTTP/|Location:)'`, and the Caddyfile sets `header Location \"/api/v1/orders/13\"` as a literal, so the value cannot differ between runs.",
+        "source": "examples/don-hang outputs/stage-0/scripts/http/methods.txt, scripts/http/methods.sh, Caddyfile line 38 @ stage-0"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "servers/index.md: \"An ASP.NET Core app runs with an in-process HTTP server implementation.\" kestrel/when-to-use-a-reverse-proxy.md attributes load spreading to the proxy in front, not to Kestrel: \"A reverse proxy server receives HTTP requests from the network and forwards them to Kestrel\" and \"A reverse proxy: ... Simplifies load balancing and secure communication (HTTPS) configuration.\"",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/servers/index.md; .../kestrel/when-to-use-a-reverse-proxy.md"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "servers/index.md: \"The server implementation listens for HTTP requests and surfaces them to the app as a set of request features composed into an HttpContext\" — surfacing an HttpContext is work beyond accepting a socket. kestrel.md documents the protocol work explicitly: \"Wide protocol support: Kestrel supports common web protocols, including: HTTP/1.1, HTTP/2 and HTTP/3 ... WebSockets\". Accepting a connection alone yields none of that.",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/servers/index.md; .../kestrel.md"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "blocker",
+        "section": 3,
+        "kind": "accuracy",
+        "quote": "**Kestrel** — the web server every ASP.NET Core app runs on",
+        "text": "\"every ASP.NET Core app\" is contradicted by the docs for the pinned 10.0 version: with IIS in-process hosting the server is IIS HTTP Server, and HTTP.sys self-hosting is \"an alternative to Kestrel\". kestrel.md only says Kestrel is \"the recommended server for ASP.NET Core, and it's configured by default in ASP.NET Core project templates\". The same absolute appears in Five-line summary line 1.",
+        "fix": "Replace both occurrences with the default framing, e.g. \"the default web server for ASP.NET Core apps — the one project templates configure and the one Đơn Hàng will run on\" (Core concepts) and \"Kestrel is the default web server for ASP.NET Core apps, turning connection bytes into a request object …\" (summary line 1). Update claim 1 in .meta.json to match."
+      },
+      {
+        "severity": "major",
+        "section": 7,
+        "kind": "accuracy",
+        "quote": "it is copied verbatim from the `Caddyfile` on every request, exactly like `www/index.html` is.",
+        "text": "Unlisted claim: as written, this says `www/index.html` is also copied verbatim from the `Caddyfile`. It is not — at stage-0 Caddy serves it with `root * /srv/www` plus `file_server`, i.e. read from disk; only the `respond` body lives in the Caddyfile. No claim in the ledger covers how the static file is served.",
+        "fix": "Rewrite as: \"The id never changes because the response is not computed: it is copied verbatim from the `Caddyfile` on every request, the same way `www/index.html` is copied verbatim off disk.\" Add it as a claim in .meta.json (kind behavior, source examples/don-hang Caddyfile @ stage-0, `root * /srv/www` + `file_server`)."
+      },
+      {
+        "severity": "minor",
+        "section": 3,
+        "kind": "version",
+        "quote": "it turns bytes arriving on a TCP connection into a request your C# code can read",
+        "text": "Stated without condition, this is false for part of Kestrel 10.0: HTTP/3 runs over QUIC, not TCP (\"`HTTP/3` uses QUIC instead of TCP\"), and Kestrel can also listen on Unix sockets (ListenUnixSocket) and named pipes. The statement is true of the HTTP/1.1 traffic this course uses, but the lesson does not say so.",
+        "fix": "Add the condition once, in Core concepts: \"…bytes arriving on a connection — a TCP connection for the HTTP/1.1 traffic in this course — into a request your C# code can read.\" No change needed in the diagram or quiz, which are explicitly about this lab's traffic."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "quote": "`respond` is Caddy's word for \"send exactly this, every time.\"",
+        "text": "Too strong as a statement about the directive. Caddy docs define only \"<body> is the response body to write\", and Caddyfile Concepts allows placeholders as \"arguments to directives and subdirectives\", so a `respond` body can vary per request. What is fixed here is the literal string in this Caddyfile, not `respond` itself.",
+        "fix": "Rewrite as: \"Both bodies here are literal strings typed into `Caddyfile`, so `respond` sends exactly that text back on every matching request.\" Adjust claim 6 in .meta.json the same way."
+      },
+      {
+        "severity": "minor",
+        "section": 1,
+        "kind": "accuracy",
+        "quote": "Kestrel is the process that will claim Đơn Hàng's.",
+        "text": "Kestrel is not a process; the docs call it an \"in-process HTTP server implementation\", and the lesson itself says so in Beginners often think (\"Kestrel is the server running inside one app process\"). Section 1 contradicts section 6 on the lesson's own core concept.",
+        "fix": "Rewrite as: \"…Kestrel, running inside the Đơn Hàng app process, is what will claim its port.\""
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "rewrite"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-23T23:59:00+07:00",
+    "reviewer": "claude-opus-5[1m] (junior reader simulation)",
+    "issues": [
+      {
+        "severity": "major",
+        "section": 2,
+        "kind": "term",
+        "quote": "how your future ASP.NET Core code will ever get a chance to run at all",
+        "text": "\"ASP.NET Core\" is never explained, and the Core concepts entry defines the one new term with it: \"the web server every ASP.NET Core app runs on\". So the definition of Kestrel rests on a term I do not have. I guess it means \"a C# web app\", and the guess carries me through the whole lesson.",
+        "fix": "At the first mention in section 2, add a six-word gloss in plain words: \"your future ASP.NET Core code (the C# way of writing web apps in this course)\", and keep using that reading in Core concepts."
+      },
+      {
+        "severity": "major",
+        "section": 2,
+        "kind": "term",
+        "quote": "every request to `/api/v1/orders` today gets the same fixed JSON back from Caddy",
+        "text": "Caddy and `Caddyfile` appear in the opening sentence as if I had already met them; neither prerequisite summary mentions either. I only learn Caddy is a web server later, in Core concepts, and I am never told `Caddyfile` is the file that tells Caddy what to do.",
+        "fix": "In section 2, at the first mention, write \"…back from Caddy, the web server running in the lab, whose whole behaviour is written in one text file, `Caddyfile`\" — one clause, placed before the file is opened."
+      },
+      {
+        "severity": "major",
+        "section": 2,
+        "kind": "term",
+        "quote": "You are ready to build the real Đơn Hàng order API",
+        "text": "\"API\" is a term I have not been given and the lesson never says what one is; it comes back in summary line 2 (\"as if a real API existed\"). I read it as \"the thing behind /api/v1/orders\" and hope that is close enough.",
+        "fix": "Replace \"the real Đơn Hàng order API\" with \"the real C# code behind `/api/v1/orders`\", and in summary line 2 replace \"as if a real API existed\" with \"as if real code were answering\"."
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "term",
+        "quote": "The stage-0 `Caddyfile` shows exactly the kind of fixed answer Kestrel replaces.",
+        "text": "\"stage-0\" is used several times, plus `tag=stage-0` in the code fence header, and is never explained. I cannot tell whether it is a folder, a version of the lab, or a marker in the repository, so in Try it I do not know which files I am supposed to be looking at.",
+        "fix": "At the first use in section 5, add one clause: \"the stage-0 `Caddyfile` — stage-0 is the lab as it stands before any C# exists —\"."
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "term",
+        "quote": "Two of its route handlers respond with JSON typed directly into `Caddyfile`",
+        "text": "\"route\" and \"route handler\" are new to me; section 4 also says \"Nothing in this diagram mentions routes\". I cannot tell whether a route is the path, the block in the file, or something Kestrel has that Caddy does not.",
+        "fix": "Replace \"route handlers\" with \"blocks\" in section 5, and \"Nothing in this diagram mentions routes, JSON, or Đơn Hàng\" with \"Nothing in this diagram mentions paths, JSON, or Đơn Hàng\" in section 4."
+      },
+      {
+        "severity": "major",
+        "section": 6,
+        "kind": "term",
+        "quote": "\"Kestrel is a load balancer that spreads traffic across multiple servers.\"",
+        "text": "I have never met \"load balancer\", so this is not something I could have believed, and the correction does not define it either — it says the job belongs to \"a separate piece placed in front of many Kestrel processes\", which adds one more thing I have not met.",
+        "fix": "Reword the bullet without the term: \"\\\"Kestrel spreads requests across several machines for you.\\\" → Actually Kestrel is the server inside one app process; it only handles the connections that arrive on its own port.\""
+      },
+      {
+        "severity": "major",
+        "section": 6,
+        "kind": "term",
+        "quote": "You notice this when a hand-written socket server chokes on a header a real browser sends.",
+        "text": "\"socket\" is new, and it comes back in quiz q5 (\"opens a socket on port 9000\"). Nothing tells me what a socket is or why a hand-written one would choke on a header, so the sentence meant to make misconception 2 concrete is the part I understand least — and a whole question is built on it.",
+        "fix": "Replace \"a hand-written socket server\" with \"a program you wrote yourself that only reads the bytes off the connection\", and use the same wording in quiz q5's stem instead of \"opens a socket on port 9000\"."
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "term",
+        "quote": "handle @postOrder {",
+        "text": "The prose explains only `respond`. The block's first line `handle @postOrder`, the `@getOrder` name and the `header Location` line are never mentioned, so I do not know what the `@` name means. Quiz q2 asks about \"the `handle @postOrder` block\", so I do have to know which block that is.",
+        "fix": "Add one sentence under the block: \"`handle @postOrder` is the part Caddy uses when the request is a POST to `/api/v1/orders`; the `header` lines set response headers and `respond` sets the body and status.\""
+      },
+      {
+        "severity": "major",
+        "section": 6,
+        "kind": "gap",
+        "quote": "You notice this when someone expects one Kestrel to survive its own machine going down.",
+        "text": "I cannot reconstruct the step from \"Kestrel is not a load balancer\" to machines going down. Nothing in the lesson says what happens to requests when a machine fails, or how more than one Kestrel would be involved, so this sentence gives me nothing I could actually notice.",
+        "fix": "Replace it with a symptom this lesson supports: \"You notice this when every request lands in the same single app process, because that is the only process listening on the port.\""
+      },
+      {
+        "severity": "major",
+        "section": "quiz.q2",
+        "kind": "quiz",
+        "quote": "Some Caddy directives can call out to other processes, but this particular block is a plain fixed string, not a script.",
+        "text": "This explanation for wrong option b tells me something about Caddy the lesson never mentions (and uses \"directives\", a word not in the lesson). Section 5 taught me `respond` blocks are strings, not code; after reading this I am less sure whether Caddy can run code, which is the exact distinction the lesson is built on.",
+        "fix": "Rewrite b's explanation using only the lesson: \"No script stands behind this block — the `respond` line is the whole answer, a fixed string chosen before any request arrives.\""
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "term",
+        "quote": "With the stage-0 stack running (start it with `scripts/up.sh`)",
+        "text": "The only \"stack\" I have been taught is the memory region for local variables, so \"the stage-0 stack running\" stopped me for a moment. The parenthetical with `scripts/up.sh` is what rescued the sentence.",
+        "fix": "Replace \"the stage-0 stack running\" with \"the stage-0 lab running\"."
+      },
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "term",
+        "quote": "\"Caddy runs your C# code the same way it serves a static file.\"",
+        "text": "\"static file\" is new. I can guess it means a file sent back as it is, but the bullet is phrased as a belief I should recognise, and I cannot judge it without the phrase.",
+        "fix": "Replace \"the same way it serves a static file\" with \"the same way it sends back a file from disk\"."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz.q1",
+        "kind": "term",
+        "quote": "later serialize a response back onto the same connection",
+        "text": "\"serialize\" does not appear anywhere in the lesson and I do not know it. The lesson's own words for the same step are \"writes the response bytes\", which I do understand.",
+        "fix": "In q1's correct explanation, replace \"serialize a response back onto\" with \"write the response bytes back onto\"."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "gap",
+        "quote": "an incoming request reaches a method that runs fresh each time, reads whatever it needs, and decides its own answer",
+        "text": "I do not know where that method comes from or how a request finds it. The lesson does say elsewhere that this is the next lesson's subject, but the strongest sentence of section 5 rests entirely on the deferred part, and here nothing signals that.",
+        "fix": "Add the pointer inside the sentence: \"…reaches a C# method (how a request finds that method is the next lesson's subject) that runs fresh each time…\"."
+      },
+      {
+        "severity": "minor",
+        "section": 9,
+        "kind": "gap",
+        "quote": "Serving HTTP the way Kestrel does is deliberate, non-trivial parsing work, not an automatic side effect of listening on a port.",
+        "text": "Only the second \"Beginners often think\" bullet supports this line. Sections 3-5 say Kestrel parses bytes, but never that the parsing is hard or deliberate, so as a summary line it sounds like a conclusion the body reached and I could not find where.",
+        "fix": "Add one clause in section 4 after \"only that it is well-formed HTTP\": \"getting that shape right for every client that turns up is the work Kestrel exists to do.\""
+      },
+      {
+        "severity": "minor",
+        "section": "quiz.q2",
+        "kind": "quiz",
+        "quote": "False, because the block's `respond` line is a fixed string typed into the config; it returns the same body and id on every call, no code runs.",
+        "text": "In q2 the two \"True\" options and option d are one short clause each; the correct option is the only long, detailed one. I could pick it by shape alone, without having read the code block.",
+        "fix": "Shorten c to \"False — the `respond` line is a fixed string in the config, so every call gets the same body and id\" and give d a comparable length."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz.q3",
+        "kind": "quiz",
+        "quote": "the directive that writes the same configured string back as the response body on every matching request is: `___`",
+        "text": "The lesson never uses \"directive\"; it says \"`respond` is Caddy's word for …\". I answered `respond` from the code block, but the question is asked in wording I was not taught, so I had to translate it first.",
+        "fix": "Replace \"the directive that writes\" with \"the Caddy word that writes\", matching the lesson's own phrasing."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz.q5",
+        "kind": "quiz",
+        "quote": "Turning those bytes into a well-formed request, and a decision back into a well-formed response — not done yet",
+        "text": "The correct option repeats the second \"Beginners often think\" bullet almost word for word (\"turning the bytes on it into a well-formed request object, and a decision back into well-formed response bytes\"). I can match the phrase without understanding it.",
+        "fix": "Reword option b so it is not a phrase match, e.g. \"It still has to read the request's first line and headers, and build a reply in that same shape\"."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz.q1",
+        "kind": "quiz",
+        "quote": "Reads a fixed file and returns it, the same way Caddy serves www/index.html",
+        "text": "`www/index.html` appears in the lesson only inside the collapsed \"Suggested answer\" of Try it, with no explanation of what it is. In q1 it is used as if it were a known fact about the lab.",
+        "fix": "In q1 option c, replace \"the same way Caddy serves www/index.html\" with \"the same way Caddy sends back a file from disk\"."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz.q6",
+        "kind": "term",
+        "quote": "arguing this already makes the endpoint 'dynamic' without writing any C#",
+        "text": "\"endpoint\" in the context and \"handler code\" in option a are words the lesson does not give me. I still pick a, but from the clause \"no code reads the request or saves data\" rather than from the rest of the option.",
+        "fix": "Replace \"makes the endpoint 'dynamic'\" with \"makes `POST /api/v1/orders` answer differently each time\", and \"real handler code behind Kestrel\" with \"real C# code behind Kestrel\"."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "length",
+        "quote": "The diagram shows the shape of every request an ASP.NET Core app answers, whatever the app does.",
+        "text": "The second paragraph of section 4 carries all five diagram steps plus a forward reference to the next lesson in one block. I had to read it twice to line each clause up with an arrow.",
+        "fix": "Split it into two paragraphs after \"only that it is well-formed HTTP.\": arrival and parsing first, hand-off and response second."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "ASP.NET Core",
+        "Caddy",
+        "Caddyfile",
+        "API (\"order API\")",
+        "stage-0 (and tag=stage-0)",
+        "route / route handler",
+        "load balancer",
+        "socket",
+        "handle / @postOrder / @getOrder",
+        "static file",
+        "stack (as in \"the stage-0 stack\")",
+        "serialize (quiz q1 explanation)",
+        "directive (quiz q2, q3)",
+        "endpoint / handler code (quiz q6)",
+        "www/index.html (quiz q1 option c)"
+      ],
+      "skipped_steps": [
+        "\"You notice this when someone expects one Kestrel to survive its own machine going down.\" — nothing links load spreading to a machine failing.",
+        "\"an incoming request reaches a method that runs fresh each time\" — where the method comes from is never said here.",
+        "The code block's `handle @postOrder` line and `header Location` line are never mentioned in the prose, which explains only `respond`.",
+        "Summary line 5 (\"deliberate, non-trivial parsing work\") is supported only by a Beginners-often-think bullet, not by sections 3-5."
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "fix-required"
+  }
+}
