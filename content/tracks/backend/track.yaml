@@ -38,6 +38,26 @@ skills:
     vi: "Xây endpoint đọc/ghi"
     en: "Building read/write endpoints"
   prereqs: [backend.rest.design, backend.rest.contracts]
+- id: backend.ef.mapping
+  title:
+    vi: "Mapping entity–bảng trong EF Core"
+    en: "EF Core entity-to-table mapping"
+  prereqs: [backend.rest.crud]
+- id: backend.ef.migrations
+  title:
+    vi: Migration
+    en: Migrations
+  prereqs: [backend.ef.mapping]
+- id: backend.ef.querying
+  title:
+    vi: "Truy vấn bằng LINQ"
+    en: "Querying with LINQ"
+  prereqs: [backend.ef.migrations]
+- id: backend.ef.persistence
+  title:
+    vi: "Lưu thay đổi"
+    en: "Saving changes"
+  prereqs: [backend.ef.querying]
 levels:
 - level: 1
   title:
@@ -248,3 +268,132 @@ levels:
       - "PATCH and PUT are interchangeable as long as the URL is the same."
       - "DELETE isn't idempotent, because the second call can't do anything — the resource is already gone."
       depth_notes: "Không xây endpoint PUT/PATCH/DELETE thật cho Đơn Hàng ở module này — GĐ1 chỉ cần danh sách sản phẩm và tạo đơn (docs/00 §2); chỉ dạy ngữ nghĩa qua ví dụ Caddyfile đã có từ GĐ0. Endpoint sửa/hủy đơn thật (nếu cần) thuộc phạm vi sau, không hứa id ở đây."
+  - id: orm-efcore
+    title:
+      vi: "ORM và EF Core: mapping, migration, N+1"
+      en: "ORM and EF Core: mapping, migrations, N+1"
+    stage: 1
+    summary:
+      vi: "Đọc và viết được mapping EF Core cho schema Đơn Hàng đã có, hiểu migration là gì, và tránh được lỗi N+1."
+      en: "Read and write an EF Core mapping for the existing Đơn Hàng schema, know what a migration is, and avoid the N+1 problem."
+    lessons:
+    - id: backend.l1.efcore-mapping
+      title:
+        vi: "DbContext ánh xạ class sang bảng, không phải ngược lại"
+        en: "A DbContext maps classes to tables, not the other way around"
+      main_path: true
+      duration_min: 12
+      skills: [backend.ef.mapping]
+      prereqs: [backend.l1.get-and-status-codes, foundation.l1.tables-keys-relations]
+      related: []
+      vocab: [orm]
+      example_tag: stage-0
+      example_files: [db/schema.sql]
+      outline:
+      - "A `DbContext` maps C# entity classes to database tables; a `DbSet<Product>` on it represents the `products` table as a queryable collection of `Product` objects."
+      - "EF Core's default naming convention expects PascalCase (`Products`, `PriceVnd`); the Đơn Hàng database uses snake_case (`products`, `price_vnd`), so the mapping configures each name explicitly."
+      - "The `Product` class the API queries against matches the shape `db/schema.sql`'s `products` table already has — the mapping targets an existing schema, not a new one."
+      misconceptions:
+      - "EF Core automatically figures out that `PriceVnd` in C# means the same thing as `price_vnd` in the database."
+      - "A `DbSet<Product>` is just a `List<Product>` that happens to load from a file."
+      depth_notes: "Không nói vì sao entity/DbContext nằm ở project riêng (DonHang.Domain/Infrastructure) — module layered sau. Không nói composite key hay navigation property — bài sau."
+    - id: backend.l1.efcore-relationships-and-keys
+      title:
+        vi: "Khóa ngoại thành navigation property, và một khóa kết hợp"
+        en: "A foreign key becomes a navigation property, and one composite key"
+      main_path: true
+      duration_min: 14
+      skills: [backend.ef.mapping]
+      prereqs: [backend.l1.efcore-mapping]
+      related: []
+      vocab: [composite-key]
+      example_tag: stage-0
+      example_files: [db/schema.sql]
+      outline:
+      - "A foreign key like `orders.customer_id` becomes a navigation property in C# (`order.Customer`), so code can follow the relationship without writing a JOIN by hand."
+      - "`order_items` has no single-column primary key; its key is the pair `(order_id, product_id)`, so its mapping configures a composite key instead of relying on a single `Id`."
+      - "A composite key means no one property alone identifies a row — EF Core needs both values together to find or update one `order_items` row."
+      misconceptions:
+      - "Every table EF Core maps needs a single column called `Id`, or EF Core can't work with it."
+      - "Once a foreign key column exists, `order.Customer` works immediately, without EF Core needing any extra configuration."
+      depth_notes: "Không nói lazy loading hay Include — bài efcore-n-plus-one sau. Không nói cascade delete hay ràng buộc xóa quan hệ — ngoài phạm vi GĐ1."
+    - id: backend.l1.migrations
+      title:
+        vi: "Migration: thay đổi schema có phiên bản, có trong code"
+        en: "Migrations: versioned schema changes, tracked in code"
+      main_path: true
+      duration_min: 12
+      skills: [backend.ef.migrations]
+      prereqs: [backend.l1.efcore-relationships-and-keys]
+      related: []
+      vocab: [migration]
+      example_tag: stage-0
+      example_files: [db/schema.sql]
+      outline:
+      - "A migration is a versioned, code-tracked description of one schema change, created with `dotnet ef migrations add` and applied with `dotnet ef database update`."
+      - "The Đơn Hàng API's first migration is written to match the schema `db/schema.sql` already created — not to build a new one — so the schema's migration history starts from what already exists."
+      - "Because a migration is a file in the repository, a schema change goes through code review like any other change, instead of being a manual step someone runs by hand."
+      misconceptions:
+      - "A migration is a backup of the database, not something that changes its structure."
+      - "Since the database already has the right tables, this API doesn't need any migrations at all."
+      depth_notes: "Không nói migration chạy tự động trong CI/CD khi deploy — module devops GĐ2. Không nói rollback hay migration xung đột giữa nhiều nhánh — ngoài phạm vi GĐ1."
+    - id: backend.l1.querying-with-linq
+      title:
+        vi: "LINQ dịch thành SQL, không chạy trong C#"
+        en: "LINQ compiles to SQL, it doesn't run in C#"
+      main_path: true
+      duration_min: 14
+      skills: [backend.ef.querying]
+      prereqs: [backend.l1.migrations, foundation.l1.sql-join]
+      related: []
+      vocab: []
+      example_tag: stage-0
+      example_files: []
+      outline:
+      - "A LINQ query against a `DbSet`, like `_db.Products.Where(p => p.PriceVnd > 100000)`, is translated into one SQL query — the filter runs in PostgreSQL, not in C# after loading every row."
+      - "A LINQ query only reaches the database once it's enumerated (`foreach`, `.ToListAsync()`); writing the query does not run it yet."
+      - "Joining two `DbSet`s in LINQ (an order and its customer) produces the same kind of JOIN already familiar from writing SQL directly, just expressed as chained C# calls."
+      misconceptions:
+      - "A LINQ query loads every row into memory first, and `.Where(...)` filters the C# list afterward."
+      - "Writing `_db.Products.Where(...)` runs the query immediately, the moment that line executes."
+      depth_notes: "Không nói query plan hay index (đã dạy bằng SQL thô ở GĐ0) — bài indexes-and-plans GĐ2 nối lại với EF Core. Không nói AsNoTracking hay performance tuning — GĐ2."
+    - id: backend.l1.saving-changes
+      title:
+        vi: "SaveChangesAsync: chưa gọi thì chưa ghi"
+        en: "SaveChangesAsync: nothing is written until you call it"
+      main_path: true
+      duration_min: 14
+      skills: [backend.ef.persistence]
+      prereqs: [backend.l1.querying-with-linq, backend.l1.creating-a-resource]
+      related: []
+      vocab: []
+      example_tag: stage-0
+      example_files: []
+      outline:
+      - "Calling `_db.Orders.Add(order)` only stages the new order in the DbContext's change tracker; nothing reaches the database until `SaveChangesAsync()` runs."
+      - "`SaveChangesAsync()` wraps every staged change in one transaction: all of them succeed together, or none do."
+      - "`POST /api/v1/orders` from the REST lessons now persists for real: the in-memory list is replaced by `Add` plus `SaveChangesAsync()`, without changing what the endpoint returns."
+      misconceptions:
+      - "`_db.Orders.Add(order)` writes the order to the database immediately."
+      - "If one of several staged changes fails when saving, the others that already succeeded stay saved."
+      depth_notes: "Không nói isolation level hay xung đột khi nhiều người sửa cùng lúc — module transactions-in-practice GĐ2. Không validate dữ liệu trước khi lưu — module validation-errors-logging."
+    - id: backend.l1.efcore-n-plus-one
+      title:
+        vi: "N+1: một vòng lặp, N+1 lượt gọi DB"
+        en: "N+1: one loop, N+1 round trips to the database"
+      main_path: true
+      duration_min: 14
+      skills: [backend.ef.querying]
+      prereqs: [backend.l1.saving-changes]
+      related: []
+      vocab: [n-plus-one, eager-loading]
+      example_tag: stage-0
+      example_files: []
+      outline:
+      - "Looping over a list of orders and querying each order's customer separately inside the loop sends one query per order, plus the original one — the N+1 problem."
+      - "`.Include(o => o.Customer)` tells EF Core to fetch the related customers in the same query — an eager-loading JOIN — instead of one query per order."
+      - "N+1 is easy to miss with a handful of rows and expensive once the Đơn Hàng database holds thousands of orders: the query count grows with the data, not with the code."
+      misconceptions:
+      - "Accessing `order.Customer` inside a loop is always fast, since the data is already on the `order` object."
+      - "N+1 only matters at a scale this course's example database will never reach."
+      depth_notes: "Không đo hiệu năng thật (EXPLAIN, benchmark) — module indexes-and-plans GĐ2. Không nói caching để né N+1 — module caching GĐ2."
