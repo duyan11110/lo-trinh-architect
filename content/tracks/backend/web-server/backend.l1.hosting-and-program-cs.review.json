@@ -1,0 +1,262 @@
+{
+  "id": "backend.l1.hosting-and-program-cs",
+  "technical": {
+    "reviewed_at": "2026-09-24T15:40:00+07:00",
+    "reviewer": "claude-opus-5[1m]",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "aspnetcore 10 moniker block: \"WebApplication.CreateBuilder initializes a new instance of the WebApplicationBuilder class with preconfigured defaults.\" Same file, WebApplicationBuilder section: \"By default the WebApplicationBuilder reads configuration from multiple sources, including: appSettings.json...\". fundamentals/index.md (>= 6.0): \"The Program file is where: Services required by the app are configured.\"",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/minimal-apis/includes/webapplication10.md (range \">= aspnetcore-10.0\"); fundamentals/index.md"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Build()->WebApplication: every 10.x doc sample is `var app = builder.Build();` typed as WebApplication (webapplication10.md). Run()->Kestrel: generic-host.md: \"When a host starts, it calls the StartAsync method on each IHostedService instance... In a web app, one of the IHostedService implementations is a web service that starts an HTTP server implementation.\" servers/index.md: \"Kestrel server is the default, cross-platform HTTP server implementation.\" DonHang.Api registers no other server, so the default (Kestrel) is what Run() starts.",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/host/generic-host.md L38; fundamentals/servers/index.md L25; fundamentals/minimal-apis/includes/webapplication10.md"
+      },
+      {
+        "n": 3,
+        "verdict": "rephrased",
+        "evidence": "Contradicted as an absolute: dependency-injection.md L297: \"Service registration methods can be used to register multiple service instances of the same service type... The second call to AddSingleton overrides the previous one when resolved as IMyDependency.\" So registration order does decide which implementation a request-time consumer gets when two registrations share a service type. track.yaml's own outline says \"the order MOST builder.Services.Add... calls happen in\"; the lesson dropped that qualifier.",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/dependency-injection.md L294-297",
+        "suggested_text": "When two `builder.Services.Add...` calls register different things — as every call in this file does — the order between them only decides what is available to the app, not how a later request is answered."
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "mvc/controllers/routing.md (moniker \">= aspnetcore-6.0\", covers 10.0) L264: \"you call MapControllers to map attribute routed controllers.\" L414: \"The route templates you define on the controller are prepended to route templates on the actions\" — so [Route(\"api/v1/products\")] + [HttpGet] gives GET /api/v1/products. fundamentals/routing.md: \"Endpoints are the app's units of executable request-handling code. Endpoints are defined in the app and configured when the app starts.\" No aspnetcore 10 breaking change touches AddControllers/MapControllers.",
+        "source": "refs/aspnetcore-docs/aspnetcore/mvc/controllers/routing.md L94,264,414; fundamentals/routing.md L19; breaking-changes/10/ (no entry)"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "fundamentals/routing.md: \"Routing is responsible for matching incoming HTTP requests and dispatching those requests to the app's executable endpoints.\" \"An endpoint is something that can be: Selected, by matching the URL and HTTP method. Executed, by running the delegate.\" \"UseRouting adds route matching to the middleware pipeline... UseEndpoints adds endpoint execution to the middleware pipeline. It runs the delegate associated with the selected endpoint.\" Registration is startup-time (\"configured when the app starts\"); execution is per matched request.",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/routing.md L19, L57-59, L84-86"
+      },
+      {
+        "n": 6,
+        "verdict": "rephrased",
+        "evidence": "Documented part: migration/22-to-30.md \"MVC service registration\": \"The following example adds support for controllers and API-related features, but not views or pages. The API template uses this code: services.AddControllers();\" Not in the pinned-version mirror: that MapControllers() cannot find controllers without it (the runtime throws, but no doc page states it). I could not run the app to show the exception — the lab is not up and Program.cs needs a DB.",
+        "source": "refs/aspnetcore-docs/aspnetcore/migration/22-to-30.md L514-528; refs/.../includes/combine-service-collection-60-or-later.md L71",
+        "suggested_text": "`AddControllers()` registers the services controllers need; without it, `app.MapControllers()` further down has no controller classes like `ProductsController` to map."
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "`git -C examples/don-hang show stage-1:DonHang.Api/Program.cs | cat -n`: L52 `var app = builder.Build();`, L74 `app.Run();` is the last line (file is 74 lines). Between them: L57-62 the migration scope block (MigrationBaseline.ApplyIfNeeded + context.Database.Migrate()) and L67-72 UseMiddleware/UseCors/UseAuthentication/UseAuthorization/MapControllers. Both lesson code blocks (lines=10-20, lines=52-74) match the tagged source character-for-character.",
+        "source": "examples/don-hang @ stage-1 (commit 83c0004), DonHang.Api/Program.cs"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Repo capture at the tag, outputs/stage-1/scripts/backend/auth-and-orders.txt: \"products (no sign-in needed):\" then the JSON list — ProductsController has no [Authorize]. ProductsController.List() runs `await db.Products.Select(...).ToListAsync()` per call; Program.cs registers no output cache, so nothing is computed at startup. Host reachability: docker-compose.yml publishes \"8080:8080\" on the lab box, Caddyfile `:8080 { handle /api/v1/* { reverse_proxy api:8080 } }`. I could not run the lab live (docker up, lab containers not running).",
+        "source": "examples/don-hang @ stage-1: outputs/stage-1/scripts/backend/auth-and-orders.txt, DonHang.Api/Controllers/ProductsController.cs, Caddyfile, docker-compose.yml"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "accuracy",
+        "quote": "turns each attribute-routed method on them into a method-and-path pair Kestrel can route a matching request to",
+        "text": "Kestrel does not route. fundamentals/routing.md: \"Routing is responsible for matching incoming HTTP requests and dispatching those requests to the app's executable endpoints\" and \"UseRouting adds route matching to the middleware pipeline. This middleware looks at the set of endpoints defined in the app, and selects the best match based on the request.\" Kestrel is the HTTP server that reads the connection; endpoint matching is the routing middleware's job. The previous lesson taught Kestrel as the server, so this sentence teaches a wrong division of labour.",
+        "fix": "Rewrite as: \"...turns each attribute-routed method on them into a method-and-path pair the app can match an incoming request to.\" Do not name Kestrel as the thing that routes anywhere in the lesson."
+      },
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "accuracy",
+        "quote": "the order these registrations happen in does not decide how a later request is answered; it only decides what is available for the app to use",
+        "text": "False as an absolute. dependency-injection.md L297: \"The second call to AddSingleton overrides the previous one when resolved as IMyDependency and adds to the previous one when multiple services are resolved via IEnumerable<IMyDependency>.\" When two registrations share a service type, the later one wins at resolution time and that does change how a request is answered. The track.yaml outline says \"the order MOST builder.Services.Add... calls happen in\"; the lesson dropped the qualifier in four places (§4, §5, §6 first misconception, §8 line 2).",
+        "fix": "Add the missing condition wherever the claim appears: say that the order between `Services.Add...` calls that register different things — as every call in this file does — is free. Change §6 \"only the `Services.Add...` order is free to vary\" and §8 line 2 the same way; update claim 3 in .meta.json to the narrowed wording."
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "accuracy",
+        "quote": "None of these lines decide how any one request gets answered — swapping their order changes nothing a client would ever see",
+        "text": "Not true of the block as quoted. Two of its lines are `var connectionString = builder.Configuration.GetConnectionString(\"Default\") ?? throw ...` and `builder.Services.AddDonHangInfrastructure(connectionString);`. Swapping those two is a C# compile error (use of a local before its declaration), so the app never starts — a very visible change. The freedom claimed only holds among the `builder.Services.Add...` calls.",
+        "fix": "Scope the sentence to the registration calls: \"None of the `builder.Services.Add...` lines decide how any one request gets answered — reordering them among themselves changes nothing a client would ever see...\". Keep the `connectionString` local out of the claim (it is ordinary C#: the variable must be declared before it is used)."
+      },
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "accuracy",
+        "quote": "Calling `builder.Build()` closes that registration phase",
+        "text": "Unlisted claim: it is not in .meta.json's claims ledger, and it is read as a runtime guarantee (registering after Build() is rejected). No page in the pinned aspnetcore 10 documentation mirror states that the service collection becomes unmodifiable after WebApplicationBuilder.Build(); I could not run the app to show the exception. It is also repeated in quiz q1's correct-answer explanation (\"`Build()` closes the registration phase\").",
+        "fix": "Either weaken to a statement about this file only — \"`builder.Build()` ends the registration half of Program.cs and produces the `WebApplication`\" (and the same in q1's explanation) — or keep the strong wording, add it to `claims` with `kind: behavior`, and back it with a documented sentence or a run that shows the failure."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "quote": "Between `Build()` and `Run()`, Program.cs wires up the steps every incoming request will pass through before reaching your code",
+        "text": "In this file that region is not only wiring: lines 57-62 open a scope and run `MigrationBaseline.ApplyIfNeeded(context)` + `context.Database.Migrate()`, which is startup-only work no request passes through. §5 later admits this (\"what runs against the database\"), so §4 as written contradicts the code block the reader is about to see.",
+        "fix": "Write: \"Between `Build()` and `Run()`, Program.cs does the rest of its startup work — including wiring up the steps every incoming request will pass through before reaching your code.\""
+      },
+      {
+        "severity": "minor",
+        "section": "track.yaml outline",
+        "kind": "scope",
+        "quote": "An endpoint is a method-and-path pair mapped to handler code with a call like `app.MapGet`",
+        "text": "The scope contract (track.yaml, outline item 3 and misconception 2) names `app.MapGet`; DonHang.Api has no minimal-API endpoint, so the lesson correctly used `app.MapControllers()` instead. The adaptation is accurate for aspnetcore 10 (mvc/controllers/routing.md: \"Call MapControllers to map attribute routed controllers\"), but the outline and the lesson now disagree, and the next reviewer or regeneration will hit the same conflict.",
+        "fix": "Update track.yaml for this lesson: outline item 3 -> \"...mapped to handler code by a call like `app.MapControllers()`\", misconception 2 -> \"`app.MapControllers()`'s handler code runs immediately...\". Do not change the lesson."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "term",
+        "quote": "turns each attribute-routed method on them into a method-and-path pair",
+        "text": "\"attribute-routed\" carries the whole mechanism of this lesson (it is what decides that `ProductsController.List()` answers GET /api/v1/products) but is never explained, is not in `vocab: [endpoint]`, and is not in glossary.yaml. The quoted code block does not show ProductsController, so the reader never sees `[Route(\"api/v1/products\")]` or `[HttpGet]`.",
+        "fix": "Add a half-sentence gloss on first use, e.g. \"attribute-routed — the path is written on the class and the method themselves, as `[Route(\\\"api/v1/products\\\")]` and `[HttpGet]`\", or add the term to `vocab` in track.yaml and glossary.yaml."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz q2",
+        "kind": "quiz",
+        "quote": "False, because `builder.Services.Add...` calls only make things available; the order between two such calls does not decide how any request is later handled.",
+        "text": "The key (c) is correct for the pair asked about — `OrderService` and `JwtTokenService` are different service types, so swapping them changes nothing. But the option's justification is the same over-general rule flagged above: for two registrations of the same service type the later one wins (dependency-injection.md L297), so the stated reason is not universally true.",
+        "fix": "Narrow option c to: \"False, because these two `builder.Services.Add...` calls register different services; the order between them does not decide how any request is later handled.\" Keep the answer key as [\"c\"]."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "fix-required"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-24T17:10:00+07:00",
+    "reviewer": "claude-opus-5[1m] (junior-reader simulation)",
+    "issues": [
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "term",
+        "quote": "turns each attribute-routed method on them into a method-and-path pair Kestrel can route a matching request to",
+        "text": "I know what a C# attribute is, but \"attribute-routed\" is new and never explained. Which attribute? Where does the path text live? This is the one sentence that is supposed to tell me how a method gets tied to `/api/v1/products`, and I have to take it on faith. No controller code appears anywhere in the lesson, so I cannot look it up myself.",
+        "fix": "In Core concepts, after the `endpoint` bullet, add one sentence: \"A method is attribute-routed when the method and its class carry attributes that state the HTTP method and the path, so the pair is written next to the code itself.\" Then the two later uses of the word are readable."
+      },
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "term",
+        "quote": "it looks at classes like `ProductsController` and turns each attribute-routed method on them into a method-and-path pair",
+        "text": "\"classes like `ProductsController`\" assumes I know what a controller is. Nothing in what I have been taught says a controller is a class whose methods answer requests, and the lesson never says it either — yet `AddControllers()`, `MapControllers()` and `ProductsController` all depend on it, and the quiz asks about a method \"inside `ProductsController`\".",
+        "fix": "In the same sentence, gloss it once: \"...classes like `ProductsController` — classes whose methods are written to answer requests — and turns each...\"."
+      },
+      {
+        "severity": "major",
+        "section": 2,
+        "kind": "gap",
+        "quote": "You do not see a URL anywhere near it. Where does an ASP.NET Core app actually start, and how does one line connect to a specific path?",
+        "text": "The first half of the question is answered well. The second half is not: I finish the lesson still not seeing where `/api/v1/products` is written. The answer given is \"MapControllers turns attribute-routed methods into method-and-path pairs\", which just moves my question one step back — I still do not know what states the path, and my teammate's claim is never actually confirmed or explained.",
+        "fix": "In section 4, after the `app.MapControllers()` paragraph, add one sentence closing the loop: \"That is why your teammate could point at `app.MapControllers()`: the path `/api/v1/products` is written on `ProductsController` itself, and this line is what makes the app notice it.\""
+      },
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "diagram",
+        "quote": "D[wiring calls] --> E[MapControllers]",
+        "text": "The diagram shows \"wiring calls\" and \"MapControllers\" as two separate steps, one after the other, so I read it as: first the wiring calls happen, then MapControllers happens. The prose then says \"One of those wiring calls, `app.MapControllers()`\" — so it is inside the box before it, not after it. I had to stop and decide which one to believe.",
+        "fix": "Relabel node E so the diagram matches the prose, e.g. `D[wiring calls] --> E[... incl. MapControllers]`, or drop node E and mention MapControllers only in the prose."
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "code",
+        "quote": "// lesson: backend.l1.migrations\n// Applies pending migrations on start, so a fresh `db` container ends up on",
+        "text": "The second code block is 23 lines and its own comments use migrations, `dotnet ef database update`, `db` container, schema, middleware, order-matters, auth, routing, CORS — none of which I know. I read all of them before the prose underneath told me \"Read only the first and last lines for now\". By then I had already lost the thread and assumed I was missing a prerequisite.",
+        "fix": "Move that instruction above the block: replace the intro sentence with \"`Build()` and `Run()` sit at the two ends of a longer block — read only its first and last lines for now; everything between them, comments included, belongs to later lessons.\""
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "code",
+        "quote": "the rest register a database connection, an order service, and a way to issue tokens",
+        "text": "I counted: after `AddControllers()` the block has `AddProblemDetails()`, a `connectionString` variable with a `?? throw`, `AddDonHangInfrastructure(...)`, `AddScoped<OrderService>()` and `AddSingleton<JwtTokenService>()`. That is five things, and \"the rest\" names only three. I spent time trying to work out which one `AddProblemDetails()` is supposed to be, and whether the `?? throw` line counts as a registration.",
+        "fix": "Make the count match, e.g.: \"...the rest read the database connection string and register a database connection, a standard error format, an order service, and a way to issue tokens.\""
+      },
+      {
+        "severity": "major",
+        "section": 7,
+        "kind": "example",
+        "quote": "both calls print the same product list, computed fresh each time by that method — nothing about that list was computed back when `app.MapControllers()` itself ran",
+        "text": "Two identical outputs are exactly what I would expect if the list had been computed once at startup and kept (I know what a cache is). The exercise tells me to conclude the opposite from an observation that cannot show it. Step 1, \"find the line in the quoted block above\", also produces nothing I can see; the whole conclusion rests on trusting the text.",
+        "fix": "Make step 2 show something startup could not have produced: have the reader add a `Console.WriteLine` inside the method (as quiz q5 already describes), restart once, watch the startup log stay silent, then curl twice and see the line print twice. State that as the Expected result."
+      },
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "example",
+        "quote": "You notice this when reordering a wiring line changes what a request sees, and reordering a `Services.Add` line does not.",
+        "text": "Section 5 told me the wiring lines belong to another lesson and to skip them; here I am told I would notice something by reordering exactly those lines. I do not know what any of them does, so I cannot picture what \"changes what a request sees\" would look like — the correction asks me to trust a result I have no way to predict.",
+        "fix": "Replace the \"You notice this\" sentence with one I can check today: \"You notice this the first time a request behaves differently after a wiring line moves — which is what the next lesson is about.\""
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "term",
+        "quote": "D[wiring calls]",
+        "text": "\"wiring calls\" is a phrase the lesson invents. In the diagram it appears as a labelled box before any prose has said what it means; I only got a working meaning two paragraphs later (\"Program.cs wires up the steps every incoming request will pass through\"). Reading the diagram first, I had no idea what that node stood for.",
+        "fix": "Add a Core concepts bullet or a one-line gloss right under the diagram: \"wiring calls — the `app.Use...` / `app.Map...` lines between `Build()` and `Run()` that set up what every request passes through.\""
+      },
+      {
+        "severity": "minor",
+        "section": "quiz q1",
+        "kind": "quiz",
+        "quote": "The `WebApplication` object, the same one `Run()` is later called on to start Kestrel",
+        "text": "The correct option is almost word-for-word the Core concepts bullet (\"what `builder.Build()` produces; ... the object whose `Run()` call starts Kestrel\"), and it is also by far the longest of the four. I could pick it by matching the wording and by length alone, without having understood the two phases.",
+        "fix": "Shorten option a to \"The `WebApplication` object that `Run()` is later called on\" and lengthen one distractor, e.g. option c -> \"A new database connection, opened from the registered connection string and ready to run queries\"."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz q2",
+        "kind": "quiz",
+        "quote": "`OrderService` is used by the code behind `/api/v1/orders`, so the two lines are related — just not in a way that reordering affects.",
+        "text": "Nothing in the lesson says there is an `/api/v1/orders` path or that `OrderService` sits behind it — the only path I was shown is `/api/v1/products`. The same goes for `AddScoped` vs `AddSingleton` in the question, and for `UseCors` / `RequestLoggingMiddleware` in q6. I can still answer, but each of these made me stop and check whether I had missed a paragraph.",
+        "fix": "Use the path and names the lesson actually shows: ask q2 about a later request to `/api/v1/products`, and drop the claim about what `OrderService` is used by from option d's explanation."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "style",
+        "quote": "Everything an ASP.NET Core app needs before it can run — a database connection, a way to issue tokens, and so on — gets registered on that one object, and the order these registrations happen in does not decide how a later request is answered; it only decides what is available for the app to use.",
+        "text": "One sentence carrying an aside, a negative claim and its correction, split by a dash pair and a semicolon. I lost the subject halfway and had to read it twice to see that \"the order ... does not decide\" was a new idea and not part of the list.",
+        "fix": "Split after \"gets registered on that one object.\" Start a new sentence: \"The order these registrations happen in does not decide how a later request is answered; it only decides what is available for the app to use.\""
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "attribute-routed",
+        "controller / `ProductsController`",
+        "wiring calls",
+        "`AddProblemDetails`",
+        "`AddScoped` / `AddSingleton`",
+        "`AddDonHangInfrastructure`",
+        "connection string / `builder.Configuration`",
+        "token (\"a way to issue tokens\")",
+        "migrations / `dotnet ef database update`",
+        "schema",
+        "`db` container",
+        "middleware",
+        "CORS",
+        "authentication / authorization",
+        "`CreateScope` / `ServiceProvider` / `DonHangDbContext`",
+        "`scripts/up.sh` (the lab)"
+      ],
+      "skipped_steps": [
+        "\"how does one line connect to a specific path?\" — never shown where `/api/v1/products` is written",
+        "\"turns each attribute-routed method on them into a method-and-path pair\" — the mechanism is named, not explained",
+        "\"Actually the wiring calls between `Build()` and `Run()` decide exactly how every later request is handled\" — asserted, and its why is deferred to the next lesson",
+        "\"both calls print the same product list, computed fresh each time\" — the observation does not show freshness"
+      ],
+      "situation_connects": false,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "fix-required"
+  }
+}
