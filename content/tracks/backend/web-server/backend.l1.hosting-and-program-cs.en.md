@@ -45,7 +45,7 @@ flowchart LR
   D --> F[Run]
 ```
 
-`WebApplication.CreateBuilder(args)` returns a `WebApplicationBuilder`. Everything an ASP.NET Core app needs before it can run — a database connection, a way to prove a customer has signed in, and so on — gets registered on that one object. When two calls register different things, as every call in this file does, the order between them makes no difference to how a later request is answered.
+`WebApplication.CreateBuilder(args)` returns a `WebApplicationBuilder`. Much of what an ASP.NET Core app needs before it can run — a database connection, a way to prove a customer has signed in, and so on — gets registered on that one object. When two calls register different things, as every call in this file does, the order between them makes no difference to how a later request is answered.
 
 Calling `builder.Build()` ends the registration half of Program.cs and produces the `WebApplication` itself, the object Program.cs configures next. Its `Run()` call, at the very end, is what actually starts Kestrel. Between `Build()` and `Run()`, Program.cs does the rest of its startup work, including wiring up (through `app.Use...`/`app.Map...` calls) the steps every incoming request will pass through before reaching your code; what order those wiring calls run in, and why it matters, is the next lesson's subject.
 
@@ -69,7 +69,7 @@ builder.Services.AddScoped<OrderService>();
 builder.Services.AddSingleton<JwtTokenService>();
 ```
 
-`AddControllers()` is what makes `app.MapControllers()` further down able to find request-answering classes like `ProductsController` at all. The rest read the connection string and register the pieces the app needs to reach the database, a standard error format (`AddProblemDetails()`), an order service, and a way to prove a customer has signed in. Reordering the `builder.Services.Add...` calls among themselves changes nothing a client would ever see; the `connectionString` line has to come before the line that uses it for an ordinary C# reason — a variable must exist before something else can read it — not because of anything this lesson is about.
+`AddControllers()` is what makes `app.MapControllers()` further down able to find request-answering classes like `ProductsController` at all. The rest read the connection string and register the pieces the app needs to reach the database and send notifications, a standard error format (`AddProblemDetails()`), an order service, and a way to hand out proof that a customer has signed in. Reordering the `builder.Services.Add...` calls among themselves changes nothing a client would ever see; the `connectionString` line has to come before the line that uses it for an ordinary C# reason — a variable must exist before something else can read it — not because of anything this lesson is about.
 
 `Build()` and `Run()` sit at the two ends of a longer block — read only its first line, its last line, and the `app.MapControllers();` line for now; everything else between them, comments included, belongs to later lessons (what runs against the database, and what order the wiring calls happen in):
 
@@ -129,6 +129,6 @@ Expected result: the startup portion of the log never prints "list ran" — `app
 
 1. `WebApplication.CreateBuilder` returns a `WebApplicationBuilder`; `Build()` turns it into the `WebApplication` whose `Run()` call starts Kestrel.
 2. Different `builder.Services.Add...` calls can run in any order in Program.cs without changing how a later request is answered.
-3. An endpoint is a method-and-path pair mapped to handler code; `app.MapControllers()` creates one for every attribute-routed method it finds.
+3. An endpoint is a method-and-path pair mapped to handler code; in this app, `app.MapControllers()` creates one for every attribute-routed method it finds.
 4. Such a method's code runs once per matching request, never when `app.MapControllers()` itself executes at startup.
 5. What order the wiring calls between `Build()` and `Run()` happen in, and why that order matters, is the next lesson's subject.

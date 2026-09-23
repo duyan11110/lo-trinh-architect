@@ -1,106 +1,112 @@
 {
   "id": "backend.l1.hosting-and-program-cs",
   "technical": {
-    "reviewed_at": "2026-09-24T06:10:00+07:00",
+    "reviewed_at": "2026-09-24T16:20:00+07:00",
     "reviewer": "claude-opus-5[1m]",
     "claim_verdicts": [
       {
         "n": 1,
         "verdict": "verified",
-        "evidence": "webapplication10.md (moniker \">= aspnetcore-10.0\"): \"WebApplication.CreateBuilder initializes a new instance of the WebApplicationBuilder class with preconfigured defaults\". Repo stage-1 Program.cs:10 `var builder = WebApplication.CreateBuilder(args);` and lines 13-50 use `builder.Services.*` and `builder.Configuration[...]` on that object, so \"registers its services and configuration on\" matches the code as well as the docs.",
-        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/minimal-apis/includes/webapplication10.md; examples/don-hang DonHang.Api/Program.cs@stage-1"
+        "evidence": "Docs mirror, .NET 10 moniker block (range=\">= aspnetcore-10.0\"): \"WebApplication.CreateBuilder ... initializes a new instance of the WebApplicationBuilder class with preconfigured defaults\". The same page shows `var builder = WebApplication.CreateBuilder(args);` followed by `builder.Services.Add...` and `builder.Configuration`, i.e. services and configuration are registered on that object.",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/minimal-apis/includes/webapplication10.md:15"
       },
       {
         "n": 2,
         "verdict": "verified",
-        "evidence": "Program.cs@stage-1: line 52 `var app = builder.Build();`, line 74 (last line) `app.Run();`. Execution this session (`docker compose up -d api`): log \"Now listening on: http://[::]:8080\" then \"Application started. Press Ctrl+C to shut down.\"; every curl answered with header `Server: Kestrel`. fundamentals/servers/index.md:25 \"Kestrel server is the default, cross-platform HTTP server implementation.\" fundamentals/host/web-host.md:440 \"The `Run` method starts the web app and blocks the calling thread until the host is shut down\".",
-        "source": "refs/aspnetcore-docs .../fundamentals/servers/index.md:25, .../fundamentals/host/web-host.md:440; docker compose logs api"
+        "evidence": "fundamentals/middleware/index.md:55 \"The call to WebApplication.Run ... at the end of the code block runs the app and blocks the calling thread until host shutdown.\" fundamentals/servers/index.md: \"Kestrel server is the default, cross-platform HTTP server implementation\" (this app self-hosts in a Linux container; no IIS). Ran on SDK 10.0.300: after builder.Build(), builder.Services.AddSingleton<object>() throws InvalidOperationException \"The service collection cannot be modified because it is read-only\" - registration really does end at Build().",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/middleware/index.md:55; fundamentals/servers/index.md; local run, dotnet 10.0.300"
       },
       {
         "n": 3,
         "verdict": "verified",
-        "evidence": "Execution: swapped `AddProblemDetails()`<->`AddControllers()` and `AddSingleton<JwtTokenService>()`<->`AddScoped<OrderService>()`, then `docker compose up -d --build api`. Responses were identical apart from traceId: GET /api/v1/products 200, 421 bytes both times; GET /api/v1/nope 404 and POST /api/v1/products 405 with 0-byte bodies; POST /api/v1/auth/login {} -> same application/problem+json body. Docs: service-registration.md:78 \"The single IMessageWriter is the last implementation to be registered\" - order decides only among registrations of the same service type.",
-        "source": "run in examples/don-hang@stage-1; refs/dotnet-docs/docs/core/extensions/dependency-injection/service-registration.md:78"
+        "evidence": ".NET docs mirror: \"Service registration is order-independent except when registering multiple implementations of the same type.\" Every builder.Services.Add... call in Program.cs lines 10-50 registers a distinct type (AddControllers, AddProblemDetails, AddDonHangInfrastructure -> DonHangDbContext/IOrderRepository/INotifier, OrderService, JwtTokenService, AddAuthentication/AddJwtBearer, AddAuthorization, AddCors), so the exception does not apply.",
+        "source": "refs/dotnet-docs/docs/core/extensions/dependency-injection/service-registration.md:128"
       },
       {
         "n": 4,
         "verdict": "verified",
-        "evidence": "API reference (default moniker aspnetcore-10.0), ControllerEndpointRouteBuilderExtensions.MapControllers: \"Adds endpoints for controller actions to the IEndpointRouteBuilder without specifying any routes.\" migration/22-to-30.md:899 \"`MapControllers` adds support for attribute-routed controllers.\" fundamentals/routing.md:20 \"Endpoints are the app's units of executable request-handling code. Endpoints are defined in the app and configured when the app starts.\" Execution: GET /api/v1/products -> 200; POST /api/v1/products -> 405 with `Allow: GET`, i.e. one pair per attribute-routed method.",
-        "source": "learn.microsoft.com/dotnet/api/microsoft.aspnetcore.builder.controllerendpointroutebuilderextensions.mapcontrollers; refs/aspnetcore-docs .../migration/22-to-30.md:899, .../fundamentals/routing.md:20"
+        "evidence": "fundamentals/routing.md:73 \"An endpoint is something that can be: Selected, by matching the URL and HTTP method. Executed, by running the delegate.\" mvc/controllers/routing.md:94 \"Call MapControllers to map attribute routed controllers.\" Ran a controller with [Route(\"api/v1/ping\")] + [HttpGet] and [HttpGet(\"{id:int}\")] on dotnet 10.0.300: GET /api/v1/ping -> 200, POST /api/v1/ping -> 405; one method-and-path pair per attribute-routed action.",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/routing.md:73; mvc/controllers/routing.md:94; local run"
       },
       {
         "n": 5,
         "verdict": "verified",
-        "evidence": "Execution: added `Console.WriteLine(\"list ran\");` as the first line of `ProductsController.List()`, rebuilt with `docker compose up -d --build api`. The startup log (through \"Application started\") contained no \"list ran\"; after two `curl http://localhost:8080/api/v1/products` calls `docker compose logs api | grep -c \"list ran\"` returned exactly 2, alongside two RequestLoggingMiddleware lines \"GET /api/v1/products responded 200\". Edit reverted, image rebuilt from the clean tree.",
-        "source": "run in examples/don-hang@stage-1 (DonHang.Api/Controllers/ProductsController.cs)"
+        "evidence": "Local run, dotnet 10.0.300: action body List() contains Console.WriteLine(\"list ran\"); the startup log shows only \"startup: MapControllers done\", \"Now listening on: http://127.0.0.1:5199\", \"Application started\" - no \"list ran\". After two GET /api/v1/ping the log shows \"list ran\" exactly twice. The method body runs per matching request, not when MapControllers() executes.",
+        "source": "local run (scratch ASP.NET Core 10 app mirroring ProductsController)"
       },
       {
         "n": 6,
         "verdict": "verified",
-        "evidence": "Execution: commented out `builder.Services.AddControllers();` and rebuilt. Startup crashed: \"Unhandled exception. System.InvalidOperationException: Unable to find the required services. Please add all the required services by calling 'IServiceCollection.AddControllers' ... at ControllerEndpointRouteBuilderExtensions.EnsureControllerServices(IEndpointRouteBuilder endpoints) at ...MapControllers(...) at Program.<Main>$(String[] args) in /src/DonHang.Api/Program.cs:line 72\"; curl returned 502. Note: without it MapControllers throws at startup rather than silently finding nothing.",
-        "source": "run in examples/don-hang@stage-1; docker compose logs api"
+        "evidence": "Ran the same app with builder.Services.AddControllers() removed, dotnet 10.0.300: \"Unhandled exception. System.InvalidOperationException: Unable to find the required services. Please add all the required services by calling 'IServiceCollection.AddControllers' ... at ControllerEndpointRouteBuilderExtensions.EnsureControllerServices(IEndpointRouteBuilder endpoints) at ...MapControllers(IEndpointRouteBuilder endpoints)\". MapControllers finds no controllers without AddControllers.",
+        "source": "local run, ASP.NET Core 10.0 / SDK 10.0.300"
       },
       {
         "n": 7,
         "verdict": "verified",
-        "evidence": "`git -C examples/don-hang show stage-1:DonHang.Api/Program.cs | cat -n`: line 52 `var app = builder.Build();`; line 74, the last line of the file, `app.Run();`. Between them: the `// lesson: backend.l1.migrations` block (`using (var scope = app.Services.CreateScope())` ... `context.Database.Migrate();`) and lines 67-72 `app.UseMiddleware<ExceptionHandlingMiddleware>(); ... app.UseAuthorization(); app.MapControllers();`. The lesson's block quotes lines 52-74 verbatim.",
-        "source": "git show stage-1:DonHang.Api/Program.cs"
+        "evidence": "git -C examples/don-hang show stage-1:DonHang.Api/Program.cs: line 52 `var app = builder.Build();`, lines 54-62 the migration block (CreateScope, MigrationBaseline.ApplyIfNeeded, context.Database.Migrate()), lines 64-72 the wiring calls ending in app.MapControllers();, line 74 `app.Run();`, and the file has exactly 74 lines. Both lesson code fences (lines=10-20, lines=52-74) match the source byte-for-byte (scripted diff).",
+        "source": "examples/don-hang @ stage-1 (commit 83c0004), DonHang.Api/Program.cs"
       },
       {
         "n": 8,
         "verdict": "verified",
-        "evidence": "Execution against the stage-1 lab (db+api+lab+web up): `curl http://localhost:8080/api/v1/products` twice returned 200 with the same 421-byte JSON list starting [{\"id\":1,\"name\":\"Bàn phím cơ\",\"priceVnd\":1250000},...]. api log shows one \"GET /api/v1/products responded 200 in ...ms\" line per call (708ms, then 118ms, then 19ms), and with the temporary Console.WriteLine each call added exactly one \"list ran\" - computed per request, not cached from startup.",
-        "source": "run in examples/don-hang@stage-1 (Caddyfile reverse_proxy api:8080)"
+        "evidence": "Behaviour executed locally (see claim 5): nothing at startup, one line per matching request, two requests -> two lines. Container mechanics from docs: \"When you run the command docker compose up --build, Docker Compose will build the images for each service and then start the containers\" and \"By default, docker logs shows the command's STDOUT and STDERR\". Not executed: the full stage-1 lab (scripts/up.sh needs flutter build web); no container was rebuilt here.",
+        "source": "local run; refs/docker-docs/content/guides/docker-compose.md:140; refs/docker-docs/content/manuals/engine/logging/_index.md:24"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "git -C examples/don-hang show stage-1:DonHang.Api/Controllers/ProductsController.cs: the class carries [ApiController] and [Route(\"api/v1/products\")]; List() carries [HttpGet]; Get(int id) carries [HttpGet(\"{id:int}\")]. The path comes from the class attribute, the HTTP method (and the id segment) from the method attribute - exactly \"the class and its methods carry [Route]/[HttpGet] attributes\".",
+        "source": "examples/don-hang @ stage-1, DonHang.Api/Controllers/ProductsController.cs"
       }
     ],
     "issues": [
       {
-        "severity": "blocker",
-        "section": 7,
-        "kind": "code",
-        "quote": "then restart the app once and watch its startup log",
-        "text": "The api runs from an image built by DonHang.Api/Dockerfile (`COPY DonHang.Api/ DonHang.Api/` then `RUN dotnet publish ...`), so a plain restart runs the old binary and never sees the edit. Executed: after adding the Console.WriteLine and `docker compose restart api`, \"list ran\" appeared neither at startup nor after two curls (grep count 0) - the promised \"Both curls do print it, once each\" does not happen. After `docker compose up -d --build api` the same steps gave 0 at startup and exactly 2 after the curls. The lesson also never says how to read the app's log.",
-        "fix": "Step 1: \"... then rebuild and restart the app with `docker compose up -d --build api` from the repo root, and watch `docker compose logs api`.\" Step 2: \"Once the startup lines end with no such line printed, run `curl http://localhost:8080/api/v1/products` twice and look at `docker compose logs api` again.\" Keep the expected result as written; it is exactly what the rebuild produces."
-      },
-      {
         "severity": "major",
-        "section": 3,
-        "kind": "accuracy",
-        "quote": "A method is attribute-routed when the method and its class carry attributes stating the HTTP method and the path",
-        "text": "Unlisted claim (nothing in .meta.json covers the definition of attribute-routed) and wrong as a general rule: the route template may sit entirely on the action, with no attribute on the class. The docs sample for attribute routing is `public class HomeController : Controller` with `[Route(\"\")] [Route(\"Index\")] [Route(\"/\")]` on the methods only; routing.md:425 \"Route templates that you apply to an action and that begin with `/` or `~/` don't get combined with route templates that you apply to the controller.\"",
-        "fix": "Write it as a description of this code, not a definition: \"A method is attribute-routed when attributes state the HTTP method and the path right next to the code itself - in `ProductsController` the attribute on the class carries the path and the attribute on each method carries the HTTP method.\" Add the sentence to .meta.json claims (kind behavior, version_key aspnetcore)."
-      },
-      {
-        "severity": "major",
-        "section": 4,
-        "kind": "accuracy",
-        "quote": "the order between them only decides what is available to the app, not how a later request is answered",
-        "text": "As written the subject is \"the order\", so the sentence says the order decides what is available to the app. It does not: both registrations end up available whichever order they are written in. Claim 3 in the ledger only covers the second half (\"does not affect how any individual request is later handled\"), so the first half is an unlisted and incorrect statement that a junior can read as \"order controls availability\".",
-        "fix": "Rewrite: \"When two calls register different things, as every call in this file does, the order between them decides nothing: both are available to the app either way, and neither order changes how a later request is answered.\" Check the same wording in the five-line summary item 2, which is already correct."
-      },
-      {
-        "severity": "major",
-        "section": "quiz q2",
+        "section": "backend.l1.hosting-and-program-cs.q6",
         "kind": "quiz",
-        "quote": "False, because `OrderService` and `JwtTokenService` are unrelated to `/api/v1/products` entirely.",
-        "text": "Option d is true of the repo: `ProductsController(DonHangDbContext db)` takes only the DbContext, and neither OrderService nor JwtTokenService takes any part in answering GET /api/v1/products. Two options (c and d) are therefore defensible for a reader who has read the code, and d's explanation rebuts a different statement (\"Both lines are in Program.cs because the app needs both\") - unrelated to the app is not what d says.",
-        "fix": "Give d a reason that is actually false, e.g. en: \"False, because ASP.NET Core sorts the `Services.Add...` calls itself before the app starts, so the order they are written in is never used\" (vi likewise), and change explanation.d to: \"Nothing sorts or rewrites the registrations; they stay in the order written - the order simply has no effect on how a request is handled.\""
+        "quote": "Please move `app.UseAuthentication();` to right after `app.UseCors();` and before `app.UseMiddleware<RequestLoggingMiddleware>();`",
+        "text": "The scenario's reorder request is impossible against the file the lesson just quoted. In Program.cs lines 67-72 the order is ExceptionHandling, RequestLogging, UseCors, UseAuthentication, UseAuthorization: UseAuthentication is ALREADY immediately after UseCors, and UseCors itself comes after RequestLogging, so \"right after UseCors\" and \"before RequestLoggingMiddleware\" cannot both hold. A reader who checks the code can therefore defend option d (\"The reviewer's suggested line order is itself wrong\"), which makes the key ambiguous.",
+        "fix": "Rewrite the review comment in `context` as one coherent move, e.g. \"Please move `app.UseAuthentication();` above `app.UseMiddleware<RequestLoggingMiddleware>();` - the current order is a bug.\" Keep answer a; option d's explanation then holds (the scenario really says nothing about whether that move is right)."
       },
       {
         "severity": "minor",
         "section": 4,
         "kind": "accuracy",
-        "quote": "is what makes an **endpoint** exist at all",
-        "text": "True of this file (MapControllers is Program.cs's only endpoint-creating call), but phrased as a general rule it tells a junior that endpoints can only come from MapControllers. fundamentals/routing.md:80-83 lists MapRazorPages, MapControllers, MapHub<THub> and MapGrpcService<TService> as the calls that create endpoints.",
-        "fix": "Scope it to this app: \"One of those wiring calls, `app.MapControllers()`, is what makes this app's **endpoint**s exist at all\" (quiz q3 already scopes it correctly with \"The one call in `DonHang.Api/Program.cs`\")."
+        "quote": "Everything an ASP.NET Core app needs before it can run — a database connection, a way to prove a customer has signed in, and so on — gets registered on that one object.",
+        "text": "\"Everything\" overstates it: the docs say CreateBuilder hands back the builder \"with preconfigured defaults\" - configuration sources, logging and the server itself are already in place and the app never registers them. What goes on builder.Services is what this app adds on top of those defaults.",
+        "fix": "Change to: \"Whatever this app needs on top of what the framework already sets up - what it uses to reach the database, a way to prove a customer has signed in, and so on - gets registered on that one object.\""
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "quote": "app.MapControllers(), is the one that creates every **endpoint** this app has",
+        "text": "Unlisted claim: \"the one that creates every endpoint this app has\" is a checkable fact about DonHang.Api (MapControllers is the only endpoint-creating call in Program.cs), not a general property of MapControllers, and no claim in the ledger carries it (claim 4 only covers what MapControllers does).",
+        "fix": "Keep the sentence (true at stage-1: Program.cs lines 64-72 contain no other Map* call) and add a fact claim to .meta.json, section 4: \"In DonHang.Api/Program.cs at stage-1, app.MapControllers() is the only endpoint-creating call, so every endpoint the app has comes from it.\""
       },
       {
         "severity": "minor",
         "section": 5,
+        "kind": "code",
+        "quote": "register the pieces the app needs to reach the database, a standard error format (`AddProblemDetails()`), an order service, and a way to prove a customer has signed in",
+        "text": "Two mismatches with the source. AddDonHangInfrastructure registers DonHangDbContext, IOrderRepository AND INotifier/LoggingNotifier - the notifier is not a piece for reaching the database. JwtTokenService's only member is IssueToken(int customerId, string email): it hands out the proof, it does not prove or check anything; the checking is AddAuthentication/AddJwtBearer on line 25, outside the quoted block.",
+        "fix": "Write: \"...register the infrastructure pieces this app runs on (among them everything it uses to reach the database), a standard error format (`AddProblemDetails()`), an order service, and a way to give a signed-in customer something it can show on later requests.\""
+      },
+      {
+        "severity": "minor",
+        "section": 9,
         "kind": "accuracy",
-        "quote": "register a database connection, a standard error format (`AddProblemDetails()`), an order service, and a way to issue tokens",
-        "text": "`AddDonHangInfrastructure(connectionString)` adds more than \"a database connection\": DonHang.Infrastructure/ServiceCollectionExtensions.cs@stage-1 registers `AddDbContext<DonHangDbContext>(options => options.UseNpgsql(connectionString))`, `IOrderRepository -> EfOrderRepository` and `INotifier -> LoggingNotifier`. The list reads as one line = one thing, which is the undercount the previous round set out to fix.",
-        "fix": "Say what the line is without counting its contents: \"... register the app's database access (that one call adds the database context and the classes built on it), a standard error format (`AddProblemDetails()`), an order service, and a way to issue tokens.\""
+        "quote": "`app.MapControllers()` creates one for every attribute-routed method it finds.",
+        "text": "True in this app only. An action method may carry several route attributes and each one produces its own endpoint; the routing docs note \"All of the HTTP verb attributes accept a route template\" and show several templates per action. Each ProductsController method carries exactly one, so the file matches, but the summary states it as a general rule.",
+        "fix": "Reword summary line 3 to \"...`app.MapControllers()` creates one for each route attribute it finds - one per method in `ProductsController`.\" (or add \"in this app\")."
+      },
+      {
+        "severity": "minor",
+        "section": "backend.l1.hosting-and-program-cs.q3",
+        "kind": "quiz",
+        "quote": "\"answer\": [\"MapControllers\"]",
+        "text": "The fill answer set has a single spelling. Comparison is case-insensitive and trimmed (docs/01), but a learner who types the call as the lesson writes it (MapControllers()) or repeats the prefix (app.MapControllers) is marked wrong for no content reason.",
+        "fix": "Set \"answer\": [\"MapControllers\", \"MapControllers()\", \"app.MapControllers\", \"app.MapControllers()\"]."
       }
     ],
     "scope": {
