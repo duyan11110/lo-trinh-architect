@@ -73,6 +73,31 @@ skills:
     vi: "Structured logging và exception handling"
     en: "Structured logging and exception handling"
   prereqs: [backend.errors.validation, backend.http.middleware]
+- id: backend.auth.passwords
+  title:
+    vi: "Hash mật khẩu"
+    en: "Hashing passwords"
+  prereqs: [backend.ef.migrations]
+- id: backend.auth.sessions-and-tokens
+  title:
+    vi: "Session vs token"
+    en: "Sessions vs tokens"
+  prereqs: [backend.auth.passwords]
+- id: backend.auth.jwt-issuing
+  title:
+    vi: "Phát hành JWT"
+    en: "Issuing a JWT"
+  prereqs: [backend.auth.sessions-and-tokens]
+- id: backend.auth.jwt-validating
+  title:
+    vi: "Kiểm JWT trên mỗi request"
+    en: "Validating a JWT on every request"
+  prereqs: [backend.auth.jwt-issuing]
+- id: backend.auth.authorization
+  title:
+    vi: "Authorization sau authentication"
+    en: "Authorization after authentication"
+  prereqs: [backend.auth.jwt-validating]
 levels:
 - level: 1
   title:
@@ -521,3 +546,114 @@ levels:
       - "An exception an endpoint doesn't catch just means that one request fails silently; nothing else needs to run."
       - "Logging the exception and returning a response to the client are the same step; doing one does the other."
       depth_notes: "Không nói retry hay circuit breaker khi lỗi — module resilience GĐ3. Middleware này là middleware thật đã hứa tái dùng ở module web-server (không viết middleware minh họa mới)."
+  - id: auth-basics
+    title:
+      vi: "Auth cơ bản: hash mật khẩu, session, JWT"
+      en: "Auth basics: password hashing, sessions, JWT"
+    stage: 1
+    summary:
+      vi: "Hash mật khẩu an toàn, hiểu session vs token, phát hành và kiểm JWT, và bảo vệ một endpoint bằng cả authentication lẫn authorization."
+      en: "Hash passwords safely, understand sessions vs tokens, issue and validate a JWT, and protect an endpoint with both authentication and authorization."
+    lessons:
+    - id: backend.l1.hashing-passwords
+      title:
+        vi: "Không bao giờ lưu mật khẩu, chỉ lưu hash của nó"
+        en: "Never store the password, only its hash"
+      main_path: true
+      duration_min: 14
+      skills: [backend.auth.passwords]
+      prereqs: [backend.l1.migrations, backend.l1.validating-input]
+      related: []
+      vocab: [password-hash, authentication]
+      example_tag: stage-0
+      example_files: []
+      outline:
+      - "Authentication answers 'who is making this request'; storing a password lets the API check that a login attempt is really from the account it claims to be."
+      - "A password is never stored as the text the customer typed; `Rfc2898DeriveBytes.Pbkdf2` turns it into a password hash, a one-way transformation that can be checked against but not reversed."
+      - "Checking a login means hashing the password just typed, with the same salt, and comparing that result to the stored hash — never comparing the typed password to anything directly."
+      - "`customers` gets a new `password_hash` column through a real migration, the first schema change since the baseline; everyone who registers gets a hash stored, never the password itself."
+      misconceptions:
+      - "Encrypting a password, so it can be decrypted later, is just as safe as hashing it."
+      - "Comparing a login attempt's password directly to the stored value, as plain text, is fine as long as the column is hard to guess."
+      depth_notes: "Không nói chi tiết thuật toán salt/pepper hay rainbow table — đủ độ sâu junior. Không nói OAuth2/OIDC — GĐ2."
+    - id: backend.l1.sessions-vs-tokens
+      title:
+        vi: "Session hay token: ai nhớ bạn đã đăng nhập"
+        en: "Session or token: who remembers you're logged in"
+      main_path: true
+      duration_min: 13
+      skills: [backend.auth.sessions-and-tokens]
+      prereqs: [backend.l1.hashing-passwords, foundation.l1.cookies-and-state]
+      related: []
+      vocab: [session]
+      example_tag: stage-0
+      example_files: []
+      outline:
+      - "Session-based auth: after login the server creates a session record and gives the browser a cookie holding just the session's id; every later request's cookie says which session to look up."
+      - "Token-based auth: after login the server gives the client a self-contained token holding who they are; the server stores nothing and re-checks the token itself on every request."
+      - "A session needs server-side storage that grows with logged-in users; a token needs none, at the cost of being harder to revoke before it expires."
+      - "The Đơn Hàng API uses token-based auth (JWT, next lesson), so it stays stateless — no session store to keep in sync if more than one instance of it runs later."
+      misconceptions:
+      - "A cookie always means session-based auth; a token is always sent some other way."
+      - "Token-based auth is strictly better than session-based auth, so no real system still uses sessions."
+      depth_notes: "Không nói refresh token hay revocation chi tiết — bài validating-a-jwt và module oauth-and-authz GĐ2. Chỉ so sánh hai mô hình."
+    - id: backend.l1.issuing-a-jwt
+      title:
+        vi: "Header, payload, signature: phát hành một JWT"
+        en: "Header, payload, signature: issuing a JWT"
+      main_path: true
+      duration_min: 14
+      skills: [backend.auth.jwt-issuing]
+      prereqs: [backend.l1.sessions-vs-tokens]
+      related: []
+      vocab: [jwt]
+      example_tag: stage-0
+      example_files: []
+      outline:
+      - "A JWT has three parts separated by dots: a header, a payload of claims (who this is, when it expires), and a signature proving the API itself issued it."
+      - "A login endpoint that verifies a password hash correctly creates a JWT, signs it with a secret only the API knows, and returns it — nothing about the token is stored server-side."
+      - "The payload is readable by anyone who has the token (it's encoded, not encrypted); the signature is what a client cannot forge, not the payload's contents."
+      misconceptions:
+      - "A JWT's payload is encrypted, so its claims can't be read without the API's secret."
+      - "Anyone who can read a JWT's payload could also produce a valid one, since both just need the same JSON."
+      depth_notes: "Không nói asymmetric signing (RS256) hay refresh token — GĐ2. Không nói cách lưu secret an toàn — module config-and-secrets sau; secret coi như đã có sẵn trong config. Chỉ HMAC-signed JWT đơn giản."
+    - id: backend.l1.validating-a-jwt
+      title:
+        vi: "401: API không biết bạn là ai"
+        en: "401: the API doesn't know who you are"
+      main_path: true
+      duration_min: 13
+      skills: [backend.auth.jwt-validating]
+      prereqs: [backend.l1.issuing-a-jwt, backend.l1.middleware-pipeline]
+      related: []
+      vocab: []
+      example_tag: stage-0
+      example_files: []
+      outline:
+      - "An authentication middleware reads the `Authorization: Bearer <token>` header on every request, checks the signature and expiry, and short-circuits with `401` if the token is missing or invalid."
+      - "Marking an endpoint with `RequireAuthorization()` means the middleware must already have established who the caller is before that endpoint's code runs at all."
+      - "`401` means the API doesn't know who's asking; it is not the status for 'the API knows who you are, but you can't do this' — that's the next lesson."
+      misconceptions:
+      - "A JWT that's expired still works as long as the signature is valid."
+      - "401 and 403 both mean roughly 'not allowed', so either one is fine for a missing or invalid token."
+      depth_notes: "Không nói refresh token hay logout (JWT không 'thu hồi' được như session) — GĐ2. Bài sau nói 403 và authorization."
+    - id: backend.l1.protecting-an-endpoint
+      title:
+        vi: "403: biết bạn là ai rồi, nhưng không được làm việc này"
+        en: "403: the API knows who you are, but not this"
+      main_path: true
+      duration_min: 14
+      skills: [backend.auth.authorization]
+      prereqs: [backend.l1.validating-a-jwt, backend.l1.choosing-an-error-status]
+      related: []
+      vocab: [authorization]
+      example_tag: stage-0
+      example_files: []
+      outline:
+      - "Authorization is a second question, asked only after authentication succeeds: now that the API knows who this is, is this specific action allowed for them?"
+      - "`GET /api/v1/orders/{id}` authenticates any logged-in customer, then authorizes: it returns `403` if the order belongs to a different customer, even though the token itself was perfectly valid."
+      - "Authentication answers 'who are you' once, at the middleware; authorization answers 'can you do this', per endpoint or per resource, using who the middleware already identified."
+      misconceptions:
+      - "If a request has a valid token, it should be allowed to do anything any logged-in customer can do."
+      - "Authorization is the same check as authentication, just run a second time."
+      depth_notes: "Không nói RBAC/ABAC hay policy phức tạp — module oauth-and-authz GĐ2. Chỉ một kiểm tra sở hữu đơn giản (order thuộc đúng customer)."
