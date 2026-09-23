@@ -26,7 +26,7 @@ reviewed_at: null
 
 ## The situation
 
-Kestrel hands a request to your code, the previous lesson said, but never showed where that code begins. You open `DonHang.Api/Program.cs` for the first time and find about seventy lines: some register things, some look like plain method calls, one is named `Run`. A teammate points at a single line, `app.MapControllers();`, and says "that line is what makes the API answer `/api/v1/products`." You do not see a URL anywhere near it. Where does an ASP.NET Core app actually start, and how does one line connect to a specific path?
+Kestrel hands a request to your code, the previous lesson said, but never showed where that code begins. You open `DonHang.Api/Program.cs` for the first time and find about seventy lines: some register things, some look like plain method calls, one is named `Run`. A teammate points at a single line, `app.MapControllers();`, and says "that line is what makes the app answer `/api/v1/products`." You do not see that path anywhere near it. Where does an ASP.NET Core app actually start, and how does one line connect to a specific path?
 
 ## Core concepts
 
@@ -45,7 +45,7 @@ flowchart LR
   D --> F[Run]
 ```
 
-`WebApplication.CreateBuilder(args)` returns a `WebApplicationBuilder`. Everything an ASP.NET Core app needs before it can run — a database connection, a way to issue tokens, and so on — gets registered on that one object. When two calls register different things, as every call in this file does, the order between them makes no difference to how a later request is answered.
+`WebApplication.CreateBuilder(args)` returns a `WebApplicationBuilder`. Everything an ASP.NET Core app needs before it can run — a database connection, a way to prove a customer has signed in, and so on — gets registered on that one object. When two calls register different things, as every call in this file does, the order between them makes no difference to how a later request is answered.
 
 Calling `builder.Build()` ends the registration half of Program.cs and produces the `WebApplication` itself, the object Program.cs configures next. Its `Run()` call, at the very end, is what actually starts Kestrel. Between `Build()` and `Run()`, Program.cs does the rest of its startup work, including wiring up (through `app.Use...`/`app.Map...` calls) the steps every incoming request will pass through before reaching your code; what order those wiring calls run in, and why it matters, is the next lesson's subject.
 
@@ -69,9 +69,9 @@ builder.Services.AddScoped<OrderService>();
 builder.Services.AddSingleton<JwtTokenService>();
 ```
 
-`AddControllers()` is what makes `app.MapControllers()` further down able to find request-answering classes like `ProductsController` at all. The rest read the connection string and register the pieces the app needs to reach the database, a standard error format (`AddProblemDetails()`), an order service, and a way to issue tokens. Reordering the `builder.Services.Add...` calls among themselves changes nothing a client would ever see; the `connectionString` line has to come before the line that uses it for an ordinary C# reason — a variable must exist before something else can read it — not because of anything this lesson is about.
+`AddControllers()` is what makes `app.MapControllers()` further down able to find request-answering classes like `ProductsController` at all. The rest read the connection string and register the pieces the app needs to reach the database, a standard error format (`AddProblemDetails()`), an order service, and a way to prove a customer has signed in. Reordering the `builder.Services.Add...` calls among themselves changes nothing a client would ever see; the `connectionString` line has to come before the line that uses it for an ordinary C# reason — a variable must exist before something else can read it — not because of anything this lesson is about.
 
-`Build()` and `Run()` sit at the two ends of a longer block — read only its first and last lines for now; everything between them, comments included, belongs to later lessons (what runs against the database, and what order the wiring calls happen in):
+`Build()` and `Run()` sit at the two ends of a longer block — read only its first line, its last line, and the `app.MapControllers();` line for now; everything else between them, comments included, belongs to later lessons (what runs against the database, and what order the wiring calls happen in):
 
 ```csharp file=DonHang.Api/Program.cs tag=stage-1 lines=52-74
 var app = builder.Build();
@@ -108,7 +108,7 @@ app.Run();
 
 ## Try it (3 minutes)
 
-1. With the lab running (`scripts/up.sh`), add a temporary `Console.WriteLine("list ran");` as the first line inside `ProductsController`'s method for `GET /api/v1/products`, then run `docker compose up -d --build api` to rebuild `api` with your change and watch `docker compose logs api` as it starts.
+1. With the lab running (`scripts/up.sh`), open `DonHang.Api/Controllers/ProductsController.cs` and add a temporary `Console.WriteLine("list ran");` as the first line inside `List()`, the method with `[HttpGet]` and no `{id}` in its route — the one that answers plain `GET /api/v1/products`. Then run `docker compose up -d --build api` to rebuild `api` with your change and watch `docker compose logs api` as it starts.
 2. Once the startup log settles with no such line printed, run `curl http://localhost:8080/api/v1/products` twice, then check `docker compose logs api` again.
 
 Expected result: the startup portion of the log never prints "list ran" — `app.MapControllers()` only registered the method, it did not run it. After the two curls, the log shows it printed twice, once per matching request, never once at startup.
@@ -128,7 +128,7 @@ Expected result: the startup portion of the log never prints "list ran" — `app
 ## Five-line summary
 
 1. `WebApplication.CreateBuilder` returns a `WebApplicationBuilder`; `Build()` turns it into the `WebApplication` whose `Run()` call starts Kestrel.
-2. When `builder.Services.Add...` calls register different things, their order only decides what is available to the app, not how any request is handled.
+2. Different `builder.Services.Add...` calls can run in any order in Program.cs without changing how a later request is answered.
 3. An endpoint is a method-and-path pair mapped to handler code; `app.MapControllers()` creates one for every attribute-routed method it finds.
 4. Such a method's code runs once per matching request, never when `app.MapControllers()` itself executes at startup.
 5. What order the wiring calls between `Build()` and `Run()` happen in, and why that order matters, is the next lesson's subject.
