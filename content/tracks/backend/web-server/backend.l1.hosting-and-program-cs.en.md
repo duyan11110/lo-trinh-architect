@@ -32,7 +32,7 @@ Kestrel hands a request to your code, the previous lesson said, but never showed
 
 - WebApplicationBuilder — the object `WebApplication.CreateBuilder(args)` returns; an app registers what it needs on this object before anything runs.
 - WebApplication — what `builder.Build()` produces; the same object the app configures next, and the object whose `Run()` call starts Kestrel.
-- **endpoint** — a method-and-path pair mapped to handler code; a request reaches that code only when both match. A method is attribute-routed when the method and its class carry attributes stating the HTTP method and the path, so the pair is written right next to the code itself.
+- **endpoint** — a method-and-path pair mapped to handler code; a request reaches that code only when both match. In `ProductsController`, each such method is attribute-routed: it and its class carry attributes stating the HTTP method and the path, so the pair is written right next to the code itself.
 - request-answering class (for example `ProductsController`) — a class whose attribute-routed methods `app.MapControllers()` finds and turns into endpoints.
 
 ## How it works
@@ -45,11 +45,11 @@ flowchart LR
   D --> F[Run]
 ```
 
-`WebApplication.CreateBuilder(args)` returns a `WebApplicationBuilder`. Everything an ASP.NET Core app needs before it can run — a database connection, a way to issue tokens, and so on — gets registered on that one object. When two calls register different things, as every call in this file does, the order between them only decides what is available to the app, not how a later request is answered.
+`WebApplication.CreateBuilder(args)` returns a `WebApplicationBuilder`. Everything an ASP.NET Core app needs before it can run — a database connection, a way to issue tokens, and so on — gets registered on that one object. When two calls register different things, as every call in this file does, the order between them makes no difference to how a later request is answered.
 
 Calling `builder.Build()` ends the registration half of Program.cs and produces the `WebApplication` itself, the object Program.cs configures next. Its `Run()` call, at the very end, is what actually starts Kestrel. Between `Build()` and `Run()`, Program.cs does the rest of its startup work, including wiring up (through `app.Use...`/`app.Map...` calls) the steps every incoming request will pass through before reaching your code; what order those wiring calls run in, and why it matters, is the next lesson's subject.
 
-One of those wiring calls, `app.MapControllers()`, is what makes an **endpoint** exist at all: it looks at request-answering classes like `ProductsController` and turns each attribute-routed method on them into a method-and-path pair the app can match an incoming request to. `app.MapControllers()` itself runs once, at startup; it does not run again for every request — only the methods it finds do that. That is why your teammate could point at this one line: the path `/api/v1/products` is written on `ProductsController` itself, and `app.MapControllers()` is what makes the app notice it.
+One of those wiring calls, `app.MapControllers()`, is the one that creates every **endpoint** this app has: it looks at request-answering classes like `ProductsController` and turns each attribute-routed method on them into a method-and-path pair the app can match an incoming request to. `app.MapControllers()` itself runs once, at startup; it does not run again for every request — only the methods it finds do that. That is why your teammate could point at this one line: the path `/api/v1/products` is written on `ProductsController` itself, and `app.MapControllers()` is what makes the app notice it.
 
 ## In the Đơn Hàng system
 
@@ -69,7 +69,7 @@ builder.Services.AddScoped<OrderService>();
 builder.Services.AddSingleton<JwtTokenService>();
 ```
 
-`AddControllers()` is what makes `app.MapControllers()` further down able to find request-answering classes like `ProductsController` at all. The rest read the connection string and register a database connection, a standard error format (`AddProblemDetails()`), an order service, and a way to issue tokens. Reordering the `builder.Services.Add...` calls among themselves changes nothing a client would ever see; the `connectionString` line has to come before the line that uses it for an ordinary C# reason — a variable must exist before something else can read it — not because of anything this lesson is about.
+`AddControllers()` is what makes `app.MapControllers()` further down able to find request-answering classes like `ProductsController` at all. The rest read the connection string and register the pieces the app needs to reach the database, a standard error format (`AddProblemDetails()`), an order service, and a way to issue tokens. Reordering the `builder.Services.Add...` calls among themselves changes nothing a client would ever see; the `connectionString` line has to come before the line that uses it for an ordinary C# reason — a variable must exist before something else can read it — not because of anything this lesson is about.
 
 `Build()` and `Run()` sit at the two ends of a longer block — read only its first and last lines for now; everything between them, comments included, belongs to later lessons (what runs against the database, and what order the wiring calls happen in):
 
@@ -108,14 +108,14 @@ app.Run();
 
 ## Try it (3 minutes)
 
-1. With the lab running (`scripts/up.sh`), add a temporary `Console.WriteLine("list ran");` as the first line inside `ProductsController`'s method for `GET /api/v1/products`, then restart the app once and watch its startup log.
-2. Once startup finishes with no such line printed, run `curl http://localhost:8080/api/v1/products` twice.
+1. With the lab running (`scripts/up.sh`), add a temporary `Console.WriteLine("list ran");` as the first line inside `ProductsController`'s method for `GET /api/v1/products`, then run `docker compose up -d --build api` to rebuild `api` with your change and watch `docker compose logs api` as it starts.
+2. Once the startup log settles with no such line printed, run `curl http://localhost:8080/api/v1/products` twice, then check `docker compose logs api` again.
 
-Expected result: the startup log never prints "list ran" — `app.MapControllers()` only registered the method, it did not run it. Both curls do print it, once each, in the app's log, showing the method's body runs fresh per matching request, never once at startup.
+Expected result: the startup portion of the log never prints "list ran" — `app.MapControllers()` only registered the method, it did not run it. After the two curls, the log shows it printed twice, once per matching request, never once at startup.
 
 <details><summary>Suggested answer</summary>
 
-`app.MapControllers()` only recorded that a method exists for that path; the method's own body — including the `Console.WriteLine` — never runs until a request actually matches, which is why the startup log stays silent and each curl adds one more line.
+`app.MapControllers()` only recorded that a method exists for that path; the method's own body — including the `Console.WriteLine` — never runs until a request actually matches, which is why the startup portion of the log stays silent and the two curls add one line each.
 
 </details>
 
