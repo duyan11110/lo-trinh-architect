@@ -59,4 +59,28 @@ void main() {
     final reparsed = yamlToPlain(loadYaml(toYaml(original)));
     expect(reparsed, equals(original));
   });
+
+  // Regression: glossary.yaml's document root is a List, not a Map (every
+  // other content YAML file is a top-level Map with a `- ` block list only
+  // nested under a key). `_writeNode`'s List branch used to pass
+  // `indent - 1` into `_writeListBlock`, which put every continuation line
+  // of a map item flush with its `- term:` line instead of indented under
+  // it — invalid YAML that only surfaced when merge-outline's own loader
+  // re-parsed the file it had just written (2026-09-23, DECISIONS.md §3).
+  test('round-trips a top-level list of maps (shape of glossary.yaml)', () {
+    final data = [
+      {'term': 'process', 'en': 'process', 'vi_keep': true, 'aliases': <String>[]},
+      {'term': 'thread', 'en': 'thread', 'vi_keep': true, 'aliases': <String>['t']},
+    ];
+    final yamlText = toYaml(data);
+    final reparsed = yamlToPlain(loadYaml(yamlText));
+    expect(reparsed, equals(data));
+  });
+
+  test('round-trips the real content/glossary.yaml unchanged', () {
+    final path = realRepo().path('content/glossary.yaml');
+    final original = loadYamlFile(path);
+    final reparsed = yamlToPlain(loadYaml(toYaml(original)));
+    expect(reparsed, equals(original));
+  });
 }

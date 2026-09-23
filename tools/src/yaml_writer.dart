@@ -99,7 +99,18 @@ void _writeNode(StringBuffer buf, dynamic value, int indent, {bool topLevel = fa
       buf.writeln('[]');
       return;
     }
-    _writeListBlock(buf, value, indent - 1);
+    // `_writeListBlock`'s `indent` parameter is the column the `- ` marker
+    // itself is written at (continuation lines of a map item go one level
+    // deeper, at `indent + 1`) — see the call site under the Map branch
+    // above, which passes its own `indent` unchanged for that same reason.
+    // A top-level list document (e.g. glossary.yaml) needs its markers at
+    // column 0, i.e. `indent` itself, not `indent - 1`: that off-by-one
+    // previously made every continuation line of a top-level list item
+    // (`_indent(indent + 1)`) come out one level too shallow — flush with
+    // the `- term:` line instead of indented under it — which is invalid
+    // YAML (caught only when the loader re-parsed the file it just wrote,
+    // 2026-09-23, DECISIONS.md §3).
+    _writeListBlock(buf, value, indent);
   } else {
     buf.writeln(scalarToYaml(value));
   }
