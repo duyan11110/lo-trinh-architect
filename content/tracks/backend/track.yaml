@@ -58,6 +58,21 @@ skills:
     vi: "Lưu thay đổi"
     en: "Saving changes"
   prereqs: [backend.ef.querying]
+- id: backend.errors.shape
+  title:
+    vi: "Hình dạng response lỗi thống nhất"
+    en: "A consistent error response shape"
+  prereqs: [backend.rest.crud]
+- id: backend.errors.validation
+  title:
+    vi: "Validate và chọn đúng status lỗi"
+    en: "Validation and choosing the right error status"
+  prereqs: [backend.errors.shape]
+- id: backend.errors.logging
+  title:
+    vi: "Structured logging và exception handling"
+    en: "Structured logging and exception handling"
+  prereqs: [backend.errors.validation, backend.http.middleware]
 levels:
 - level: 1
   title:
@@ -397,3 +412,112 @@ levels:
       - "Accessing `order.Customer` inside a loop is always fast, since the data is already on the `order` object."
       - "N+1 only matters at a scale this course's example database will never reach."
       depth_notes: "Không đo hiệu năng thật (EXPLAIN, benchmark) — module indexes-and-plans GĐ2. Không nói caching để né N+1 — module caching GĐ2."
+  - id: validation-errors-logging
+    title:
+      vi: "Validation, lỗi, và logging có cấu trúc"
+      en: "Validation, errors, and structured logging"
+    stage: 1
+    summary:
+      vi: "Trả đúng status/hình dạng cho mọi lỗi của API Đơn Hàng, validate trước khi lưu, và ghi log tìm lại được."
+      en: "Return the right status and shape for every Đơn Hàng API failure, validate before saving, and log in a way that's findable later."
+    lessons:
+    - id: backend.l1.errors-and-problem-details
+      title:
+        vi: "Một hình dạng cho mọi lỗi: Problem Details"
+        en: "One shape for every error: Problem Details"
+      main_path: true
+      duration_min: 12
+      skills: [backend.errors.shape]
+      prereqs: [backend.l1.creating-a-resource, foundation.l1.http-status-codes]
+      related: []
+      vocab: [problem-details]
+      example_tag: stage-0
+      example_files: [Caddyfile]
+      outline:
+      - "RFC 9457 defines a JSON shape for error responses — `type`, `title`, `status`, `detail` — so every error looks the same no matter which endpoint produced it."
+      - "A Problem Details response still uses the same status code the endpoint would return anyway (`400`, `404`, `409`); the shape is what's new, not the status code."
+      - "Without a shared shape, each endpoint invents its own error JSON, like the Caddyfile's fixed `{\"error\":\"order not found\"}` from earlier lessons — fine for one fake response, not for a real API with many failure kinds."
+      misconceptions:
+      - "Problem Details is its own status code, separate from 400/404/etc."
+      - "Only server errors (500) need a structured error body; a 400 can just say `{\"error\": \"bad request\"}`."
+      depth_notes: "Không nói validate cụ thể hay exception-handling middleware — hai bài sau. Chỉ định nghĩa hình dạng response lỗi."
+    - id: backend.l1.validating-input
+      title:
+        vi: "Validate trước khi lưu: SaveChangesAsync không phải chỗ để bắt lỗi"
+        en: "Validate before saving: SaveChangesAsync isn't where you catch mistakes"
+      main_path: true
+      duration_min: 14
+      skills: [backend.errors.validation]
+      prereqs: [backend.l1.errors-and-problem-details, backend.l1.saving-changes]
+      related: []
+      vocab: []
+      example_tag: stage-0
+      example_files: [db/schema.sql]
+      outline:
+      - "`orders.customer_id` already has a foreign key and `order_items.quantity` already has `CHECK (quantity > 0)` in `db/schema.sql` — the database rejects a bad value either way, but as a raw database error, not a clean `400`."
+      - "'At least one item' is a rule no single column's `CHECK` can express: only application code sees the whole list of items at once, so the endpoint checks it explicitly."
+      - "`POST /api/v1/orders` checks what it can before calling `SaveChangesAsync()`; on failure it returns `400` with a Problem Details body naming which field was wrong."
+      misconceptions:
+      - "Letting the database reject bad data with its own constraints is enough; a 400 needs no separate check in the endpoint."
+      - "A validation failure should still return 201, with an error field in the body explaining what went wrong."
+      depth_notes: "Không dùng thư viện validation cụ thể — kiểm tra thủ công, rõ ràng cho junior. Không nói uniqueness check phức tạp hay validate bất đồng bộ — ngoài phạm vi GĐ1."
+    - id: backend.l1.choosing-an-error-status
+      title:
+        vi: "400, 404, hay 409: chọn đúng cho từng kiểu lỗi"
+        en: "400, 404, or 409: the right status for each kind of failure"
+      main_path: true
+      duration_min: 12
+      skills: [backend.errors.validation]
+      prereqs: [backend.l1.validating-input]
+      related: []
+      vocab: []
+      example_tag: stage-0
+      example_files: [Caddyfile]
+      outline:
+      - "A request that's malformed or fails validation (a missing field, a quantity of zero) is `400`; a request that's well-formed but names something that doesn't exist (`/api/v1/orders/999`) is `404`."
+      - "A request that's well-formed and real, but conflicts with the resource's current state (cancelling an order that already shipped), is `409` — nothing about the request itself was wrong."
+      - "Every one of these still returns a Problem Details body, so a client always parses errors the same way and only `status`/`title`/`detail` differ."
+      misconceptions:
+      - "404 and 400 are interchangeable for 'something about this request didn't work'."
+      - "A conflict, like cancelling an already-shipped order, should be 400, since the client's request was 'wrong'."
+      depth_notes: "Không nói idempotency key hay optimistic concurrency (ETag/If-Match) — ngoài phạm vi GĐ1. Ví dụ hủy đơn đã shipped minh họa khái niệm 409; module rest-api không xây endpoint hủy đơn thật (xem depth_notes của rest-for-writes), bài này không hứa nó tồn tại."
+    - id: backend.l1.structured-logging
+      title:
+        vi: "Log theo field, không phải theo câu văn"
+        en: "Log by field, not by sentence"
+      main_path: true
+      duration_min: 12
+      skills: [backend.errors.logging]
+      prereqs: [backend.l1.validating-input, foundation.l2.debugger-and-logging]
+      related: []
+      vocab: [structured-logging]
+      example_tag: stage-0
+      example_files: []
+      outline:
+      - "A structured log writes each piece of information (the order id, the outcome) as its own named field, not interpolated into one free-text sentence."
+      - "A structured log line about a failed order stays filterable by field (`orderId=41`), where a string like `\"Order 41 failed\"` only supports a text search."
+      - "Logging the failure's context (method, path, a request id) alongside the order id is what makes one specific failed request findable among thousands of log lines."
+      misconceptions:
+      - "Logging is `Console.WriteLine` with more steps; the format doesn't matter as long as a human can read it."
+      - "A log message with the order id typed into the sentence (`$\"Order {id} failed\"`) already counts as structured logging."
+      depth_notes: "Không nói log aggregation tập trung (Loki) hay dashboard — module devops GĐ2. Không nói log level chi tiết (khi nào Warning vs Error) — chỉ giới thiệu field có cấu trúc."
+    - id: backend.l1.exception-handling-middleware
+      title:
+        vi: "Middleware bắt exception: log rồi mới trả 500"
+        en: "The exception-handling middleware: log, then respond 500"
+      main_path: true
+      duration_min: 14
+      skills: [backend.errors.logging]
+      prereqs: [backend.l1.structured-logging, backend.l1.middleware-pipeline]
+      related: []
+      vocab: []
+      example_tag: stage-0
+      example_files: []
+      outline:
+      - "An exception-handling middleware, registered first in the pipeline, catches any unhandled exception a later middleware or endpoint throws and turns it into a `500` Problem Details response."
+      - "Without this middleware, an unhandled exception either crashes the request with no response, or leaks a raw stack trace — neither of which a client can parse as Problem Details."
+      - "The middleware logs the exception, structured, before writing the response, so the failure is findable even though the client only sees a generic `500` message."
+      misconceptions:
+      - "An exception an endpoint doesn't catch just means that one request fails silently; nothing else needs to run."
+      - "Logging the exception and returning a response to the client are the same step; doing one does the other."
+      depth_notes: "Không nói retry hay circuit breaker khi lỗi — module resilience GĐ3. Middleware này là middleware thật đã hứa tái dùng ở module web-server (không viết middleware minh họa mới)."
