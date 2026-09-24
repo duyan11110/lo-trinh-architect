@@ -15,9 +15,9 @@ vocab: [orm]
 example_tag: stage-1
 versions_used: [efcore, aspnetcore]
 content_version: 1
-status: draft
-approved_by: null
-reviewed_at: null
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-25T02:00:00+07:00"
 ---
 
 ## Before you start
@@ -48,7 +48,7 @@ A `DbContext` is the object standing between your code and the database: you ask
 
 The translation needs to know two things for every property: which table, and which column. By default, EF Core assumes a column exists with the exact same name as the property — a `Product.Name` property expects a `Name` column. The Đơn Hàng database doesn't use that casing: its columns are snake_case (`price_vnd`), while `Product`'s properties are PascalCase (`PriceVnd`), the normal casing for a C# property. Nothing about the framework auto-translates one casing into the other; wherever a name doesn't match by default, the mapping has to name the real column explicitly.
 
-A schema is the tables and columns the database already has. That means the mapping does not invent a schema; it is written against one that already exists. Here, `Product` doesn't describe what the `products` table should look like — the table came first; `Product` describes what a `products` row already looks like, told to EF Core one column at a time.
+A schema is the tables and columns the database already has. In Đơn Hàng the tables were created before this C# code, so the mapping does not invent a schema — it is written against one that already exists: `Product` describes what a `products` row already looks like, not what the table should look like, one column at a time. That is what the title means: the class is written to fit the table, never the other way around.
 
 ## In the Đơn Hàng system
 
@@ -63,9 +63,9 @@ public sealed class Product
 }
 ```
 
-Three properties, no attributes, no base class, nothing in the class itself pointing at a database — it's just a shape. `DonHangDbContext`, this project's own class built on EF Core's `DbContext`, is what connects that shape to the real `products` table. It declares one `DbSet<T>` property per table; the one for `Product` is `public DbSet<Product> Products => Set<Product>();`, where `Set<Product>()` is how the `DbContext` gives back the `DbSet<Product>` for that table. `Products => Set<Product>()` is what `Get(int id)`, from `get-and-status-codes`, reaches through when it calls `db.Products.FindAsync(id)` — `db` being a `DonHangDbContext` that ASP.NET Core hands to `ProductsController` when the request is served. That call is what turns one row into the `Product` object named `product`.
+Three properties, no attributes, no base class, nothing in the class itself pointing at a database — it's just a shape. `DonHangDbContext`, this project's own class built on EF Core's `DbContext`, is what connects that shape to the real `products` table. It declares one `DbSet<T>` property per table; the one for `Product` is `public DbSet<Product> Products => Set<Product>();`, where `Set<Product>()` is how the `DbContext` gives back the `DbSet<Product>` for that table. `Products => Set<Product>()` is what `Get(int id)`, from `get-and-status-codes`, reaches through when it calls `db.Products.FindAsync(id)` — `db` being a `DonHangDbContext` that ASP.NET Core hands to `ProductsController` when the request is served (how that handing-over is wired up is not this lesson's subject). That call is what turns one row into the `Product` object named `product`.
 
-The column mapping lives elsewhere, in `OnModelCreating` — a method on `DonHangDbContext` that EF Core calls when it builds the mapping, handing it a `modelBuilder` to describe each class with. `modelBuilder.Entity<Product>(e => …)` opens the description of `Product` specifically, and gives the code inside the block a parameter, `e`, that every line calls `ToTable` and `Property` on — one call per property:
+The column mapping lives elsewhere, in `OnModelCreating` — a method on `DonHangDbContext` that EF Core calls when it builds the mapping, handing it a `modelBuilder` to describe each class with. `modelBuilder.Entity<Product>(e => …)` opens the description of `Product` specifically, and gives the code inside the block a parameter, `e`: the first line calls `ToTable` on it to name the table, and each line after it calls `Property`, one per property:
 
 ```csharp file=DonHang.Infrastructure/DonHangDbContext.cs tag=stage-1 lines=30-36
         modelBuilder.Entity<Product>(e =>
@@ -77,12 +77,12 @@ The column mapping lives elsewhere, in `OnModelCreating` — a method on `DonHan
         });
 ```
 
-`ToTable("products")` says which table `Product` maps to; each `Property(...).HasColumnName(...)` says which column that one property reads and writes. Against this PostgreSQL database, case counts as a difference, the same way `PriceVnd` and `price_vnd` do: `Id` is not the same string as `id`, and neither is `Name` against `name`, so `HasColumnName` is required for all three properties, for the same reason — none of the three is relying on a name matching by accident. `PriceVnd` is just the one where the two spellings look least alike; it breaks without it: left unconfigured, EF Core would ask PostgreSQL for a column literally named `PriceVnd`, and the query would fail at runtime — PostgreSQL answers with an error saying the column `PriceVnd` does not exist — because the table only has `price_vnd`.
+`ToTable("products")` says which table `Product` maps to; each `Property(p => p.X)` names which property of `Product` that line configures, and the `HasColumnName(...)` chained onto it says which column that property reads and writes. Against this PostgreSQL database, case counts as a difference, the same way `PriceVnd` and `price_vnd` do: `Id` is not the same string as `id`, nor `Name` the same as `name`. So `HasColumnName` is required for all three properties — none of them is relying on a name matching by accident. `PriceVnd` is just the one where the break is easiest to see: left unconfigured, EF Core would ask PostgreSQL for a column literally named `PriceVnd`, and the query would fail at runtime — PostgreSQL answers with an error saying the column `PriceVnd` does not exist — because the table only has `price_vnd`.
 
 ## Beginners often think…
 
 - **"EF Core automatically figures out that `PriceVnd` in C# means the same thing as `price_vnd` in the database."** → Actually EF Core's default expects an exact name match; `PriceVnd` and `price_vnd` are different strings, and nothing built into the framework relates PascalCase to snake_case on its own. `OnModelCreating`'s `HasColumnName("price_vnd")` is what makes the connection, explicitly, one property at a time.
-- **"A `DbSet<Product>` is just a `List<Product>` that EF Core has already filled with every row."** → Actually a `DbSet<Product>` doesn't hold any `Product` objects until something asks it a question — `Get(int id)`'s `FindAsync(id)` call is what turns `db.Products` into a real row read from PostgreSQL. A `List<Product>` already holds its items; a `DbSet<Product>` is a standing question you can ask about a table, holding nothing until it is asked.
+- **"A `DbSet<Product>` is just a `List<Product>` that EF Core has already filled with every row."** → Actually a `DbSet<Product>` doesn't hold any `Product` objects until something asks it a question — `Get(int id)`'s `FindAsync(id)` call is what makes EF Core actually read one row from PostgreSQL and hand back a `Product` built from it. A `List<Product>` already holds its items; a `DbSet<Product>` is a standing question you can ask about a table, holding nothing until it is asked.
 
 ## Try it (3 minutes)
 
