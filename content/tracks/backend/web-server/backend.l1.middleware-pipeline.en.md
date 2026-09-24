@@ -41,15 +41,15 @@ flowchart TD
   M[Routing matches the endpoint] --> A[ExceptionHandlingMiddleware]
   A --> B[RequestLoggingMiddleware, UseCors, UseAuthentication]
   B --> E{UseAuthorization: allowed?}
-  E -->|No| F[401 or 403, written here]
+  E -->|No| F[401 or 403 response]
   E -->|Yes| G[The matched endpoint runs: OrdersController.Create]
 ```
 
-In the situation above, the request never reaches `OrdersController.Create()` because one of the middleware steps before it decided the request could go no further. That is a short-circuit: the middleware stops the request instead of calling the next step, so every step after it, including the endpoint, sees nothing.
+Before any of Đơn Hàng's own middleware runs, routing already works out which endpoint a request's path and method match — that is the first box in the diagram, and it is why a teammate can point at `OrdersController.Create()` by name at all. In the situation above, the request never reaches that method because one of the middleware steps decided the request could go no further first. That is a short-circuit: the middleware stops the request instead of calling the next step, so every step after it, including the already-matched endpoint, sees nothing.
 
-Each `app.Use...` call in `Program.cs` registers one middleware, and the order of those calls is the order a request meets them, top to bottom. What makes middleware different from a single function call is that each step can act twice: once on the way in, before it calls the next step, and once on the way out, after that call returns. A step that only reads the request and always calls next behaves like the top half of that shape; a step that also does something with the response after `next` returns uses the bottom half too. The endpoint itself, once reached, is terminal: it writes the response and calls nothing further, and that response is what travels back out through every middleware that did call `next`.
+Each `app.Use...` call in `Program.cs` registers one middleware, in the order a request meets them, top to bottom. What makes middleware different from a single function call is that each step can act twice: once on the way in, before it calls the next step, and once on the way out, after that call returns. A step that only reads the request and always calls next uses just the top half of that shape; a step that also touches the response after `next` returns uses the bottom half too. The endpoint itself, once reached, is terminal: it writes the response and calls nothing further, and that response travels back out through every middleware that did call `next`.
 
-`UseAuthorization`, one of the middleware Đơn Hàng registers, is what can short-circuit here: for an endpoint marked `[Authorize]`, it stops the request instead of calling the next step when the request is not allowed, and a `401` (or `403`) is written on its behalf before the pipeline unwinds. `RequestLoggingMiddleware`, registered earlier still, called `next` before that check ever ran, so it is still on its way back out when the short-circuit happens further down — which is why it still gets a chance to log the outcome, even though the endpoint never ran.
+`UseAuthorization` is what can short-circuit here: for an endpoint marked `[Authorize]`, it stops the request instead of calling the next step when not allowed, and a `401` (or `403`) is written on its behalf. `RequestLoggingMiddleware`, registered earlier, already called `next` and is simply waiting for it to return — which is why it still logs the outcome, even though the endpoint never ran.
 
 ## In the Đơn Hàng system
 
@@ -69,7 +69,7 @@ app.MapControllers();
 app.Run();
 ```
 
-`ExceptionHandlingMiddleware` is the first of Đơn Hàng's own middleware calls, so it can catch a failure from anything below it; `RequestLoggingMiddleware` comes next so it logs every request regardless of what happens later; `UseAuthorization` comes last among them, right before `app.MapControllers()`, because it is the last thing allowed to say no before an allowed request's endpoint runs. Moving `UseAuthorization` above `RequestLoggingMiddleware` would not just reorder two lines: a rejected request would then short-circuit before `RequestLoggingMiddleware` ever called `next`, so it would stop appearing in the log at all — exactly the change Try it below checks for.
+`ExceptionHandlingMiddleware` is the first of Đơn Hàng's own middleware calls, so it can catch a failure from anything below it; `RequestLoggingMiddleware` comes next so it logs every request regardless of what happens later; `UseAuthorization` comes last among them, because it is the last thing allowed to say no before an allowed request's endpoint runs. Moving `RequestLoggingMiddleware` below `UseAuthorization` would not just reorder two lines: a rejected request would then short-circuit before `RequestLoggingMiddleware` ever called `next`, so it would stop appearing in the log at all — exactly what Try it below checks for.
 
 `RequestLoggingMiddleware` itself shows the before/after shape from "How it works":
 
@@ -108,7 +108,7 @@ Expected result: curl prints `401`; the log line still reads `POST /api/v1/order
 
 <details><summary>Suggested answer</summary>
 
-`RequestLoggingMiddleware` is registered before `UseAuthorization`, so it already called `next` and is only waiting for it to return; a short-circuit further down still counts as `next` returning, just earlier and with a `401` already written. Whatever was registered after the short-circuiting middleware — here, the endpoint `OrdersController.Create()` that routing had already matched — never runs at all.
+`RequestLoggingMiddleware` is registered before `UseAuthorization`, so it already called `next` and is only waiting for it to return; a short-circuit further down still counts as `next` returning, just earlier and with a `401` already written. Whatever the short-circuiting middleware stops the request short of — here, the endpoint `OrdersController.Create()` that routing had already matched — never runs at all.
 
 </details>
 
