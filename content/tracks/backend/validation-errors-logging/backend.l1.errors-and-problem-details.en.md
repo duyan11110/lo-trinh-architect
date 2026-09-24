@@ -15,9 +15,9 @@ vocab: [problem-details]
 example_tag: stage-0
 versions_used: [http_problem_details, http, caddy]
 content_version: 1
-status: draft
-approved_by: null
-reviewed_at: null
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-25T19:00:00+07:00"
 ---
 
 ## Before you start
@@ -34,7 +34,7 @@ You're writing the Đơn Hàng client's error handling. At stage-0 the lab answe
 - **Problem Details (RFC 9457)** — a standard JSON shape for an error response, defined by RFC 9457, the standards document that names it; this lesson uses four of its fields, `type`, `title`, `status`, `detail`, instead of a shape each endpoint invents on its own.
 - `type` — a URI reference, a string in the form of a URL, used only as a name for this kind of problem, not as an address the client fetches; when it's left out, it defaults to `"about:blank"`, meaning nothing more specific than the status code itself.
 - `title` — a short, human-readable summary of that problem kind, meant to read the same on every occurrence of this kind of error.
-- `status` — the same HTTP status code already on the response's status line, the first line of an HTTP/1.1 response, where the status code travels outside the body — repeated inside the body.
+- `status` — the same HTTP status code already on the response's status line (the first line of an HTTP/1.1 response, outside the body), repeated here inside the body.
 - `detail` — a human-readable explanation specific to this one occurrence, naming the field or id involved.
 
 RFC 9457 defines one more field, `instance`, and lets an API add fields of its own — a body carrying extra fields beyond these four is still Problem Details.
@@ -83,7 +83,7 @@ That body has one field, `error`, holding a sentence written for this one path. 
 
 ## Try it (3 minutes)
 
-1. With the lab running (`scripts/up.sh`), run `curl -sS -i http://localhost:8080/conflict`.
+1. With the lab running (`scripts/up.sh`), run `curl -sS -i http://localhost:8080/conflict` (`-i` prints the response's headers above its body, so you can see `Content-Type`). `/conflict` still answers exactly as the block above shows.
 2. Compare it to the stage-0 `/api/v1/orders/999` handler quoted above — don't curl that path; a later stage replaced that fixed body with a real endpoint, and what it answers now is a different lesson's subject.
 
 Expected result: `/conflict` answers `409` with `Content-Type: text/plain; charset=utf-8` and a single line of plain text, no `error` field or any structure at all — a completely different shape from `/api/v1/orders/999`'s stage-0 JSON, even though both are "a failure with a reason".
