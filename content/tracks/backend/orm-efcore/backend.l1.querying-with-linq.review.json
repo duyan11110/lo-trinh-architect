@@ -1,0 +1,94 @@
+{
+  "id": "backend.l1.querying-with-linq",
+  "technical": {
+    "reviewed_at": "2026-09-24T21:10:00+07:00",
+    "reviewer": "claude-opus-5[1m]",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "how-query-works.md, \"When queries are executed\": \"When you call LINQ operators, you're simply building up an in-memory representation of the query. The query is only sent to the database when the results are consumed.\" Listed triggers: \"Iterating the results in a `for` loop\"; \"Using an operator such as `ToList`, `ToArray`, `Single`, `Count`, or the equivalent async overloads\". ToListAsync/FirstOrDefaultAsync are such async overloads.",
+        "source": "refs/efcore-docs/entity-framework/core/querying/how-query-works.md"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "how-query-works.md, \"The life of a query\": \"The result is passed to the database provider / The database provider identifies which parts of the query can be evaluated in the database / These parts of the query are translated to database-specific query language (for example, SQL for a relational database) / A query is sent to the database and the result set returned\". The page carries an \"out of date\" note, so I also confirmed by execution: postgres log_statement=all for GET /api/v1/orders shows exactly one prepared statement per call.",
+        "source": "refs/efcore-docs/.../how-query-works.md + donhang-db postgres log, 2026-09-24 20:58"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "single-split-queries.md: \"EF loads related entities by introducing JOINs into a single query\" and \"EF Core uses single query mode by default in the absence of any configuration.\" DonHangDbContext sets no UseQuerySplittingBehavior. Execution (postgres log): ListByCustomerAsync -> one statement \"SELECT o.id, ... FROM orders AS o INNER JOIN customers AS c ON o.customer_id = c.id WHERE o.customer_id = $1 ORDER BY o.id\"; FindAsync -> one statement with \"LEFT JOIN order_items AS o0 ON o1.id = o0.order_id\".",
+        "source": "refs/efcore-docs/entity-framework/core/querying/single-split-queries.md; donhang-db log 2026-09-24 20:58"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "git -C examples/don-hang show stage-1:DonHang.Infrastructure/EfOrderRepository.cs (19 lines, commit 4fca60a) is byte-identical to the lesson's block: \"public Task<Order?> FindAsync(int id) => db.Orders.Include(o => o.Items).FirstOrDefaultAsync(o => o.Id == id);\" and \"public Task<List<Order>> ListByCustomerAsync(int customerId) => db.Orders.Where(...).Include(o => o.Customer).OrderBy(o => o.Id).ToListAsync();\". Both are expression-bodied, no async/await; only AddAsync uses await.",
+        "source": "examples/don-hang @ stage-1, DonHang.Infrastructure/EfOrderRepository.cs:1-19"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Live run against the stage-1 lab (localhost:8080), 2026-09-24: login anh.tran@example.com -> GET /api/v1/orders returns ids 1 (paid), 2 (shipped), 10 (paid), all \"Trần Minh Anh\"; login chau.nguyen@example.com -> ids 3 (paid), 4 (cancelled), 11 (shipped), all \"Nguyễn Bảo Châu\". The two lists are disjoint. OrdersController.List() reads customerId from the token's sub claim and calls repository.ListByCustomerAsync(customerId).",
+        "source": "curl POST /api/v1/auth/login + GET /api/v1/orders, both accounts; OrdersController.cs @ stage-1"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "major",
+        "section": 6,
+        "kind": "accuracy",
+        "text": "Unlisted claim: a performance assertion appears in \"Beginners often think…\" with no entry in the claims ledger and no evidence. Whether a WHERE filter on a million-row table \"runs fast\" depends on an index on orders.customer_id and on the plan chosen — both explicitly excluded by depth_notes (\"Không nói query plan hay index\"). Without an index, PostgreSQL evaluates the predicate in the database but still scans every row, so the sentence can be false while the lesson's actual point (no row leaves the database unfiltered) stays true.",
+        "quote": "You notice this when a filter that should only match a handful of rows still runs fast on a table with millions of them.",
+        "fix": "Replace with an observation that does not depend on indexes or plans, e.g. \"You notice this when only the matching rows come back over the wire — the row count your code receives does not grow with the size of the table.\" Keep the claim out of performance territory, or add it to .meta.json with evidence."
+      },
+      {
+        "severity": "major",
+        "section": "backend.l1.querying-with-linq.q3",
+        "kind": "quiz",
+        "text": "The fill answer set is incomplete. The stem asks for \"the call that finally sends the query to PostgreSQL and reads back every matching row as a list\" — `ToList` satisfies that stem exactly as well as `ToListAsync` (the stem never says the call is awaited or asynchronous), yet `answer` accepts only [\"ToListAsync\"]. A learner answering `ToList` is marked wrong for a correct answer.",
+        "quote": "\"answer\": [\"ToListAsync\"]",
+        "fix": "Either add \"ToList\" to the answer array, or pin the stem to the async form: \"... the awaited call that finally sends the query to PostgreSQL and reads back every matching row as a list\" (and keep [\"ToListAsync\"])."
+      },
+      {
+        "severity": "minor",
+        "section": 3,
+        "kind": "accuracy",
+        "text": "Type claim is imprecise: `db.Orders` is a `DbSet<Order>`, while `db.Orders.Where(...)` returns an `IQueryable<Order>`. They are \"the same kind\" only at the IQueryable level; the returned object is not a DbSet and has none of a DbSet's non-query members (Add, AddAsync, Find). Quiz q5's explanation repeats the same wording (\"query holds the same kind of queryable\").",
+        "quote": "returns another queryable object, the same kind `db.Orders` itself is",
+        "fix": "Say what is true: \"returns another queryable — the same queryable interface `db.Orders` itself is used through, with the condition attached\". Avoid implying the result is a `DbSet`."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Off-by-one, self-contradictory: the sentence promises four calls \"before enumerating\" and then lists `.ToListAsync()` — the enumerating call itself — as the fourth. Only three calls precede enumeration.",
+        "quote": "`ListByCustomerAsync` chains four calls before enumerating: `.Where(...)` for the filter, `.Include(...)` for the JOIN, `.OrderBy(...)` for the order, `.ToListAsync()` to finally run it.",
+        "fix": "Rewrite as: \"`ListByCustomerAsync` chains four calls: `.Where(...)` for the filter, `.Include(...)` for the JOIN, `.OrderBy(...)` for the order — three that only extend the description — then `.ToListAsync()`, the one that finally runs it.\""
+      },
+      {
+        "severity": "minor",
+        "section": 3,
+        "kind": "accuracy",
+        "text": "The Include bullet states the JOIN outcome unconditionally, while the claim it rests on (claim 3) and the docs both carry the condition: \"EF Core uses single query mode by default in the absence of any configuration\"; an app that calls UseQuerySplittingBehavior(SplitQuery) or AsSplitQuery gets a second query for a collection navigation. Quiz q2's explanation states the condition correctly, the lesson body does not.",
+        "quote": "EF Core folds it into the one SQL statement as a JOIN",
+        "fix": "Add the default: \"by default EF Core folds it into the one SQL statement as a JOIN\". (Reference navigations such as `Order.Customer` are always JOINed in the same query, so §4's Customer paragraph needs no change.)"
+      },
+      {
+        "severity": "minor",
+        "section": "backend.l1.querying-with-linq.q2",
+        "kind": "quiz",
+        "text": "Distractor d (\"False, because `FindAsync` sends no SQL at all when the order is already loaded\") describes real EF Core behaviour of `DbSet<T>.FindAsync`, which does return an already-tracked entity without querying. The lesson names the repository method `FindAsync` and never distinguishes it from EF's own `FindAsync`, so a reader who knows that API can read d as defensible; only the explanation resolves it.",
+        "quote": "False, because `FindAsync` sends no SQL at all when the order is already loaded.",
+        "fix": "Name the method unambiguously in the distractor: \"False, because `EfOrderRepository.FindAsync` sends no SQL at all when the order is already loaded.\" Keep the key at c."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "fix-required"
+  }
+}
