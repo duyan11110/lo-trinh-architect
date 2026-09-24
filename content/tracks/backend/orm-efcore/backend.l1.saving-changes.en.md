@@ -31,7 +31,7 @@ A teammate is reading `OrderService.PlaceOrderAsync` and finds two calls in a ro
 
 ## Core concepts
 
-- change tracker — an in-memory list `DonHangDbContext`, the class holding the `DbSet`s (it is `db` in `EfOrderRepository`), keeps of every entity — a C# object like `order` that stands for one row — it's watching, and what's changed about each one since it was loaded or added. Calling `AddAsync` marks an entity as new in this list, putting it in the `Added` state; putting a change in this list is what the rest of this lesson calls staging it, and nothing is written anywhere until the change is saved.
+- change tracker — an in-memory list that `DonHangDbContext` keeps of every entity it is watching, and of what has changed about each one since it was loaded or added. `DonHangDbContext` is the class holding the `DbSet`s the previous lesson's LINQ queries ran against; it is `db` in `EfOrderRepository`. An entity is a C# object like `order` that stands for one row. Calling `AddAsync` marks an entity as new in this list, putting it in the `Added` state; putting a change in this list is what the rest of this lesson calls staging it, and nothing is written anywhere until the change is saved.
 - `SaveChangesAsync` — the call that turns every staged change in the change tracker into actual SQL and sends it, wrapping all of it in one transaction, by default: every staged change succeeds together, or none of them do.
 - database-generated id — a primary key value like `orders.id` that PostgreSQL itself assigns during `INSERT`, not something EF Core invents in C#; the entity's `Id` property stays at its default until `SaveChangesAsync` runs and copies back what the database generated.
 
@@ -45,9 +45,13 @@ flowchart LR
   D -->|id copied back| E[order.Id populated]
 ```
 
-With an identity key like `orders.id` — meaning PostgreSQL fills the column in when the `INSERT` doesn't supply a value — `AddAsync` sends nothing to PostgreSQL: it hands `order` to the change tracker and marks it `Added`, the same way `.Where(...)` builds a query description without running it. `order.Id` is still `0`, because nothing has asked the database for one yet.
+With a database-generated id like `orders.id` — an identity column, filled in only when `INSERT` supplies no value — `AddAsync` sends nothing to PostgreSQL: it hands `order` to the change tracker and marks it `Added`, the same way `.Where(...)` builds a query description without running it. `order.Id` is still `0`, because nothing has asked the database for one yet.
 
-`SaveChangesAsync` is the call that does something. It looks at every entity the change tracker has marked as changed and, for each one, builds the SQL that change needs: an `INSERT` for something added, an `UPDATE` for something modified (this lesson only follows the added case). `AddAsync` stages not only the object handed to it but the objects hanging off it, so `AddAsync(order)` also stages every `OrderItem` in `order.Items` — more than one staged change from one call. By default, all staged changes in one call go inside one transaction: every `INSERT`/`UPDATE`/`DELETE` succeeds together, or the whole batch is rolled back — undone. By default, each `SaveChangesAsync()` call gets its own transaction: a later call cannot undo what an earlier one already saved.
+`SaveChangesAsync` is the call that does something. It looks at every entity the change tracker has marked as changed and, for each one, builds the SQL that change needs: an `INSERT` for something added, an `UPDATE` for something modified (this lesson only follows the added case).
+
+`AddAsync` stages not only the object handed to it but every object it holds a reference to, so `AddAsync(order)` also stages every `OrderItem` in `order.Items` — more than one staged change from one call.
+
+By default, all staged changes in one call go inside one transaction: every `INSERT`/`UPDATE`/`DELETE` succeeds together, or the whole batch is rolled back — undone. By default, each `SaveChangesAsync()` call gets its own transaction: a later call cannot undo what an earlier one already saved.
 
 `orders.id` is a column PostgreSQL assigns a value to on `INSERT`, the same way `customers.id`, `products.id`, `payments.id`, and `notifications.id` do — every single-column `id` primary key in this schema (`order_items` is the one exception, keyed by the pair `order_id`/`product_id` instead).
 
@@ -95,7 +99,7 @@ Each is a one-line wrapper around the `DonHangDbContext` call of the same name: 
 
 ## Try it (3 minutes)
 
-1. From the Đơn Hàng project's root folder, run `scripts/up.sh` first and wait until it reports the system is ready. Run `creating-a-resource`'s two Try it commands: the login for `anh.tran@example.com` (`donhang-dev-password`), then the same `POST /api/v1/orders` body, sent with the token from the login.
+1. From the Đơn Hàng project's root folder, run `scripts/up.sh` first and wait until it reports the system is ready. Run steps 1 and 2 of `creating-a-resource`'s Try it: the login for `anh.tran@example.com` (`donhang-dev-password`), then the same `POST /api/v1/orders` request, sent with the token from the login.
 2. Read the `id` field in the response, and the number at the end of the `Location` header.
 
 Expected result: both name the same, real id — never `0` — even though nothing in the request body supplied one; PostgreSQL assigned it during the `INSERT` that `SaveChangesAsync` ran.
