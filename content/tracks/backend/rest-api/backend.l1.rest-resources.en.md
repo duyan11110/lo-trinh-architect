@@ -54,6 +54,8 @@ This diagram is the general pattern every resource can follow, not a promise tha
 
 By convention, POST goes on the collection URL and PUT, PATCH, and DELETE go on an item URL, because each of those three acts on one specific resource, so the URL has to name that one and not the whole set. HTTP itself does not enforce this split — it is a convention this lesson and Đơn Hàng both follow, not a rule the protocol checks.
 
+That fixes an order of decisions: name the resource first, then decide whether you mean the whole collection or one item, and only then write the path.
+
 ## In the Đơn Hàng system
 
 Every resource in Đơn Hàng follows the same shape: one `/api/v1/<plural-noun>` prefix per class, then one method per thing that prefix needs to do. Only the `[Route(...)]` and `[Http...]` lines matter for this lesson; the rest — `[ApiController]`, `[Authorize]`, parameter and return types, what each method's body does — belongs to later lessons. `ProductsController` maps its collection URL and the item URL under it, both with GET:
@@ -118,7 +120,7 @@ Not every `/api/v1/...` path names a resource this way. A third class, `AuthCont
 
 ## Try it (3 minutes)
 
-1. From the Đơn Hàng project's root folder, start the lab with `scripts/up.sh`, then run `curl -i http://localhost:8080/api/v1/products` (the collection URL, no id).
+1. From the Đơn Hàng project's root folder, start the example system with `scripts/up.sh`, then run `curl -i http://localhost:8080/api/v1/products` (`-i` makes curl print the status line and headers, not just the body) — the collection URL, no id.
 2. Then run `curl -i http://localhost:8080/api/v1/products/1` (the item URL, id `1`).
 
 Expected result: the first returns `200` with a JSON array of every product; the second returns `200` with one product object, not wrapped in an array. Same `ProductsController`, same GET method's meaning both times — only the URL changed which resource it reads.
