@@ -15,9 +15,9 @@ vocab: []
 example_tag: stage-1
 versions_used: [postgresql, efcore, http_problem_details, http]
 content_version: 1
-status: draft
-approved_by: null
-reviewed_at: null
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-26T00:30:00+07:00"
 ---
 
 ## Before you start
@@ -34,7 +34,7 @@ A teammate tests `POST /api/v1/orders` two ways. Sending `{"items": []}` fails c
 - `CHECK (quantity > 0)` — a row-level database rule, a *constraint*: PostgreSQL tests it against the new row on every `INSERT` and `UPDATE`, and rejects a row that breaks it. It can see that row's own columns and nothing else.
 - "at least one item" — a rule about the whole request, not any single row; no `CHECK` can express it, because a `CHECK` only ever sees the row being inserted — never other rows, and never another table's rows.
 - application-level check — code the endpoint runs before calling `SaveChangesAsync()`, catching what a database's row-level rules structurally cannot.
-- raw database error — a constraint violation that reaches `SaveChangesAsync()` unchecked, surfacing as an exception the endpoint never asked about, instead of a clean, expected failure.
+- raw database error — a bad value that reaches `SaveChangesAsync()` unchecked and violates a constraint there, surfacing as an exception the endpoint never asked about, instead of a clean, expected failure.
 
 ## How it works
 
@@ -49,9 +49,9 @@ flowchart LR
   F -->|yes| H[row saved, 201]
 ```
 
-Two different rules guard the same request, from two different places. `items.Count == 0` is checked in application code, before `SaveChangesAsync()` ever runs — because only application code holds the whole list of items at once. No `CHECK` in `orders` or `order_items` could express "this order has zero items": that would mean counting rows across the whole `order_items` table for one order, and a `CHECK` never sees past the row it's testing. When that check fails, it throws — the endpoint already knows exactly what's wrong, and can hand back a `400` naming it, because something outside `PlaceOrderAsync` catches that specific exception and turns its own message into the response's `detail`. What catches it, and how, is `exception-handling-middleware`'s subject, not this lesson's.
+Two different rules guard the same request, from two different places. `items.Count == 0` is checked in application code, before `SaveChangesAsync()` ever runs — because only application code holds the whole list of items at once. No `CHECK` in `orders` or `order_items` could express "this order has zero items": that would mean counting rows across the whole `order_items` table for one order, and a `CHECK` never sees past the row it's testing. When that check fails, it throws — the endpoint already knows exactly what's wrong, and can hand back a `400` naming it, because something outside `PlaceOrderAsync` catches that specific exception and turns the exception's own message into the response's `detail`. What catches it, and how, is `exception-handling-middleware`'s subject, not this lesson's.
 
-`quantity > 0` is a different story: nothing in application code checks it before saving, so a bad value only gets caught when `SaveChangesAsync()` sends the `INSERT` and PostgreSQL enforces its own `CHECK` constraint. The database's rejection isn't wrong, but it arrives as a different, unrecognized kind of exception, not one the endpoint was watching for. Nothing there names `quantity`, or says which item, or says a number needed to be positive — that same catching mechanism only recognizes specific exception types, and this isn't one of them, so it writes a fixed generic message instead of whatever the exception actually said.
+`quantity > 0` is a different story: nothing in application code checks it before saving, so a bad value only gets caught when `SaveChangesAsync()` sends the `INSERT` and PostgreSQL enforces its own `CHECK` constraint. The database's rejection isn't wrong, but it arrives as a different, unrecognized kind of exception, not one the endpoint was watching for. Nothing there names `quantity`, or says which item, or says a number needed to be positive. That same catching mechanism only recognizes specific exception types, and this isn't one of them, so it writes a fixed generic message instead of whatever the exception actually said.
 
 The database's constraints stay real and enforced either way; what changes is only whether application code checked the same thing first. A check the endpoint runs itself turns a bad request into an expected outcome, with a body describing it. A check left only to the database still stops the bad row, but leaves the endpoint reacting to a failure it did not see coming.
 
