@@ -27,7 +27,7 @@ reviewed_at: null
 
 ## The situation
 
-A teammate asks you to add a way to cancel an order and proposes the path `/api/v1/cancelOrder`. It works — you could write a method that answers it — but something about it doesn't sit right next to `/api/v1/orders`, the path Đơn Hàng already uses to create and read orders. What should decide a new endpoint's path, if not just "whatever makes the action clear"?
+A teammate asks you to add a way to cancel an order and proposes the path `/api/v1/cancelOrder`. It works — you could write a method that answers it — but something about it doesn't sit right next to `/api/v1/orders`, the path Đơn Hàng already uses to create an order and to read one back by id. What should decide a new endpoint's path, if not just "whatever makes the action clear"?
 
 ## Core concepts
 
@@ -56,7 +56,7 @@ By convention, POST goes on the collection URL and PUT, PATCH, and DELETE go on 
 
 ## In the Đơn Hàng system
 
-Every resource in Đơn Hàng follows the same shape: one `/api/v1/<plural-noun>` prefix per class, then one method per thing that prefix needs to do. Only the `[Route(...)]` and `[Http...]` lines matter for this lesson; the rest — parameter types, what each method's body does — belongs to later lessons. `ProductsController` maps its collection URL and the item URL under it, both with GET:
+Every resource in Đơn Hàng follows the same shape: one `/api/v1/<plural-noun>` prefix per class, then one method per thing that prefix needs to do. Only the `[Route(...)]` and `[Http...]` lines matter for this lesson; the rest — `[ApiController]`, `[Authorize]`, parameter and return types, what each method's body does — belongs to later lessons. `ProductsController` maps its collection URL and the item URL under it, both with GET:
 
 ```csharp file=DonHang.Api/Controllers/ProductsController.cs tag=stage-1 lines=8-28
 [ApiController]
@@ -112,7 +112,7 @@ Not every `/api/v1/...` path names a resource this way. A third class, `AuthCont
 
 ## Beginners often think…
 
-- **"A URL like `/api/v1/cancelOrder` is fine as long as it's clear what it does."** → Actually clarity isn't the test, and the fix isn't a brand-new top-level path either. Đơn Hàng's real fix for exactly this action is `PATCH /api/v1/orders/{id}/cancel`: the order's own path survives, with `cancel` added after it. You notice this in `OrdersController` above, where the resource's URL stays intact even for an action that isn't a plain PUT or a plain field change.
+- **"A URL like `/api/v1/cancelOrder` is fine as long as it's clear what it does."** → Actually clarity isn't the test, and the fix isn't a brand-new top-level path either. Đơn Hàng's real fix for exactly this action is `PATCH /api/v1/orders/{id}/cancel`: the order's own path survives, with `cancel` added after it. You notice this in `OrdersController` above, where the resource's URL stays intact even though cancelling is exposed as its own named action rather than a client directly writing the order's status field.
 - **"Creating an order and listing orders need two different URLs, since they're different actions."** → Actually they'd be the same URL, `/api/v1/orders`, answered by whichever methods that resource needs — POST creates, as `OrdersController.Create` does; GET would list, as `ProductsController.List` does for products. `OrdersController` and `ProductsController` are different classes, same pattern: Đơn Hàng just hasn't needed a GET that lists every order yet.
 - **"The `v1` in `/api/v1/orders` refers to the version of each individual order, not this whole set of endpoints."** → Actually `v1` is fixed once for every endpoint this server answers, not per order: `/api/v1/orders/1` and `/api/v1/orders/2` carry the same `v1` even after one order has changed status several times and the other never has.
 
