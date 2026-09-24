@@ -1,0 +1,117 @@
+{
+  "id": "backend.l1.request-lifecycle",
+  "technical": {
+    "reviewed_at": "2026-09-24T08:40:00+07:00",
+    "reviewer": "claude-opus-5[1m]",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "index.md:665: \"If you don't call `app.UseRouting`, the Routing middleware runs at the beginning of the pipeline by default.\" middleware8.md (>= aspnetcore-8.0): \"UseRouting is added second, if the user code didn't already call UseRouting and endpoints are configured\"; \"User configured middleware and endpoints are added between UseRouting and UseEndpoints\". index.md:23: each middleware is \"responsible for invoking the next middleware in the pipeline or short-circuiting\". Program.cs at stage-1 never calls UseRouting, so routing matches before ExceptionHandlingMiddleware runs.",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/middleware/index.md and .../middleware/includes/middleware8.md (learn.microsoft.com/aspnet/core/fundamentals/middleware/)"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "index.md:667: \"The order you add middleware components in the `Program.cs` file defines the order in which the middleware components are invoked on requests and the reverse order for the response.\" Figure alt text, index.md:43: \"the request passes back through the prior two middlewares in reverse order for additional processing after their next() statements before leaving the app as a response to the client.\"",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/middleware/index.md"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "index.md:23: \"When a middleware short-circuits, it's called a terminal middleware because it prevents further middleware from processing the request\" — further, not earlier. Alt text index.md:43: the request \"passes back through the prior two middlewares in reverse order ... after their next() statements\". Executed at stage-1 (docker compose up -d db api): POST /api/v1/orders with no token returned 401 and `docker compose logs api` shows \"POST /api/v1/orders responded 401 in 18ms\" logged by RequestLoggingMiddleware, which is registered before UseAuthorization.",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/middleware/index.md; examples/don-hang at tag stage-1"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "git show stage-1:DonHang.Api/Controllers/OrdersController.cs: `[HttpGet(\"{id:int}\")] public async Task<ActionResult<OrderDto>> Get(int id) { var order = await repository.FindAsync(id); if (order is null) return NotFound(); return Ok(ToDto(order)); }`. No [Authorize] on Get; Create and Cancel carry it. Executed: GET /api/v1/orders/999999 returned \"HTTP/1.1 404 Not Found\".",
+        "source": "examples/don-hang/DonHang.Api/Controllers/OrdersController.cs at tag stage-1"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Ran the stage-1 lab (docker compose up -d db api): request to /api/v1/orders/999999 returned \"HTTP/1.1 404 Not Found\" with content-type application/problem+json; `docker compose logs api` printed \"info: DonHang.Api.Middleware.RequestLoggingMiddleware[0] | GET /api/v1/orders/999999 responded 404 in 1208ms\". Host port 8080 reaches the api through Caddy (`handle /api/v1/* { reverse_proxy api:8080 }`), which preserves the path, so the logged path is the one the lesson prints. Seed data has 12 orders (ids 1-12), so 999999 never exists.",
+        "source": "examples/don-hang at tag stage-1 (docker-compose.yml, Caddyfile, db/seed.sql)"
+      },
+      {
+        "n": 6,
+        "verdict": "rephrased",
+        "evidence": "Lines 64-74 at stage-1 match the listed order exactly. But `MapControllers()` is not a pipeline position: middleware8.md says \"UseEndpoints is added at the end of the middleware pipeline if endpoints are configured\" and \"User configured middleware and endpoints are added between UseRouting and UseEndpoints\". What runs in written order are the five `app.Use...` calls; the endpoint runs after all of them because the endpoint middleware sits at the end, not because `MapControllers()` is the last line. Treating it as a step in the list is what breaks quiz q6.",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/middleware/includes/middleware8.md; examples/don-hang/DonHang.Api/Program.cs at tag stage-1",
+        "suggested_text": "In DonHang.Api/Program.cs the five `app.Use...` calls run in written order — ExceptionHandling, RequestLogging, UseCors, UseAuthentication, UseAuthorization — and then the matched endpoint is invoked; the response passes back through the same five in reverse. Where `app.MapControllers()` is written does not change this: WebApplication invokes endpoints at the end of the pipeline."
+      }
+    ],
+    "issues": [
+      {
+        "severity": "blocker",
+        "section": "backend.l1.request-lifecycle.q6",
+        "kind": "quiz",
+        "quote": "A middleware registered after `app.MapControllers()` never runs for any request that reaches the endpoint, since the endpoint is the terminal step",
+        "text": "The marked answer (a) is wrong. `app.MapControllers()` creates no pipeline boundary at that line: WebApplication adds `UseEndpoints` at the end of the pipeline and puts user middleware between `UseRouting` and `UseEndpoints` (middleware8.md: \"UseEndpoints is added at the end of the middleware pipeline if endpoints are configured\"; \"User configured middleware and endpoints are added between UseRouting and UseEndpoints\"). So the proposed middleware would run — before the endpoint. No option states the real flaw, so the question has no correct answer.",
+        "fix": "Rewrite q6. Simplest: drop it (the schema allows 5 questions). If kept, invert the key: make (a) a distractor and add the true option — \"It would run, but not where they think: `MapControllers()` only registers endpoints, so the new middleware still runs before the endpoint, not after it\" — and only keep it if section 4 or 5 first states that endpoints are invoked at the end of the pipeline regardless of where `MapControllers()` is written."
+      },
+      {
+        "severity": "major",
+        "section": "backend.l1.request-lifecycle.q5",
+        "kind": "quiz",
+        "quote": "Yes — anything registered before the short-circuiting middleware is already on its way out, `UseCors` included",
+        "text": "Ambiguous key. Option (a) endorses the junior's wording that a rejected request \"must still run `UseCors`'s after-`next` code\", but nothing in the lesson or the docs says `UseCors` has after-`next` code at all — and this quiz's own explanation for option (c) says \"whether any specific middleware has after-`next` code at all is a fact about that middleware's own implementation\". A learner who takes that explanation seriously can reject (a).",
+        "fix": "Reword option (a) so it claims position, not code that may not exist: \"Yes — `UseCors` is registered before the short-circuit, so it is already waiting on the way out, and whatever after-`next` code it has runs.\" Leave the (c) explanation unchanged."
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "accuracy",
+        "quote": "whether it reaches `app.MapControllers()` or stops three lines earlier",
+        "text": "The count contradicts the code block printed directly above. In lines 64-74, `app.UseAuthorization()` is line 71 and `app.MapControllers()` is line 72 — one line earlier, not three; three lines earlier is `app.UseCors()`. The very next sentence shows that the intended stopping point is `UseAuthorization`.",
+        "fix": "Replace \"stops three lines earlier\" with \"stops one line earlier, at `app.UseAuthorization()`\", or drop the count entirely: \"or stops at one of the lines above it\"."
+      },
+      {
+        "severity": "major",
+        "section": 8,
+        "kind": "accuracy",
+        "quote": "Kestrel is both ends of this trip: the first thing that sees the request and the last thing that sees the response before the client does.",
+        "text": "False for the system this lesson runs on. At tag stage-1 the Caddyfile proxies `/api/v1/*` to `api:8080` (\"Caddy stays in front of Kestrel; DonHang.Api never faces the internet directly\"), and Try it curls `http://localhost:8080`, which is Caddy. Caddy is what first sees the request and last sees the response before the client. The diagram's `C->>K: request bytes` / `K-->>C: response bytes` arrows repeat the same simplification without saying so.",
+        "fix": "Scope the sentence to the app process: \"Kestrel is both ends of this trip inside the app: the first thing in the app that sees the request and the last that sees the response before it leaves the app.\" Optionally relabel the diagram participant C as \"Caddy (in front of the app)\" or add one line saying the client reaches Kestrel through Caddy."
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "accuracy",
+        "quote": "A `POST /api/v1/orders` with no `Authorization` header travels in only as far as `UseAuthorization`",
+        "text": "Unlisted claim: that `OrdersController.Create` is `[Authorize]`d and that `UseAuthorization` — not the endpoint — writes the 401 for this exact verb and path is a concrete, checkable behaviour of the example app and is not in `.meta.json`. It happens to be true (I ran it at stage-1: status 401, log line \"POST /api/v1/orders responded 401 in 18ms\"), but it must be in the ledger.",
+        "fix": "Add a claim to `.meta.json`: text \"POST /api/v1/orders with no Authorization header is short-circuited by UseAuthorization with 401 and never reaches OrdersController.Create, which carries [Authorize]\", kind behavior, version_key aspnetcore, source_hint \"examples/don-hang stage-1: OrdersController.cs + outputs/stage-1/scripts/backend/auth-and-orders.txt\", section 5."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "quote": "A request only ever travels forward once",
+        "text": "Unconditioned absolute the docs do not support. error-handling.md:30 says UseExceptionHandler \"Re-executes the request in an alternate pipeline using the path indicated\", and :220 says UseStatusCodePagesWithReExecute \"Generates the response body by re-executing the request pipeline using an alternate path\". Đơn Hàng uses neither, so the statement holds for this app but not as an absolute.",
+        "fix": "Condition it: \"In this pipeline, a request travels forward once: ...\" (or \"Unless something re-runs it, ...\"). No other sentence needs changing."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "quote": "it is on the way out, called by whichever step below it — the endpoint or an earlier short-circuit — already produced a response",
+        "text": "Two inaccuracies in one clause. The after-`next` half is not \"called by\" the step below it — control returns to it when its own `next` returns. And \"an earlier short-circuit\" contradicts \"below it\": a middleware below it in `Program.cs` is registered later, not earlier; it is only earlier in time than the endpoint would have been.",
+        "fix": "Rewrite as: \"it runs on the way out, after its own `next` returns — and by then whichever step further down answered first, the endpoint or a short-circuit below it, has already produced a response.\""
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "diagram",
+        "quote": "participant Z as UseAuthorization",
+        "text": "The sequence diagram shows three of the five middleware `Program.cs` registers — `UseCors` and `UseAuthentication` are absent — while section 5 names all five as the forward order and the prose calls the diagram's arrows \"the forward trip\" through \"every middleware in registration order\". A learner matching diagram against file finds two different lists.",
+        "fix": "Add one line under the diagram: \"`UseCors` and `UseAuthentication` are left out to keep the diagram readable; they sit between `RequestLoggingMiddleware` and `UseAuthorization` and behave the same way.\""
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "fix-required"
+  }
+}

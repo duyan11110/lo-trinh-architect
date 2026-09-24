@@ -56,7 +56,7 @@ sequenceDiagram
   K-->>C: response bytes
 ```
 
-A request only ever travels forward once: in through Kestrel, in through every middleware in registration order, then into the endpoint if nothing stopped it first. The response travels the same path backward, middleware by middleware, in the reverse of that order — the diagram's arrows going right are that forward trip; the arrows going left are the way out. `RequestLoggingMiddleware` is not guessing when it logs a status code: it is on the way out, called by whichever step below it — the endpoint or an earlier short-circuit — already produced a response, and `context.Response.StatusCode` already holds the answer by the time its own code after `next` runs.
+The diagram skips `UseCors` and `UseAuthentication` to keep the shape visible; the full six-step order is in "In the Đơn Hàng system" below. For the requests this lesson covers, a request travels forward once: in through Kestrel, in through every middleware in registration order, then into the endpoint if nothing stopped it first. The response travels the same path backward, middleware by middleware, in the reverse of that order — the diagram's arrows going right are that forward trip; the arrows going left are the way out. `RequestLoggingMiddleware` is not guessing when it logs a status code: it is on the way out, its `next(context)` call has already returned because a response now exists — whether the endpoint produced it or a short-circuit further down did — and `context.Response.StatusCode` already holds the answer by the time its own code after `next` runs.
 
 A short-circuit does not skip the way out; it only skips what comes after it on the way in. If `UseAuthorization` rejects a request, `ExceptionHandlingMiddleware` and `RequestLoggingMiddleware` — both registered before it — still run their after-`next` code, because from where they stand, `next` returned; a request that a middleware rejects still finishes the trip back through everything that ran before that middleware, including the exception handler.
 
@@ -78,7 +78,7 @@ app.MapControllers();
 app.Run();
 ```
 
-Reading top to bottom names the forward order once: exception handling, logging, CORS, `UseAuthentication`, `UseAuthorization`, then whichever method routing matched. Nothing in this file spells out the reverse order — it does not need to, because the reverse order is always exactly this list backward, for every request, whether it reaches `app.MapControllers()` or stops three lines earlier. A `POST /api/v1/orders` with no `Authorization` header travels in only as far as `UseAuthorization`, but travels out through `RequestLoggingMiddleware` and `ExceptionHandlingMiddleware` regardless.
+Reading top to bottom names the forward order once: exception handling, logging, CORS, `UseAuthentication`, `UseAuthorization`, then whichever method routing matched. Nothing in this file spells out the reverse order — it does not need to, because the reverse order is always exactly this list backward, for every request, whether it reaches `app.MapControllers()` or stops one line earlier, at `UseAuthorization`. A `POST /api/v1/orders` with no `Authorization` header travels in only as far as `UseAuthorization`, but travels out through `RequestLoggingMiddleware` and `ExceptionHandlingMiddleware` regardless — confirmed by running the request against the stage-1 lab: it comes back `401`, and `docker compose logs api` still shows `RequestLoggingMiddleware`'s line for it.
 
 ## Beginners often think…
 
@@ -101,7 +101,7 @@ Expected result: curl prints `404`; the log line reads `GET /api/v1/orders/99999
 ## Connections
 
 - [[backend.l1.middleware-pipeline]] — the forward order and the idea of short-circuiting, which this lesson extends with the trip back out.
-- [[backend.l1.what-kestrel-does]] — Kestrel is both ends of this trip: the first thing that sees the request and the last thing that sees the response before the client does.
+- [[backend.l1.what-kestrel-does]] — inside `DonHang.Api` itself, Kestrel is both ends of this trip: the first thing that sees the request and the last thing that sees the response before it leaves the app (the stage-1 lab also puts Caddy in front of Kestrel, but that is outside this trip).
 - [[backend.l1.errors-and-problem-details]] — the same reverse trip, read from the angle of what a middleware does with an error on the way back out.
 
 ## Five-line summary
