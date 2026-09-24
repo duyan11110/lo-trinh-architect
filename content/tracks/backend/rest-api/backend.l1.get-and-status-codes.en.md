@@ -13,7 +13,7 @@ prereqs: [backend.l1.dtos-and-serialization]
 related: []
 vocab: []
 example_tag: stage-1
-versions_used: [aspnetcore]
+versions_used: [aspnetcore, http]
 content_version: 1
 status: draft
 approved_by: null
@@ -31,7 +31,7 @@ A teammate is adding a price filter to `GET /api/v1/products` and asks: when no 
 ## Core concepts
 
 - `200` vs `404` — `200` means the request for that URL succeeded and here is the answer; `404` means the server has nothing to return for the one specific thing the URL named.
-- collection GET stays `200` — a collection URL names the whole set, and an empty set is still a complete answer about that set; the row count never turns the answer into a `404` (a URL the server has no collection behind at all, like `/api/v1/gadgets`, is a different case: there is nothing there at all, so this rule says nothing about it).
+- collection GET stays `200` — by the convention this API follows, a collection URL names the whole set, and an empty set is still a complete answer about that set; the row count never turns the answer into a `404` (a URL the server has no collection behind at all, like `/api/v1/gadgets`, is a different case: there is nothing there at all, so this rule says nothing about it).
 - item GET can `404` — an item URL names one specific thing; if the server has nothing for it, `404` is the honest answer, since `200` would claim to have found something it didn't.
 - GET must not write — a GET must not change the resource it serves; the client asked to read, not to write, and that promise holds even on the very first call, not just on repeats (which is all being idempotent covers).
 
@@ -81,7 +81,7 @@ public sealed class ProductsController(DonHangDbContext db) : ControllerBase
 }
 ```
 
-The lines that matter here are the two `[HttpGet]` attributes and the `return` lines; the class header is the same shape for every class like this one and doesn't affect the status code. `[Route("api/v1/products")]` on the class gives both methods the same URL start, and the attribute above each method adds the rest: `[HttpGet]` above `List()` answers `GET /api/v1/products`; `[HttpGet("{id:int}")]` above `Get(int id)` answers that same URL followed by an integer (a negative one matches too), which arrives as the `id` parameter — a segment that isn't an integer, like `/api/v1/products/abc`, matches no route at all. That's how `GET /api/v1/products/999999` in Try it below ends up running `Get`, not `List`. `db` is how this class reaches the Đơn Hàng database, and both methods only ever read from it: `List()` runs a query and hands back one `ProductDto` per product row, and `FindAsync(id)` hands back the one row with that id, or `null` if there is none.
+The lines that matter here are the two `[HttpGet]` attributes and the `return` lines; the class header is the same shape for every class like this one and doesn't affect the status code. `[Route("api/v1/products")]` on the class gives both methods the same URL start, and the attribute above each method adds the rest: `[HttpGet]` above `List()` answers `GET /api/v1/products`; `[HttpGet("{id:int}")]` above `Get(int id)` answers that same URL followed by an integer (a negative one matches too), which arrives as the `id` parameter — a segment that isn't an integer, like `/api/v1/products/abc`, matches no route at all. That's how `GET /api/v1/products/999999` in Try it below ends up running `Get`, not `List`. `db` is how this class reaches the Đơn Hàng database, and both methods only ever read from it; `FindAsync(id)` hands back the one row with that id, or `null` if there is none.
 
 `List()` has exactly one `return`, `Ok(products)`, with no branch on how many rows `products` holds — an empty list still reaches that same line and gets the same `200`. `Get(int id)` has two returns: `NotFound()`, the call that sends the `404`, when `db.Products.FindAsync(id)` comes back `null`, and `Ok(...)`, the call that sends the `200`, only once a real row exists to build a `ProductDto` from. Neither method writes to `db` anywhere — both only read, matching the rule that a GET must not change anything.
 
@@ -113,7 +113,7 @@ Expected result: the first returns `200` with one product's JSON; the second ret
 ## Five-line summary
 
 1. `200` means the URL's request succeeded; `404` means the server has nothing to return for the one thing the URL named.
-2. A collection URL's GET stays `200` whatever the row count — an empty set is a complete, successful answer about the collection, not a `404`.
+2. By the convention this API follows, a collection URL's GET stays `200` whatever the row count — never a `404`.
 3. An item URL's GET can answer `404`, because it names one specific thing the server may have nothing for.
 4. `List()` has one unconditional `return Ok(...)`; `Get(int id)` branches between `NotFound()` and `Ok(...)` based on one lookup.
 5. A GET must not write to the resource it serves, even on its first call — stronger than just being idempotent.
