@@ -33,7 +33,7 @@ A teammate reviewing a pull request for `POST /api/v1/orders` asks why a success
 - `201` vs `200` — `200` says only that the request succeeded; `201` says that and adds that the request created a new resource that didn't exist a moment before.
 - `Location` header — a `201` for a newly created resource should carry a `Location` header naming that resource's own URL (this API always sends one), so the client can read it back without guessing the id the server just assigned.
 - the server assigns the id — a client sending `POST /api/v1/orders` never puts an id in the request; the server decides the new order's id and hands it back, in both the `Location` header and the response body.
-- `POST` is not idempotent — sending the same `POST` twice does not repeat one result; it creates two separate orders, unlike a `GET`, which leaves the server exactly as it was however many times it is sent.
+- `POST` is not idempotent — sending the same `POST` twice does not repeat one result; it creates two separate orders, unlike a `GET`, which is not supposed to change the server at all.
 
 ## How it works
 
@@ -48,7 +48,7 @@ A `POST` that creates something answers a different question than a `GET` does. 
 
 Since the client can't know the new id in advance, it can't put it in the URL or the body — the server has to choose it and report it back. It reports it two ways at once: the `Location` header, letting the client read the new order back with a plain `GET` against its own URL, and the response body, letting the client use the created order immediately without a second request. Both carry the id the server just assigned; the client contributed nothing but the order's contents.
 
-Repeating the exact same `POST` changes the server again each time; repeating a `GET` never does. Each successful `Create` call makes one more row, with its own new id, whether or not an earlier call already created an order with identical items. The two `201` answers aren't supposed to be the same answer: each one reports a different new order, so both are correct.
+Repeating the exact same `POST` changes the server again each time; a `GET` is not supposed to change it at all. Each successful `Create` call makes one more row, with its own new id, whether or not an earlier call already created an order with identical items. The two `201` answers aren't supposed to be the same answer: each one reports a different new order, so both are correct.
 
 ## In the Đơn Hàng system
 
