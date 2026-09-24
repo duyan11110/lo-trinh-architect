@@ -27,23 +27,23 @@ reviewed_at: null
 
 ## The situation
 
-A customer says order `41`'s confirmation notification never arrived. `docker logs donhang-api` holds thousands of lines from every order today. Searching the text `order 41` finds the line — this time. Next week, a different customer reports order `410`, and that same search also matches order `41`'s line, since `order 41` is a substring of `order 410` too — now both customers' lines look alike in the results. Nothing in the log line promises a number sits in a place you can search for precisely; the sentence just happens to contain it somewhere, close enough to other numbers to be confused with them. What would make one specific order's log line findable on purpose, not by luck?
+A customer says order `41`'s confirmation notification never arrived. `docker logs donhang-api` holds thousands of lines from every order today. Searching the text `order 41` finds the line — this time. Next week, a different customer reports order `410`, and now the same search for `order 41` also matches order `410`'s line, since `order 41` is a substring of `order 410` — the two customers' lines are no longer told apart. Nothing in the log line promises a number sits in a place you can search for precisely; the sentence just happens to contain it somewhere, close enough to other numbers to be confused with them. What would make one specific order's log line findable on purpose, not by luck?
 
 ## Core concepts
 
 - **structured logging** — writing each piece of information a log line carries as its own named field (like `OrderId`), instead of interpolating it into one free-text sentence.
 - message template — the fixed part of a log call, written with `{Placeholder}` names marking where each field goes, kept separate from the values themselves.
 - field — one named value inside a log event, exact and on its own, unlike a substring buried inside free text where `41` and `410` overlap.
-- log event — the one record a single logging call produces. Its fields exist on this record regardless of how any particular tool later prints it.
+- log event — the record one logging call produces, when the configured minimum level lets it through. Its fields exist on that record regardless of how a tool later prints it.
 
 ## How it works
 
 ```mermaid
 flowchart LR
-  A[logger.LogInformation given a template] --> B{named placeholders in the template?}
-  B -->|yes| C[each value becomes its own field on the log event]
+  A[logger.LogInformation's first argument] --> B{a template with named placeholders, or a finished string?}
+  B -->|template| C[each value becomes its own field on the log event]
   C --> D[a tool that reads fields can filter: OrderId=41]
-  B -->|no, given a finished string| E[one free-text sentence, no fields]
+  B -->|finished string| E[one free-text sentence, no fields]
   E --> F[searchable only as a substring, even by such a tool]
 ```
 
@@ -88,7 +88,9 @@ public sealed class RequestLoggingMiddleware(RequestDelegate next, ILogger<Reque
 }
 ```
 
-`Method`, `Path`, `StatusCode`, and `ElapsedMs` are four separate fields, each named once in the template and filled once from its own argument — not one long sentence describing the request that happens to mention four numbers. The two lines don't share a field — `LoggingNotifier` never logs a status code, and `RequestLoggingMiddleware` never logs an order id — but each answers a different question precisely because its own values are fields, not text: filtering `OrderId=41` finds the notification for that exact order; filtering `StatusCode=500` finds every request that failed, regardless of which order it was for. Neither search is a guess about where a number sits in a sentence.
+`Method`, `Path`, `StatusCode`, and `ElapsedMs` are four separate fields, each named once in the template and filled once from its own argument — not one long sentence describing the request that happens to mention four numbers. The two lines don't share a field — `LoggingNotifier` never logs a status code, and `RequestLoggingMiddleware` never logs an order id — but a tool that reads fields could still filter each on its own: `OrderId=41` for the notification of that exact order, or `ElapsedMs` above some threshold for slow requests, whichever order they belong to. Neither lookup is a guess about where a number sits in a sentence.
+
+This line only appears when `next(context)` returns normally, so `StatusCode` here never shows the 4xx or 5xx a validation or not-found error produces in this app — those are exceptions, and an exception skips the rest of `InvokeAsync`, including this log call. What logs when a request fails instead is [[backend.l1.exception-handling-middleware]]'s subject, next.
 
 ## Beginners often think…
 
@@ -100,7 +102,7 @@ public sealed class RequestLoggingMiddleware(RequestDelegate next, ILogger<Reque
 1. With the Đơn Hàng system running (`scripts/up.sh`), run steps 1 and 2 of [[backend.l1.creating-a-resource]]'s Try it to place an order.
 2. Read the notification's line in the logs: `docker logs donhang-api --since 1m`.
 
-Expected result: that window also holds a `RequestLoggingMiddleware` line for the request you just made — ignore it. Look instead for this pair: `info: DonHang.Infrastructure.LoggingNotifier[0]`, then an indented `notification for order <id>: order placed` — plain text, indistinguishable at a glance from a hand-built sentence.
+Expected result: that window also holds two `RequestLoggingMiddleware` lines, one for each request those steps made (login, then placing the order) — ignore both. Look instead for this pair: `info: DonHang.Infrastructure.LoggingNotifier[0]`, then an indented `notification for order <id>: order placed` — plain text, indistinguishable at a glance from a hand-built sentence.
 
 <details><summary>Suggested answer</summary>
 
