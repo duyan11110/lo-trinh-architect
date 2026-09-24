@@ -1,0 +1,108 @@
+{
+  "id": "backend.l1.validating-input",
+  "technical": {
+    "reviewed_at": "2026-09-25T21:00:00+07:00",
+    "reviewer": "claude-opus-5[1m]",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "`git show stage-0:db/schema.sql` line 20: `    customer_id integer NOT NULL REFERENCES customers (id),` (block in the lesson is lines 18-32, char-for-char identical; `git diff stage-0 HEAD -- db/schema.sql` is empty). PostgreSQL 17 docs, ddl-constraints: \"A foreign key constraint specifies that the values in a column (or a group of columns) must match the values appearing in some row of another table. We say this maintains the referential integrity between two related tables.\"",
+        "source": "examples/don-hang @ stage-0 db/schema.sql:18-24; https://www.postgresql.org/docs/17/ddl-constraints.html"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "`git show stage-0:db/schema.sql` lines 26-32: `quantity       integer NOT NULL CHECK (quantity > 0),` and `    PRIMARY KEY (order_id, product_id)`; the `order_items` block declares no `id` column, so the composite PK is the only key. Same bytes at stage-1 and HEAD.",
+        "source": "examples/don-hang @ stage-0 db/schema.sql:26-32"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "`git show stage-1:DonHang.Domain/OrderService.cs` line 8 `public async Task<Order> PlaceOrderAsync(int customerId, List<OrderItem> items)`, line 10 `        if (items.Count == 0) throw new ArgumentException(\"an order needs at least one item\");`, `await repository.AddAsync(order);` at line 19 and `await repository.SaveChangesAsync();` at line 20 — the throw is the method's first statement. The lesson's inline quote matches character for character. Note: the file does not exist at the lesson's declared `example_tag: stage-0` (see issue).",
+        "source": "examples/don-hang @ stage-1 DonHang.Domain/OrderService.cs:8-20"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "OrderService.cs stage-1 lines 8-23 contain exactly one guard (`items.Count == 0`); the rest only builds `new Order {...Items = items}` and calls AddAsync/SaveChangesAsync — no read of `Quantity` or `ProductId`. Confirmed by execution: POST with `productId:9999` (a row absent from `products`) returned `HTTP/1.1 500` with `{\"title\":\"Server error\",\"status\":500,\"detail\":\"something went wrong\"}`, i.e. the value reached the database unchecked.",
+        "source": "examples/don-hang @ stage-1 DonHang.Domain/OrderService.cs:8-23; live curl, lab api image donhang-api:stage-1"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Re-ran this session against the running lab: login POST /api/v1/auth/login (anh.tran@example.com) then `curl -i -X POST http://localhost:8080/api/v1/orders -d '{\"items\":[]}'` -> `HTTP/1.1 400 Bad Request` and body `{\"title\":\"Invalid request\",\"status\":400,\"detail\":\"an order needs at least one item\"}`. `docker compose logs api` shows `System.ArgumentException: an order needs at least one item`. Content-Type observed is `application/json; charset=utf-8` (not problem+json) — the lesson claims only the body shape, so no conflict.",
+        "source": "live: donhang-api:stage-1 via http://localhost:8080"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "`-d '{\"items\":[{\"productId\":1,\"quantity\":0,\"unitPriceVnd\":10000}]}'` -> `HTTP/1.1 500 Internal Server Error`, body `{\"title\":\"Server error\",\"status\":500,\"detail\":\"something went wrong\"}`. api logs: `Npgsql.PostgresException (0x80004005): 23514: new row for relation \"order_items\" violates check constraint \"order_items_quantity_check\"` wrapped in `DbUpdateException` from `Microsoft.EntityFrameworkCore.Update`. productId 9999 returns the same status and body.",
+        "source": "live: donhang-api:stage-1; docker compose logs api"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "major",
+        "section": 3,
+        "kind": "accuracy",
+        "text": "A PostgreSQL CHECK constraint is not \"per-column\": it is a row-level rule that may span several columns of the same row. PostgreSQL 17 docs, ddl-constraints: \"A check constraint can also refer to several columns.\" (example: `CHECK (price > discounted_price)`). The lesson's own `orders.status` CHECK is a column one, but `order_items` could carry a multi-column CHECK. The true limit is the row, which the second half of the bullet states correctly. Also unlisted: no claim in the ledger covers how PostgreSQL enforces CHECK.",
+        "quote": "`CHECK (quantity > 0)` — a per-column database rule; PostgreSQL enforces it on every `INSERT`, rejecting a row that breaks it, but only that one column's condition — it can't see anything outside its own row.",
+        "fix": "Rewrite as: \"`CHECK (quantity > 0)` — a row-level database rule; PostgreSQL tests it against the new row on every `INSERT` and `UPDATE`, and rejects a row that breaks it. It can see that row's own columns and nothing else.\" Add a claim to `.meta.json` for it, source https://www.postgresql.org/docs/17/ddl-constraints.html."
+      },
+      {
+        "severity": "minor",
+        "section": 3,
+        "kind": "accuracy",
+        "text": "The stated reason is weaker than the real one. \"No column holds how many items\" invites a junior to answer \"then add an item_count column\" (quiz q5's distractor). The documented rule is stronger: PostgreSQL 17 ddl-constraints: \"PostgreSQL does not support CHECK constraints that reference table data other than the new or updated row being checked.\" — counting `order_items` rows is out of reach for any CHECK regardless of which columns exist.",
+        "quote": "no `CHECK` on one table's column can express it, since no column holds \"how many items does this order have\"",
+        "fix": "Replace the clause with: \"no `CHECK` can express it, because a `CHECK` only ever sees the row being inserted — never other rows, and never another table's rows.\""
+      },
+      {
+        "severity": "major",
+        "section": "frontmatter",
+        "kind": "code",
+        "text": "`example_tag: stage-0`, but the code the lesson quotes inline and the system it tells the reader to call only exist at stage-1: `git show stage-0:DonHang.Domain/OrderService.cs` -> \"fatal: path 'DonHang.Domain/OrderService.cs' exists on disk, but not in 'stage-0'\". The running lab that produces the 400/500 evidence is `donhang-api:stage-1` (`docker compose ps`). A reader checking out stage-0 finds neither `PlaceOrderAsync` nor a `POST /api/v1/orders`.",
+        "quote": "example_tag: stage-0",
+        "fix": "Set `example_tag: stage-1` in the lesson frontmatter and in the `backend.l1.validating-input` entry of `content/tracks/backend/track.yaml`. The SQL block needs no other change: `git diff stage-0 stage-1 -- db/schema.sql` is empty, so `file=db/schema.sql tag=stage-1 lines=18-32` is byte-identical. Keep `example_files: [db/schema.sql]`."
+      },
+      {
+        "severity": "major",
+        "section": 6,
+        "kind": "accuracy",
+        "text": "Unlisted claim: the lesson asserts what `201` means and that a validation failure must not use it (also line 5 of the summary: \"it must return `400`, not `201`\"). This is an RFC 9110 statement, verifiable and load-bearing, but no entry in `.meta.json` covers it, and `versions_used` omits the `http` key that governs it (the prereq lesson errors-and-problem-details does list `http`).",
+        "quote": "failing validation means the order was never created — nothing was saved, so there is no new resource to answer `201` about",
+        "fix": "Add a claim to `.meta.json`: \"201 means the request has been fulfilled and one or more new resources were created (RFC 9110 s15.3.2), so a request that created nothing cannot answer 201\", kind `fact`, source RFC 9110 s15.3.2; and add `http` to `versions_used`. No prose change needed — the sentence is correct as written."
+      },
+      {
+        "severity": "minor",
+        "section": 1,
+        "kind": "accuracy",
+        "text": "The recap promises a `type` member that no body in this lesson has: both observed responses are `{\"title\",\"status\",\"detail\"}` with no `type`. RFC 9457 makes it optional: \"When this member is not present, its value is assumed to be 'about:blank'.\" As written, an attentive reader concludes section 5's bodies are malformed Problem Details.",
+        "quote": "you know a failing response's body should carry `type`/`title`/`status`/`detail`, the same shape no matter which endpoint failed",
+        "fix": "Reword to: \"you know a failing response's body carries `title`/`status`/`detail` (and optionally a `type`), the same shape no matter which endpoint failed.\""
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "diagram",
+        "text": "\"unhandled\" is contradicted by the lesson's own evidence: a genuinely unhandled exception does not produce `{\"title\":\"Server error\",\"status\":500,\"detail\":\"something went wrong\"}` — something caught it and wrote that body. The prose is careful (\"an exception the endpoint never asked about\"); the diagram node is not.",
+        "quote": "H[unhandled exception, generic 500]",
+        "fix": "Relabel the node `H[exception the endpoint didn't expect, generic 500]`. This keeps the middleware out of scope (per the outline's depth_notes) while not asserting the exception went unhandled."
+      },
+      {
+        "severity": "major",
+        "section": "quiz.q3",
+        "kind": "quiz",
+        "text": "Two options answer the stem as asked. The stem is \"Which rule can no single column's `CHECK` constraint express\"; option `c` (\"`customer_id` must reference a real customer\") also cannot be expressed by any CHECK — PostgreSQL 17 ddl-constraints: \"PostgreSQL does not support CHECK constraints that reference table data other than the new or updated row being checked\", and recommends FOREIGN KEY instead. The option's own text concedes this (\"expressed by the foreign key\"), and the `c` explanation admits \"This is handled by a foreign key, not a `CHECK`\".",
+        "quote": "Which rule can no single column's `CHECK` constraint express, as this lesson explains it?",
+        "fix": "Change the stem to: \"Which rule has no database constraint enforcing it at all, so application code has to check it?\" Then `a` is uniquely right (b, d are CHECKs; c is a foreign key). Update `c`'s explanation to: \"A foreign key already enforces this in the database, so the endpoint doesn't have to.\""
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "fix-required"
+  }
+}
