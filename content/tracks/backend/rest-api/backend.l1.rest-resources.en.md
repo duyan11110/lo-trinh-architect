@@ -27,12 +27,12 @@ reviewed_at: null
 
 ## The situation
 
-A teammate asks you to add a way to cancel an order and proposes the path `/api/v1/cancelOrder`. It works — you could write a method that answers it — but something about it doesn't sit right next to `/api/v1/orders`, the path Đơn Hàng already uses to create an order and to read one back by id. What should decide a new endpoint's path, if not just "whatever makes the action clear"?
+A teammate asks you to add a way to cancel an order and proposes the path `/api/v1/cancelOrder`. It works — you could write a method that answers it — but something about it doesn't sit right next to the order paths Đơn Hàng already has: `/api/v1/orders`, which creates an order, and `/api/v1/orders/1`, which reads one back by id. What should decide a new endpoint's path, if not just "whatever makes the action clear"?
 
 ## Core concepts
 
 - **resource** — by this lesson's convention, a thing named by a noun in the URL (the path half of the method-and-path pair from the last lesson), like an order or a product; the URL says which thing, the HTTP method says what to do to it.
-- collection URL — a URL naming every resource of one kind (`/api/v1/orders`); GET on it lists them all.
+- collection URL — a URL naming every resource of one kind (`/api/v1/orders`); when a GET is offered on it, that GET lists them all.
 - item URL — a URL naming one specific resource (`/api/v1/orders/1`); GET on it reads just that one.
 - method, not URL, carries the verb — the same item URL means something different depending on the method: GET reads it, PUT or PATCH changes it, DELETE removes it.
 
@@ -82,7 +82,7 @@ public sealed class ProductsController(DonHangDbContext db) : ControllerBase
     }
 ```
 
-`[Route("api/v1/products")]` on the class fixes the shared prefix once; `[HttpGet]` with no id, on `List()`, answers the bare collection URL, `GET /api/v1/products`. `[HttpGet("{id:int}")]`, on `Get(int id)`, adds `{id}` to that prefix — a placeholder the actual id in the request fills in, with `:int` saying only a whole number matches — answering the item URL, `GET /api/v1/products/{id}`, the one Try it calls below.
+`[Route("api/v1/products")]` on the class fixes the shared prefix once; `[HttpGet]` with no id, on `List()`, answers the bare collection URL, `GET /api/v1/products`. `[HttpGet("{id:int}")]`, on `Get(int id)`, adds `{id}` to that prefix — a placeholder the actual id in the request fills in, with `:int` saying only a whole number within the 32-bit range matches — answering the item URL, `GET /api/v1/products/{id}`, the one Try it calls below.
 
 `OrdersController` carries the same class-level attribute, `[Route("api/v1/orders")]`, and a `[HttpPost]` method, `Create`, answering the collection URL, `POST /api/v1/orders` (creating an order adds to the whole set — not shown again here, same shape as `[Route(...)]` above). Further down the same class, two more methods answer the item URL and the teammate's question from the situation above:
 
