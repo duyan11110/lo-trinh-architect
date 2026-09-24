@@ -1,0 +1,127 @@
+{
+  "id": "backend.l1.rest-resources",
+  "technical": {
+    "reviewed_at": "2026-09-24T09:50:00+07:00",
+    "reviewer": "claude-opus-5[1m]",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "git show stage-1:DonHang.Api/Controllers/ProductsController.cs: line 9 `[Route(\"api/v1/products\")]`, line 13 `[HttpGet]` on `public async Task<ActionResult<List<ProductDto>>> List()`, line 22 `[HttpGet(\"{id:int}\")]` on `public async Task<ActionResult<ProductDto>> Get(int id)`. Confirmed live against the running lab: GET /api/v1/products -> 200 array, GET /api/v1/products/1 -> 200 single object, GET /api/v1/products/999 -> 404, POST /api/v1/products -> 405.",
+        "source": "examples/don-hang @ stage-1 (commit 83c0004) DonHang.Api/Controllers/ProductsController.cs"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "git show stage-1:DonHang.Api/Controllers/OrdersController.cs: line 11 `[Route(\"api/v1/orders\")]`; `[Authorize] [HttpPost] public async Task<ActionResult<OrderDto>> Create(CreateOrderRequest request)`; `[HttpGet(\"{id:int}\")] public async Task<ActionResult<OrderDto>> Get(int id)`. Note not stated in the claim: `Create` also carries `[Authorize]`, so anonymous POST /api/v1/orders returns 401 (outputs/stage-1/scripts/backend/auth-and-orders.txt ends with `401`); and the class also carries `[HttpPatch(\"{id:int}/cancel\")]` on `Cancel`.",
+        "source": "examples/don-hang @ stage-1 DonHang.Api/Controllers/OrdersController.cs"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Ran the stage-1 lab (docker compose up -d --wait db api web lab, tag stage-1 clean tree). `curl -i http://localhost:8080/api/v1/products` -> `HTTP/1.1 200 OK`, `Content-Type: application/json; charset=utf-8`, body `[{\"id\":1,\"name\":\"Bàn phím cơ\",\"priceVnd\":1250000},...]` (8 products). `curl -i http://localhost:8080/api/v1/products/1` -> `HTTP/1.1 200 OK`, body `{\"id\":1,\"name\":\"Bàn phím cơ\",\"priceVnd\":1250000}` — object, not array. Both via Caddy (`Via: 1.1 Caddy`, `Server: Kestrel`).",
+        "source": "examples/don-hang @ stage-1, live lab, 2026-09-24 09:37 +07"
+      },
+      {
+        "n": 4,
+        "verdict": "rephrased",
+        "evidence": "No normative source states this. RFC 9110 defines each method against \"the target resource\" only: \"The POST method requests that the target resource process the representation enclosed in the request according to the resource's own specific semantics\"; and for PUT, \"If the target resource does not have a current representation and the PUT successfully creates one, then the origin server MUST inform the user agent by sending a 201 (Created) response\". \"collection\" appears once in RFC 9110, unrelated. So collection/item is convention, not an HTTP rule; PUT is not confined to an existing item.",
+        "source": "refs/rfc/rfc9110.txt lines 4027-4096, 8808",
+        "suggested_text": "By a common REST naming convention, a collection URL usually answers GET (list) and POST (create), and an item URL usually answers GET, PUT or PATCH, and DELETE. HTTP itself attaches no such restriction: it defines each method against whatever URL is the target."
+      }
+    ],
+    "issues": [
+      {
+        "severity": "blocker",
+        "section": 5,
+        "kind": "code",
+        "quote": "Nowhere in either file does a path spell out an action as a verb",
+        "text": "False of the code at stage-1. OrdersController.cs carries `[HttpPatch(\"{id:int}/cancel\")]` on `Cancel(int id)` — route `PATCH /api/v1/orders/{id}/cancel`, a verb spelled out in the path, in one of the two files the lesson excerpts. Verified live: `PATCH /api/v1/orders/1/cancel` -> 401 (the `[Authorize]` on it), i.e. the route exists; a non-existent route on the same controller returns 405 (`GET /api/v1/orders` -> 405).",
+        "fix": "Delete the sentence and replace it with the truth about this file: e.g. \"`List`, `Get` and `Create` are C# method names, not URL segments — the only action word in either file's routes is the `/cancel` segment on `PATCH /api/v1/orders/{id}/cancel`, which is scoped under the order it acts on rather than standing alone as a top-level path.\""
+      },
+      {
+        "severity": "blocker",
+        "section": 9,
+        "kind": "accuracy",
+        "quote": "`/api/v1/cancelOrder` puts a verb where a noun belongs — the same job belongs on `/api/v1/orders/{id}` with the right method instead.",
+        "text": "The rule as stated is contradicted by the very system the lesson teaches from: Đơn Hàng cancels an order with `PATCH /api/v1/orders/{id}/cancel`, not with a plain method on `/api/v1/orders/{id}`. Same problem in section 2 (\"A teammate ... proposes the path `/api/v1/cancelOrder`\", whose real answer in this repo is never shown) and in section 6's first misconception (\"every action needs its own path\"). A learner who opens OrdersController after this lesson sees the reference implementation breaking the rule it was just given.",
+        "fix": "State the rule the repo actually follows: a verb must not be a top-level path segment; an action that no single method expresses is written as a sub-path *under* the item it acts on — `PATCH /api/v1/orders/{id}/cancel` — so the noun still owns the path. Update section 2, section 6's first bullet and summary line 5 together."
+      },
+      {
+        "severity": "major",
+        "section": 6,
+        "kind": "code",
+        "quote": "You notice this in `OrdersController` and `ProductsController` above: one `[Route(...)]` per class, several methods answering the one path it names.",
+        "text": "Neither controller demonstrates the claim it is cited for (POST and GET on the same URL). At stage-1 `GET /api/v1/orders` -> 405 (OrdersController has no collection GET; its GET is `[HttpGet(\"{id:int}\")]`), and `POST /api/v1/products` -> 405 (ProductsController has no POST). Both verified live against the running lab.",
+        "fix": "Either drop the second sentence, or cite what the files really show: ProductsController answers one prefix with two GETs (collection and item); OrdersController answers the same prefix with POST on the collection and GET on the item. Do not claim POST+GET on one URL — no such pair exists at stage-1."
+      },
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "accuracy",
+        "quote": "POST only makes sense on the collection ... while PUT, PATCH and DELETE only make sense on an item",
+        "text": "Unlisted claim: this exclusive form is absent from the ledger (claim 4 states only the weaker \"supports\" form) and is stronger than any source supports. RFC 9110 §9.3.4: \"If the target resource does not have a current representation and the PUT successfully creates one, then the origin server MUST inform the user agent by sending a 201 (Created) response\" — PUT is defined for a URL with nothing behind it yet, and DELETE/PUT on a collection URL are not forbidden anywhere in RFC 9110 (the spec never uses \"collection\" in this sense at all).",
+        "fix": "Rewrite as a convention with its condition, e.g.: \"By convention POST goes on the collection URL and PUT, PATCH and DELETE on an item URL, because each of those three needs exactly one resource to act on. HTTP does not enforce this.\" Then add the sentence to `.meta.json` claims."
+      },
+      {
+        "severity": "major",
+        "section": 7,
+        "kind": "code",
+        "quote": "because `{id}` narrows the resource down to exactly one row before GET ever runs",
+        "text": "Wrong about this code. `Get(int id)` *is* the GET handler; routing only selects it, and the row lookup happens inside it (`var product = await db.Products.FindAsync(id);`). Nothing narrows anything \"before GET ever runs\", and it is not \"exactly one row\": `FindAsync` can return null — verified live, `GET /api/v1/products/999` -> 404. The single-object shape comes from the handler returning `Ok(new ProductDto(...))`, not from the URL.",
+        "fix": "Rewrite as: \"`Get(int id)` answers the item URL; the id in the path is handed to that method, which looks up one product and returns it as a single object (or 404 when no product has that id). `List()` returns a JSON array because it returns a list — the shape comes from the method the URL selected.\""
+      },
+      {
+        "severity": "major",
+        "section": "outline item 3",
+        "kind": "scope",
+        "quote": "The Đơn Hàng API groups its endpoints under `/api/v1/<plural-noun>` for every resource (customers, products, orders)",
+        "text": "Outline item 3 is not established anywhere in the lesson — the grouping rule is never stated and customers are never mentioned; the lesson only shows two `[Route(...)]` values that happen to fit. The outline item is also false of stage-1: there is no customers resource in the API, and the third controller is `AuthController` with `[Route(\"api/v1/auth\")]` — not a plural noun. `.meta.json` nevertheless lists outline item 3 under `outline_items_covered`.",
+        "fix": "Fix track.yaml first — rewrite the item as \"groups its endpoints under `/api/v1/<noun>` (`/api/v1/products`, `/api/v1/orders`)\" and drop `customers` — then add one sentence in section 5 stating the shared `/api/v1/<noun>` shape, and correct `coverage.outline_items_covered` in `.meta.json`."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "diagram",
+        "quote": "A --> D[\"/api/v1/orders/{id}\"]",
+        "text": "Unlabelled edge in a diagram where every other edge is an HTTP method, so it reads as a fifth request from the collection to the item. It is meant to express \"add an id to narrow it\", which is not a request at all.",
+        "fix": "Label it -- e.g. `A -->|add an id| D` -- or remove the edge and let D stand as a separate node."
+      },
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "gap",
+        "quote": "The `v1` in `/api/v1/orders` refers to the version of each individual order, not the API.",
+        "text": "Outline misconception 3 is not addressed in the body at all; it appears only as a distractor in quiz q1 option d, where a learner holding it gets no correction beyond the explanation text.",
+        "fix": "Add a third bullet to \"Beginners often think…\" correcting it in one line (v1 names the API's shape, not an order's revision), or drop the misconception from track.yaml."
+      },
+      {
+        "severity": "minor",
+        "section": "backend.l1.rest-resources.q3",
+        "kind": "quiz",
+        "text": "Fill answer set is `[\"noun\"]` only. \"a noun\" and the Vietnamese \"danh từ\" (the vi stem reads \"lẽ ra thuộc về một ____\") are equally right answers for a learner reading the vi version.",
+        "fix": "Extend `answer` to `[\"noun\", \"a noun\", \"danh từ\"]`, matching the multi-variant precedent in backend.l1.hosting-and-program-cs.quiz.json q3."
+      },
+      {
+        "severity": "minor",
+        "section": "backend.l1.rest-resources.q4",
+        "kind": "quiz",
+        "text": "The required order a-b-c-d is defensible but not established by the lesson: nothing in the text says the path is written down (c) before the method is chosen (d). A learner who picks the method while writing the path has no way to know which the lesson wants.",
+        "fix": "Either state the four-step order explicitly in section 4, or replace option c/d with steps whose order the lesson does fix (e.g. \"decide the resource\" -> \"decide collection or item\" -> \"write the path\" only, as a 3-item order)."
+      },
+      {
+        "severity": "minor",
+        "section": "backend.l1.rest-resources.q6",
+        "kind": "quiz",
+        "quote": "both actions belong on `/api/v1/orders/{id}` instead, with something other than the URL carrying the verb",
+        "text": "Keyed answer is correct against the lesson as written, but it excludes exactly the shape the repo uses for the same kind of action (`PATCH /api/v1/orders/{id}/cancel`). Once the blocker on summary line 5 is fixed, option a becomes at best ambiguous.",
+        "fix": "Reword option a to \"both paths put the verb at the top level; both actions belong under the order they act on, `/api/v1/orders/{id}`, as Đơn Hàng already does for cancel\" and update the explanation accordingly."
+      }
+    ],
+    "scope": {
+      "outline_covered": false,
+      "beyond_scope": []
+    },
+    "verdict": "fix-required"
+  }
+}
