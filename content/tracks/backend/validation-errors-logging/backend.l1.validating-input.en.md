@@ -31,7 +31,7 @@ A teammate tests `POST /api/v1/orders` two ways. Sending `{"items": []}` fails c
 
 ## Core concepts
 
-- `CHECK (quantity > 0)` — a row-level database rule; PostgreSQL tests it against the new row on every `INSERT` and `UPDATE`, and rejects a row that breaks it. It can see that row's own columns and nothing else.
+- `CHECK (quantity > 0)` — a row-level database rule, a *constraint*: PostgreSQL tests it against the new row on every `INSERT` and `UPDATE`, and rejects a row that breaks it. It can see that row's own columns and nothing else.
 - "at least one item" — a rule about the whole request, not any single row; no `CHECK` can express it, because a `CHECK` only ever sees the row being inserted — never other rows, and never another table's rows.
 - application-level check — code the endpoint runs before calling `SaveChangesAsync()`, catching what a database's row-level rules structurally cannot.
 - raw database error — a constraint violation that reaches `SaveChangesAsync()` unchecked, surfacing as an exception the endpoint never asked about, instead of a clean, expected failure.
@@ -49,9 +49,9 @@ flowchart LR
   G --> H[exception the endpoint didn't expect, generic 500]
 ```
 
-Two different rules guard the same request, from two different places. `items.Count == 0` is checked in application code, before `SaveChangesAsync()` ever runs — because only application code holds the whole list of items at once; no `CHECK` in `orders` or `order_items` could express "this order has zero items" — that would mean counting rows across the whole `order_items` table for one order, and a `CHECK` never sees past the row it's testing. When that check fails, the endpoint already knows exactly what's wrong, and can hand back a `400` naming it.
+Two different rules guard the same request, from two different places. `items.Count == 0` is checked in application code, before `SaveChangesAsync()` ever runs — because only application code holds the whole list of items at once; no `CHECK` in `orders` or `order_items` could express "this order has zero items" — that would mean counting rows across the whole `order_items` table for one order, and a `CHECK` never sees past the row it's testing. When that check fails, the endpoint already knows exactly what's wrong, and can hand back a `400` naming it — something outside `PlaceOrderAsync` catches that specific exception and turns its own message into the response's `detail`. What catches it, and how, is `exception-handling-middleware`'s subject, not this lesson's.
 
-`quantity > 0` is a different story: nothing in application code checks it before saving, so a bad value only gets caught when `SaveChangesAsync()` sends the `INSERT` and PostgreSQL enforces its own `CHECK` constraint. The database's rejection isn't wrong, but it arrives as a database-level exception, not something the endpoint was watching for. Nothing there names `quantity`, or says which item, or says a number needed to be positive — the endpoint sees the same shape of surprise it would see from any other unexpected failure.
+`quantity > 0` is a different story: nothing in application code checks it before saving, so a bad value only gets caught when `SaveChangesAsync()` sends the `INSERT` and PostgreSQL enforces its own `CHECK` constraint. The database's rejection isn't wrong, but it arrives as a different, unrecognized kind of exception, not one the endpoint was watching for. Nothing there names `quantity`, or says which item, or says a number needed to be positive — that same catching mechanism has no specific message to work with here, so what comes back is generic instead.
 
 The database's constraints stay real and enforced either way; what changes is only whether application code checked the same thing first. A check the endpoint runs itself turns a bad request into an expected outcome, with a body describing it. A check left only to the database still stops the bad row, but leaves the endpoint reacting to a failure it did not see coming.
 
@@ -79,7 +79,7 @@ CREATE TABLE order_items (
 
 `orders.customer_id REFERENCES customers (id)` rejects an order for a customer that doesn't exist; `order_items.quantity CHECK (quantity > 0)` rejects a non-positive quantity. Both are real, enforced constraints — PostgreSQL never lets either bad row exist. Neither one, on its own, could reject an order with zero items: that rule is about how many rows are in `order_items` for one order, not about any one row's own columns.
 
-`OrderService.PlaceOrderAsync`, from `saving-changes`, already checks the one thing no column here can: `if (items.Count == 0) throw new ArgumentException("an order needs at least one item");`, before `AddAsync` or `SaveChangesAsync` run at all. Nothing in that same method checks `quantity` or `productId` before saving — those are left entirely to the constraints above.
+`OrderService.PlaceOrderAsync`, from `saving-changes`, receives the request's item list as its `items` parameter, and its very first statement, before `AddAsync` or `SaveChangesAsync` run at all, already checks the one thing no column here can: `if (items.Count == 0) throw new ArgumentException("an order needs at least one item");`. Nothing in that same method checks `quantity` or `productId` before saving — those are left entirely to the constraints above.
 
 Sending the two requests to the running system shows exactly that gap. `{"items": []}` gets `400` with `{"title":"Invalid request","status":400,"detail":"an order needs at least one item"}` — the application check's own message, in a Problem Details-shaped body. A real item with `quantity` `0` gets `500` with `{"title":"Server error","status":500,"detail":"something went wrong"}` — the database did reject the row, but nothing in the endpoint was watching for that specific failure, so the response says nothing about `quantity` at all.
 
@@ -90,7 +90,7 @@ Sending the two requests to the running system shows exactly that gap. `{"items"
 
 ## Try it (3 minutes)
 
-1. Run step 1 of `creating-a-resource`'s Try it to log in as `anh.tran@example.com` (`donhang-dev-password`) and copy the token.
+1. With the Đơn Hàng system running (`scripts/up.sh`), run step 1 of [[backend.l1.creating-a-resource]]'s Try it to log in as `anh.tran@example.com` (`donhang-dev-password`) and copy the token.
 2. Send an order with no items: `curl -sS -i -X POST http://localhost:8080/api/v1/orders -H 'Content-Type: application/json' -H "Authorization: Bearer <token>" -d '{"items":[]}'`.
 3. Send an order with a zero quantity instead: `curl -sS -i -X POST http://localhost:8080/api/v1/orders -H 'Content-Type: application/json' -H "Authorization: Bearer <token>" -d '{"items":[{"productId":1,"quantity":0,"unitPriceVnd":10000}]}'`.
 
@@ -107,6 +107,7 @@ Step 2's `400` and step 3's `500` come from the same kind of mistake — a value
 - [[backend.l1.saving-changes]] — the same `PlaceOrderAsync`, now read for the line before `AddAsync` instead of the two lines after it.
 - [[backend.l1.errors-and-problem-details]] — the shape a clean `400` uses; this lesson is about which failures actually get to use it yet.
 - [[backend.l1.choosing-an-error-status]] — the next lesson, choosing between `400`, `404`, and `409` for different kinds of failure.
+- [[backend.l1.exception-handling-middleware]] — the mechanism that catches `PlaceOrderAsync`'s exceptions and turns each one into a response, named here but not explained until then.
 
 ## Five-line summary
 
@@ -114,4 +115,4 @@ Step 2's `400` and step 3's `500` come from the same kind of mistake — a value
 2. `PlaceOrderAsync` already checks `items.Count == 0` before calling `SaveChangesAsync()`, because only application code sees the whole item list at once.
 3. That check turns a bad request into a `400` with a `detail` naming exactly what was wrong, before anything is saved.
 4. `quantity > 0` isn't checked in application code yet; violating it surfaces as a raw exception and a generic `500`, not a clean `400`.
-5. A validation failure is not success — it must return `400`, not `201` with an error field bolted on.
+5. A validation failure is not success — the empty-items check answers `400`, never `201` with an error field bolted on.
