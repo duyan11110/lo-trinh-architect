@@ -15,9 +15,9 @@ vocab: []
 example_tag: stage-1
 versions_used: [aspnetcore, http]
 content_version: 1
-status: draft
-approved_by: null
-reviewed_at: null
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-24T21:10:00+07:00"
 ---
 
 ## Before you start
@@ -81,7 +81,7 @@ public sealed class ProductsController(DonHangDbContext db) : ControllerBase
 }
 ```
 
-The lines that matter here are the two `[HttpGet]` attributes and the `return` lines; the class header is the same shape for every class like this one and doesn't affect the status code. `[Route("api/v1/products")]` on the class gives both methods the same URL start, and the attribute above each method adds the rest: `[HttpGet]` above `List()` answers `GET /api/v1/products`; `[HttpGet("{id:int}")]` above `Get(int id)` answers that same URL followed by an integer (a negative one matches too), which arrives as the `id` parameter — a segment that isn't an integer, like `/api/v1/products/abc`, matches no route at all. That's how `GET /api/v1/products/999999` in Try it below ends up running `Get`, not `List`. `db` is how this class reaches the Đơn Hàng database, and both methods only ever read from it; `FindAsync(id)` hands back the one row with that id, or `null` if there is none.
+The lines that matter here are the two `[HttpGet]` attributes and the `return` lines — the return types above them and the class header, including `[ApiController]`, are the same shape for every class like this one and don't choose the status code; the `return` line does. `[Route("api/v1/products")]` on the class gives both methods the same URL start, and the attribute above each method adds the rest: `[HttpGet]` above `List()` answers `GET /api/v1/products`; `[HttpGet("{id:int}")]` above `Get(int id)` answers that same URL followed by an integer, which arrives as the `id` parameter. That's how `GET /api/v1/products/999999` in Try it below ends up running `Get`, not `List`. `db` is how this class reaches the Đơn Hàng database, and both methods only ever read from it; `FindAsync(id)` hands back the one row with that id, or `null` if there is none.
 
 `List()` has exactly one `return`, `Ok(products)`, with no branch on how many rows `products` holds — an empty list still reaches that same line and gets the same `200`. `Get(int id)` has two returns: `NotFound()`, the call that sends the `404`, when `db.Products.FindAsync(id)` comes back `null`, and `Ok(...)`, the call that sends the `200`, only once a real row exists to build a `ProductDto` from. Neither method writes to `db` anywhere — both only read, matching the rule that a GET must not change anything.
 
@@ -92,7 +92,7 @@ The lines that matter here are the two `[HttpGet]` attributes and the `return` l
 
 ## Try it (3 minutes)
 
-1. From the Đơn Hàng project's root folder, start the example system with `scripts/up.sh` — it starts the Đơn Hàng system on port 8080; wait until it stops printing before running the next command. Then run `curl -i http://localhost:8080/api/v1/products/1` (a product id that exists) — `curl` sends one request from the terminal and prints the answer; `-i` makes the status code and headers print above the body, which is where you read the `200` or `404`.
+1. From the Đơn Hàng project's root folder, start the example system with `scripts/up.sh` — it starts the Đơn Hàng system on port 8080; wait until it stops printing and your prompt comes back before running the next command. Then run `curl -i http://localhost:8080/api/v1/products/1` (a product id that exists) — `curl` sends one request from the terminal and prints the answer; `-i` makes the status code and headers print above the body, which is where you read the `200` or `404`.
 2. Then run `curl -i http://localhost:8080/api/v1/products/999999` (a product id that doesn't).
 3. Then run `curl -i http://localhost:8080/api/v1/products` (no id).
 
