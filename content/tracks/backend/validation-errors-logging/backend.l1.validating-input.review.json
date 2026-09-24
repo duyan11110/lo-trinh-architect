@@ -1,109 +1,87 @@
 {
   "id": "backend.l1.validating-input",
   "technical": {
-    "reviewed_at": "2026-09-25T21:00:00+07:00",
+    "reviewed_at": "2026-09-25T23:30:00+07:00",
     "reviewer": "claude-opus-5[1m]",
     "claim_verdicts": [
       {
         "n": 1,
         "verdict": "verified",
-        "evidence": "`git show stage-0:db/schema.sql` line 20: `    customer_id integer NOT NULL REFERENCES customers (id),` (block in the lesson is lines 18-32, char-for-char identical; `git diff stage-0 HEAD -- db/schema.sql` is empty). PostgreSQL 17 docs, ddl-constraints: \"A foreign key constraint specifies that the values in a column (or a group of columns) must match the values appearing in some row of another table. We say this maintains the referential integrity between two related tables.\"",
-        "source": "examples/don-hang @ stage-0 db/schema.sql:18-24; https://www.postgresql.org/docs/17/ddl-constraints.html"
+        "evidence": "`git -C examples/don-hang show stage-1:db/schema.sql` line 20: `customer_id integer NOT NULL REFERENCES customers (id),`. `tools/extract-code db/schema.sql --tag stage-1 --lines 18-32` returns exactly the lesson's block, character for character. PostgreSQL 17 ddl-constraints: \"A foreign key constraint specifies that the values in a column (or a group of columns) must match the values appearing in some row of another table.\"",
+        "source": "examples/don-hang @ stage-1 db/schema.sql:18-24; https://www.postgresql.org/docs/17/ddl-constraints.html"
       },
       {
         "n": 2,
         "verdict": "verified",
-        "evidence": "`git show stage-0:db/schema.sql` lines 26-32: `quantity       integer NOT NULL CHECK (quantity > 0),` and `    PRIMARY KEY (order_id, product_id)`; the `order_items` block declares no `id` column, so the composite PK is the only key. Same bytes at stage-1 and HEAD.",
-        "source": "examples/don-hang @ stage-0 db/schema.sql:26-32"
+        "evidence": "Same extract: `quantity       integer NOT NULL CHECK (quantity > 0),` and `PRIMARY KEY (order_id, product_id)`; the `order_items` block declares no `id` column, so the composite PK is the only key. Unchanged since round 1 (`example_tag` is now stage-1, same bytes as stage-0).",
+        "source": "examples/don-hang @ stage-1 db/schema.sql:26-32"
       },
       {
         "n": 3,
         "verdict": "verified",
-        "evidence": "`git show stage-1:DonHang.Domain/OrderService.cs` line 8 `public async Task<Order> PlaceOrderAsync(int customerId, List<OrderItem> items)`, line 10 `        if (items.Count == 0) throw new ArgumentException(\"an order needs at least one item\");`, `await repository.AddAsync(order);` at line 19 and `await repository.SaveChangesAsync();` at line 20 — the throw is the method's first statement. The lesson's inline quote matches character for character. Note: the file does not exist at the lesson's declared `example_tag: stage-0` (see issue).",
-        "source": "examples/don-hang @ stage-1 DonHang.Domain/OrderService.cs:8-20"
+        "evidence": "`git show stage-1:DonHang.Domain/OrderService.cs`: `public async Task<Order> PlaceOrderAsync(int customerId, List<OrderItem> items)`, then as the method's FIRST statement `if (items.Count == 0) throw new ArgumentException(\"an order needs at least one item\");`, with `await repository.AddAsync(order);` / `await repository.SaveChangesAsync();` further down. The lesson's inline quote matches character for character. Round-2 wording \"receives the request's item list as its `items` parameter\" matches OrdersController.Create, which maps `request.Items` into `List<OrderItem>` and passes it.",
+        "source": "examples/don-hang @ stage-1 DonHang.Domain/OrderService.cs; DonHang.Api/Controllers/OrdersController.cs"
       },
       {
         "n": 4,
         "verdict": "verified",
-        "evidence": "OrderService.cs stage-1 lines 8-23 contain exactly one guard (`items.Count == 0`); the rest only builds `new Order {...Items = items}` and calls AddAsync/SaveChangesAsync — no read of `Quantity` or `ProductId`. Confirmed by execution: POST with `productId:9999` (a row absent from `products`) returned `HTTP/1.1 500` with `{\"title\":\"Server error\",\"status\":500,\"detail\":\"something went wrong\"}`, i.e. the value reached the database unchecked.",
-        "source": "examples/don-hang @ stage-1 DonHang.Domain/OrderService.cs:8-23; live curl, lab api image donhang-api:stage-1"
+        "evidence": "OrderService.cs at stage-1 contains exactly one guard (`items.Count == 0`); the rest builds `new Order { ... Items = items }` and calls AddAsync/SaveChangesAsync, with no read of `Quantity` or `ProductId`. OrdersController.Create likewise only copies `i.ProductId`, `i.Quantity`, `i.UnitPriceVnd` into `OrderItem` without testing them, so both values reach the database unchecked by application code.",
+        "source": "examples/don-hang @ stage-1 DonHang.Domain/OrderService.cs; DonHang.Api/Controllers/OrdersController.cs"
       },
       {
         "n": 5,
         "verdict": "verified",
-        "evidence": "Re-ran this session against the running lab: login POST /api/v1/auth/login (anh.tran@example.com) then `curl -i -X POST http://localhost:8080/api/v1/orders -d '{\"items\":[]}'` -> `HTTP/1.1 400 Bad Request` and body `{\"title\":\"Invalid request\",\"status\":400,\"detail\":\"an order needs at least one item\"}`. `docker compose logs api` shows `System.ArgumentException: an order needs at least one item`. Content-Type observed is `application/json; charset=utf-8` (not problem+json) — the lesson claims only the body shape, so no conflict.",
-        "source": "live: donhang-api:stage-1 via http://localhost:8080"
+        "evidence": "Round-1 live run (text unchanged): POST /api/v1/orders with `{\"items\":[]}` returned `HTTP/1.1 400 Bad Request` and `{\"title\":\"Invalid request\",\"status\":400,\"detail\":\"an order needs at least one item\"}`. Confirmed from source this round: ExceptionHandlingMiddleware has `catch (ArgumentException ex)` -> `WriteProblemAsync(context, StatusCodes.Status400BadRequest, \"Invalid request\", ex.Message)`, and the thrown message is exactly that string (claim 3).",
+        "source": "live: donhang-api:stage-1; examples/don-hang @ stage-1 DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs"
       },
       {
         "n": 6,
         "verdict": "verified",
-        "evidence": "`-d '{\"items\":[{\"productId\":1,\"quantity\":0,\"unitPriceVnd\":10000}]}'` -> `HTTP/1.1 500 Internal Server Error`, body `{\"title\":\"Server error\",\"status\":500,\"detail\":\"something went wrong\"}`. api logs: `Npgsql.PostgresException (0x80004005): 23514: new row for relation \"order_items\" violates check constraint \"order_items_quantity_check\"` wrapped in `DbUpdateException` from `Microsoft.EntityFrameworkCore.Update`. productId 9999 returns the same status and body.",
-        "source": "live: donhang-api:stage-1; docker compose logs api"
+        "evidence": "Round-1 live run: `{\"productId\":1,\"quantity\":0,\"unitPriceVnd\":10000}` -> `HTTP/1.1 500`, body `{\"title\":\"Server error\",\"status\":500,\"detail\":\"something went wrong\"}`; log `Npgsql.PostgresException ... 23514: new row for relation \"order_items\" violates check constraint \"order_items_quantity_check\"` inside `DbUpdateException`. Source confirms the body: the middleware's `catch (Exception ex)` writes `Status500InternalServerError, \"Server error\", \"something went wrong\"`. db/seed.sql @ stage-1 inserts product id 1, so the request does reach the CHECK.",
+        "source": "live: donhang-api:stage-1; ExceptionHandlingMiddleware.cs; db/seed.sql @ stage-1"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "PostgreSQL 17 ddl-constraints, fetched this session: \"PostgreSQL does not support CHECK constraints that reference table data other than the new or updated row being checked.\" and \"This assumption is what justifies examining CHECK constraints only when rows are inserted or updated, and not at other times.\" Also \"A check constraint can also refer to several columns.\", which is why round 1's fix from \"per-column\" to \"a row-level database rule, a *constraint*\" in section 3 is now correct as written.",
+        "source": "https://www.postgresql.org/docs/17/ddl-constraints.html"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "RFC 9110 s15.3.2, verbatim from the local mirror refs/rfc/rfc9110.txt:6970: \"The 201 (Created) status code indicates that the request has been fulfilled and has resulted in one or more new resources being created.\" Section 6's sentence and the round-2 summary line 5 (\"the empty-items check answers `400`, never `201` with an error field bolted on\") both stay inside that, and no longer assert `400` is the only admissible status.",
+        "source": "refs/rfc/rfc9110.txt:6968-6974 (RFC 9110 s15.3.2)"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Orphaned claim added after this round's own review ran, to close its minor issue #2 (the new section-4 sentences about the catching mechanism had no claim). Verified using the same evidence this round already gathered: DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs catches ArgumentException -> 400 with ex.Message as detail, KeyNotFoundException -> 404, any other Exception -> fixed 500 'something went wrong'; registered via app.UseMiddleware<ExceptionHandlingMiddleware>() at DonHang.Api/Program.cs:67.",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs; DonHang.Api/Program.cs:67 (cited in this review's own findings)"
       }
     ],
     "issues": [
       {
-        "severity": "major",
-        "section": 3,
-        "kind": "accuracy",
-        "text": "A PostgreSQL CHECK constraint is not \"per-column\": it is a row-level rule that may span several columns of the same row. PostgreSQL 17 docs, ddl-constraints: \"A check constraint can also refer to several columns.\" (example: `CHECK (price > discounted_price)`). The lesson's own `orders.status` CHECK is a column one, but `order_items` could carry a multi-column CHECK. The true limit is the row, which the second half of the bullet states correctly. Also unlisted: no claim in the ledger covers how PostgreSQL enforces CHECK.",
-        "quote": "`CHECK (quantity > 0)` — a per-column database rule; PostgreSQL enforces it on every `INSERT`, rejecting a row that breaks it, but only that one column's condition — it can't see anything outside its own row.",
-        "fix": "Rewrite as: \"`CHECK (quantity > 0)` — a row-level database rule; PostgreSQL tests it against the new row on every `INSERT` and `UPDATE`, and rejects a row that breaks it. It can see that row's own columns and nothing else.\" Add a claim to `.meta.json` for it, source https://www.postgresql.org/docs/17/ddl-constraints.html."
-      },
-      {
         "severity": "minor",
-        "section": 3,
+        "section": 4,
         "kind": "accuracy",
-        "text": "The stated reason is weaker than the real one. \"No column holds how many items\" invites a junior to answer \"then add an item_count column\" (quiz q5's distractor). The documented rule is stronger: PostgreSQL 17 ddl-constraints: \"PostgreSQL does not support CHECK constraints that reference table data other than the new or updated row being checked.\" — counting `order_items` rows is out of reach for any CHECK regardless of which columns exist.",
-        "quote": "no `CHECK` on one table's column can express it, since no column holds \"how many items does this order have\"",
-        "fix": "Replace the clause with: \"no `CHECK` can express it, because a `CHECK` only ever sees the row being inserted — never other rows, and never another table's rows.\""
-      },
-      {
-        "severity": "major",
-        "section": "frontmatter",
-        "kind": "code",
-        "text": "`example_tag: stage-0`, but the code the lesson quotes inline and the system it tells the reader to call only exist at stage-1: `git show stage-0:DonHang.Domain/OrderService.cs` -> \"fatal: path 'DonHang.Domain/OrderService.cs' exists on disk, but not in 'stage-0'\". The running lab that produces the 400/500 evidence is `donhang-api:stage-1` (`docker compose ps`). A reader checking out stage-0 finds neither `PlaceOrderAsync` nor a `POST /api/v1/orders`.",
-        "quote": "example_tag: stage-0",
-        "fix": "Set `example_tag: stage-1` in the lesson frontmatter and in the `backend.l1.validating-input` entry of `content/tracks/backend/track.yaml`. The SQL block needs no other change: `git diff stage-0 stage-1 -- db/schema.sql` is empty, so `file=db/schema.sql tag=stage-1 lines=18-32` is byte-identical. Keep `example_files: [db/schema.sql]`."
-      },
-      {
-        "severity": "major",
-        "section": 6,
-        "kind": "accuracy",
-        "text": "Unlisted claim: the lesson asserts what `201` means and that a validation failure must not use it (also line 5 of the summary: \"it must return `400`, not `201`\"). This is an RFC 9110 statement, verifiable and load-bearing, but no entry in `.meta.json` covers it, and `versions_used` omits the `http` key that governs it (the prereq lesson errors-and-problem-details does list `http`).",
-        "quote": "failing validation means the order was never created — nothing was saved, so there is no new resource to answer `201` about",
-        "fix": "Add a claim to `.meta.json`: \"201 means the request has been fulfilled and one or more new resources were created (RFC 9110 s15.3.2), so a request that created nothing cannot answer 201\", kind `fact`, source RFC 9110 s15.3.2; and add `http` to `versions_used`. No prose change needed — the sentence is correct as written."
-      },
-      {
-        "severity": "minor",
-        "section": 1,
-        "kind": "accuracy",
-        "text": "The recap promises a `type` member that no body in this lesson has: both observed responses are `{\"title\",\"status\",\"detail\"}` with no `type`. RFC 9457 makes it optional: \"When this member is not present, its value is assumed to be 'about:blank'.\" As written, an attentive reader concludes section 5's bodies are malformed Problem Details.",
-        "quote": "you know a failing response's body should carry `type`/`title`/`status`/`detail`, the same shape no matter which endpoint failed",
-        "fix": "Reword to: \"you know a failing response's body carries `title`/`status`/`detail` (and optionally a `type`), the same shape no matter which endpoint failed.\""
+        "text": "The new quantity paragraph implies the database's exception carries no message. It does: the captured log is `Npgsql.PostgresException ... 23514: new row for relation \"order_items\" violates check constraint \"order_items_quantity_check\"`. The response is generic because ExceptionHandlingMiddleware's fallback `catch (Exception ex)` writes a hardcoded \"something went wrong\" instead of `ex.Message` — only the ArgumentException branch passes a message through. Quiz q4's `correct` explanation repeats the same wording.",
+        "quote": "Nothing there names `quantity`, or says which item, or says a number needed to be positive — that same catching mechanism has no specific message to work with here",
+        "fix": "Replace with: \"The response names nothing — not `quantity`, not which item, not that a number had to be positive: that same catching mechanism has no case for this kind of exception, so it falls back to a generic message instead of passing anything along.\" Make the matching change in quiz q4's `correct` explanation (en+vi): \"without a specific message ready\" -> \"with no case matching it\"."
       },
       {
         "severity": "minor",
         "section": 4,
-        "kind": "diagram",
-        "text": "\"unhandled\" is contradicted by the lesson's own evidence: a genuinely unhandled exception does not produce `{\"title\":\"Server error\",\"status\":500,\"detail\":\"something went wrong\"}` — something caught it and wrote that body. The prose is careful (\"an exception the endpoint never asked about\"); the diagram node is not.",
-        "quote": "H[unhandled exception, generic 500]",
-        "fix": "Relabel the node `H[exception the endpoint didn't expect, generic 500]`. This keeps the middleware out of scope (per the outline's depth_notes) while not asserting the exception went unhandled."
-      },
-      {
-        "severity": "major",
-        "section": "quiz.q3",
-        "kind": "quiz",
-        "text": "Two options answer the stem as asked. The stem is \"Which rule can no single column's `CHECK` constraint express\"; option `c` (\"`customer_id` must reference a real customer\") also cannot be expressed by any CHECK — PostgreSQL 17 ddl-constraints: \"PostgreSQL does not support CHECK constraints that reference table data other than the new or updated row being checked\", and recommends FOREIGN KEY instead. The option's own text concedes this (\"expressed by the foreign key\"), and the `c` explanation admits \"This is handled by a foreign key, not a `CHECK`\".",
-        "quote": "Which rule can no single column's `CHECK` constraint express, as this lesson explains it?",
-        "fix": "Change the stem to: \"Which rule has no database constraint enforcing it at all, so application code has to check it?\" Then `a` is uniquely right (b, d are CHECKs; c is a foreign key). Update `c`'s explanation to: \"A foreign key already enforces this in the database, so the endpoint doesn't have to.\""
+        "kind": "accuracy",
+        "text": "Round 2 added a mechanism sentence with no entry in the claims ledger. Its substance is entailed by claims 3+5+6 (the thrown message is exactly the 400's `detail`; the quantity path gets a generic 500), so this is not an unlisted claim in the strong sense — but \"that specific exception\" plus \"a different, unrecognized kind of exception\" asserts recognition by exception type, which no claim covers. Verified true this session: catch KeyNotFoundException -> 404, catch ArgumentException -> 400 with ex.Message, catch Exception -> 500 generic.",
+        "quote": "something outside `PlaceOrderAsync` catches that specific exception and turns its own message into the response's `detail`",
+        "fix": "Add claim 9 to `.meta.json`: \"An exception-handling middleware registered first in the pipeline catches by exception type: ArgumentException -> 400 with the exception's own Message as `detail`; an unrecognized exception -> 500 with a fixed 'something went wrong'\", kind `behavior`, source `examples/don-hang @ stage-1 DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs` + `DonHang.Api/Program.cs` line `app.UseMiddleware<ExceptionHandlingMiddleware>();`. No prose change needed."
       }
     ],
     "scope": {
       "outline_covered": true,
       "beyond_scope": []
     },
-    "verdict": "fix-required"
+    "verdict": "pass"
   },
   "junior": {
     "reviewed_at": "2026-09-25T22:30:00+07:00",
