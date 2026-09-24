@@ -48,7 +48,7 @@ A `DbContext` is the object standing between your code and the database: you ask
 
 The translation needs to know two things for every property: which table, and which column. By default, EF Core assumes a column exists with the exact same name as the property — a `Product.Name` property expects a `Name` column. The Đơn Hàng database doesn't use that casing: its columns are snake_case (`price_vnd`), while `Product`'s properties are PascalCase (`PriceVnd`), the normal casing for a C# property. Nothing about the framework auto-translates one casing into the other; wherever a name doesn't match by default, the mapping has to name the real column explicitly.
 
-That means the mapping isn't guessing at a schema — the tables and columns the database already has — it's aimed at one that already exists. `Product` doesn't describe what the `products` table should look like; it describes what a `products` row already looks like, told to EF Core one column at a time.
+That means the mapping isn't guessing at a schema — the tables and columns the database already has — it's aimed at one that already exists. Here, `Product` doesn't describe what the `products` table should look like — the table came first; `Product` describes what a `products` row already looks like, told to EF Core one column at a time.
 
 ## In the Đơn Hàng system
 
@@ -63,7 +63,7 @@ public sealed class Product
 }
 ```
 
-Three properties, no attributes, no base class, nothing in the class itself pointing at a database — it's just a shape. `DonHangDbContext`, this project's own class built on EF Core's `DbContext`, is what connects that shape to the real `products` table. It declares one `DbSet<T>` property per table; the one for `Product` is `public DbSet<Product> Products => Set<Product>();`, where `Set<Product>()` is the `DbSet<Product>` the `DbContext` itself keeps for that table. `Products => Set<Product>()` is what `Get(int id)`, from the last lesson, reaches through when it calls `db.Products.FindAsync(id)` — `db` being a `DonHangDbContext`, handed to `ProductsController` when the request is served — and that call is what turns one row into the `Product` object named `product`.
+Three properties, no attributes, no base class, nothing in the class itself pointing at a database — it's just a shape. `DonHangDbContext`, this project's own class built on EF Core's `DbContext`, is what connects that shape to the real `products` table. It declares one `DbSet<T>` property per table; the one for `Product` is `public DbSet<Product> Products => Set<Product>();`, where `Set<Product>()` is how the `DbContext` gives back the `DbSet<Product>` for that table. `Products => Set<Product>()` is what `Get(int id)`, from the last lesson, reaches through when it calls `db.Products.FindAsync(id)` — `db` being a `DonHangDbContext`, handed to `ProductsController` when the request is served — and that call is what turns one row into the `Product` object named `product`.
 
 The column mapping lives elsewhere, in `OnModelCreating` — a method on `DonHangDbContext` that EF Core calls when it builds the mapping, handing it a `modelBuilder` to describe each class with — one call per property:
 
@@ -77,7 +77,7 @@ The column mapping lives elsewhere, in `OnModelCreating` — a method on `DonHan
         });
 ```
 
-`ToTable("products")` says which table `Product` maps to; each `Property(...).HasColumnName(...)` says which column that one property reads and writes. `Id` and `Name` happen to already match their columns' names once case is set aside, but `HasColumnName` is still there for them — nothing here relies on a name matching by accident. `PriceVnd` is the one that breaks without it: left unconfigured, EF Core would ask PostgreSQL for a column literally named `PriceVnd`, and the query would fail at runtime — `column "PriceVnd" does not exist` — because the table only has `price_vnd`.
+`ToTable("products")` says which table `Product` maps to; each `Property(...).HasColumnName(...)` says which column that one property reads and writes. `Id` and `Name` happen to already match their columns' names once case is set aside, but `HasColumnName` is still there for them — nothing here relies on a name matching by accident. `PriceVnd` is the one that breaks without it: left unconfigured, EF Core would ask PostgreSQL for a column literally named `PriceVnd`, and the query would fail at runtime — PostgreSQL answers with an error saying the column `PriceVnd` does not exist — because the table only has `price_vnd`.
 
 ## Beginners often think…
 
