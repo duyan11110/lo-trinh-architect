@@ -52,7 +52,7 @@ In the situation above, `ExceptionHandlingMiddleware.InvokeAsync` wraps one `try
 
 When it throws instead, C# checks this method's `catch` clauses in the order they're written. `KeyNotFoundException` is listed first, so `CancelOrderAsync`'s missing-order case is caught there, answering `404`. `ArgumentException` is listed second, catching `PlaceOrderAsync`'s empty-item-list case as `400`. Both of those are already familiar from [[backend.l1.validating-input]] and [[backend.l1.choosing-an-error-status]].
 
-What's new here is the last clause: `catch (Exception ex)` matches anything neither of the two more specific types above it already claimed, including the situation's lost connection. That branch answers `500` with the same fixed `detail` whatever the underlying exception was — unless a middleware after it has already started sending the response, in which case nothing here can still change what the client sees.
+What's new here is the last clause: `catch (Exception ex)` matches anything neither of the two more specific types above it already claimed, including the situation's lost connection. That branch answers `500` with the same fixed `detail` whatever the underlying exception was, as long as the code inside `next(context)` hadn't already started writing a response of its own before throwing — once a response has started, ASP.NET Core throws a new exception instead of letting this `catch` change what the client already received.
 
 ## In the Đơn Hàng system
 
@@ -87,7 +87,7 @@ The two specific catches pass `ex.Message` as `detail`, the pattern [[backend.l1
 
 ## Beginners often think…
 
-- **"An exception an endpoint doesn't catch just means that one request fails silently; nothing else needs to run."** → Actually it never fails silently: this app is set up to show full error detail while developing, so without this middleware a `500` still comes back, but carrying a raw stack trace instead of a body a client could parse. This middleware's `catch (Exception)` clause intercepts the exception first, replacing that stack trace with one fixed, parseable body instead. You notice this when the situation's lost connection still comes back with a body a client can parse, not a stack trace.
+- **"An exception an endpoint doesn't catch just means that one request fails silently; nothing else needs to run."** → Actually it never fails silently: this app is set up to include exception detail while developing, so without this middleware a `500` still comes back — but with the exception's own type, message, and stack trace inside the body, for any client to read. This middleware's `catch (Exception)` clause intercepts the exception first, replacing that leak with one fixed, generic body that reveals nothing about what actually failed. You notice this when the situation's lost connection still comes back with a body that never mentions Postgres or a connection at all.
 - **"Logging the exception and returning a response to the client are the same step; doing one does the other."** → Actually `logger.LogError(ex, "unhandled exception")` and `await WriteProblemAsync(...)` are two separate calls in the same `catch` block; the first records the real exception, the second decides what the client sees, and only the second ever reaches the client. You notice this when the response reads `"something went wrong"` while the log line right above it carries the real exception and its stack trace.
 
 ## Try it (3 minutes)
