@@ -15,14 +15,14 @@ vocab: [composite-key]
 example_tag: stage-1
 versions_used: [efcore]
 content_version: 1
-status: draft
-approved_by: null
-reviewed_at: null
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-25T00:15:00+07:00"
 ---
 
 ## Before you start
 
-- [[backend.l1.efcore-mapping]] — you know `OnModelCreating` maps one class to one table, column by column, with `Property(...).HasColumnName(...)`. This lesson is about the calls in that same method for tables that relate to each other.
+- [[backend.l1.efcore-mapping]] — you know `OnModelCreating` maps one class to one table with `modelBuilder.Entity<T>(e => { ... })`, `e.ToTable(...)`, and `e.Property(...).HasColumnName(...)`, column by column. This lesson is about the calls in that same method for tables that relate to each other.
 
 ## The situation
 
@@ -42,7 +42,7 @@ flowchart LR
   C[order_items.order_id, product_id] -->|HasKey with both| D[one order_items row]
 ```
 
-A navigation property doesn't replace the foreign key column — it sits alongside it. `Order` still has `CustomerId`, an `int`, exactly like `orders.customer_id`; `Customer`, the navigation property, is a second, separate property that gives code the related `Customer` object itself, once EF Core has it. When and how EF Core puts that object there is [[backend.l1.efcore-n-plus-one]]'s subject; this lesson only accounts for the property existing and being configured. Writing `order.Customer.FullName` reads that second property; nothing about it removes or changes `order.CustomerId`.
+A navigation property doesn't replace the foreign key column — it sits alongside it. `Order` still has `CustomerId`, an `int`, exactly like `orders.customer_id`; `Customer`, the navigation property, is a second, separate property that gives code the related `Customer` object itself, once EF Core has it — in the code that serves `GET /api/v1/orders`, it is there, as Try it below shows. When and how EF Core puts it there is [[backend.l1.efcore-n-plus-one]]'s subject; this lesson only accounts for the property existing and being configured. Writing `order.Customer.FullName` reads that second property; nothing about it removes or changes `order.CustomerId`.
 
 Configuring a navigation property looks like configuring a column, but describes a relationship instead of one value: `HasOne(o => o.Customer)` says which navigation property is involved, and `HasForeignKey(o => o.CustomerId)` says which property is the foreign key — the same `CustomerId` already mapped to the `customer_id` column by `HasColumnName`. The same shape works the other way round, for a collection instead of one object: `HasMany(o => o.Items)` and `HasForeignKey(i => i.OrderId)` describe `Order.Items`, the list of an order's `OrderItem` rows, tied to it through `OrderId`.
 
@@ -101,7 +101,7 @@ The `// lesson:` comment is a bookmark for a later lesson and can be ignored her
         });
 ```
 
-`WithOne(...)`/`WithMany(...)` name the navigation property on the *other* side of the relationship, the same way `HasOne`/`HasMany` name it on this side — empty parentheses mean there is none; if `Customer` instead had a `List<Order> Orders` property, that line would read `WithMany(c => c.Orders)` instead of `WithMany()`.
+`WithOne(...)`/`WithMany(...)` name the navigation property on the *other* side of the relationship, the same way `HasOne`/`HasMany` name it on this side — the word follows how many there are on that other side, one `Order` per `OrderItem` but many orders per `Customer`, even when the parentheses stay empty. Empty parentheses mean there is no navigation property there at all; if `Customer` instead had a `List<Order> Orders` property, that line would read `WithMany(c => c.Orders)` instead of `WithMany()`.
 
 `e.HasMany(o => o.Items).WithOne().HasForeignKey(i => i.OrderId)` names `Items` as the navigation property and `OrderId` as the foreign-key property on the other side — the same `OrderId` that the `OrderItem` block below maps to the `order_id` column; `WithOne()` is left empty because `OrderItem` has no property pointing back to its `Order` — this relationship only reads in one direction. `e.HasOne(o => o.Customer).WithMany().HasForeignKey(o => o.CustomerId)` does the same for the single-object side: `Customer` is the navigation property, `CustomerId` is the foreign-key property, and `WithMany()` is empty for the same reason — `Customer` has no list of its own orders.
 
@@ -110,11 +110,11 @@ The `// lesson:` comment is a bookmark for a later lesson and can be ignored her
 ## Beginners often think…
 
 - **"Every table EF Core maps needs a single column called `Id`, or EF Core can't work with it."** → Actually `order_items` has no `Id` at all; `HasKey(i => new { i.OrderId, i.ProductId })` tells EF Core to use the pair instead. Nothing about EF Core requires a single-column key named `Id` — that's just what every other table in this system happens to use.
-- **"Once a foreign key column exists, `order.Customer` works immediately, without EF Core needing any extra configuration."** → Actually `orders.customer_id` existing in the database doesn't create `Order.Customer` — the C# property has to exist on the class; in this codebase the `HasOne(o => o.Customer).WithMany().HasForeignKey(o => o.CustomerId)` line states that relationship explicitly, next to the column mappings, and that is the only case this lesson describes.
+- **"Once a foreign key column exists, `order.Customer` works immediately, without EF Core needing any extra configuration."** → Actually `orders.customer_id` existing in the database doesn't create `Order.Customer` — the C# property has to exist on the class; in this codebase the `HasOne(o => o.Customer).WithMany().HasForeignKey(o => o.CustomerId)` line states that relationship explicitly, next to the column mappings — every relationship in Đơn Hàng is configured this way.
 
 ## Try it (3 minutes)
 
-1. From the Đơn Hàng project's root folder, with the example system running (`scripts/up.sh`), send `{"email": "anh.tran@example.com", "password": "donhang-dev-password"}` to `POST /api/v1/auth/login` — that account is already in the example data. Take the value the response returns, and send it in the header `Authorization: Bearer <value>` when you call `GET /api/v1/orders`.
+1. From the Đơn Hàng project's root folder, with the example system running (`scripts/up.sh`), send `{"email": "anh.tran@example.com", "password": "donhang-dev-password"}` to `POST /api/v1/auth/login` — that account is already in the example data. Take the `token` field from the response body, and send it in the header `Authorization: Bearer <value>` when you call `GET /api/v1/orders` — `Bearer` is typed literally, only `<value>` is replaced.
 2. In the response, find `customerName`. In `Entities.cs`, find the only property on `Order` that could supply it.
 
 Expected result: the response carries a `customerName` field even though `orders` has only a `customer_id` column, and no request you made ever supplied that name.
