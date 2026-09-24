@@ -15,9 +15,9 @@ vocab: []
 example_tag: stage-1
 versions_used: [aspnetcore]
 content_version: 1
-status: draft
+status: reviewed
 approved_by: null
-reviewed_at: null
+reviewed_at: "2026-09-24T13:00:00+07:00"
 ---
 
 ## Before you start
@@ -58,7 +58,7 @@ sequenceDiagram
   K-->>C: response bytes
 ```
 
-The diagram skips `UseCors` and `UseAuthentication`; the full order is below. It uses `OrdersController.Create` for this rejection example; the same shape applies to `OrdersController.Get`, used in Try it below. In this pipeline, a request travels forward once: Kestrel turns the incoming bytes into a request, routing matches it to an endpoint, then it passes through every middleware in registration order, into that endpoint if nothing stopped it first. The response travels the same path backward, middleware by middleware, in the reverse of that order — the diagram's arrows going right are that forward trip; the arrows going left are the way out. When `UseAuthorization` does not allow the request, the `Z->>E` arrow never happens, and the response arrow starts at `Z` instead of `E`, then travels back through `M2` and `M1` exactly the same way.
+The diagram skips `UseCors` and `UseAuthentication`; the full order is below. It uses `OrdersController.Create`; the same shape applies to `OrdersController.Get`, used in Try it below. In this pipeline, a request travels forward once: Kestrel turns the incoming bytes into a request, routing matches it to an endpoint, then it passes through every middleware in registration order, into that endpoint if nothing stopped it first. The response travels the same path backward, middleware by middleware, in the reverse of that order — the diagram's arrows going right are that forward trip; the arrows going left are the way out. When `UseAuthorization` does not allow the request, the `Z->>E` arrow never happens, and the response arrow starts at `Z` instead of `E`, then travels back through `M2` and `M1` exactly the same way.
 
 `RequestLoggingMiddleware` is not guessing when it logs a status code: its own `next(context)` call has already returned, so a response now exists, whether the endpoint produced it or a short-circuit further down did. It reads `context.Response.StatusCode` only after that, on the way out — the answer is already there by the time its own code after `next` runs.
 
@@ -81,7 +81,7 @@ app.MapControllers();
 app.Run();
 ```
 
-The comment's "terminal middleware" means the last calls able to answer a request outright instead of only passing it on — `UseAuthorization`, plus `UseAuthentication` right before it, which the comment's "auth" is short for even though `UseAuthentication` itself never rejects a request. The comment's "routing" is a different use of that word from the one in Core concepts: not the automatic matching that already happened before these six lines ran, but `app.MapControllers()`, the line that registers the endpoints so one of them can run.
+The comment's "terminal middleware" is `UseAuthorization` — the only one of these six calls that can answer a request outright instead of passing it on. The comment's "auth" is short for the pair `UseAuthentication` and `UseAuthorization`, though only the second of the two can do that. The comment's "routing" is a different use of that word from the one in Core concepts: not the automatic matching, which happens on every request before any of the middleware these lines register runs, but `app.MapControllers()`, the line that registers the endpoints so one of them can run.
 
 Reading top to bottom names the forward order for these six calls: exception handling, logging, CORS, `UseAuthentication`, `UseAuthorization`, then the matched endpoint. `UseCors` and `UseAuthentication` are only names holding positions in that list here — what each one does is not this lesson's subject. The final `app.Run();` line is not a step of the trip either — it is the call that runs the app, starting the server that then listens for connections, and blocks until the app shuts down. Nothing in this file spells out the reverse order — it does not need to, because the reverse order is always exactly this list backward, for every request, whether it reaches `app.MapControllers()` or stops one line earlier, at `UseAuthorization`. A `POST /api/v1/orders` with no `Authorization` header travels in only as far as `UseAuthorization`, but travels out through `RequestLoggingMiddleware` regardless — as you saw in the previous lesson's Try it — and past `ExceptionHandlingMiddleware` too, which simply has nothing to do when no exception was thrown.
 
