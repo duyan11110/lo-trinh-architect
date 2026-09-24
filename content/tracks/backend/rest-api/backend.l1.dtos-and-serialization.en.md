@@ -15,9 +15,9 @@ vocab: [dto]
 example_tag: stage-1
 versions_used: [aspnetcore]
 content_version: 1
-status: draft
+status: reviewed
 approved_by: null
-reviewed_at: null
+reviewed_at: "2026-09-25T00:30:00+07:00"
 ---
 
 ## Before you start
@@ -26,7 +26,7 @@ reviewed_at: null
 
 ## The situation
 
-A teammate suggests skipping a separate type for what `GET /api/v1/products/{id}` returns — just return the `Product` class the server already has internally, and save writing another type. It would work today: `Product` only has `Id`, `Name`, and `PriceVnd`, exactly the fields a client would want back. Nothing in the response would look wrong, and no test would catch a difference, because right now there isn't one. Today's response gives no hint of it. What goes wrong later, once `Product` has to hold something a client should never see?
+A teammate suggests skipping a separate type for what `GET /api/v1/products/{id}` returns — just return the `Product` class the server already has internally, and save writing another type. It would work today: `Product` only has `Id`, `Name`, and `PriceVnd`, exactly the fields a client would want back. Nothing in the response would look wrong, and no test would catch a difference, because right now there isn't one. What goes wrong later, once `Product` has to hold something a client should never see?
 
 ## Core concepts
 
@@ -44,7 +44,7 @@ flowchart LR
   D[JSON request body] -->|deserialized| E[CreateOrderRequest DTO]
 ```
 
-A DTO is not the entity; something in the endpoint's own code has to build one from the other, field by field. `ProductsController.List()`, the method that answers `GET /api/v1/products` from the last lesson, does exactly this: `new ProductDto(p.Id, p.Name, p.PriceVnd)`, one argument per property, read off `p`, a `Product` row. Once that `ProductDto` is what the endpoint returns, serialization takes over — it walks the DTO's properties and writes one JSON field per property, with no further code from you.
+A DTO is not the entity; something in the endpoint's own code has to build one from the other, field by field. `ProductsController.List()`, the method that answers `GET /api/v1/products` from the last lesson, does exactly this: `new ProductDto(p.Id, p.Name, p.PriceVnd)`, one argument per property, read off `p`, a `Product` row. `Get(int id)`, the item-URL method Try it below calls, builds one the same way from the single row it finds. Once that `ProductDto` is what the endpoint returns, serialization takes over — it walks the DTO's properties and writes one JSON field per property, with no further code from you.
 
 The same mapping runs in reverse for a request body: `POST /api/v1/orders`'s body is JSON, and deserialization turns it into a `CreateOrderRequest` before your endpoint's code runs — one JSON field filling one property, the same field-by-field mapping, run the other way.
 
