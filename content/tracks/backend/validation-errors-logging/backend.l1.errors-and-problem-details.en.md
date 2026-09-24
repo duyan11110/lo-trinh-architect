@@ -27,15 +27,17 @@ reviewed_at: null
 
 ## The situation
 
-You're writing the Đơn Hàng client's error handling. `GET /api/v1/orders/999` returns `404` with the body `{"error":"order not found"}` — the lab's fixed stand-in for a real endpoint. When a real endpoint later returns its own `400` or `409`, nothing says its body has to look anything like that one: it could be `{"message": "..."}`, plain text, or something else entirely. Your client code would need a separate parser for every endpoint's error shape, just to show the user a reason. What should every failing response's body look like, so one piece of client code can read all of them?
+You're writing the Đơn Hàng client's error handling. At stage-0 the lab answered `GET /api/v1/orders/999` with `404` and the body `{"error":"order not found"}` — a fixed stand-in for a real endpoint. When a real endpoint later returns its own `400` or `409`, nothing says its body has to look anything like that one: it could be `{"message": "..."}`, plain text, or something else entirely. Your client code would need a separate parser for every endpoint's error shape, just to show the user a reason. What should every failing response's body look like, so one piece of client code can read all of them?
 
 ## Core concepts
 
-- **Problem Details (RFC 9457)** — the standard JSON shape for an error response: a body with `type`, `title`, `status`, and `detail`, instead of a shape each endpoint invents on its own.
-- `type` — a short, stable identifier for the kind of problem; when it's left out, it defaults to `"about:blank"`, meaning nothing more specific than the status code itself.
-- `title` — a short, human-readable summary of that problem kind, the same text every time this kind of error happens.
+- **Problem Details (RFC 9457)** — a standard JSON shape for an error response; this lesson uses four of its fields, `type`, `title`, `status`, `detail`, instead of a shape each endpoint invents on its own.
+- `type` — a URI reference that identifies the kind of problem; it's an identifier, not a sentence, and when it's left out, it defaults to `"about:blank"`, meaning nothing more specific than the status code itself.
+- `title` — a short, human-readable summary of that problem kind, meant to read the same on every occurrence of this kind of error.
 - `status` — the same HTTP status code already on the response's status line, repeated inside the body.
 - `detail` — a human-readable explanation specific to this one occurrence, naming the field or id involved.
+
+RFC 9457 defines one more field, `instance`, and lets an API add fields of its own — a body carrying extra fields beyond these four is still Problem Details.
 
 ## How it works
 
@@ -47,15 +49,15 @@ flowchart LR
   S --> P[Problem Details body: type, title, status, detail]
 ```
 
-Problem Details doesn't change which status code an endpoint returns for a given failure — that decision is exactly what it was before, made by whichever code path fails. What it standardizes is the body that comes back alongside that status code: instead of every endpoint inventing its own JSON, or plain text, for an error, every one of them returns the same four fields, or a subset of them.
+Problem Details doesn't change which status code an endpoint returns for a given failure — that decision is exactly what it was before, made by whichever code path fails. What it standardizes is the body that comes back alongside that status code: instead of every endpoint inventing its own JSON, or plain text, for an error, every one of them returns the same fields.
 
-`type` and `title` describe the *kind* of problem, so they stay the same on every response for that kind — every "order not found" response would use the same `title`. `status` copies the exact number already sitting on the response's status line; code that has already deserialized the body into an object can still tell which HTTP status caused it, without also holding on to the raw response. `detail` is the one field that changes per response: it names the specific thing that went wrong this time — which order id, which field, which conflict — while `type` and `title` stay fixed for that error kind.
+`type` and `title` describe the *kind* of problem, so they stay fixed across every response of that kind — every "order not found" response would use the same `title`. `status` copies the exact number already sitting on the response's status line — the status line is still the authoritative one, and the body's `status` is only a copy kept for convenience, for code that has already deserialized the body into an object and no longer holds on to the raw response. `detail` is the one field that changes per response: it names the specific thing that went wrong this time — which order id, which field, which conflict — while `type` and `title` stay fixed for that error kind.
 
-None of this touches which status code gets picked for which failure. A `400` still means the request itself was wrong, a `404` still means nothing matches, a `409` still means a conflict with the resource's current state — Problem Details only fixes the shape of what rides along with whichever one of those an endpoint returns.
+None of this touches which status code gets picked for which failure. A `400` still means the request itself was malformed or failed validation, a `404` still means the server has no current representation for that resource, a `409` still means a conflict with the resource's current state — Problem Details only fixes the shape of what rides along with whichever one of those an endpoint returns.
 
 ## In the Đơn Hàng system
 
-The stage-0 lab stands in for a real API with fixed Caddy responses, and it already shows what having no shared shape looks like. A missing order returns JSON:
+At stage-0, fixed Caddy responses stood in for a real API, and they already showed what having no shared shape looks like. A missing order returned JSON:
 
 ```caddyfile file=Caddyfile tag=stage-0 lines=52-55
 		handle @missingOrder {
@@ -72,7 +74,7 @@ That body has one field, `error`, holding a sentence written for this one path. 
 		}
 ```
 
-`/conflict` returns the same kind of information as `/api/v1/orders/999` — what went wrong, and why — but not even as JSON: the whole response is one plain-text string, no `error` field, no structure at all. A client reading order errors needs one parser for the JSON above and a completely different one for plain text here; a third endpoint could invent a third shape again. Problem Details replaces every one of these with the same four fields, no matter which endpoint or which status code produced them.
+`/conflict` returns the same kind of information the stage-0 `/api/v1/orders/999` handler did — what went wrong, and why — but not even as JSON: the whole response is one plain-text string, no `error` field, no structure at all. A client reading order errors needs one parser for the JSON above and a completely different one for plain text here; a third endpoint could invent a third shape again. Problem Details replaces every one of these with the same fields, no matter which endpoint or which status code produced them.
 
 ## Beginners often think…
 
@@ -81,14 +83,14 @@ That body has one field, `error`, holding a sentence written for this one path. 
 
 ## Try it (3 minutes)
 
-1. With the stage-0 lab running (`scripts/up.sh`), run `curl -sS -i http://localhost:8080/conflict`.
-2. Compare what you see to the `/api/v1/orders/999` handler quoted above, without curling it again.
+1. With the lab running (`scripts/up.sh`), run `curl -sS -i http://localhost:8080/conflict`.
+2. Compare it to the stage-0 `/api/v1/orders/999` handler quoted above — don't curl that path, the lab no longer serves that fixed body.
 
-Expected result: `/conflict` answers `409` with `Content-Type: text/plain; charset=utf-8` and a single line of plain text, no `error` field or any structure at all — a completely different shape from `/api/v1/orders/999`'s JSON, even though both are "a failure with a reason".
+Expected result: `/conflict` answers `409` with `Content-Type: text/plain; charset=utf-8` and a single line of plain text, no `error` field or any structure at all — a completely different shape from `/api/v1/orders/999`'s stage-0 JSON, even though both are "a failure with a reason".
 
 <details><summary>Suggested answer</summary>
 
-Two endpoints, two failures, two unrelated bodies: one is a JSON object with an `error` field, the other is one line of plain text with no structure a client could reliably parse. A client written to read one would silently mishandle the other. Problem Details fixes this by giving every failing response, regardless of which endpoint or status code, the same four fields to read.
+Two endpoints, two failures, two unrelated bodies: one is a JSON object with an `error` field, the other is one line of plain text with no structure a client could reliably parse. A client written to read one would silently mishandle the other. Problem Details fixes this by giving every failing response, regardless of which endpoint or status code, the same fields to read.
 
 </details>
 
