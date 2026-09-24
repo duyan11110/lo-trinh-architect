@@ -327,11 +327,11 @@ levels:
       prereqs: [backend.l1.get-and-status-codes, foundation.l1.tables-keys-relations]
       related: []
       vocab: [orm]
-      example_tag: stage-0
-      example_files: [db/schema.sql]
+      example_tag: stage-1
+      example_files: [DonHang.Infrastructure/DonHangDbContext.cs, DonHang.Domain/Entities.cs]
       outline:
       - "A `DbContext` maps C# entity classes to database tables; a `DbSet<Product>` on it represents the `products` table as a queryable collection of `Product` objects."
-      - "EF Core's default naming convention expects PascalCase (`Products`, `PriceVnd`); the Đơn Hàng database uses snake_case (`products`, `price_vnd`), so the mapping configures each name explicitly."
+      - "EF Core's default naming expects PascalCase (`Products`, `PriceVnd`); the Đơn Hàng database uses snake_case (`products`, `price_vnd`), so `OnModelCreating` configures each name explicitly via Fluent API `HasColumnName`."
       - "The `Product` class the API queries against matches the shape `db/schema.sql`'s `products` table already has — the mapping targets an existing schema, not a new one."
       misconceptions:
       - "EF Core automatically figures out that `PriceVnd` in C# means the same thing as `price_vnd` in the database."
@@ -347,8 +347,8 @@ levels:
       prereqs: [backend.l1.efcore-mapping]
       related: []
       vocab: [composite-key]
-      example_tag: stage-0
-      example_files: [db/schema.sql]
+      example_tag: stage-1
+      example_files: [DonHang.Infrastructure/DonHangDbContext.cs, DonHang.Domain/Entities.cs]
       outline:
       - "A foreign key like `orders.customer_id` becomes a navigation property in C# (`order.Customer`), so code can follow the relationship without writing a JOIN by hand."
       - "`order_items` has no single-column primary key; its key is the pair `(order_id, product_id)`, so its mapping configures a composite key instead of relying on a single `Id`."
@@ -367,11 +367,11 @@ levels:
       prereqs: [backend.l1.efcore-relationships-and-keys]
       related: []
       vocab: [migration]
-      example_tag: stage-0
-      example_files: [db/schema.sql]
+      example_tag: stage-1
+      example_files: [DonHang.Infrastructure/MigrationBaseline.cs, DonHang.Infrastructure/Migrations/20260923154631_InitialCreate.cs]
       outline:
-      - "A migration is a versioned, code-tracked description of one schema change, created with `dotnet ef migrations add` and applied with `dotnet ef database update`."
-      - "The Đơn Hàng API's first migration is written to match the schema `db/schema.sql` already created — not to build a new one — so the schema's migration history starts from what already exists."
+      - "A migration is a versioned, code-tracked description of one schema change, created with `dotnet ef migrations add` and applied with `dotnet ef database update` (or, here, `Database.Migrate()` on startup)."
+      - "`db/schema.sql` still creates the tables when a fresh container starts; `MigrationBaseline` marks EF's first migration, `InitialCreate` (matching `db/schema.sql` exactly), as already applied, so `Migrate()` doesn't recreate what exists."
       - "Because a migration is a file in the repository, a schema change goes through code review like any other change, instead of being a manual step someone runs by hand."
       misconceptions:
       - "A migration is a backup of the database, not something that changes its structure."
@@ -387,15 +387,15 @@ levels:
       prereqs: [backend.l1.migrations, foundation.l1.sql-join]
       related: []
       vocab: []
-      example_tag: stage-0
-      example_files: []
+      example_tag: stage-1
+      example_files: [DonHang.Infrastructure/EfOrderRepository.cs]
       outline:
-      - "A LINQ query against a `DbSet`, like `_db.Products.Where(p => p.PriceVnd > 100000)`, is translated into one SQL query — the filter runs in PostgreSQL, not in C# after loading every row."
-      - "A LINQ query only reaches the database once it's enumerated (`foreach`, `.ToListAsync()`); writing the query does not run it yet."
-      - "Joining two `DbSet`s in LINQ (an order and its customer) produces the same kind of JOIN already familiar from writing SQL directly, just expressed as chained C# calls."
+      - "A LINQ query against a `DbSet`, like `db.Orders.Where(o => o.CustomerId == customerId)`, is translated into one SQL query — the filter runs in PostgreSQL, not in C# after loading every row."
+      - "A LINQ query only reaches the database once it's enumerated (`.ToListAsync()`, `.FirstOrDefaultAsync()`); writing `db.Orders.Where(...)` alone does not run it yet."
+      - "Joining two `DbSet`s in LINQ (an order and its customer, via `.Include(o => o.Customer)`) produces the same kind of JOIN already familiar from writing SQL directly, just expressed as chained C# calls."
       misconceptions:
       - "A LINQ query loads every row into memory first, and `.Where(...)` filters the C# list afterward."
-      - "Writing `_db.Products.Where(...)` runs the query immediately, the moment that line executes."
+      - "Writing `db.Orders.Where(o => o.CustomerId == customerId)` runs the query immediately, the moment that line executes, rather than when `.ToListAsync()` is awaited."
       depth_notes: "Không nói query plan hay index (đã dạy bằng SQL thô ở GĐ0) — bài indexes-and-plans GĐ2 nối lại với EF Core. Không nói AsNoTracking hay performance tuning — GĐ2."
     - id: backend.l1.saving-changes
       title:
@@ -407,14 +407,14 @@ levels:
       prereqs: [backend.l1.querying-with-linq, backend.l1.creating-a-resource]
       related: []
       vocab: []
-      example_tag: stage-0
-      example_files: []
+      example_tag: stage-1
+      example_files: [DonHang.Domain/OrderService.cs, DonHang.Infrastructure/EfOrderRepository.cs]
       outline:
-      - "Calling `_db.Orders.Add(order)` only stages the new order in the DbContext's change tracker; nothing reaches the database until `SaveChangesAsync()` runs."
+      - "Calling `db.Orders.AddAsync(order)` only stages the new order in the DbContext's change tracker; nothing reaches the database until `SaveChangesAsync()` runs."
       - "`SaveChangesAsync()` wraps every staged change in one transaction: all of them succeed together, or none do."
-      - "`POST /api/v1/orders` from the REST lessons now persists for real: the in-memory list is replaced by `Add` plus `SaveChangesAsync()`, without changing what the endpoint returns."
+      - "The two-step shape behind `POST /api/v1/orders` (met in `creating-a-resource`): `PlaceOrderAsync` calls `AddAsync(order)` then `SaveChangesAsync()` — the id only exists after that second call."
       misconceptions:
-      - "`_db.Orders.Add(order)` writes the order to the database immediately."
+      - "`db.Orders.AddAsync(order)` writes the order to the database immediately."
       - "If one of several staged changes fails when saving, the others that already succeeded stay saved."
       depth_notes: "Không nói isolation level hay xung đột khi nhiều người sửa cùng lúc — module transactions-in-practice GĐ2. Không validate dữ liệu trước khi lưu — module validation-errors-logging."
     - id: backend.l1.efcore-n-plus-one
@@ -427,16 +427,16 @@ levels:
       prereqs: [backend.l1.saving-changes]
       related: []
       vocab: [n-plus-one, eager-loading]
-      example_tag: stage-0
-      example_files: []
+      example_tag: stage-1
+      example_files: [DonHang.Infrastructure/EfOrderRepository.cs, DonHang.Api/Controllers/OrdersController.cs]
       outline:
       - "Looping over a list of orders and querying each order's customer separately inside the loop sends one query per order, plus the original one — the N+1 problem."
-      - "`.Include(o => o.Customer)` tells EF Core to fetch the related customers in the same query — an eager-loading JOIN — instead of one query per order."
+      - "`.Include(o => o.Customer)` tells EF Core to fetch the related customers in the same query — an eager-loading JOIN — instead of one query per order; `ListByCustomerAsync` uses exactly this."
       - "N+1 is easy to miss with a handful of rows and expensive once the Đơn Hàng database holds thousands of orders: the query count grows with the data, not with the code."
       misconceptions:
       - "Accessing `order.Customer` inside a loop is always fast, since the data is already on the `order` object."
       - "N+1 only matters at a scale this course's example database will never reach."
-      depth_notes: "Không đo hiệu năng thật (EXPLAIN, benchmark) — module indexes-and-plans GĐ2. Không nói caching để né N+1 — module caching GĐ2."
+      depth_notes: "`GET /api/v1/orders` (thêm cho bài này, DECISIONS.md 2026-09-24) trả `.Include` thật; bản 'xấu' chỉ minh họa bằng sửa tạm working tree. Không đo EXPLAIN/benchmark thật — GĐ2. Không nói caching — GĐ2."
   - id: validation-errors-logging
     title:
       vi: "Validation, lỗi, và logging có cấu trúc"
