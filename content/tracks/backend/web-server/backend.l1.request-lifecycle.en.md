@@ -26,11 +26,12 @@ reviewed_at: null
 
 ## The situation
 
-You can now recite the order `DonHang.Api/Program.cs` puts things in: exceptions, logging, CORS, `UseAuthentication`, `UseAuthorization`, then the endpoint. A teammate asks two questions you cannot yet answer from that list alone: when `RequestLoggingMiddleware` logs a `401` it never caused, has anything told it the request was rejected, or is it guessing? And when `UseAuthorization` rejects a request, does `ExceptionHandlingMiddleware` still see the response on its way out, or is it skipped along with the endpoint? What actually happens to a response between the moment it is decided and the moment the client receives it?
+You can now recite the order `DonHang.Api/Program.cs` puts things in: exceptions, logging, CORS, `UseAuthentication`, `UseAuthorization`, then the endpoint. A teammate points out two things that list alone cannot explain: `RequestLoggingMiddleware` logs a `401` it never caused, and `ExceptionHandlingMiddleware` still runs even when `UseAuthorization` rejects the request before the endpoint. What actually happens to a response between the moment it is decided and the moment the client receives it?
 
 ## Core concepts
 
-- request lifecycle — the complete path one request takes: Kestrel, every middleware in order, then the endpoint routing already matched (or a short-circuit), then back out through the same middleware in reverse.
+- request lifecycle — the complete path one request takes: Kestrel, routing, every middleware in order, then the matched endpoint (or a short-circuit), then back out through the same middleware in reverse.
+- routing — the automatic step that decides which endpoint a request's path and method match; it runs before any middleware and has no line of its own in `Program.cs`.
 - on the way in — the first half of each middleware's work, the code before its `next` call, which every middleware up to a short-circuit runs once, in registration order.
 - on the way out — the second half of each middleware's work, the code after its `next` call, which runs once a response exists, whichever step produced it.
 - `context` — the `HttpContext` object each middleware is handed, holding both this one request and the response being built for it.
@@ -57,7 +58,7 @@ sequenceDiagram
   K-->>C: response bytes
 ```
 
-The diagram skips `UseCors` and `UseAuthentication` to keep the shape visible; the full six-step order is in "In the Đơn Hàng system" below. It also uses `OrdersController.Create` because this section's example is about a rejected request; the same shape applies to `OrdersController.Get`, the endpoint Try it uses below. In this pipeline, a request travels forward once: in through Kestrel, past routing already matching an endpoint before any middleware runs, in through every middleware in registration order, then into that matched endpoint if nothing stopped it first. The response travels the same path backward, middleware by middleware, in the reverse of that order — the diagram's arrows going right are that forward trip; the arrows going left are the way out. When `UseAuthorization` does not allow the request, the `Z->>E` arrow never happens, and the response arrow starts at `Z` instead of `E`, then travels back through `M2` and `M1` exactly the same way.
+The diagram skips `UseCors` and `UseAuthentication` to keep the shape visible; the full six-step order is in "In the Đơn Hàng system" below. It also uses `OrdersController.Create` because this section's example is about a rejected request; the same shape applies to `OrdersController.Get`, the endpoint Try it uses below. In this pipeline, a request travels forward once: in through Kestrel, through routing, in through every middleware in registration order, then into the matched endpoint if nothing stopped it first. The response travels the same path backward, middleware by middleware, in the reverse of that order — the diagram's arrows going right are that forward trip; the arrows going left are the way out. When `UseAuthorization` does not allow the request, the `Z->>E` arrow never happens, and the response arrow starts at `Z` instead of `E`, then travels back through `M2` and `M1` exactly the same way.
 
 `RequestLoggingMiddleware` is not guessing when it logs a status code: its own `next(context)` call has already returned, so a response now exists, whether the endpoint produced it or a short-circuit further down did. It reads `context.Response.StatusCode` only after that, on the way out — the answer is already there by the time its own code after `next` runs.
 
@@ -80,9 +81,9 @@ app.MapControllers();
 app.Run();
 ```
 
-The comment's "terminal middleware" means the last calls able to answer a request outright instead of only passing it on; "auth" there covers `UseAuthentication` and `UseAuthorization` together, and "routing" there is `app.MapControllers()`, the line that runs whichever method was matched — a later, different step from the automatic matching the diagram showed, which had already happened before any of these six lines ran.
+The comment's "terminal middleware" means the last calls able to answer a request outright instead of only passing it on — `UseAuthorization`, plus `UseAuthentication` right before it, which the comment's "auth" is short for even though `UseAuthentication` itself never rejects a request. The comment's "routing" is a different use of that word from the one in Core concepts: not the automatic matching that already happened before these six lines ran, but `app.MapControllers()`, the line that runs whichever method was matched.
 
-Reading top to bottom names the forward order for these six calls: exception handling, logging, CORS, `UseAuthentication`, `UseAuthorization`, then whichever endpoint routing already matched. `UseCors` and `UseAuthentication` are only names holding positions in that list here — what each one does is not this lesson's subject. `UseAuthentication` works out who is asking and never rejects a request by itself; `UseAuthorization` is the only one of the two that can stop one. The final `app.Run();` line is not a step of the trip either — it is the call that runs the app, starting the server that then listens for connections, and blocks until the app shuts down. Nothing in this file spells out the reverse order — it does not need to, because the reverse order is always exactly this list backward, for every request, whether it reaches `app.MapControllers()` or stops one line earlier, at `UseAuthorization`. A `POST /api/v1/orders` with no `Authorization` header travels in only as far as `UseAuthorization`, but travels out through `RequestLoggingMiddleware` and `ExceptionHandlingMiddleware` regardless — confirmed by running the request against the stage-1 lab: it comes back `401`, and `docker compose logs api` still shows `RequestLoggingMiddleware`'s line for it.
+Reading top to bottom names the forward order for these six calls: exception handling, logging, CORS, `UseAuthentication`, `UseAuthorization`, then the matched endpoint. `UseCors` and `UseAuthentication` are only names holding positions in that list here — what each one does is not this lesson's subject. The final `app.Run();` line is not a step of the trip either — it is the call that runs the app, starting the server that then listens for connections, and blocks until the app shuts down. Nothing in this file spells out the reverse order — it does not need to, because the reverse order is always exactly this list backward, for every request, whether it reaches `app.MapControllers()` or stops one line earlier, at `UseAuthorization`. A `POST /api/v1/orders` with no `Authorization` header travels in only as far as `UseAuthorization`, but travels out through `RequestLoggingMiddleware` and `ExceptionHandlingMiddleware` regardless — as you saw in the previous lesson's Try it.
 
 ## Beginners often think…
 
@@ -112,7 +113,7 @@ Question: how could `RequestLoggingMiddleware` log a `404` it never decided, wit
 
 ## Five-line summary
 
-1. In this pipeline, a request travels forward once: through Kestrel, every middleware in order, then the endpoint routing matched, if nothing stopped it first.
+1. In this pipeline, a request travels forward once: through Kestrel, routing, every middleware in order, then the matched endpoint, if nothing stopped it first.
 2. The response travels the same path backward, through every middleware that ran on the way in, in the reverse of that order.
 3. A middleware's after-`next` code runs once a response exists, whichever step — the endpoint or a short-circuit — actually produced it.
 4. A short-circuit skips everything registered after it on the way in, but not the way out for middleware registered before it.
