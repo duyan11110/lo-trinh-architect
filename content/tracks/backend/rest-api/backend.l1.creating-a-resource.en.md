@@ -26,14 +26,14 @@ reviewed_at: null
 
 ## The situation
 
-A teammate reviewing a pull request for `POST /api/v1/orders` asks why a successful response comes back `201`, not `200` — isn't `200` already what "succeeded" means, the same as `ProductsController.Get(int id)` answers with when it finds a product? `Get(int id)` only ever hands back something that already existed before the request arrived. `Create` is different: before the request, no such order existed anywhere; the request itself is what brings one into being. Does that difference change which status code counts as "succeeded", or what else, besides a status code, the client needs back?
+A teammate reviewing a pull request for `POST /api/v1/orders` asks why a successful response comes back `201`, not `200` — isn't `200` already what "succeeded" means, the same as `ProductsController.Get(int id)` answers with when it finds a product? `ProductsController.Get(int id)` only ever hands back something that already existed before the request arrived. `Create` is different: before the request, no such order existed anywhere; the request itself is what brings one into being. Does that difference change which status code counts as "succeeded", or what else, besides a status code, the client needs back?
 
 ## Core concepts
 
 - `201` vs `200` — `200` says only that the request succeeded; `201` says that and adds that the request created a new resource that didn't exist a moment before.
 - `Location` header — a `201` for a newly created resource should carry a `Location` header naming that resource's own URL (this API always sends one), so the client can read it back without guessing the id the server just assigned.
 - the server assigns the id — a client sending `POST /api/v1/orders` never puts an id in the request; the server decides the new order's id and hands it back, in both the `Location` header and the response body.
-- `POST` is not idempotent — sending the same `POST` twice does not repeat one result; it creates two separate orders, unlike a `GET`, which just re-reads the same thing every time.
+- `POST` is not idempotent — sending the same `POST` twice does not repeat one result; it creates two separate orders, unlike a `GET`, which leaves the server exactly as it was however many times it is sent.
 
 ## How it works
 
@@ -48,7 +48,7 @@ A `POST` that creates something answers a different question than a `GET` does. 
 
 Since the client can't know the new id in advance, it can't put it in the URL or the body — the server has to choose it and report it back. It reports it two ways at once: the `Location` header, letting the client read the new order back with a plain `GET` against its own URL, and the response body, letting the client use the created order immediately without a second request. Both carry the id the server just assigned; the client contributed nothing but the order's contents.
 
-Repeating the exact same `POST` doesn't repeat the exact same result the way repeating a `GET` does. Each successful `Create` call makes one more row, with its own new id, whether or not an earlier call already created an order with identical items. Nothing here is about the response looking wrong — two `201` responses side by side, for two different orders, are both correct answers, because two different requests happened.
+Repeating the exact same `POST` changes the server again each time; repeating a `GET` never does. Each successful `Create` call makes one more row, with its own new id, whether or not an earlier call already created an order with identical items. Nothing here is about the response looking wrong — two `201` responses side by side, for two different orders, are both correct answers, because two different requests happened.
 
 ## In the Đơn Hàng system
 
@@ -88,7 +88,7 @@ public sealed class OrdersController(OrderService orderService, IOrderRepository
 
 ## Try it (3 minutes)
 
-1. From the Đơn Hàng project's root folder, with the example system running (`scripts/up.sh`), sign in as a customer the example data already contains, to get a token: `curl -sS -X POST http://localhost:8080/api/v1/auth/login -H 'Content-Type: application/json' -d '{"email":"anh.tran@example.com","password":"donhang-dev-password"}'` — copy the `token` field's value from the response. That value is the string that tells the server which customer is calling; step 2 sends it back in the `Authorization` header, which is what `[Authorize]` checks.
+1. From the Đơn Hàng project's root folder, with the example system running (`scripts/up.sh`), sign in as a customer the example data already contains, to get a token: `curl -sS -X POST http://localhost:8080/api/v1/auth/login -H 'Content-Type: application/json' -d '{"email":"anh.tran@example.com","password":"donhang-dev-password"}'` — copy the `token` field's value from the response. That value is the string that tells the server which customer is calling; step 2 sends it back in the `Authorization` header, which is how the server knows who is calling before `[Authorize]` lets the request through.
 2. Use that token to create an order: `curl -i -X POST http://localhost:8080/api/v1/orders -H 'Content-Type: application/json' -H "Authorization: Bearer <token>" -d '{"items":[{"productId":2,"quantity":1,"unitPriceVnd":450000}]}'` (replace `<token>` with the value copied in step 1).
 3. Run the exact same command from step 2 again, unchanged, and compare the two `Location` headers.
 
@@ -104,7 +104,7 @@ Step 1's response is `{"token":"..."}`; that token proves who is signed in. Step
 
 - [[backend.l1.get-and-status-codes]] — the `200`/`404` pair this lesson's `201` sits alongside; `Location` here points at the orders equivalent of that lesson's item-URL `GET`.
 - [[backend.l1.dtos-and-serialization]] — `CreateOrderRequest` and `OrderDto`, the shapes this endpoint reads and answers in.
-- [[backend.l1.rest-for-writes]] — the remaining write methods, `PUT`, `PATCH`, `DELETE`, none of which create a new resource the way `POST` does here.
+- [[backend.l1.rest-for-writes]] — the remaining write methods, `PUT`, `PATCH`, `DELETE`, none of which have the server choose a brand-new URL the way `POST` does here.
 
 ## Five-line summary
 
