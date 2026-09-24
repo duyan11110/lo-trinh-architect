@@ -26,11 +26,11 @@ reviewed_at: null
 
 ## The situation
 
-A teammate is adding a price filter to `GET /api/v1/products` and asks: when no product matches the filter, should the endpoint answer `404`, since there's nothing to show, or `200`? `ProductsController.List()` has no filter yet, so this isn't about the filter itself — it's about what a GET on a collection already promises, filter or not. Does an empty result mean the same thing for `GET /api/v1/products` as it does for `GET /api/v1/products/{id}`?
+A teammate is adding a price filter to `GET /api/v1/products` and asks: when no product matches the filter, should the endpoint answer `404`, since there's nothing to show, or `200`? `ProductsController.List()` has no filter yet, so this isn't about the filter itself — it's about what a GET on the whole-set URL `/api/v1/products` already promises, filter or not. Does an empty result mean the same thing for `GET /api/v1/products` as it does for `GET /api/v1/products/{id}`?
 
 ## Core concepts
 
-- `200` vs `404` — `200` means the URL's request succeeded and here is the answer; `404` means the server has nothing to return for the one specific thing the URL named.
+- `200` vs `404` — `200` means the request for that URL succeeded and here is the answer; `404` means the server has nothing to return for the one specific thing the URL named.
 - collection GET stays `200` — a collection URL names the whole set; whatever the row count, an empty set is still a successful answer, never a `404`.
 - item GET can `404` — an item URL names one specific thing; if the server has nothing for it, `404` is the honest answer, since `200` would claim to have found something it didn't.
 - GET must not write — a GET must not change the resource it serves; the client asked to read, not to write, and that promise holds even on the very first call, not just on repeats (which is all being idempotent covers).
@@ -46,7 +46,7 @@ flowchart TD
   D -->|no| F[404]
 ```
 
-A collection URL and an item URL answer the "nothing found" case differently because they're answering different questions. `GET /api/v1/products` asks "what's in the collection?" — the honest answer to "nothing matches" is an empty array, still a successful answer, still `200`. `GET /api/v1/products/{id}` asks "does this one product exist?" — the honest answer to "no" is `404`, because there is no product to put in the response body at all, empty or otherwise.
+A collection URL and an item URL answer the "nothing found" case differently because they're answering different questions. `GET /api/v1/products` asks "what's in the collection?" — the honest answer to "nothing matches" is an empty array, still a successful answer, still `200`. `GET /api/v1/products/{id}` asks "does this one product exist?" — the honest answer to "yes" is `200` with that one product in the body, and the honest answer to "no" is `404`, because there is no product to put in the response body at all, empty or otherwise.
 
 Nothing about this depends on how full the collection happens to be. `List()` doesn't count the rows it found before deciding a status code; it always answers `200`, whether the query returns eight products or zero. Only an item URL's GET has a found-or-not-found branch to take at all, because only an item URL names one specific thing that can fail to exist.
 
@@ -80,19 +80,22 @@ public sealed class ProductsController(DonHangDbContext db) : ControllerBase
     }
 ```
 
+`[HttpGet]` above `List()` answers `GET /api/v1/products`; `[HttpGet("{id:int}")]` above `Get(int id)` answers that same URL followed by a whole number, which arrives as the `id` parameter — that's how `GET /api/v1/products/999999` in Try it below ends up running `Get`, not `List`. `db` is how this class reaches the Đơn Hàng database; the only two things it does here are reads — `ToListAsync()` returns every product row, and `FindAsync(id)` returns the one row with that id, or `null` if there is none.
+
 `List()` has exactly one `return`, `Ok(products)`, with no branch on how many rows `products` holds — an empty list still reaches that same line and gets the same `200`. `Get(int id)` has two returns: `NotFound()` when `db.Products.FindAsync(id)` comes back `null`, and `Ok(...)` only once a real row exists to build a `ProductDto` from. Neither method writes to `db` anywhere — both only read, matching the rule that a GET must not change anything.
 
 ## Beginners often think…
 
-- **"An empty list from a GET should be a 404, since there's 'nothing there'."** → Actually the collection is still there even when it's empty — `List()` has no code path that turns an empty result into `404`, and adding one would mean two different requests to `/api/v1/products` (an empty catalog today, three products tomorrow) answer with two different status codes for the exact same URL. You notice this in Try it below, where an id that doesn't exist gets `404`, but a filter that matches nothing never would.
+- **"An empty list from a GET should be a 404, since there's 'nothing there'."** → Actually the collection is still there even when it's empty — `List()` has no code path that turns an empty result into `404`, and adding one would mean two different requests to `/api/v1/products` (an empty catalog today, three products tomorrow) answer with two different status codes for the exact same URL. You see this in Try it below: an id that doesn't exist gets `404`, while `/api/v1/products` answers `200` no matter what the query finds.
 - **"A GET endpoint can also update something as a side effect, as long as it still returns data."** → Actually a GET must not change the resource the client asked to read — the client didn't request that change, and correct status codes don't excuse making it anyway. Neither `List()` nor `Get(int id)` above writes to `db` anywhere; both only read.
 
 ## Try it (3 minutes)
 
-1. From the Đơn Hàng project's root folder, start the example system with `scripts/up.sh`, then run `curl -i http://localhost:8080/api/v1/products/1` (a product id that exists).
+1. From the Đơn Hàng project's root folder, start the example system with `scripts/up.sh` — it starts the Đơn Hàng system on port 8080; wait until it stops printing before running the next command. Then run `curl -i http://localhost:8080/api/v1/products/1` (a product id that exists) — `-i` makes the status code and headers print above the body, which is where you read the `200` or `404`.
 2. Then run `curl -i http://localhost:8080/api/v1/products/999999` (a product id that doesn't).
+3. Then run `curl -i http://localhost:8080/api/v1/products` (no id).
 
-Expected result: the first returns `200` with one product's JSON; the second returns `404`, its body a short JSON error description with no product data in it. Both requests reach the same method, `Get(int id)` — the status code depends only on whether `FindAsync` found a row, not on anything about the request itself.
+Expected result: the first returns `200` with one product's JSON; the second returns `404`, its body a short JSON error description with no product data in it; the third returns `200` with a JSON array of products — the same `200` it would give if that array were empty. The first two requests both run `Get(int id)` — the status code depends only on whether `FindAsync` found a row, not on anything about the request itself.
 
 <details><summary>Suggested answer</summary>
 
