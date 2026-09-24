@@ -30,7 +30,7 @@ A teammate reads `Program.cs` and finds `MigrationBaseline.ApplyIfNeeded(context
 
 ## Core concepts
 
-- **migration** — a versioned, code-tracked description of one schema change; EF Core generates the file by comparing the current model against a snapshot of the last one, and records which migrations have run in a table it keeps inside the target database.
+- **migration** — a versioned, code-tracked description of one schema change; EF Core generates the file by comparing the current model against a snapshot of the model as it was at the last migration, and records which migrations have run in a table, `__EFMigrationsHistory` by default, that it keeps inside the target database.
 - `dotnet ef migrations add <Name>` / `dotnet ef database update` — the two commands: the first writes a new migration file from whatever changed in the model since the last one; the second applies every migration a target database hasn't recorded yet.
 - `Database.Migrate()` — the same "apply what's pending" step as `dotnet ef database update`, called from code instead of a terminal; Đơn Hàng runs it once, every time the API process starts.
 
@@ -42,14 +42,14 @@ flowchart LR
   B -->|Migrate applies pending ones| C[(database schema)]
   C -->|recorded as applied in| D[__EFMigrationsHistory]
   E[db/schema.sql, fresh database] -->|creates tables directly| C
-  E -.->|MigrationBaseline inserts InitialCreate's row| D
+  E -.->|MigrationBaseline creates the table + InitialCreate's row| D
 ```
 
-A migration is a C# class EF Core generates for you, not one you write by hand: `dotnet ef migrations add <Name>` compares the current model against a snapshot of the last migration, and writes the difference as `Up`/`Down` methods in a file under `Migrations/`. `dotnet ef database update` — or, at runtime, `Database.Migrate()` — then applies every migration a database hasn't seen yet, and records each one it runs in a table EF Core keeps inside that same database, `__EFMigrationsHistory`.
+A migration is a C# class EF Core generates for you rather than one you write from scratch — you can still edit it afterwards, as the backfill in the next section shows: `dotnet ef migrations add <Name>` compares the current model against a snapshot of the model as it was at the last migration, and writes the difference as `Up`/`Down` methods in a file under `Migrations/`. `dotnet ef database update` — or, at runtime, `Database.Migrate()` — then applies every migration a database hasn't seen yet, and records each one it runs in a table EF Core keeps inside that same database, `__EFMigrationsHistory` by default.
 
-In Đơn Hàng, `db/schema.sql` already builds every table the instant a fresh database is set up, before `Migrate()` ever runs. If `Migrate()` saw an empty history table, it would try to run `InitialCreate`'s table-creation calls against tables that already exist, and fail. `MigrationBaseline.ApplyIfNeeded` checks for exactly that case — no history table yet, but `customers` already there — and, instead of letting `InitialCreate` run, inserts one row into `__EFMigrationsHistory` recording it as already applied. From then on, `Migrate()` only ever applies whatever comes after `InitialCreate`.
+In Đơn Hàng, `db/schema.sql` already builds every table the instant a fresh database is set up, before `Migrate()` ever runs. If `Migrate()` saw an empty history table, it would try to run `InitialCreate`'s table-creation calls against tables that already exist, and fail. `MigrationBaseline.ApplyIfNeeded` checks for exactly that case — no history table yet, but `customers` already there — and, instead of letting `InitialCreate` run, creates `__EFMigrationsHistory` itself and inserts one row recording `InitialCreate` as already applied. From then on, `Migrate()` only ever applies whatever comes after `InitialCreate`.
 
-Because a migration is a file checked into source control, like `AddPasswordHashToCustomers.cs`, a schema change goes through code review the same way any other code change does — a reviewer reads the exact `AddColumn`/`Sql` calls a migration will run before it ever reaches a database, instead of trusting that a manual `ALTER TABLE` someone typed by hand was correct.
+Because a migration is a file checked into source control, like `AddPasswordHashToCustomers.cs`, a schema change can go through the same code review as any other file in source control — a reviewer can read the exact `AddColumn`/`Sql` calls a migration will run before it ever reaches a database, instead of trusting that a manual `ALTER TABLE` someone typed by hand was correct.
 
 ## In the Đơn Hàng system
 
@@ -125,13 +125,13 @@ A real migration looks nothing like that check. `AddPasswordHashToCustomers`, on
 ## Try it (3 minutes)
 
 1. From the Đơn Hàng project's root folder, with the example system running (`scripts/up.sh`), run `docker exec donhang-db psql -U donhang -d donhang -c 'select "MigrationId" from "__EFMigrationsHistory" order by "MigrationId";'`.
-2. Compare the three rows against the file names under `DonHang.Infrastructure/Migrations/`.
+2. Compare the three rows against the `.cs` migration file names under `DonHang.Infrastructure/Migrations/` (ignore the `.Designer.cs` and `DonHangDbContextModelSnapshot.cs` files next to them — neither is a migration).
 
-Expected result: the three `MigrationId` values match the three migration file names exactly, `InitialCreate` first — even though `InitialCreate`'s own `CREATE TABLE` calls never actually ran; `db/schema.sql` built those tables, and `MigrationBaseline` only recorded `InitialCreate` as applied.
+Expected result: the three `MigrationId` values match the three migration file names exactly, minus the `.cs` extension, `InitialCreate` first — even though `InitialCreate`'s own `CREATE TABLE` calls never actually ran; `db/schema.sql` built those tables, and `MigrationBaseline` only recorded `InitialCreate` as applied.
 
 <details><summary>Suggested answer</summary>
 
-`select "MigrationId" from "__EFMigrationsHistory"` returns `20260923154631_InitialCreate`, `20260923154700_AddPasswordHashToCustomers`, and one migration later, in that order — one row per file under `Migrations/`, each with a `.cs` and a `.Designer.cs`. The first row exists only because `MigrationBaseline.ApplyIfNeeded` inserted it; every row after it was written there by `Migrate()` actually running that migration's `Up`.
+`select "MigrationId" from "__EFMigrationsHistory"` returns `20260923154631_InitialCreate`, `20260923154700_AddPasswordHashToCustomers`, and `20260924092625_AddOrderCustomerNavigation`, in that order — one row per migration `.cs` file, each of which also has a matching `.Designer.cs`. The first row exists only because `MigrationBaseline.ApplyIfNeeded` inserted it; every row after it was written there by `Migrate()` actually running that migration's `Up`.
 
 </details>
 
@@ -144,6 +144,6 @@ Expected result: the three `MigrationId` values match the three migration file n
 
 1. A migration is a versioned, code-tracked file describing one schema change, generated by comparing the current model against the last one.
 2. `dotnet ef migrations add <Name>` writes a migration file; `dotnet ef database update`, or `Database.Migrate()` at runtime, applies every migration not yet recorded.
-3. EF Core tracks which migrations ran in `__EFMigrationsHistory`, a table it keeps inside the target database itself.
+3. EF Core tracks which migrations ran in a table it keeps inside the target database itself, `__EFMigrationsHistory` by default.
 4. `db/schema.sql` builds Đơn Hàng's tables directly, once; `MigrationBaseline` marks `InitialCreate` as already applied so `Migrate()` doesn't try to recreate them.
-5. Because a migration is a file checked into source control, a schema change goes through code review the same way any other code change does.
+5. Because a migration is a file checked into source control, a schema change can go through the same code review as any other file there.
