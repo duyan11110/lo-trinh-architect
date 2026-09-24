@@ -1,0 +1,129 @@
+{
+  "id": "backend.l1.creating-a-resource",
+  "technical": {
+    "reviewed_at": "2026-09-24T13:55:00+07:00",
+    "reviewer": "claude-opus-5[1m]",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "OrdersController.cs @stage-1 lines 19-28: method body has no `if`/`switch`; the only `return` is `return CreatedAtAction(nameof(Get), new { id = order.Id }, ToDto(order));` (line 27). Preceding lines only build `customerId`, `items`, `order`.",
+        "source": "git show stage-1:DonHang.Api/Controllers/OrdersController.cs (lines 19-28)"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "RFC 9110 §9.3.3: \"If one or more resources has been created on the origin server as a result of successfully processing a POST request, the origin server SHOULD send a 201 (Created) response containing a Location header field that provides an identifier for the primary resource created (Section 10.2.2) and a representation that describes the status of the request while referring to the new resource(s).\" Verbatim in local mirror.",
+        "source": "refs/rfc/rfc9110.txt lines 4050-4055 (§9.3.3 POST)"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "RFC 9110 §9.2.2: \"A request method is considered 'idempotent' if the intended effect on the server of multiple identical requests with that method is the same as the effect for a single such request. Of the request methods defined by this specification, PUT, DELETE, and safe request methods are idempotent.\" POST is absent from that list.",
+        "source": "refs/rfc/rfc9110.txt lines 3861-3867 (§9.2.2 Idempotent Methods)"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Dtos.cs @stage-1 line 13: `public sealed record CreateOrderRequest(List<CreateOrderItemRequest> Items);` — one positional parameter, no id. `CreateOrderItemRequest` (line 11) is `(int ProductId, int Quantity, int UnitPriceVnd)`, also no id.",
+        "source": "git show stage-1:DonHang.Api/Dtos.cs"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "ASP.NET Core docs on CreatedAtAction: \"Adds a Location header to the response. The Location header specifies the URI of the newly created to-do item.\" and \"References the `GetTodoItem` action to create the `Location` header's URI.\" Execution confirms the route source: OrdersController.Get is `[HttpGet(\"{id:int}\")]` under `[Route(\"api/v1/orders\")]`, and the live POST returned `Location: http://localhost:8080/api/v1/orders/15`.",
+        "source": "refs/aspnetcore-docs/aspnetcore/tutorials/first-web-api/includes/first-web-api8.md lines 317-321; live run 2026-09-24"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Live run against the stage-1 lab: POST /api/v1/orders with a valid JSON body and NO Authorization header returned `HTTP/1.1 401 Unauthorized`, `Content-Length: 0` — the body never ran. Source line 21 reads the identity, not the body: `var customerId = int.Parse(User.FindFirstValue(JwtRegisteredClaimNames.Sub)!);`, and CreateOrderRequest has no customer field.",
+        "source": "live run 2026-09-24 (donhang-api stage-1, port 8080); OrdersController.cs @stage-1 line 21"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Reproduced independently this session. Login as anh.tran@example.com returned `{\"token\":\"eyJ...\"}`; POST /api/v1/orders with that token and `{\"items\":[{\"productId\":2,\"quantity\":1,\"unitPriceVnd\":450000}]}` returned `HTTP/1.1 201 Created`, `Location: http://localhost:8080/api/v1/orders/15`, body `{\"id\":15,\"customerId\":1,\"status\":\"new\",\"placedAt\":\"2026-09-24T06:53:16.1678894+00:00\",\"items\":[{\"productId\":2,\"quantity\":1,\"unitPriceVnd\":450000}]}`.",
+        "source": "live run 2026-09-24, examples/don-hang @stage-1"
+      },
+      {
+        "n": 8,
+        "verdict": "rephrased",
+        "evidence": "Behaviour reproduced, ids not. Two identical POSTs (same token, same body) back-to-back returned 201 with `Location: .../orders/15` then 201 with `Location: .../orders/16`, bodies `\"id\":15` and `\"id\":16`. Ids 13/14 belong to the author's earlier session and cannot be re-observed; the ledger should not pin run-specific ids.",
+        "source": "live run 2026-09-24, two consecutive curl POSTs",
+        "suggested_text": "Live run: sending the identical POST /api/v1/orders request (same token, same body) twice in a row created two separate orders with two different ids, both answered 201, neither reusing or rejecting the other's id (observed ids differ per run)."
+      }
+    ],
+    "issues": [
+      {
+        "severity": "major",
+        "section": 3,
+        "kind": "accuracy",
+        "text": "Unlisted claim: the lesson defines `200` as meaning the answer pre-existed. RFC 9110 §15.3.1 says only \"The 200 (OK) status code indicates that the request has succeeded\", and Table 6 gives POST's 200 content as \"the status of, or results obtained from, the action\" — i.e. 200 is routinely used for POSTs that change state. The claim is not in the ledger, and it is reused in section 9 line 1 and in quiz q6's explanation for option c (\"`200` claims the answer already existed\").",
+        "quote": "`200` means the request succeeded and the answer already existed",
+        "fix": "Rewrite as a statement about what 201 adds, not about what 200 asserts: \"`200` says only that the request succeeded; `201` says that and adds that the request created a new resource.\" Apply the same correction to five-line summary line 1 and to quiz q6's explanation for option c (say `200` loses information the client needs, not that it \"claims the answer already existed\")."
+      },
+      {
+        "severity": "major",
+        "section": 3,
+        "kind": "accuracy",
+        "text": "Unconditional wording contradicts the ledger's own claim 2 (which correctly says SHOULD) and RFC 9110 §15.3.2: \"The primary resource created by the request is identified by either a Location header field in the response or, if no Location header field is received, by the target URI.\" A 201 without Location is legal. Repeated verbatim as five-line summary line 2.",
+        "quote": "a `201` response carries a `Location` header naming the new resource's own URL",
+        "fix": "Add the condition: \"a `201` for a newly created resource should carry a `Location` header naming that resource's own URL — the Đơn Hàng API always sends one —\". Update five-line summary line 2 the same way (\"A `201` from `POST /api/v1/orders` carries a `Location` header…\")."
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "code",
+        "text": "False about the previous lesson's code. The last lesson (backend.l1.get-and-status-codes, example_files: ProductsController.cs) shows `Get(int id)` returning `Ok(new ProductDto(product.Id, product.Name, product.PriceVnd))` — it never calls `ToDto` and never touches `OrderDto`. `ToDto` and `OrderDto` are OrdersController.cs lines 48-53 plus Dtos.cs line 9; no earlier lesson has shown `ToDto` at all, so the reader is told they already know a helper they have never seen.",
+        "quote": "`ToDto(order)` — the same mapping to `OrderDto` the last lesson's `Get` uses",
+        "fix": "Replace with a statement that is true and self-contained: \"`ToDto(order)` maps the saved `Order` into the `OrderDto` shape from `Dtos.cs` (two lessons ago) — a small private helper further down this same controller, not shown here.\""
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "Wrong lesson attributed. Module order in content/tracks/backend/track.yaml is rest-resources → dtos-and-serialization → get-and-status-codes → creating-a-resource. `Dtos.cs` is the example file of backend.l1.dtos-and-serialization, which is two lessons back; the last lesson is get-and-status-codes (ProductsController.cs).",
+        "quote": "`CreateOrderRequest` (from the last lesson's `Dtos.cs`)",
+        "fix": "Change to \"`CreateOrderRequest` (from `Dtos.cs`, two lessons ago)\"."
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "Wrong lesson attributed, in the opposite direction. `List()` is `ProductsController.List()`, taught in the LAST lesson: backend.l1.get-and-status-codes, whose own five-line summary line 4 reads \"`List()` has one unconditional `return Ok(...)`\". Two lessons ago is dtos-and-serialization, which shows no controller method.",
+        "quote": "the same shape as `List()`'s one `return` from two lessons ago",
+        "fix": "Change to \"the same shape as `List()`'s one `return` from the last lesson\"."
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "code",
+        "text": "The `Get` named here is `OrdersController.Get(int id)` (OrdersController.cs line 30-31, `[HttpGet(\"{id:int}\")]` under `[Route(\"api/v1/orders\")]`), which is outside the quoted excerpt (lines 9-28) and has never appeared in a lesson. The only `Get(int id)` the reader has seen is ProductsController's, whose route is `/api/v1/products/{id}`, so as written the sentence attributes the orders route to the products method. The route itself is correct — the live run returned `Location: http://localhost:8080/api/v1/orders/15`.",
+        "quote": "it builds a `Location` header from `Get`'s own route, `GET /api/v1/orders/{id}`",
+        "fix": "Name the method's home before using it: \"`nameof(Get)` names this controller's own `Get(int id)`, further down the same file (not shown), which answers `GET /api/v1/orders/{id}`; `CreatedAtAction` fills that route in with the new order's id to build the `Location` header.\""
+      },
+      {
+        "severity": "major",
+        "section": 8,
+        "kind": "accuracy",
+        "text": "Same conflation in Connections: the `Get(int id)` from backend.l1.get-and-status-codes is ProductsController's, routed at `/api/v1/products/{id}`. `Location` here points at OrdersController's `Get`, a method that lesson never showed.",
+        "quote": "the `200`/`404` pair this lesson's `201` sits alongside, and the `Get(int id)` route `Location` points at",
+        "fix": "Drop the second half or make it explicit: \"— the `200`/`404` pair this lesson's `201` sits alongside; `Location` here points at the orders equivalent of that lesson's item-URL `GET`.\""
+      },
+      {
+        "severity": "minor",
+        "section": "backend.l1.creating-a-resource.q1",
+        "kind": "quiz",
+        "text": "The key is guessable from length alone: option a (correct) is 105 characters, distractors b/c/d are 76/66/74. Every wrong option is visibly shorter than the right one.",
+        "quote": "The request succeeded and, because of it, a new resource now exists that didn't a moment before",
+        "fix": "Shorten a to roughly the distractors' length, e.g. \"The request succeeded and created a new resource that didn't exist before\", and lengthen c, e.g. \"The request reached the server and was accepted, but processing hasn't finished yet\"."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "fix-required"
+  }
+}

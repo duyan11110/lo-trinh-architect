@@ -30,8 +30,8 @@ A teammate reviewing a pull request for `POST /api/v1/orders` asks why a success
 
 ## Core concepts
 
-- `201` vs `200` — `200` means the request succeeded and the answer already existed; `201` means the request succeeded and, because of it, something new exists now that didn't a moment before.
-- `Location` header — a `201` response carries a `Location` header naming the new resource's own URL, so the client can read it back without guessing the id the server just assigned.
+- `201` vs `200` — `200` says only that the request succeeded; `201` says that and adds that the request created a new resource that didn't exist a moment before.
+- `Location` header — a `201` for a newly created resource should carry a `Location` header naming that resource's own URL (this API always sends one), so the client can read it back without guessing the id the server just assigned.
 - the server assigns the id — a client sending `POST /api/v1/orders` never puts an id in the request; the server decides the new order's id and hands it back, in both the `Location` header and the response body.
 - `POST` is not idempotent — sending the same `POST` twice does not repeat one result; it creates two separate orders, unlike a `GET`, which just re-reads the same thing every time.
 
@@ -77,9 +77,9 @@ public sealed class OrdersController(OrderService orderService, IOrderRepository
     }
 ```
 
-`Create` has one `return`, unconditional, the same shape as `List()`'s one `return` from two lessons ago — no found-or-not-found branch, because there is nothing to look up yet. `[Authorize]` above `[HttpPost]` means this endpoint only runs for a signed-in caller; `customerId` comes from who is signed in, never from `request`, which is why `CreateOrderRequest` (from the last lesson's `Dtos.cs`) has no field for it. `orderService.PlaceOrderAsync(customerId, items)` does the actual work of building and saving the order — a later module opens that up; here it only matters that it hands back the `order` it just created, complete with the id the database assigned.
+`Create` has one `return`, unconditional, the same shape as `List()`'s one `return` from the last lesson — no found-or-not-found branch, because there is nothing to look up yet. `[Authorize]` above `[HttpPost]` means this endpoint only runs for a signed-in caller; `customerId` comes from who is signed in, never from `request`, which is why `CreateOrderRequest` (from `Dtos.cs`, two lessons ago) has no field for it. `orderService.PlaceOrderAsync(customerId, items)` does the actual work of building and saving the order — a later module opens that up; here it only matters that it hands back the `order` it just created, complete with the id the database assigned.
 
-`CreatedAtAction(nameof(Get), new { id = order.Id }, ToDto(order))` does three things in one call: it answers `201`; it builds a `Location` header from `Get`'s own route, `GET /api/v1/orders/{id}`, filled in with this new order's id; and it puts `ToDto(order)` — the same mapping to `OrderDto` the last lesson's `Get` uses — in the response body. Nothing about `id`, here, comes from `request`: `CreateOrderRequest` only carries `Items`, so there was never anywhere for the client to put one.
+`CreatedAtAction(nameof(Get), new { id = order.Id }, ToDto(order))` does three things in one call. `nameof(Get)` names `OrdersController`'s own `Get(int id)`, further down the same file (not shown here), which answers `GET /api/v1/orders/{id}`; `CreatedAtAction` fills that route in with the new order's id to build the `Location` header. It also answers `201`, and it puts `ToDto(order)` — mapping the saved `order` into the `OrderDto` shape from `Dtos.cs` (two lessons ago), by a small private helper further down the same file — in the response body. Nothing about `id`, here, comes from `request`: `CreateOrderRequest` only carries `Items`, so there was never anywhere for the client to put one.
 
 ## Beginners often think…
 
@@ -101,14 +101,14 @@ Step 1's response is `{"token":"..."}`; that token proves who is signed in. Step
 
 ## Connections
 
-- [[backend.l1.get-and-status-codes]] — the `200`/`404` pair this lesson's `201` sits alongside, and the `Get(int id)` route `Location` points at.
+- [[backend.l1.get-and-status-codes]] — the `200`/`404` pair this lesson's `201` sits alongside; `Location` here points at the orders equivalent of that lesson's item-URL `GET`.
 - [[backend.l1.dtos-and-serialization]] — `CreateOrderRequest` and `OrderDto`, the shapes this endpoint reads and answers in.
 - [[backend.l1.rest-for-writes]] — the remaining write methods, `PUT`, `PATCH`, `DELETE`, none of which create a new resource the way `POST` does here.
 
 ## Five-line summary
 
-1. `201` means the request succeeded and created a new resource; `200` means the request succeeded and the answer already existed.
-2. A `201` response carries a `Location` header naming the new resource's own URL.
+1. `200` says only that the request succeeded; `201` says that and adds that the request created a new resource.
+2. A `201` for a new resource should carry a `Location` header naming that resource's own URL — this API always sends one.
 3. The server assigns the new resource's id; the client never sends one, because there's nowhere in the request to put it.
 4. `Create` has one unconditional `return` — no found-or-not-found branch, because nothing exists yet to look up.
 5. `POST` is not idempotent: the same request sent twice creates two resources, not one.
