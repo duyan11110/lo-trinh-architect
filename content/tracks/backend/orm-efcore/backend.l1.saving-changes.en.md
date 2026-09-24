@@ -49,9 +49,9 @@ With a database-generated id like `orders.id` — an identity column, filled in 
 
 `SaveChangesAsync` is the call that does something. It looks at every entity the change tracker has marked as changed and, for each one, builds the SQL that change needs: an `INSERT` for something added, an `UPDATE` for something modified (this lesson only follows the added case).
 
-`AddAsync` stages not only the object handed to it but every object it holds a reference to, so `AddAsync(order)` also stages every `OrderItem` in `order.Items` — more than one staged change from one call.
+`AddAsync` stages not only the object handed to it but every entity it reaches through that object, so `AddAsync(order)` also stages every `OrderItem` in `order.Items` — more than one staged change from one call.
 
-By default, all staged changes in one call go inside one transaction: every `INSERT`/`UPDATE`/`DELETE` succeeds together, or the whole batch is rolled back — undone. By default, each `SaveChangesAsync()` call gets its own transaction: a later call cannot undo what an earlier one already saved.
+By default, one `SaveChangesAsync()` call saves its staged changes all-or-nothing and independently of any other call: every `INSERT`/`UPDATE`/`DELETE` in that call succeeds together or the whole batch is rolled back — undone — and a later call cannot undo what an earlier one already saved.
 
 `orders.id` is a column PostgreSQL assigns a value to on `INSERT`, the same way `customers.id`, `products.id`, `payments.id`, and `notifications.id` do — every single-column `id` primary key in this schema (`order_items` is the one exception, keyed by the pair `order_id`/`product_id` instead).
 
