@@ -45,11 +45,11 @@ flowchart LR
   C --> D[clean 400, Problem Details]
   B -->|no| E[SaveChangesAsync runs]
   E --> F{quantity > 0?}
-  F -->|no| G[database CHECK violation]
-  G --> H[exception the endpoint didn't expect, generic 500]
+  F -->|no| G[database CHECK violation, generic 500]
+  F -->|yes| H[row saved, 201]
 ```
 
-Two different rules guard the same request, from two different places. `items.Count == 0` is checked in application code, before `SaveChangesAsync()` ever runs — because only application code holds the whole list of items at once; no `CHECK` in `orders` or `order_items` could express "this order has zero items" — that would mean counting rows across the whole `order_items` table for one order, and a `CHECK` never sees past the row it's testing. When that check fails, the endpoint already knows exactly what's wrong, and can hand back a `400` naming it — something outside `PlaceOrderAsync` catches that specific exception and turns its own message into the response's `detail`. What catches it, and how, is `exception-handling-middleware`'s subject, not this lesson's.
+Two different rules guard the same request, from two different places. `items.Count == 0` is checked in application code, before `SaveChangesAsync()` ever runs — because only application code holds the whole list of items at once. No `CHECK` in `orders` or `order_items` could express "this order has zero items": that would mean counting rows across the whole `order_items` table for one order, and a `CHECK` never sees past the row it's testing. When that check fails, it throws — the endpoint already knows exactly what's wrong, and can hand back a `400` naming it, because something outside `PlaceOrderAsync` catches that specific exception and turns its own message into the response's `detail`. What catches it, and how, is `exception-handling-middleware`'s subject, not this lesson's.
 
 `quantity > 0` is a different story: nothing in application code checks it before saving, so a bad value only gets caught when `SaveChangesAsync()` sends the `INSERT` and PostgreSQL enforces its own `CHECK` constraint. The database's rejection isn't wrong, but it arrives as a different, unrecognized kind of exception, not one the endpoint was watching for. Nothing there names `quantity`, or says which item, or says a number needed to be positive — that same catching mechanism only recognizes specific exception types, and this isn't one of them, so it writes a fixed generic message instead of whatever the exception actually said.
 
@@ -57,7 +57,7 @@ The database's constraints stay real and enforced either way; what changes is on
 
 ## In the Đơn Hàng system
 
-`orders.customer_id` and `order_items.quantity` are exactly the two constraints this lesson is about:
+`orders.customer_id` and `order_items.quantity` are exactly the two constraints this lesson is about; the `id` and `placed_at` lines are just how the tables are declared, and nothing here depends on them:
 
 ```sql file=db/schema.sql tag=stage-1 lines=18-32
 CREATE TABLE orders (
@@ -86,13 +86,13 @@ Sending the two requests to the running system shows exactly that gap. `{"items"
 ## Beginners often think…
 
 - **"Letting the database reject bad data with its own constraints is enough; a `400` needs no separate check in the endpoint."** → Actually the `quantity > 0` case shows what that produces: not a `400`, but a `500` with a body that names nothing about what was wrong. The constraint stopped the bad row, but nobody translated that into a response worth reading. You notice this when a client can't tell a real server crash from a value it sent being invalid — both come back as the same opaque failure.
-- **"A validation failure should still return `201`, with an error field in the body explaining what went wrong."** → Actually failing validation means the order was never created — nothing was saved, so there is no new resource to answer `201` about. You notice this when a `201`-with-an-error response leaves a client unsure whether to retry, since `201` already promised something was made.
+- **"A validation failure — one of those application-level checks failing — should still return `201`, with an error field in the body explaining what went wrong."** → Actually failing validation means the order was never created — nothing was saved, so there is no new resource to answer `201` about. You notice this when a `201`-with-an-error response leaves a client unsure whether to retry, since `201` already promised something was made.
 
 ## Try it (3 minutes)
 
 1. With the Đơn Hàng system running (`scripts/up.sh`), run step 1 of [[backend.l1.creating-a-resource]]'s Try it to log in as `anh.tran@example.com` (`donhang-dev-password`) and copy the token.
 2. Send an order with no items: `curl -sS -i -X POST http://localhost:8080/api/v1/orders -H 'Content-Type: application/json' -H "Authorization: Bearer <token>" -d '{"items":[]}'`.
-3. Send an order with a zero quantity instead: `curl -sS -i -X POST http://localhost:8080/api/v1/orders -H 'Content-Type: application/json' -H "Authorization: Bearer <token>" -d '{"items":[{"productId":1,"quantity":0,"unitPriceVnd":10000}]}'`.
+3. Send an order with a zero quantity instead: `curl -sS -i -X POST http://localhost:8080/api/v1/orders -H 'Content-Type: application/json' -H "Authorization: Bearer <token>" -d '{"items":[{"productId":1,"quantity":0,"unitPriceVnd":10000}]}'` — product `1` is already in the seeded data, so `quantity` is the only thing wrong with this request.
 
 Expected result: step 2 answers `400` with `detail` naming the missing items directly. Step 3 answers `500` with `detail` reading only `something went wrong` — the same database rule from the code above stopped the row, but the response never says `quantity` was the problem.
 
