@@ -30,10 +30,10 @@ A teammate is adding a price filter to `GET /api/v1/products` and asks: when no 
 
 ## Core concepts
 
-- `200` vs `404` — `200` means the URL's request succeeded and here is the answer; `404` means the one specific thing the URL named does not exist.
-- collection GET always `200` — a collection URL names the whole set, and the set still exists even with zero members in it right now; there is no "wrong id" for a GET on a collection to reject.
-- item GET can `404` — an item URL names one specific thing; if that thing isn't there, `404` is the honest answer, since `200` would claim to have found something it didn't.
-- reading must not change anything — a GET endpoint only reads; even the very first call must leave the resource exactly as it found it, a stronger promise than being idempotent (which is only about repeating the same call).
+- `200` vs `404` — `200` means the URL's request succeeded and here is the answer; `404` means the server has nothing to return for the one specific thing the URL named.
+- collection GET stays `200` — a collection URL names the whole set; whatever the row count, an empty set is still a successful answer, never a `404`.
+- item GET can `404` — an item URL names one specific thing; if the server has nothing for it, `404` is the honest answer, since `200` would claim to have found something it didn't.
+- GET must not write — a GET must not change the resource it serves; the client asked to read, not to write, and that promise holds even on the very first call, not just on repeats (which is all being idempotent covers).
 
 ## How it works
 
@@ -50,7 +50,7 @@ A collection URL and an item URL answer the "nothing found" case differently bec
 
 Nothing about this depends on how full the collection happens to be. `List()` doesn't count the rows it found before deciding a status code; it always answers `200`, whether the query returns eight products or zero. Only an item URL's GET has a found-or-not-found branch to take at all, because only an item URL names one specific thing that can fail to exist.
 
-The "reading must not change anything" rule isn't about what a GET returns — it's about what else happens while it runs. A GET method that logged a view count, marked something as read, or changed a row would still be answering the right status codes and still be violating this rule, silently, in a way no status code reveals.
+The "GET must not write" rule isn't about what a GET returns — it's about what else happens to the resource the client asked to read. A GET method that marked something as read or changed a row would still be answering the right status codes and still be violating this rule, silently, in a way no status code reveals.
 
 ## In the Đơn Hàng system
 
@@ -85,14 +85,14 @@ public sealed class ProductsController(DonHangDbContext db) : ControllerBase
 ## Beginners often think…
 
 - **"An empty list from a GET should be a 404, since there's 'nothing there'."** → Actually the collection is still there even when it's empty — `List()` has no code path that turns an empty result into `404`, and adding one would mean two different requests to `/api/v1/products` (an empty catalog today, three products tomorrow) answer with two different status codes for the exact same URL. You notice this in Try it below, where an id that doesn't exist gets `404`, but a filter that matches nothing never would.
-- **"A GET endpoint can also update something as a side effect, as long as it still returns data."** → Actually a GET that changes anything breaks a promise every client, cache, and library relies on without checking — that repeating or skipping a GET is always safe. Neither `List()` nor `Get(int id)` above writes to `db` anywhere; both only read.
+- **"A GET endpoint can also update something as a side effect, as long as it still returns data."** → Actually a GET must not change the resource the client asked to read — the client didn't request that change, and correct status codes don't excuse making it anyway. Neither `List()` nor `Get(int id)` above writes to `db` anywhere; both only read.
 
 ## Try it (3 minutes)
 
 1. From the Đơn Hàng project's root folder, start the example system with `scripts/up.sh`, then run `curl -i http://localhost:8080/api/v1/products/1` (a product id that exists).
 2. Then run `curl -i http://localhost:8080/api/v1/products/999999` (a product id that doesn't).
 
-Expected result: the first returns `200` with one product's JSON; the second returns `404`, with no product in the body. Both requests reach the same method, `Get(int id)` — the status code depends only on whether `FindAsync` found a row, not on anything about the request itself.
+Expected result: the first returns `200` with one product's JSON; the second returns `404`, its body a short JSON error description with no product data in it. Both requests reach the same method, `Get(int id)` — the status code depends only on whether `FindAsync` found a row, not on anything about the request itself.
 
 <details><summary>Suggested answer</summary>
 
@@ -108,8 +108,8 @@ Expected result: the first returns `200` with one product's JSON; the second ret
 
 ## Five-line summary
 
-1. `200` means the URL's request succeeded; `404` means the one specific thing the URL named does not exist.
-2. A collection URL's GET always answers `200`, even with zero results, because the collection itself still exists.
-3. An item URL's GET can answer `404`, because it names one specific thing that can fail to exist.
+1. `200` means the URL's request succeeded; `404` means the server has nothing to return for the one thing the URL named.
+2. A collection URL's GET stays `200` whatever the row count — an empty set is still a successful answer, never a `404`.
+3. An item URL's GET can answer `404`, because it names one specific thing the server may have nothing for.
 4. `List()` has one unconditional `return Ok(...)`; `Get(int id)` branches between `NotFound()` and `Ok(...)` based on one lookup.
-5. A GET must not change anything, even on its very first call — a stronger promise than just being idempotent.
+5. A GET must not write to the resource it serves, even on its first call — stronger than just being idempotent.
