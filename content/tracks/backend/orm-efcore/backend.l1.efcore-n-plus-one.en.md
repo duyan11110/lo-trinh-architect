@@ -66,7 +66,7 @@ The gap between the two grows with the data, not with the code: for a customer w
 
 `FindAsync` eager-loads `Items` the same way `ListByCustomerAsync` eager-loads `Customer`: EF Core puts both tables in one statement by default, and this project keeps it that way, so one `.Include(...)` call means one JOIN, one query, regardless of how many `OrderItem` rows an order has. Neither method loops over anything to fetch related data — the JOIN does that work inside the single query PostgreSQL runs.
 
-`OrdersController.List()`, behind `GET /api/v1/orders`, is why `Customer` has to already be loaded before the loop that builds the response. What matters for that is the call to `ListByCustomerAsync`, then the `.Select(...)` that reads `Customer` off what it returned; `[Authorize]` and the `customerId` line above them are just routing and identity, and don't change how many queries run.
+`OrdersController.List()`, behind `GET /api/v1/orders`, is why `Customer` has to already be loaded before the loop that builds the response. What matters for that is the call to `ListByCustomerAsync`, then the `.Select(...)` that reads `Customer` off what it returned; `[Authorize]` and the `customerId` line above them are just access control and identity, and don't change how many queries run.
 
 ```csharp file=DonHang.Api/Controllers/OrdersController.cs tag=stage-1 lines=48-56
     // lesson: backend.l1.efcore-n-plus-one

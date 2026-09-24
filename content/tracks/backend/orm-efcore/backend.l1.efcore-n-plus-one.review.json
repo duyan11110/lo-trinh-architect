@@ -1,83 +1,67 @@
 {
   "id": "backend.l1.efcore-n-plus-one",
   "technical": {
-    "reviewed_at": "2026-09-25T00:35:00+07:00",
-    "reviewer": "claude-opus-5[1m] (technical review round 2, prompt 04)",
+    "reviewed_at": "2026-09-25T00:25:00+07:00",
+    "reviewer": "claude-opus-5[1m] (technical review round 3, prompt 04)",
     "claim_verdicts": [
       {
         "n": 1,
         "verdict": "verified",
-        "evidence": "Claim text now names the per-iteration call, which is what makes 8 correct. Re-confirmed today on donhang-db: `select customer_id, count(*) from orders group by customer_id` returns `1|7`. The loop version itself cannot be re-run (never committed; repo clean at stage-1), but EF Core docs settle the per-iteration behaviour: \"EF Core always executes a LINQ query on a DbSet against the database and only returns results based on what is in the database.\" 7 x FirstOrDefaultAsync + 1 for the orders = 8.",
-        "source": "live 2026-09-25: docker exec donhang-db psql; refs/efcore-docs/entity-framework/core/change-tracking/identity-resolution.md:618"
+        "evidence": "Re-checked after the round-2 junior edit. §2's new clause \"even repeats of the same customer send a fresh query each time\" is exactly what the docs say: \"EF Core always executes a LINQ query on a DbSet against the database and only returns results based on what is in the database. However, for a tracking query, if the entities returned are already tracked, then the tracked instances are used.\" Statement count is unaffected by tracking. Live today: GET /api/v1/orders as anh.tran returned 7 entries (ids 1,2,10,14,15,16,17), so 7 x FirstOrDefaultAsync + 1 = 8.",
+        "source": "refs/efcore-docs/entity-framework/core/change-tracking/identity-resolution.md:618; live run 2026-09-25 00:21 +07"
       },
       {
         "n": 2,
         "verdict": "verified",
-        "evidence": "Re-ran live today with the lesson's own Try it commands: log_statement='all', login as anh.tran@example.com, GET /api/v1/orders -> HTTP 200, 7 entries. donhang-db logged exactly one statement for that call: \"execute <unnamed>: SELECT o.id, o.customer_id, o.placed_at, o.status, c.id, c.city, c.email, c.full_name, c.password_hash / FROM orders AS o / INNER JOIN customers AS c ON o.customer_id = c.id / WHERE o.customer_id = $1 / ORDER BY o.id\". log_statement reset to 'none' (SHOW confirms).",
+        "evidence": "Re-ran the lesson's Try it verbatim today. donhang-db logged exactly two `execute <unnamed>: SELECT` matches in the window: the login (`FROM customers AS c / WHERE c.email = $1`) and this call — \"SELECT o.id, o.customer_id, o.placed_at, o.status, c.id, c.city, c.email, c.full_name, c.password_hash / FROM orders AS o / INNER JOIN customers AS c ON o.customer_id = c.id\". One statement for 7 orders. log_statement returned to 'none' afterwards (new psql session: SHOW log_statement -> none).",
         "source": "live run 2026-09-25 on donhang-db / donhang-api (stage-1 lab)"
       },
       {
         "n": 3,
         "verdict": "verified",
-        "evidence": "Unchanged since round 1. efficient-querying.md, \"Beware of lazy loading\": \"each iteration in the inner foreach triggers an additional database query, in its own roundtrip. As a result, after the initial query loading all the blogs, we then have another query *per blog*... this is sometimes called the *N+1* problem\"; and \"Because lazy loading makes it extremely easy to inadvertently trigger the N+1 problem, it is recommended to avoid it. Eager or explicit loading make it very clear in the source code when a database roundtrip occurs.\"",
-        "source": "refs/efcore-docs/entity-framework/core/performance/efficient-querying.md:137,146"
+        "evidence": "Also covers §4's new closing clause (\"each one of those calls is its own round trip to PostgreSQL\"). efficient-querying.md: \"each iteration in the inner foreach triggers an additional database query, in its own roundtrip... this is sometimes called the *N+1* problem\"; \"it is always better to use eager loading, so that EF can fetch all the required data in one roundtrip\"; non-eager loading \"require[s] additional roundtrips to the database, which is source of slowdown\". Docs' example is lazy loading; the per-query roundtrip statement is general.",
+        "source": "refs/efcore-docs/entity-framework/core/performance/efficient-querying.md:97,101,137"
       },
       {
         "n": 4,
         "verdict": "verified",
-        "evidence": "`git show stage-1:DonHang.Infrastructure/EfOrderRepository.cs` lines 9-14 are character-for-character the lesson's first code block: FindAsync = `db.Orders.Include(o => o.Items).FirstOrDefaultAsync(o => o.Id == id)`; ListByCustomerAsync = `db.Orders.Where(o => o.CustomerId == customerId).Include(o => o.Customer).OrderBy(o => o.Id).ToListAsync()`. One Include each.",
+        "evidence": "`git show stage-1:DonHang.Infrastructure/EfOrderRepository.cs | cat -n` lines 9-14 still match the block character-for-character, comment line included: FindAsync = `db.Orders.Include(o => o.Items).FirstOrDefaultAsync(o => o.Id == id)`; ListByCustomerAsync = `db.Orders.Where(o => o.CustomerId == customerId).Include(o => o.Customer).OrderBy(o => o.Id).ToListAsync()`. One Include each. Block unchanged by the round-2 edits (only the prose above it changed).",
         "source": "examples/don-hang @ stage-1: DonHang.Infrastructure/EfOrderRepository.cs:9-14"
       },
       {
         "n": 5,
         "verdict": "verified",
-        "evidence": "`git show stage-1:DonHang.Api/Controllers/OrdersController.cs | cat -n` shows lines 48-56 matching the quoted block exactly, comment line included: `[Authorize]`, `[HttpGet]`, `int.Parse(User.FindFirstValue(JwtRegisteredClaimNames.Sub)!)`, `repository.ListByCustomerAsync(customerId)`, `orders.Select(o => new OrderSummaryDto(o.Id, o.Status, o.Customer!.FullName)).ToList()`. Live GET http://localhost:8080/api/v1/orders returned `customerName` per entry, confirming the route and the projection.",
+        "evidence": "Block still matches `git show stage-1:DonHang.Api/Controllers/OrdersController.cs` lines 48-56 exactly. The rewritten intro sentence is now true of those lines: `repository.ListByCustomerAsync(customerId)` is line 54 and the `.Select(o => ... o.Customer!.FullName ...)` line 55, and `[Authorize]` (49) plus `var customerId = ...` (53) are indeed above them. \"Don't change how many queries run\" confirmed live: the whole GET logged one statement, so `[Authorize]`'s JWT check hits no database.",
         "source": "examples/don-hang @ stage-1: DonHang.Api/Controllers/OrdersController.cs:48-56; live run 2026-09-25"
       },
       {
         "n": 6,
         "verdict": "verified",
-        "evidence": "Reworded text is now fully supported. No lazy loading anywhere at stage-1: only `services.AddDbContext<DonHangDbContext>(options => options.UseNpgsql(connectionString))`, no proxies package, and `Order`/`Customer` are `sealed` with non-virtual navigations. Fix-up clause: \"Entity Framework Core will automatically fix-up navigation properties to any other entities that were previously loaded into the context instance.\" \"Same request\" is right because AddDbContext \"registers DbContext types with a scoped lifetime by default\".",
-        "source": "stage-1 ServiceCollectionExtensions.cs:14, Entities.cs; refs/efcore-docs/.../related-data/eager.md:28; .../dbcontext-configuration/index.md:419"
+        "evidence": "Unchanged evidence from round 2 (no lazy loading at stage-1: only `options.UseNpgsql(...)`, no proxies package, sealed entities with non-virtual navigations; fix-up: \"Entity Framework Core will automatically fix-up navigation properties to any other entities that were previously loaded into the context instance\"). §6's new clause \"a separate case from this lesson's loop example above, which always asks for a fresh row\" is consistent with identity-resolution.md:618 — the loop's FirstOrDefaultAsync executes regardless of what is tracked.",
+        "source": "stage-1 ServiceCollectionExtensions.cs:14; refs/efcore-docs/.../related-data/eager.md:28; .../change-tracking/identity-resolution.md:618"
       },
       {
         "n": 7,
         "verdict": "verified",
-        "evidence": "New claim, and the docs state it flatly: \"When working against relational databases, EF loads related entities by introducing JOINs into a single query\" and \"EF Core uses single query mode by default in the absence of any configuration.\" No `AsSplitQuery` / `UseQuerySplittingBehavior` anywhere at stage-1. Confirmed live: the one logged statement for GET /api/v1/orders is a single `INNER JOIN customers` query.",
+        "evidence": "Unchanged since round 2: \"When working against relational databases, EF loads related entities by introducing JOINs into a single query\" and \"EF Core uses single query mode by default in the absence of any configuration.\" No `AsSplitQuery` / `UseQuerySplittingBehavior` anywhere at stage-1. Re-confirmed live today: the single logged statement for GET /api/v1/orders is one `INNER JOIN customers AS c` query.",
         "source": "refs/efcore-docs/entity-framework/core/querying/single-split-queries.md:12,125; live run 2026-09-25"
       }
     ],
     "issues": [
       {
-        "severity": "major",
-        "section": 7,
-        "kind": "accuracy",
-        "text": "Wrong cross-reference. Step 2 of `creating-a-resource`'s Try it is `POST /api/v1/orders` (create an order), not a GET; only its step 1 (the login) is reused here. A learner following the pointer literally creates an order first, which adds an INSERT plus extra statements to the very log they are about to count, and changes the number of orders the GET returns.",
-        "fix": "Rewrite step 2 as: \"Run step 1 of `creating-a-resource`'s Try it to get a token (login for `anh.tran@example.com`, password `donhang-dev-password`), then call the list endpoint with it: `curl -sS http://localhost:8080/api/v1/orders -H \"Authorization: Bearer <token>\"`.\"",
-        "quote": "Run steps 1 and 2 of `creating-a-resource`'s Try it: the login for `anh.tran@example.com` (`donhang-dev-password`), then call `GET /api/v1/orders` with the token."
-      },
-      {
-        "severity": "major",
-        "section": 7,
-        "kind": "gap",
-        "text": "The identification cue the step gives is invisible in the output the step's own command produces. Ran it live: EF Core's statement is logged over five lines and grep prints only the first, so the learner sees `execute <unnamed>: SELECT c.id, c.city, ...` (the login) and `execute <unnamed>: SELECT o.id, o.customer_id, ...` (this call) — the words `FROM orders AS o` are on a continuation line grep drops. \"The one selecting from `orders`\" cannot be found in what is printed.",
-        "fix": "Print the continuation lines and name the real cue: `docker logs donhang-db --since 1m | grep -iA 2 \"execute <unnamed>: SELECT\"` — then step 3 can say \"the statement that belongs to this call is the one whose `FROM` line reads `FROM orders AS o`; the login's statement selects `c.` columns from `customers`.\"",
-        "quote": "`docker logs donhang-db --since 1m | grep -i \"execute <unnamed>: SELECT\"`. The login in step 2 logs `SELECT`s of its own — the statement that belongs to this call is the one selecting from `orders`."
-      },
-      {
-        "severity": "major",
+        "severity": "minor",
         "section": 5,
-        "kind": "code",
-        "text": "The colon makes the sentence claim that `customerId` and `[Authorize]` ARE the last two lines of the method. They are not: `[Authorize]` is an attribute above the signature (line 49 of the file) and `var customerId = ...` is line 53; the last two lines are `var orders = await repository.ListByCustomerAsync(customerId);` and the `return Ok(orders.Select(...))`. As written the pointer sends the reader to the wrong lines — the two named are exactly the ones that do not matter.",
-        "fix": "Split the two halves: \"Only the last two lines of the method matter for that — the repository call and the `.Select(...)` that builds the response. The two things above them are just context: `customerId` identifies the signed-in customer and `[Authorize]` keeps the endpoint closed to strangers; neither changes how many queries run.\"",
-        "quote": "Only the last two lines of the method matter for that: `customerId` identifies the signed-in customer, and `[Authorize]` keeps the endpoint closed to strangers"
+        "kind": "accuracy",
+        "text": "\"routing\" has no referent among the two things named. `[Authorize]` is authorization, not routing; what routes this method is `[HttpGet]` plus the class's `[Route(\"api/v1/orders\")]`, neither of which the sentence mentions. `customerId` is the identity half, so the pair \"routing and identity\" mislabels one of the two lines it is about.",
+        "fix": "Replace \"are just routing and identity\" with \"are just access control and identity\" (or name the third line: \"`[HttpGet]` routes it, `[Authorize]` keeps strangers out, and the `customerId` line says who is calling\").",
+        "quote": "`[Authorize]` and the `customerId` line above them are just routing and identity, and don't change how many queries run."
       }
     ],
     "scope": {
       "outline_covered": true,
       "beyond_scope": []
     },
-    "verdict": "fix-required"
+    "verdict": "pass"
   },
   "junior": {
     "reviewed_at": "2026-09-25T01:10:00+07:00",
