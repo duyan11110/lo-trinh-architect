@@ -26,13 +26,13 @@ reviewed_at: null
 
 ## The situation
 
-A teammate wants to print each order together with its customer's name, and writes `order.Customer.FullName` — it works, with no JOIN written anywhere in that code, and no second call to the database that they can find. `Customer` isn't a column `orders` has; the only column is `customer_id`. They also notice `OrderItem`, unlike every other class in this codebase, has no `Id` property at all, and ask how EF Core can find or save one `order_items` row without one. Where does `order.Customer` come from, and what actually identifies a single row of `order_items`?
+A teammate wants to print each order together with its customer's name, and writes `order.Customer.FullName` — it works, with no JOIN written by hand in that code, and, in this particular code path, no second request the client had to make. `Customer` isn't a column `orders` has; the only column is `customer_id`. They also notice `OrderItem`, unlike every other class in this codebase, has no `Id` property at all, and ask how EF Core can find or save one `order_items` row without one. Where does `order.Customer` come from, and what actually identifies a single row of `order_items`?
 
 ## Core concepts
 
 - foreign key → navigation property — a foreign key column like `orders.customer_id` can become a plain C# property, `order.Customer`, that follows the relationship directly; code reads the related object without writing a JOIN by hand.
 - **composite key** — a primary key made of more than one column; no single property alone identifies a row, only the two (or more) together do.
-- `HasForeignKey` / `HasKey` — the `OnModelCreating` calls that configure a relationship's foreign key, or a composite key, the same way `HasColumnName` configures a column name: explicitly, because the default doesn't cover this shape.
+- `HasForeignKey` / `HasKey` — the `OnModelCreating` calls that state a relationship's foreign key, or a composite key, explicitly, next to the column mappings from the last lesson. `HasKey` is the one EF Core can't skip here: `order_items` has no single `Id` column for it to fall back on.
 
 ## How it works
 
@@ -44,9 +44,9 @@ flowchart LR
 
 A navigation property doesn't replace the foreign key column — it sits alongside it. `Order` still has `CustomerId`, an `int`, exactly like `orders.customer_id`; `Customer`, the navigation property, is a second, separate property that gives code the related `Customer` object itself, once EF Core has it. Writing `order.Customer.FullName` reads that second property; nothing about it removes or changes `order.CustomerId`.
 
-Configuring a navigation property looks like configuring a column, but describes a relationship instead of one value: `HasOne(o => o.Customer)` says which navigation property is involved, and `HasForeignKey(o => o.CustomerId)` says which column backs it. The same shape works the other way round, for a collection instead of one object: `HasMany(o => o.Items)` and `HasForeignKey(i => i.OrderId)` describe `Order.Items`, the list of an order's `OrderItem` rows, backed by `order_items.order_id`.
+Configuring a navigation property looks like configuring a column, but describes a relationship instead of one value: `HasOne(o => o.Customer)` says which navigation property is involved, and `HasForeignKey(o => o.CustomerId)` says which property is the foreign key — the same `CustomerId` already mapped to the `customer_id` column by `HasColumnName`. The same shape works the other way round, for a collection instead of one object: `HasMany(o => o.Items)` and `HasForeignKey(i => i.OrderId)` describe `Order.Items`, the list of an order's `OrderItem` rows, tied to it through `OrderId`.
 
-A composite key changes what "one row" means to look up. Every other table in this system has a single `Id` column, so one value finds one row. `order_items` doesn't have that column at all — its rows are identified by the pair `(order_id, product_id)` together, because one order can have many items and one product can appear in many orders, and only that combination is ever unique. `HasKey` takes both properties at once to say so.
+A composite key changes what "one row" means to look up. Every other table in this system has a single `Id` column, so one value finds one row. `order_items` doesn't have that column at all — its rows are identified by the pair `(order_id, product_id)` together, because that pair is exactly what `order_items` declares as its primary key: one order never lists the same product twice. `HasKey` takes both properties at once to say so.
 
 ## In the Đơn Hàng system
 
@@ -74,7 +74,7 @@ public sealed class OrderItem
 }
 ```
 
-The `// lesson:` comment is a bookmark for a later lesson and can be ignored here. `Order` has both `CustomerId` (the foreign key column) and `Customer` (the navigation property, nullable because nothing forces EF Core to have loaded it) — plus `Items`, a second navigation property, this time a list, for every `OrderItem` that belongs to this order. `OrderItem` itself has no `Id`: just `OrderId`, `ProductId`, and the two data columns, `Quantity` and `UnitPriceVnd`.
+The `// lesson:` comment is a bookmark for a later lesson and can be ignored here. `Order` has both `CustomerId` (the foreign key property) and `Customer` (the navigation property, declared `Customer?` because the object isn't always present on an `Order` sitting in memory) — plus `Items`, a second navigation property, this time a list, for every `OrderItem` that belongs to this order. That `?` says nothing about the column: `customer_id` is a non-nullable `int` in the database, so every order still has exactly one customer there. `OrderItem` itself has no `Id`: just `OrderId`, `ProductId`, and the two data columns, `Quantity` and `UnitPriceVnd`.
 
 `OnModelCreating` configures both relationships and the composite key:
 
@@ -101,12 +101,12 @@ The `// lesson:` comment is a bookmark for a later lesson and can be ignored her
         });
 ```
 
-`e.HasMany(o => o.Items).WithOne().HasForeignKey(i => i.OrderId)` names `Items` as the navigation property and `order_items.order_id` as the column that backs it; `WithOne()` is left empty because `OrderItem` has no property pointing back to its `Order` — this relationship only reads in one direction. `e.HasOne(o => o.Customer).WithMany().HasForeignKey(o => o.CustomerId)` does the same for the single-object side: `Customer` is the navigation property, `customer_id` is the column, and `WithMany()` is empty for the same reason — `Customer` has no list of its own orders. `e.HasKey(i => new { i.OrderId, i.ProductId })` is `OrderItem`'s composite key: passing both properties together, inside `new { ... }`, is what tells EF Core neither one alone identifies a row.
+`e.HasMany(o => o.Items).WithOne().HasForeignKey(i => i.OrderId)` names `Items` as the navigation property and `OrderId` as the foreign-key property on the other side — the same `OrderId` the block above already mapped to the `order_id` column; `WithOne()` is left empty because `OrderItem` has no property pointing back to its `Order` — this relationship only reads in one direction. `e.HasOne(o => o.Customer).WithMany().HasForeignKey(o => o.CustomerId)` does the same for the single-object side: `Customer` is the navigation property, `CustomerId` is the foreign-key property, and `WithMany()` is empty for the same reason — `Customer` has no list of its own orders. `e.HasKey(i => new { i.OrderId, i.ProductId })` is `OrderItem`'s composite key: passing both properties together, inside `new { ... }`, is what tells EF Core neither one alone identifies a row. From then on, every time EF Core has to find or save one `order_items` row, it uses both values together — one of them alone is never enough.
 
 ## Beginners often think…
 
 - **"Every table EF Core maps needs a single column called `Id`, or EF Core can't work with it."** → Actually `order_items` has no `Id` at all; `HasKey(i => new { i.OrderId, i.ProductId })` tells EF Core to use the pair instead. Nothing about EF Core requires a single-column key named `Id` — that's just what every other table in this system happens to use.
-- **"Once a foreign key column exists, `order.Customer` works immediately, without EF Core needing any extra configuration."** → Actually `orders.customer_id` existing in the database doesn't create `Order.Customer` — the C# property has to exist on the class, and `HasOne(o => o.Customer).WithMany().HasForeignKey(o => o.CustomerId)` in `OnModelCreating` is what connects that property to the column.
+- **"Once a foreign key column exists, `order.Customer` works immediately, without EF Core needing any extra configuration."** → Actually `orders.customer_id` existing in the database doesn't create `Order.Customer` — the C# property has to exist on the class; in this codebase the `HasOne(o => o.Customer).WithMany().HasForeignKey(o => o.CustomerId)` line states that relationship explicitly, next to the column mappings. Do not read this as the configuration call making the property work — it's stating a relationship that EF Core can, in other shapes, also discover on its own.
 
 ## Try it (3 minutes)
 
@@ -130,7 +130,7 @@ Nothing about how `order.Customer` actually gets fetched is this lesson's subjec
 ## Five-line summary
 
 1. A foreign key column can become a navigation property in C# — `order.Customer` — without removing the plain `CustomerId` column property.
-2. `HasOne`/`HasMany` names the navigation property; `HasForeignKey` names the column that backs it.
+2. `HasOne`/`HasMany` names the navigation property; `HasForeignKey` names the foreign-key property, already tied to its column by `HasColumnName`.
 3. `WithOne()`/`WithMany()` left empty means the relationship has no navigation pointing back the other way.
 4. A composite key is a primary key made of more than one column; `order_items` has no `Id`, only `(order_id, product_id)` together.
 5. `HasKey(i => new { i.OrderId, i.ProductId })` is how a composite key is configured — passing every key property at once.

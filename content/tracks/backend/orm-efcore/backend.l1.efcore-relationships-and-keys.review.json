@@ -1,0 +1,150 @@
+{
+  "id": "backend.l1.efcore-relationships-and-keys",
+  "technical": {
+    "reviewed_at": "2026-09-24T18:27:37+07:00",
+    "reviewer": "claude-opus-5[1m]",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "navigations.md: \"EF Core relationships are defined by foreign keys. Navigations are layered over foreign keys to provide a natural, object-oriented view for reading and manipulating relationships.\" one-to-many.md lists both on the dependent: \"One or more foreign key properties on the dependent entity ... For example, `Post.BlogId`.\" and \"Optionally, a reference navigation on the dependent entity referencing the principal entity. For example, `Post.Blog`.\" The sample class declares both `public int BlogId` and `public Blog Blog`.",
+        "source": "refs/efcore-docs entity-framework/core/modeling/relationships/navigations.md L10; one-to-many.md L39-45"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "one-to-many.md: \"In the example above, configuration of the relationships starts with `HasMany` on the principal entity type (`Blog`) and then follows this with `WithOne`. As with all relationships, it is exactly equivalent to start with dependent entity type (`Post`) and use `HasOne` followed by `WithMany`.\" Both shown samples chain `.HasForeignKey(e => e.BlogId)`.",
+        "source": "refs/efcore-docs entity-framework/core/modeling/relationships/one-to-many.md L79-90"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "one-to-many.md, anatomy of the relationship: \"Optionally, a collection navigation on the principal entity referencing the dependent entities. For example, `Blog.Posts`.\" / \"Optionally, a reference navigation on the dependent entity referencing the principal entity. For example, `Post.Blog`.\" Section \"One-to-many without navigation to principal\": \"Notice that the call to `WithOne` has no arguments. This is the way to tell EF that there is no navigation from `Post` to `Blog`.\"",
+        "source": "refs/efcore-docs entity-framework/core/modeling/relationships/one-to-many.md L42-45, L213-250"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "keys.md: \"You can also configure multiple properties to be the key of an entity - this is known as a composite key. Conventions will only set up a composite key in specific cases - like for an owned type collection.\" The Fluent API sample it links is samples/core/Modeling/Keys/FluentAPI/KeyComposite.cs: `modelBuilder.Entity<Car>().HasKey(c => new { c.State, c.LicensePlate });` — the same anonymous-type shape as the lesson.",
+        "source": "refs/efcore-docs entity-framework/core/modeling/keys.md L33-53; samples/core/Modeling/Keys/FluentAPI/KeyComposite.cs"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "`git -C examples/don-hang show stage-1:DonHang.Domain/Entities.cs` (tag stage-1 = commit 4fca60a), lines 25-43: `Order` declares `Id`, `CustomerId` (int), `PlacedAt`, `Status`, `Items` (List<OrderItem>) and `Customer` (Customer?, preceded by `// lesson: backend.l1.efcore-n-plus-one`); `OrderItem` declares only `OrderId`, `ProductId`, `Quantity`, `UnitPriceVnd` — no `Id`. Lesson's code block is character-identical to those lines.",
+        "source": "examples/don-hang @ stage-1 (4fca60a): DonHang.Domain/Entities.cs:25-43"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "`git show stage-1:DonHang.Infrastructure/DonHangDbContext.cs` lines 38-57 contain exactly `e.HasMany(o => o.Items).WithOne().HasForeignKey(i => i.OrderId);`, `e.HasOne(o => o.Customer).WithMany().HasForeignKey(o => o.CustomerId);` and `e.HasKey(i => new { i.OrderId, i.ProductId });` inside the `Order` and `OrderItem` blocks. The lesson's second code block matches those lines verbatim, indentation included.",
+        "source": "examples/don-hang @ stage-1: DonHang.Infrastructure/DonHangDbContext.cs:38-57"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Entities.cs @ stage-1: `Customer` declares Id, FullName, Email, City, PasswordHash only — no collection of orders; `OrderItem` declares OrderId, ProductId, Quantity, UnitPriceVnd only — no `Order` reference. Consistent with the two no-argument calls `WithOne()` / `WithMany()` in DonHangDbContext.cs:45-46.",
+        "source": "examples/don-hang @ stage-1: DonHang.Domain/Entities.cs:5-15, 37-43"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Live run this session against the stage-1 lab (container donhang-api, port 8080): POST /api/v1/auth/login with anh.tran@example.com returned a token; GET /api/v1/orders with it returned `[{\"id\":1,\"status\":\"paid\",\"customerName\":\"Trần Minh Anh\"},{\"id\":2,\"status\":\"shipped\",\"customerName\":\"Trần Minh Anh\"},{\"id\":10,\"status\":\"paid\",\"customerName\":\"Trần Minh Anh\"}]`. OrdersController.List builds `new OrderSummaryDto(o.Id, o.Status, o.Customer!.FullName)`, so customerName does come through the navigation property.",
+        "source": "live: curl http://localhost:8080/api/v1/orders; examples/don-hang @ stage-1 DonHang.Api/Controllers/OrdersController.cs:48-56"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Claim added and verified in this same round-1 pass, using this reviewer's own already-gathered evidence: the major-severity issue at section 5 already quoted navigations.md — \"Reference navigations for required relationships can be nullable or non-nullable\" — to show `Customer?`'s nullability is an authoring choice, independent of the relationship's own optionality, which the non-nullable `CustomerId` foreign key actually governs.",
+        "source": "refs/efcore-docs entity-framework/core/modeling/relationships/navigations.md (quoted in this review's section-5 major issue)"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "blocker",
+        "section": 3,
+        "kind": "accuracy",
+        "quote": "explicitly, because the default doesn't cover this shape",
+        "text": "False for the two relationships, true only for the composite key. Both shapes used here are documented as discovered by convention: one-to-many.md, sections \"One-to-many without navigation to principal\" and \"One-to-many without navigation to dependents\", both say \"this relationship is discovered by convention\"; conventions.md lists `<navigation property name>Id` and `<principal entity type name>Id` as FK naming conventions, which `Order.CustomerId` and `OrderItem.OrderId` match. Only `HasKey` is unavoidable (keys.md: conventions set up a composite key only in special cases).",
+        "fix": "Split the sentence: say `HasOne`/`HasMany`/`HasForeignKey` are how this codebase states the relationship explicitly in `OnModelCreating` (next to `HasColumnName`), and reserve the \"the default doesn't cover it\" reason for `HasKey` alone — e.g. \"`HasKey` is required here because `order_items` has no single `Id` column for EF Core to fall back on.\""
+      },
+      {
+        "severity": "blocker",
+        "section": 6,
+        "kind": "accuracy",
+        "quote": "and `HasOne(o => o.Customer).WithMany().HasForeignKey(o => o.CustomerId)` in `OnModelCreating` is what connects that property to the column",
+        "text": "Stated as a general rule, this is contradicted by the docs: once `Order.Customer` and `Order.CustomerId` exist on the class, EF Core discovers the relationship and the foreign key by convention, with no `OnModelCreating` line at all (one-to-many.md: \"As before, this relationship is discovered by convention\"). The true half of the correction is that the C# property must exist; the second half overstates the Fluent API as mandatory.",
+        "fix": "Rewrite the correction as: \"…the C# property has to exist on the class; in this codebase the `HasOne(o => o.Customer).WithMany().HasForeignKey(o => o.CustomerId)` line states that relationship explicitly, next to the column mappings.\" Do not claim the configuration call is what makes the property work."
+      },
+      {
+        "severity": "major",
+        "section": 2,
+        "kind": "accuracy",
+        "quote": "it works, with no JOIN written anywhere in that code, and no second call to the database that they can find",
+        "text": "Unlisted claim: whether reading a navigation costs a second query depends on how the order was loaded (here `EfOrderRepository.ListByCustomerAsync` calls `.Include(o => o.Customer)`, which the lesson deliberately never mentions). Unconditioned, the sentence reads as a property of navigation properties in general — the exact belief the n+1 lesson has to undo. Not in the claims ledger.",
+        "fix": "Bind it to the one code path and defer the reason: \"…it works, with no JOIN written by hand in that code, and — in this code path — no second call to the database. Why the customer is already there when the property is read is the subject of a later lesson; this lesson answers where the property itself comes from.\""
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "accuracy",
+        "quote": "the navigation property, nullable because nothing forces EF Core to have loaded it",
+        "text": "Unlisted claim, and it states as the rule something the docs treat as a free choice. navigations.md: \"Reference navigations for required relationships can be nullable or non-nullable\"; the relationship here is required because `CustomerId` is non-nullable — nullability of `Customer?` does not make it optional. A reader can conclude that a nullable navigation means an optional relationship.",
+        "fix": "Say: \"`Customer` is declared `Customer?` because the object is not always present on an `Order` in memory; that choice says nothing about the column — `CustomerId` is a non-nullable `int`, so every order still has a customer in the database.\" Add it to the claims ledger with navigations.md as source."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "quote": "names `Items` as the navigation property and `order_items.order_id` as the column that backs it",
+        "text": "`HasForeignKey(i => i.OrderId)` names a C# property, not a column. The column name `order_id` comes from `e.Property(i => i.OrderId).HasColumnName(\"order_id\")` two lines below — the exact property-to-column distinction the previous lesson taught. Same conflation for `HasForeignKey(o => o.CustomerId)` (\"`customer_id` is the column\") in the same paragraph and in section 4.",
+        "fix": "Write \"names the `OrderItem.OrderId` property as the foreign key — the property already mapped to `order_items.order_id` by `HasColumnName`\", and likewise for `CustomerId` / `customer_id`."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "quote": "because one order can have many items and one product can appear in many orders, and only that combination is ever unique",
+        "text": "The two cardinalities given do not imply the pair is unique — a table could allow the same product twice in one order and use a surrogate key. What makes it true here is the schema: `db/schema.sql` declares `PRIMARY KEY (order_id, product_id)` on `order_items`. As written the reasoning is not sound, though the conclusion is right for this system.",
+        "fix": "Anchor it in the schema the reader already saw: \"…its rows are identified by the pair `(order_id, product_id)` together — that pair is what `order_items` declares as its primary key, so one order never lists the same product twice.\""
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "gap",
+        "quote": "what actually identifies a single row of `order_items`?",
+        "text": "Outline item 3 is \"EF Core needs both values together to find or update one `order_items` row\", and section 2 asks \"how EF Core can find or save one `order_items` row without one\". The lesson answers only the identification half; nothing in sections 4-5 says what a lookup or save then takes. The promise made in the situation is left half-open.",
+        "fix": "Add one sentence after the `HasKey` explanation: \"From then on, every time EF Core has to find or save one `order_items` row, it uses both values together — one of them alone is never enough.\" (Covered by claim 4's source; no new code needed.)"
+      },
+      {
+        "severity": "major",
+        "section": "backend.l1.efcore-relationships-and-keys.q4",
+        "kind": "quiz",
+        "quote": "Put these four facts about `Order.Items` in the order this lesson introduces them.",
+        "text": "The key `a, b, c, d` is the logical dependency order (as the explanation itself argues: \"The property has to exist on the class before anything can configure it\"), not the order of the text. In the lesson, `HasMany(o => o.Items)` and `HasForeignKey(i => i.OrderId)` are introduced in section 4 (\"The same shape works the other way round…\"), before `Items` is shown as a `List<OrderItem>` property in section 5. A reader who follows the stem literally gets marked wrong.",
+        "fix": "Change the stem to the dependency reading, e.g. \"Put these four facts about `Order.Items` in the order each one makes the next possible.\", and keep the key `a, b, c, d`."
+      },
+      {
+        "severity": "major",
+        "section": "backend.l1.efcore-relationships-and-keys.q5",
+        "kind": "quiz",
+        "quote": "Nothing in this lesson's model is detected automatically at startup; every navigation property and foreign key shown here is configured explicitly, by hand, in `OnModelCreating`.",
+        "text": "The distractor explanation for option b is false in its general form, for the same reason as the section 3/6 blockers: both relationships in this model are shapes the docs describe as \"discovered by convention\". The key (a) stays correct — with `WithMany()` explicitly empty, a new `Customer.Orders` property is not folded into that relationship — but the stated reason teaches the wrong rule.",
+        "fix": "Replace with: \"Adding the property alone is not enough: the relationship is already configured with `WithMany()` empty, which tells EF Core this relationship has no navigation on the `Customer` side — so the new property has to be named there.\""
+      },
+      {
+        "severity": "minor",
+        "section": "backend.l1.efcore-relationships-and-keys.q3",
+        "kind": "quiz",
+        "quote": "\"answer\": [\"HasKey\", \"HasKey(i => new { i.OrderId, i.ProductId })\"]",
+        "text": "The blank is `e.____(i => new { i.OrderId, i.ProductId })`, so the second accepted spelling substitutes into `e.HasKey(i => new { … })(i => new { … })` — it is not a valid answer to the question asked, only a plausible mistyping. Nothing accepts a lower-case `hasKey` either.",
+        "fix": "Set `answer` to [\"HasKey\", \"hasKey\", \"e.HasKey\"] — drop the duplicated-lambda variant."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "fix-required"
+  }
+}
