@@ -31,7 +31,7 @@ A teammate asks you to add a way to cancel an order and proposes the path `/api/
 
 ## Core concepts
 
-- **resource** — a thing named by a noun in the URL, like an order or a product; the URL says which thing, the HTTP method says what to do to it.
+- **resource** — a thing named by a noun in the URL (the path half of the method-and-path pair from the last lesson), like an order or a product; the URL says which thing, the HTTP method says what to do to it.
 - collection URL — a URL naming every resource of one kind (`/api/v1/orders`); GET on it lists them all.
 - item URL — a URL naming one specific resource (`/api/v1/orders/1`); GET on it reads just that one.
 - method, not URL, carries the verb — the same item URL means something different depending on the method: GET reads it, PUT or PATCH changes it, DELETE removes it.
@@ -48,15 +48,17 @@ flowchart LR
   D -->|DELETE| G[remove one order]
 ```
 
-`/api/v1/orders` and `/api/v1/orders/{id}` are two different resources, not two spellings of one path — the plural, bare path names the whole collection, and adding an id narrows it to one item. Both accept several methods, and each method keeps its usual meaning from `foundation.l1.http-methods` no matter which of the two URLs it's applied to: GET always reads, POST always creates, and so on. Nothing about *what to do* lives in the URL itself; a path like `/api/v1/cancelOrder` tries to put a verb where a noun belongs, which is exactly what makes it a resource smell rather than a resource.
+This diagram is the general pattern every resource can follow, not a promise that Đơn Hàng answers every branch of it today — its own orders collection, below, has no GET yet.
 
-A collection and an item URL also tend not to answer the same methods. POST usually creates by adding to a collection — there's no id yet to create one for. PUT, PATCH, and DELETE usually act on one item already named by its own URL, since each needs exactly one existing thing to replace, change, or remove.
+`/api/v1/orders` and `/api/v1/orders/{id}` are two different resources, not two spellings of one path — the plural, bare path names the whole collection, and adding an id narrows it to one item. Both accept several methods, and each method keeps its usual meaning from [[foundation.l1.http-methods]] no matter which of the two URLs it's applied to: GET always reads, POST always creates, and so on. Nothing about *what to do* lives in the URL itself; a path like `/api/v1/cancelOrder` tries to put a verb where a noun belongs, which is exactly why that path does not name a resource at all.
+
+By convention, POST goes on the collection URL and PUT, PATCH, and DELETE go on an item URL, because each of those three needs exactly one existing thing to replace, change, or remove. HTTP itself does not enforce this split — it is a convention this lesson and Đơn Hàng both follow, not a rule the protocol checks.
 
 ## In the Đơn Hàng system
 
-`ProductsController` maps one collection URL and the item URL under it, both with GET:
+Every resource in Đơn Hàng follows the same shape: one `/api/v1/<plural-noun>` prefix per class, then one method per thing that prefix needs to do. Only the `[Route(...)]` and `[Http...]` lines matter for this lesson; the rest — parameter types, what each method's body does — belongs to later lessons. `ProductsController` maps its collection URL and the item URL under it, both with GET:
 
-```csharp file=DonHang.Api/Controllers/ProductsController.cs tag=stage-1 lines=8-15
+```csharp file=DonHang.Api/Controllers/ProductsController.cs tag=stage-1 lines=8-28
 [ApiController]
 [Route("api/v1/products")]
 public sealed class ProductsController(DonHangDbContext db) : ControllerBase
@@ -65,33 +67,58 @@ public sealed class ProductsController(DonHangDbContext db) : ControllerBase
     [HttpGet]
     public async Task<ActionResult<List<ProductDto>>> List()
     {
+        var products = await db.Products
+            .Select(p => new ProductDto(p.Id, p.Name, p.PriceVnd))
+            .ToListAsync();
+        return Ok(products);
+    }
+
+    [HttpGet("{id:int}")]
+    public async Task<ActionResult<ProductDto>> Get(int id)
+    {
+        var product = await db.Products.FindAsync(id);
+        if (product is null) return NotFound();
+        return Ok(new ProductDto(product.Id, product.Name, product.PriceVnd));
+    }
 ```
 
-`[Route("api/v1/products")]` on the class fixes the shared prefix once; `[HttpGet]` with no id, on `List()`, answers the bare collection URL, `GET /api/v1/products`. `OrdersController` shows the same pattern with an item URL added, plus a method besides GET:
+`[Route("api/v1/products")]` on the class fixes the shared prefix once; `[HttpGet]` with no id, on `List()`, answers the bare collection URL, `GET /api/v1/products`. `[HttpGet("{id:int}")]`, on `Get(int id)`, adds `{id}` to that prefix — a placeholder the actual id in the request fills in, with `:int` saying only a whole number matches — answering the item URL, `GET /api/v1/products/{id}`, the one Try it calls below.
 
-```csharp file=DonHang.Api/Controllers/OrdersController.cs tag=stage-1 lines=9-13
-// lesson: backend.l1.creating-a-resource
-[ApiController]
-[Route("api/v1/orders")]
-public sealed class OrdersController(OrderService orderService, IOrderRepository repository) : ControllerBase
-{
+`OrdersController` carries the same class-level attribute, `[Route("api/v1/orders")]`, and a `[HttpPost]` method, `Create`, answering the collection URL, `POST /api/v1/orders` (creating an order adds to the whole set — not shown again here, same shape as `[Route(...)]` above). Further down the same class, two more methods answer the item URL and the teammate's question from the situation above:
+
+```csharp file=DonHang.Api/Controllers/OrdersController.cs tag=stage-1 lines=30-46
+    [HttpGet("{id:int}")]
+    public async Task<ActionResult<OrderDto>> Get(int id)
+    {
+        var order = await repository.FindAsync(id);
+        if (order is null) return NotFound();
+        return Ok(ToDto(order));
+    }
+
+    // lesson: management.l1.reviewing-for-tests
+    // Deliberately missing a check: see OrderService.CancelOrderAsync.
+    [Authorize]
+    [HttpPatch("{id:int}/cancel")]
+    public async Task<ActionResult<OrderDto>> Cancel(int id)
+    {
+        var order = await orderService.CancelOrderAsync(id);
+        return Ok(ToDto(order));
+    }
 ```
 
-`[HttpPost]` (on `Create`, further down) answers `POST /api/v1/orders` — the collection URL, since creating an order adds to the whole set. `[HttpGet("{id:int}")]` (on `Get`) adds `{id}` to the shared prefix, answering the item URL, `GET /api/v1/orders/{id}`, for one order at a time.
+`[HttpGet("{id:int}")]` answers the item URL, `GET /api/v1/orders/{id}`, for one order at a time — the same shape as `ProductsController.Get` above. `[HttpPatch("{id:int}/cancel")]`, on `Cancel`, is the teammate's real answer: `PATCH /api/v1/orders/{id}/cancel`, not `/api/v1/cancelOrder`. The order's own path, `/api/v1/orders/{id}`, never disappears; `cancel` is added after it, naming an action that doesn't fit a plain replace-the-whole-thing or change-a-field request, instead of a verb replacing the resource's own noun-path.
 
-`OrdersController` also answers the teammate's question from the situation above. It has a real `Cancel(int id)` method, marked `[HttpPatch("{id:int}/cancel")]`, answering `PATCH /api/v1/orders/{id}/cancel` — not `/api/v1/cancelOrder`. The order's own path, `/api/v1/orders/{id}`, never disappears; `cancel` is added after it, naming an action that doesn't fit a plain replace-the-whole-thing or change-a-field request, instead of a verb replacing the resource's own noun-path.
-
-Not every `/api/v1/...` path is a resource this way. A third class, `AuthController`, answers `/api/v1/auth`, for signing in — a job with no plural noun of its own, so it keeps the same URL prefix without being a collection or item URL for anything.
+Not every `/api/v1/...` path names a resource this way. A third class, `AuthController`, answers `/api/v1/auth`, for signing in. That is fine, not the same mistake as `/api/v1/cancelOrder`: no order, product, or other thing is being named at `/api/v1/auth`, so no noun is being pushed aside for a verb — there was never a resource's path to keep in the first place.
 
 ## Beginners often think…
 
-- **"A REST URL like `/api/v1/cancelOrder` is fine as long as it's clear what it does."** → Actually clarity isn't the test, and the fix isn't a brand-new top-level path either. Đơn Hàng's real fix for exactly this action is `PATCH /api/v1/orders/{id}/cancel`: the order's own path survives, with `cancel` added after it. You notice this in `OrdersController` above, where the resource's URL stays intact even for an action that isn't a plain PUT or a plain field change.
+- **"A URL like `/api/v1/cancelOrder` is fine as long as it's clear what it does."** → Actually clarity isn't the test, and the fix isn't a brand-new top-level path either. Đơn Hàng's real fix for exactly this action is `PATCH /api/v1/orders/{id}/cancel`: the order's own path survives, with `cancel` added after it. You notice this in `OrdersController` above, where the resource's URL stays intact even for an action that isn't a plain PUT or a plain field change.
 - **"Creating an order and listing orders need two different URLs, since they're different actions."** → Actually they'd be the same URL, `/api/v1/orders`, answered by whichever methods that resource needs — POST creates, as `OrdersController.Create` does; GET would list, as `ProductsController.List` does for products. `OrdersController` and `ProductsController` are different classes, same pattern: Đơn Hàng just hasn't needed a GET that lists every order yet.
-- **"The `v1` in `/api/v1/orders` refers to the version of each individual order, not the API."** → Actually `v1` names the version of the whole API's shape, written once per path; it has nothing to do with how many times a single order has changed. You notice this because every endpoint in this lesson — products, orders, and their items — shares the same `v1`, regardless of which resource or which specific order it answers about.
+- **"The `v1` in `/api/v1/orders` refers to the version of each individual order, not this whole set of endpoints."** → Actually `v1` is fixed once for every endpoint this server answers, not per order: `/api/v1/orders/1` and `/api/v1/orders/2` carry the same `v1` even after one order has changed status several times and the other never has.
 
 ## Try it (3 minutes)
 
-1. With the lab running (`scripts/up.sh`), run `curl -i http://localhost:8080/api/v1/products` (the collection URL, no id).
+1. From the Đơn Hàng project's root folder, start the lab with `scripts/up.sh`, then run `curl -i http://localhost:8080/api/v1/products` (the collection URL, no id).
 2. Then run `curl -i http://localhost:8080/api/v1/products/1` (the item URL, id `1`).
 
 Expected result: the first returns `200` with a JSON array of every product; the second returns `200` with one product object, not wrapped in an array. Same `ProductsController`, same GET method's meaning both times — only the URL changed which resource it reads.
