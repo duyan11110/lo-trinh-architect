@@ -15,9 +15,9 @@ vocab: []
 example_tag: stage-1
 versions_used: [dotnet, aspnetcore, http_problem_details]
 content_version: 1
-status: draft
+status: reviewed
 approved_by: null
-reviewed_at: null
+reviewed_at: "2026-09-25T22:00:00+07:00"
 ---
 
 ## Before you start
@@ -52,7 +52,7 @@ In the situation above, `ExceptionHandlingMiddleware.InvokeAsync` wraps one `try
 
 When it throws instead, C# checks this method's `catch` clauses in the order they're written. `KeyNotFoundException` is listed first, so `CancelOrderAsync`'s missing-order case is caught there, answering `404`. `ArgumentException` is listed second, catching `PlaceOrderAsync`'s empty-item-list case as `400`. Both of those are already familiar from [[backend.l1.validating-input]] and [[backend.l1.choosing-an-error-status]].
 
-What's new here is the last clause: `catch (Exception ex)` matches anything neither of the two more specific types above it already claimed, including the situation's lost connection. That branch answers `500` with the same fixed `detail` whatever the underlying exception was, as long as the code inside `next(context)` hadn't already started writing a response of its own before throwing — once a response has started, ASP.NET Core throws a new exception instead, and the client is left with whatever partial response already went out, which by then this middleware can no longer take back.
+What's new here is the last clause: `catch (Exception ex)` matches anything neither of the two more specific types above it already claimed, including the situation's lost connection. That branch answers `500` with the same fixed `detail` whatever the underlying exception was, as long as the code inside `next(context)` hadn't already started writing a response of its own before throwing — once a response has started, ASP.NET Core throws a new exception instead, and the client is left with whatever partial response already went out, cut off mid-stream, which by then this middleware can no longer take back.
 
 ## In the Đơn Hàng system
 
