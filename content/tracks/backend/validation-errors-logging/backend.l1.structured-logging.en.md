@@ -13,7 +13,7 @@ prereqs: [backend.l1.validating-input, foundation.l2.debugger-and-logging]
 related: []
 vocab: [structured-logging]
 example_tag: stage-1
-versions_used: [dotnet]
+versions_used: [dotnet, aspnetcore]
 content_version: 1
 status: draft
 approved_by: null
@@ -33,7 +33,7 @@ A customer says order `41`'s confirmation notification never arrived. `docker lo
 
 - **structured logging** — writing each piece of information a log line carries as its own named field (like `OrderId`), instead of interpolating it into one free-text sentence.
 - message template — the fixed part of a log call, written with `{Placeholder}` names marking where each field goes, kept separate from the values themselves.
-- field — one named value inside a structured log line, independently searchable, unlike a substring buried inside free text.
+- field — one named value inside a structured log line, searchable on its own by any provider that stores the fields, unlike a substring buried inside free text.
 
 ## How it works
 
@@ -46,13 +46,13 @@ flowchart LR
   E --> F[searchable only as a substring]
 ```
 
-`logger.LogInformation`'s first argument is a template, not a finished sentence: `{OrderId}` names where a value goes and what to call it, and the value itself arrives as a separate argument. The logger keeps that value as its own field on the log event, independent of whatever sentence gets displayed later. `$"order {orderId} failed"` works differently: C# finishes building that string before `LogInformation` is ever called, so by the time the logger sees it, there is one piece of text and no field boundary left — `orderId` is in there somewhere, but nothing marks where.
+`logger.LogInformation`'s first argument is a template, not a finished sentence: `{OrderId}` names where a value goes and what to call it, and the value itself arrives as a separate argument, matched to its placeholder by position, not by name. The logger keeps that value as its own field on the log event, independent of whatever sentence gets displayed later. `$"order {orderId} failed"` works differently: C# finishes building that string before `LogInformation` is ever called, so by the time the logger sees it, there is one piece of text and no field boundary left — `orderId` is in there somewhere, but nothing marks where.
 
-This app's console happens to print a structured call's fields back into a sentence that reads exactly like an interpolated one would. That rendering is only one way of displaying the same log event; the field boundary a template creates still exists underneath it, which is what makes filtering by `OrderId` possible for anything built to read the event instead of its printed text.
+This app's console happens to print a structured call's fields back into a sentence that reads exactly like an interpolated one would. That printed line is only one way of displaying the same log event; the field boundary a template creates still exists underneath it, which is what makes filtering by `OrderId` possible for anything built to read the event instead of its printed text.
 
 ## In the Đơn Hàng system
 
-`LoggingNotifier.Send` is the simplest example — one field, one value, one line:
+`LoggingNotifier.Send` is the smallest example — two fields, one call, one line:
 
 ```csharp file=DonHang.Infrastructure/LoggingNotifier.cs tag=stage-1 lines=9-13
 public sealed class LoggingNotifier(ILogger<LoggingNotifier> logger) : INotifier
@@ -64,7 +64,7 @@ public sealed class LoggingNotifier(ILogger<LoggingNotifier> logger) : INotifier
 
 `{OrderId}` and `{Subject}` name two fields; `orderId` and `subject` are passed as their own arguments, never spliced into the template string first. The log event this produces carries `OrderId` as a field of its own, the same one `saving-changes`' `notifier.Send(order.Id, "order placed")` call already fills in on every order placed.
 
-`RequestLoggingMiddleware.InvokeAsync` shows a template with four fields in a single call, not just one:
+`RequestLoggingMiddleware.InvokeAsync` shows a template with four fields in a single call, not just two:
 
 ```csharp file=DonHang.Api/Middleware/RequestLoggingMiddleware.cs tag=stage-1 lines=9-24
 public sealed class RequestLoggingMiddleware(RequestDelegate next, ILogger<RequestLoggingMiddleware> logger)
@@ -85,7 +85,7 @@ public sealed class RequestLoggingMiddleware(RequestDelegate next, ILogger<Reque
 }
 ```
 
-`Method`, `Path`, `StatusCode`, and `ElapsedMs` are four separate fields, each named once in the template and filled once from its own argument — not one long sentence describing the request that happens to mention four numbers.
+`Method`, `Path`, `StatusCode`, and `ElapsedMs` are four separate fields, each named once in the template and filled once from its own argument — not one long sentence describing the request that happens to mention four numbers. Neither line alone identifies a failing request: the notification line names the order, and the request line names the method, path, and status of the call that produced it. Filtering on fields from both lines together, instead of scanning either sentence, is what narrows thousands of log lines down to one.
 
 ## Beginners often think…
 
@@ -97,11 +97,11 @@ public sealed class RequestLoggingMiddleware(RequestDelegate next, ILogger<Reque
 1. With the Đơn Hàng system running (`scripts/up.sh`), run steps 1 and 2 of `creating-a-resource`'s Try it to place an order.
 2. Read the notification's line in the logs: `docker logs donhang-api --since 1m`.
 
-Expected result: a line reading `notification for order <id>: order placed` — plain text, indistinguishable at a glance from a hand-built sentence.
+Expected result: two lines — `info: DonHang.Infrastructure.LoggingNotifier[0]`, then an indented `notification for order <id>: order placed` — plain text, indistinguishable at a glance from a hand-built sentence.
 
 <details><summary>Suggested answer</summary>
 
-The line looks identical either way, but it isn't built the same way underneath. `LoggingNotifier.Send` calls `logger.LogInformation` with the template `"notification for order {OrderId}: {Subject}"` and `orderId` as its own argument — the field exists on the log event before this console ever renders it into a sentence. A version built with `$"notification for order {orderId}: {subject}"` would print the exact same text, but by the time `LogInformation` saw it, there would be no `OrderId` field left to filter on — only the sentence you're looking at.
+The line looks identical either way, but it isn't built the same way underneath. `LoggingNotifier.Send` calls `logger.LogInformation` with the template `"notification for order {OrderId}: {Subject}"` and `orderId` as its own argument — the field exists on the log event before this console ever prints it as a sentence. A version built with `$"notification for order {orderId}: {subject}"` would print the exact same text, but by the time `LogInformation` saw it, there would be no `OrderId` field left to filter on — only the sentence you're looking at.
 
 </details>
 
@@ -117,4 +117,4 @@ The line looks identical either way, but it isn't built the same way underneath.
 2. `logger.LogInformation("... {OrderId} ...", orderId, ...)` keeps `orderId` as a separate field; string interpolation finishes it into text before the logger ever runs.
 3. `LoggingNotifier` logs every notification with `OrderId` and `Subject` as named fields, from one line.
 4. `RequestLoggingMiddleware` logs `Method`, `Path`, `StatusCode`, and `ElapsedMs` as four separate fields in one call.
-5. The console renders a structured call's fields as readable text, but the field boundary still exists — searching that text works by luck, not design.
+5. The console prints a structured call's fields as readable text, but the field boundary still exists — searching that text works by luck, not design.

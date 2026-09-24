@@ -1,0 +1,133 @@
+{
+  "id": "backend.l1.structured-logging",
+  "technical": {
+    "reviewed_at": "2026-09-25T04:30:00+07:00",
+    "reviewer": "claude-opus-5[1m]",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "`git show stage-1:DonHang.Infrastructure/LoggingNotifier.cs` lines 9-13 are character-for-character the lesson's block: `public sealed class LoggingNotifier(ILogger<LoggingNotifier> logger) : INotifier` / `public void Send(int orderId, string subject) => logger.LogInformation(\"notification for order {OrderId}: {Subject}\", orderId, subject);`. One template, two named placeholders ({OrderId}, {Subject}), two arguments after the template. Lines 6-8 skipped by the block are the `// lesson: design.l1.solid-dip` comment only.",
+        "source": "examples/don-hang @ stage-1 (commit 4fca60a): DonHang.Infrastructure/LoggingNotifier.cs:9-13"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "`git show stage-1:DonHang.Api/Middleware/RequestLoggingMiddleware.cs` lines 9-24 match the lesson's block verbatim, including the call `logger.LogInformation(\"{Method} {Path} responded {StatusCode} in {ElapsedMs}ms\", context.Request.Method, context.Request.Path, context.Response.StatusCode, stopwatch.ElapsedMilliseconds);`. Four placeholders, four arguments, in that order. Lines 5-8 skipped by the block are the comment naming backend.l1.middleware-pipeline and this lesson as reusers.",
+        "source": "examples/don-hang @ stage-1 (commit 4fca60a): DonHang.Api/Middleware/RequestLoggingMiddleware.cs:9-24"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Logging overview, \"Log message template\": \"Each log API uses a message template. The message template can contain placeholders for which arguments are provided.\" and \"This approach lets logging providers implement semantic or structured logging. The arguments themselves are passed to the logging system, not just the formatted message template. This enables logging providers to store the parameter values as fields.\" Earlier: \"The key name (or placeholder) comes from the word inside the curly braces in the template, and the value comes from the remaining method argument.\"",
+        "source": "refs/dotnet-docs docs/core/extensions/logging/overview.md#log-message-template (learn.microsoft.com/dotnet/core/extensions/logging)"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Ran live 2026-09-25: POST /api/v1/auth/login then POST /api/v1/orders against the running lab returned `201 Created`, `Location: .../api/v1/orders/26`. `docker logs donhang-api --since 3m` then printed, plain text and not JSON: \"info: DonHang.Infrastructure.LoggingNotifier[0]\" / \"      notification for order 26: order placed\" and \"info: DonHang.Api.Middleware.RequestLoggingMiddleware[0]\" / \"      POST /api/v1/orders responded 201 in 13ms\".",
+        "source": "live: docker logs donhang-api --since 3m, examples/don-hang lab running at localhost:8080"
+      },
+      {
+        "n": 5,
+        "verdict": "rephrased",
+        "evidence": "True for this call, too strong in general. C# reference: \"If an interpolated string has the type `string`, the compiler typically transforms it into a String.Format method call.\" But also: \"The compiler checks if an interpolated string is assigned to a type that satisfies the interpolated string handler pattern\" — a method whose parameter is a handler type does receive the pieces separately. `LogInformation(string? message, params object?[] args)` takes `string`, so there the value is finished first.",
+        "source": "refs/dotnet-docs docs/csharp/language-reference/tokens/interpolated.md (lines 99, 104)",
+        "suggested_text": "When an interpolated string is passed to a parameter of type `string` — as `LogInformation(string? message, params object?[] args)` is — the compiler finishes it into one `string` (typically via `String.Format`) before the call, so the method never sees the placeholder names or the values separately. (C# 10+ interpolated string handler parameters are the exception; `ILogger` has none.)"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Orphaned claim added after this round's own review ran, to close its major issue #2 (the unlisted OrderService.cs claim). Verified using the same evidence this round already gathered: OrderService.PlaceOrderAsync ends with notifier.Send(order.Id, \"order placed\"); at line 21 at stage-1, unconditionally after SaveChangesAsync().",
+        "source": "examples/don-hang @ stage-1: DonHang.Domain/OrderService.cs:21 (cited in this review's own major issue #2)"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "code",
+        "text": "The prose contradicts the code it introduces. The template in `LoggingNotifier.Send` has two placeholders, `{OrderId}` and `{Subject}`, and the lesson says so ten lines later (\"`{OrderId}` and `{Subject}` name two fields\"). The lead-in calling it \"one field, one value\" is false of this code, and the middleware lead-in (\"four fields in a single call, not just one\") repeats the error.",
+        "fix": "Change the lead-in to \"`LoggingNotifier.Send` is the smallest example — two fields, one call, one line:\" and change the middleware lead-in to \"...shows a template with four fields in a single call, not just two\".",
+        "quote": "`LoggingNotifier.Send` is the simplest example — one field, one value, one line:"
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "Unlisted claim: the sentence asserts a specific call site in a file the lesson does not quote (`DonHang.Domain/OrderService.cs`), and it is not in the claims ledger. I verified it — `OrderService.PlaceOrderAsync` ends with `notifier.Send(order.Id, \"order placed\");` at line 21 at stage-1, unconditionally after `SaveChangesAsync()` — but a repo-specific assertion outside the ledger is a claim the author is not tracking (a second call, `notifier.Send(order.Id, \"order cancelled\")`, also exists at line 36).",
+        "fix": "Add claim n=6 to `.meta.json`: \"OrderService.PlaceOrderAsync calls notifier.Send(order.Id, \\\"order placed\\\") after SaveChangesAsync, so every placed order produces one LoggingNotifier line\", kind `fact`, source_hint `examples/don-hang @ stage-1: DonHang.Domain/OrderService.cs:21`, section 5.",
+        "quote": "the same one `saving-changes`' `notifier.Send(order.Id, \"order placed\")` call already fills in on every order placed"
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "gap",
+        "text": "Outline item 3 (\"Logging the failure's context (method, path, a request id) alongside the order id is what makes one specific failed request findable among thousands of log lines\") is not established. The lesson shows the four request fields and the order-id field as two unrelated call sites; it never says the two together are what narrow thousands of lines to one request, and \"request id\" appears nowhere. `.meta.json` coverage claims item 3 is covered.",
+        "fix": "After the four-field paragraph, add one sentence tying the two call sites together, e.g.: \"Neither line alone identifies the failing request: the notification line names the order, the request line names the method, path and status of the call that produced it — filtering on both fields is what narrows thousands of lines to one.\" No new code needed. If the outline's \"a request id\" cannot be honoured (the repo logs none), amend that outline item in track.yaml instead of implying one exists.",
+        "quote": "`Method`, `Path`, `StatusCode`, and `ElapsedMs` are four separate fields"
+      },
+      {
+        "severity": "major",
+        "section": "quiz q3",
+        "kind": "quiz",
+        "text": "The fill answer set `[\"{OrderId}\"]` is incomplete relative to the prompt. The prompt asks for \"the placeholder name\", and the .NET docs call the name the word inside the braces (\"The key name (or placeholder) comes from the word inside the curly braces\"), so `OrderId` is the literal answer to the question asked, while the blank's position inside the template string requires `{OrderId}`. Both spellings are defensible; only one is accepted.",
+        "fix": "Either add `OrderId` to `answer` (making it `[\"{OrderId}\", \"OrderId\"]`), or change the prompt to \"fill in the placeholder, braces included, that makes `orderId` its own field\" so only `{OrderId}` can be intended.",
+        "quote": "fill in the placeholder name that makes `orderId` its own field"
+      },
+      {
+        "severity": "minor",
+        "section": "quiz q4",
+        "kind": "quiz",
+        "text": "Option c states a rule the lesson never teaches. Positional matching is correct per the docs (\"The order of placeholders, not their names, determines which parameters are used to provide their values\"), but the lesson only says the value \"arrives as a separate argument\" — a reader cannot decide c from the lesson text, which Step 6 requires.",
+        "fix": "Add one clause to \"How it works\" after \"the value itself arrives as a separate argument\": \"matched to its placeholder by position, not by name\". Otherwise replace option c with a statement the lesson does make, e.g. \"None of the four values is spliced into the template string before the call\".",
+        "quote": "Each argument fills the placeholder with the same position, not the same spelling, as its name"
+      },
+      {
+        "severity": "minor",
+        "section": "quiz q5",
+        "kind": "quiz",
+        "text": "The explanation for distractor c dismisses a performance difference as if none existed. The .NET docs say the opposite direction is real: \"In most cases, you should use log message template formatting when logging. Use of string interpolation can cause performance issues.\" The key (a) is still uniquely correct — c misnames \"the real problem\" — but the explanation teaches something the docs contradict.",
+        "fix": "Reword c's explanation to: \"There is a cost difference — the docs recommend templates over interpolation partly for performance — but that is not what this review missed: the change removed a named field, and the console test could never have shown it.\"",
+        "quote": "the lesson never claims one template is faster than the other"
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "\"independently searchable\" is stated without the condition the docs attach to it. The docs frame field storage as a provider capability: \"This enables logging providers to store the parameter values as fields\" — and this app's console provider does not let you filter by `OrderId` at all. Section 4 hedges correctly (\"for anything built to read the event\"); the Core concepts definition does not, and a reader meets the unconditional version first.",
+        "fix": "Change the bullet to: \"field — one named value inside a structured log line, searchable on its own by any provider that stores the fields, unlike a substring buried inside free text.\"",
+        "quote": "field — one named value inside a structured log line, independently searchable"
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "accuracy",
+        "text": "The expected result understates what the console prints. Running the steps live produced two lines, not one: \"info: DonHang.Infrastructure.LoggingNotifier[0]\" followed by the indented \"      notification for order 26: order placed\". A reader grepping for a single self-contained line will not find the category header described anywhere in the lesson.",
+        "fix": "Change to: \"Expected result: two lines — `info: DonHang.Infrastructure.LoggingNotifier[0]`, then an indented `notification for order <id>: order placed` — plain text, indistinguishable at a glance from a hand-built sentence.\"",
+        "quote": "Expected result: a line reading `notification for order <id>: order placed`"
+      },
+      {
+        "severity": "minor",
+        "section": 1,
+        "kind": "version",
+        "text": "`versions_used: [dotnet]` is right for the message-template behaviour (Microsoft.Extensions.Logging ships in .NET, docs under learn.microsoft.com/dotnet/core/extensions/logging), but the second code block is ASP.NET Core code (`RequestDelegate`, `HttpContext`, `context.Request.Path`, `context.Response.StatusCode`) and the live console output in Try it comes from the ASP.NET Core host's default logging configuration. An aspnetcore version bump would not flag this lesson for re-review.",
+        "fix": "Set `versions_used: [dotnet, aspnetcore]` in the front matter and in `.meta.json`'s claim 2 add `version_key: aspnetcore`.",
+        "quote": "versions_used: [dotnet]"
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "term",
+        "text": "`tools/validate` reports: `W backend.l1.structured-logging L15: dùng thuật ngữ \"render\" ngoài known_vocab ∪ vocab`. \"render\"/\"rendering\" carries the load of section 4's key sentence and reappears in the Try it answer and in q2/q6 explanations, but it is neither in this lesson's `vocab` nor taught earlier.",
+        "fix": "Replace with plain wording already available: \"This app's console happens to print a structured call's fields back into a sentence...\" → keep \"print\"; change \"That rendering is only one way of displaying the same log event\" to \"That printed line is only one way of displaying the same log event\", and drop \"render\"/\"renders\" from the Try it answer and the quiz explanations. Otherwise add `render` to the lesson's `vocab` in track.yaml and define it in Core concepts.",
+        "quote": "That rendering is only one way of displaying the same log event"
+      }
+    ],
+    "scope": {
+      "outline_covered": false,
+      "beyond_scope": []
+    },
+    "verdict": "fix-required"
+  }
+}
