@@ -1,0 +1,115 @@
+---
+id: backend.l1.efcore-mapping
+lang: en
+track: backend
+level: 1
+stage: 1
+module: orm-efcore
+main_path: true
+title: "A DbContext maps classes to tables, not the other way around"
+duration_min: 12
+skills: [backend.ef.mapping]
+prereqs: [backend.l1.get-and-status-codes, foundation.l1.tables-keys-relations]
+related: []
+vocab: [orm]
+example_tag: stage-1
+versions_used: [efcore]
+content_version: 1
+status: draft
+approved_by: null
+reviewed_at: null
+---
+
+## Before you start
+
+- [[backend.l1.get-and-status-codes]] — you know `ProductsController.List()` returns every row of the `products` table; this lesson is about the piece that turns those rows into `Product` objects in the first place.
+- [[foundation.l1.tables-keys-relations]] — you know the `products` table's shape: a primary key `id`, plus `name` and `price_vnd`.
+
+## The situation
+
+A teammate asks: `ProductsController` builds a `ProductDto` from a `Product` object it calls `p`, but nowhere in that class does anything open a connection, write SQL, or parse a result set. Where does a `Product` come from, and how does it end up matching the `products` table's columns — `price_vnd`, not `PriceVnd` — when nothing in `Product` itself says anything about a database at all?
+
+## Core concepts
+
+- **ORM (object-relational mapper)** — a library mapping classes in code to database tables, so most queries don't need hand-written SQL.
+- `DbContext` — a class standing between your code and the database; asking it for data returns C# objects, not rows or a result set.
+- `DbSet<T>` — a property on the `DbContext` representing one table as a queryable collection of `T` objects; `DbSet<Product>` stands for the whole `products` table.
+- column mapping — by default, EF Core expects a table column with the exact same name as the C# property; when the names differ (`PriceVnd` in C#, `price_vnd` in the database), the mapping has to say so explicitly.
+
+## How it works
+
+```mermaid
+flowchart LR
+  A[Product class] -->|DbSet Products, mapped by DonHangDbContext| B[(products table)]
+  B -->|query result rows| C[Product objects]
+```
+
+A `DbContext` is the object standing between your code and the database for one unit of work: you ask its `DbSet<Product>` for data, and it comes back as `Product` objects, already built — no row, no column, no SQL visible to the code that asked. That's the "O/R" in object-relational mapper: an object on one side, a relational table on the other, and the `DbContext` doing the translation between them.
+
+The translation needs to know two things for every property: which table, and which column. By default, EF Core assumes a column exists with the exact same name as the property — a `Product.Name` property expects a `Name` column. The Đơn Hàng database doesn't use that casing: its columns are snake_case (`price_vnd`), while `Product`'s properties are PascalCase (`PriceVnd`), the normal casing for a C# property. Nothing about the framework auto-translates one casing into the other; wherever a name doesn't match by default, the mapping has to name the real column explicitly.
+
+That means the mapping isn't guessing at a schema — it's aimed at one that already exists. `Product` doesn't describe what the `products` table should look like; it describes what a `products` row already looks like, told to EF Core one column at a time.
+
+## In the Đơn Hàng system
+
+`DonHangDbContext` declares one `DbSet<T>` per table:
+
+```csharp file=DonHang.Infrastructure/DonHangDbContext.cs tag=stage-1 lines=6-14
+// lesson: backend.l1.efcore-mapping
+public sealed class DonHangDbContext(DbContextOptions<DonHangDbContext> options) : DbContext(options)
+{
+    public DbSet<Customer> Customers => Set<Customer>();
+    public DbSet<Product> Products => Set<Product>();
+    public DbSet<Order> Orders => Set<Order>();
+    public DbSet<OrderItem> OrderItems => Set<OrderItem>();
+    public DbSet<Payment> Payments => Set<Payment>();
+    public DbSet<Notification> Notifications => Set<Notification>();
+```
+
+Each line pairs one entity class with one `DbSet<T>` property; `Products => Set<Product>()` is what `ProductsController` actually asks for when it writes `db.Products`, from the last lesson. `Product` itself, in `DonHang.Domain/Entities.cs`, is a plain class: three properties, `Id`, `Name`, `PriceVnd`, no attributes, no base class, nothing in the class itself pointing at a database — it's just a shape.
+
+The column mapping lives elsewhere, in `OnModelCreating`, one call per property:
+
+```csharp file=DonHang.Infrastructure/DonHangDbContext.cs tag=stage-1 lines=30-36
+        modelBuilder.Entity<Product>(e =>
+        {
+            e.ToTable("products");
+            e.Property(p => p.Id).HasColumnName("id");
+            e.Property(p => p.Name).HasColumnName("name");
+            e.Property(p => p.PriceVnd).HasColumnName("price_vnd");
+        });
+```
+
+`ToTable("products")` says which table `Product` maps to; each `Property(...).HasColumnName(...)` says which column that one property reads and writes. `Id` and `Name` happen to already match their columns' names once case is set aside, but `HasColumnName` is still there for them — nothing here relies on a name matching by accident. `PriceVnd` is the one that would fail silently without it: left unconfigured, EF Core would look for a column literally named `PriceVnd`, which doesn't exist in a database that only has `price_vnd`.
+
+## Beginners often think…
+
+- **"EF Core automatically figures out that `PriceVnd` in C# means the same thing as `price_vnd` in the database."** → Actually EF Core's default expects an exact name match; `PriceVnd` and `price_vnd` are different strings, and nothing built into the framework relates PascalCase to snake_case on its own. `OnModelCreating`'s `HasColumnName("price_vnd")` is what makes the connection, explicitly, one property at a time.
+- **"A `DbSet<Product>` is just a `List<Product>` that happens to load from a file."** → Actually a `DbSet<Product>` doesn't hold any `Product` objects until something asks it a question — `ProductsController.List()`'s query is what turns `db.Products` into rows read from PostgreSQL. A `List<Product>` already holds its items; a `DbSet<Product>` is a standing connection to a table, holding nothing until asked.
+
+## Try it (3 minutes)
+
+1. From the Đơn Hàng project's root folder, with the example system running (`scripts/up.sh`), run `curl -s http://localhost:8080/api/v1/products/1`.
+2. Compare the response's field names to `Product`'s property names.
+
+Expected result: the response reads `{"id":1,"name":"Bàn phím cơ","priceVnd":1250000}` (camelCase, from serialization, per `dtos-and-serialization`); the database column behind it is `price_vnd`, and the C# property mapped to that column is `PriceVnd`. Three different spellings for the same value, at three different steps, none of them the database's own.
+
+<details><summary>Suggested answer</summary>
+
+`price_vnd` (the column) is mapped to `PriceVnd` (the `Product` property) by `HasColumnName("price_vnd")` in `OnModelCreating`; `PriceVnd` is then serialized to `priceVnd` (the JSON field) because ASP.NET Core writes response fields in camelCase by default. The database's name never reaches the response directly — it passes through the entity mapping first.
+
+</details>
+
+## Connections
+
+- [[backend.l1.get-and-status-codes]] — `ProductsController.List()`, the code that turns `db.Products` into the JSON array this lesson traces back to its table.
+- [[backend.l1.dtos-and-serialization]] — the second name change, `PriceVnd` to `priceVnd`, that happens after this lesson's mapping already ran.
+- [[backend.l1.efcore-relationships-and-keys]] — the next piece of `OnModelCreating`, for tables related to each other instead of standing alone.
+
+## Five-line summary
+
+1. A `DbContext` maps C# classes to database tables; asking a `DbSet<T>` for data returns objects, not rows.
+2. `DbSet<Product>` on `DonHangDbContext` represents the whole `products` table as a queryable collection of `Product` objects.
+3. By default, EF Core expects a column with the exact same name as the property; a mismatch needs explicit configuration.
+4. `OnModelCreating`'s `HasColumnName("price_vnd")` is what connects `Product.PriceVnd` to the real `price_vnd` column.
+5. The mapping targets a schema that already exists — `Product`'s shape follows `products`, not the other way around.
