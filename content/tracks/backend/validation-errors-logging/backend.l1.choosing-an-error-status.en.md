@@ -9,7 +9,7 @@ main_path: true
 title: "400, 404, or 409: the right status for each kind of failure"
 duration_min: 12
 skills: [backend.errors.validation]
-prereqs: [backend.l1.validating-input]
+prereqs: [backend.l1.validating-input, backend.l1.creating-a-resource]
 related: []
 vocab: []
 example_tag: stage-1
@@ -23,10 +23,11 @@ reviewed_at: null
 ## Before you start
 
 - [[backend.l1.validating-input]] — you know `PlaceOrderAsync` throws `ArgumentException` for an empty item list, and something outside it catches that exception and answers `400` naming the problem.
+- [[backend.l1.creating-a-resource]] — you know how to log in and get a token to send with a request.
 
 ## The situation
 
-You're extending `PATCH /api/v1/orders/{id}/cancel`. Cancelling order `99999`, which doesn't exist, needs its own answer — separate from `validating-input`'s empty-items case, where the request itself was malformed. Sending `PATCH /api/v1/orders/99999/cancel`, with a valid token, gets `404` with `{"title":"Not found","status":404,"detail":"order 99999 not found"}`. Same `title`/`status`/`detail` shape as that `400` — only the number and the text changed. Nothing about this request was malformed; the id it named just doesn't exist. What decides which status code fits?
+You're extending `PATCH /api/v1/orders/{id}/cancel`. Cancelling order `99999`, which doesn't exist, needs its own answer — separate from `validating-input`'s empty-items case, where the request itself was malformed. Sending `PATCH /api/v1/orders/99999/cancel` (signed in, as in Try it below) gets `404` with `{"title":"Not found","status":404,"detail":"order 99999 not found"}`. Same `title`/`status`/`detail` shape as that `400` — only the number and the text changed. Nothing about this request was malformed; the id it named just doesn't exist. What decides which status code fits?
 
 ## Core concepts
 
@@ -48,11 +49,11 @@ flowchart LR
   F -->|no| H[succeeds]
 ```
 
-The three status codes answer three different questions about a failing request — not necessarily three checks inside one single endpoint; the diagram's three status boxes each name what illustrates them. First: is the request itself broken? That's `validating-input`'s territory, illustrated by `POST /api/v1/orders`: a missing or invalid value in the request body, like an empty item list, is `400` no matter which order it would have applied to. `PATCH /api/v1/orders/{id}/cancel` takes no request body at all, so this question never comes up for it — every request that reaches `CancelOrderAsync` has already passed it trivially, with nothing to be malformed.
+The three status codes answer three different questions about a failing request. The three boxes are not one request's stages — each comes from a separate case, explained below. First: is the request itself broken? That's `validating-input`'s territory, illustrated by `POST /api/v1/orders`: a missing or invalid value in the request body, like an empty item list, is `400` no matter which order it would have applied to. `PATCH /api/v1/orders/{id}/cancel` takes no request body at all, so this question never comes up for it — every request that reaches `CancelOrderAsync` has already passed it trivially, with nothing to be malformed.
 
-Second: does the thing the request names exist? `PATCH /api/v1/orders/99999/cancel` is a perfectly well-formed request — there's nothing wrong with its shape — but no order `99999` exists to cancel. That's `404`: the id is what's missing, not the request. This holds even when the id itself looks like an obviously wrong number: as long as it's a value the route accepts, a lookup that finds nothing is still `404` in this app, not `400` — the request's shape was fine, so only the id was missing.
+Second: does the thing the request names exist? `PATCH /api/v1/orders/99999/cancel` is a perfectly well-formed request — there's nothing wrong with its shape — but no order `99999` exists to cancel. That's `404`: the id is what's missing, not the request. This holds even when the id itself looks like an obviously wrong number: as long as it's a value the endpoint accepts, a lookup that finds nothing is still `404` in this app, not `400` — the request's shape was fine, so only the id was missing.
 
-Third, if the named thing does exist: does acting on it conflict with its current state right now? Every order carries a `status` — `"new"`, `"paid"`, `"shipped"`, or `"cancelled"` — and cancelling one that's already `"shipped"` would be exactly this case: the request is well-formed, and the order is real, but shipping already happened, and cancelling now conflicts with that. If a check for this existed, it would answer `409`, not `400`: nothing about the request was ever wrong, only its timing relative to the order's state. `CancelOrderAsync` doesn't run that check yet, so this branch describes what should happen, not what happens today.
+Third, if the named thing does exist: does acting on it conflict with its current state right now? Every order carries its own `Status` — `"new"`, `"paid"`, `"shipped"`, or `"cancelled"` — and cancelling one that's already `"shipped"` would be exactly this case: the request is well-formed, and the order is real, but shipping already happened, and cancelling now conflicts with that. If a check for this existed, it would answer `409`, not `400`: nothing about the request was ever wrong, only its timing relative to the order's state. `CancelOrderAsync` doesn't run that check yet, so this branch describes what should happen, not what happens today.
 
 ## In the Đơn Hàng system
 
@@ -68,7 +69,7 @@ Third, if the named thing does exist: does acting on it conflict with its curren
         await repository.SaveChangesAsync();
 ```
 
-`repository.FindAsync(orderId)` returns `null` when no order has that id; the `??` throws `KeyNotFoundException` right there, before any other line in the method runs. The same catching mechanism `validating-input` described for `ArgumentException` recognizes `KeyNotFoundException` too, answering `404` with the exception's own message as `detail` — which is why the situation's response reads `"order 99999 not found"` verbatim.
+`repository.FindAsync(orderId)` returns `null` when no order has that id; the `??` throws `KeyNotFoundException` right there, before any other line in the method runs. The same catching mechanism `validating-input` described for `ArgumentException` recognizes `KeyNotFoundException` too, answering `404` with the exception's own message as `detail` — it fills `title` and `status` itself from the status code it picked, so only `detail` comes from the exception, which is why the situation's response reads `"order 99999 not found"` verbatim.
 
 Nothing in this method checks whether `order.Status` is already `"shipped"` before the `order.Status = "cancelled"` line on the block above sets it. That's the missing `409` case: cancelling a shipped order today succeeds, silently, exactly like cancelling a `"new"` or `"paid"` one — the method has no branch that would answer anything else.
 
@@ -79,7 +80,7 @@ Nothing in this method checks whether `order.Status` is already `"shipped"` befo
 
 ## Try it (3 minutes)
 
-1. Run step 1 of [[backend.l1.creating-a-resource]]'s Try it to log in as `anh.tran@example.com` (`donhang-dev-password`) and copy the token.
+1. Run step 1 of `creating-a-resource`'s Try it to log in as `anh.tran@example.com` (`donhang-dev-password`) and copy the token.
 2. Cancel an order that doesn't exist: `curl -sS -i -X PATCH http://localhost:8080/api/v1/orders/99999/cancel -H "Authorization: Bearer <token>"`.
 
 Expected result: `404` with `{"title":"Not found","status":404,"detail":"order 99999 not found"}` — the same `title`/`status`/`detail` shape `validating-input`'s `400` used, just a different status code and message, because a different question was being answered.
@@ -97,7 +98,6 @@ Both responses are Problem Details bodies with `title`/`status`/`detail`, so a c
 - [[backend.l1.validating-input]] — the `400` case this lesson assumes already, now joined by two more status codes for two other kinds of failure.
 - [[backend.l1.errors-and-problem-details]] — the shared `title`/`status`/`detail` shape every one of these three status codes uses.
 - [[backend.l1.structured-logging]] — the next lesson.
-- [[backend.l1.creating-a-resource]] — the login command this lesson's Try it reuses to get a token.
 
 ## Five-line summary
 
