@@ -1,116 +1,118 @@
 {
   "id": "backend.l1.request-lifecycle",
   "technical": {
-    "reviewed_at": "2026-09-24T08:45:00+07:00",
+    "reviewed_at": "2026-09-24T09:20:00+07:00",
     "reviewer": "claude-opus-5[1m]",
     "claim_verdicts": [
       {
         "n": 1,
         "verdict": "verified",
-        "evidence": "middleware/index.md, moniker \">= aspnetcore-8.0\": \"The order that middleware appears in the app's `Program` file defines the order in which middleware are invoked on a request with the reverse order for the response.\" Same zone's sample: \"app.UseRouting(); // If not called, runs at the beginning of the pipeline by default\" - Program.cs never calls UseRouting, so routing matches before the six lines. Short-circuit: \"Each middleware ... is responsible for invoking the next middleware in the pipeline or short-circuiting the pipeline.\" Kestrel confirmed by run: response header \"Server: Kestrel\".",
-        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/middleware/index.md (learn.microsoft.com/aspnet/core/fundamentals/middleware/); curl -i http://localhost:8080/api/v1/orders/999999"
+        "evidence": "middleware/index.md: \"If you don't call `app.UseRouting`, the Routing middleware runs at the beginning of the pipeline by default.\" middleware8.md (moniker >= aspnetcore-8.0): \"User configured middleware and endpoints are added between `UseRouting` and `UseEndpoints`.\" git show stage-1:DonHang.Api/Program.cs never calls UseRouting. Short-circuit: \"Each middleware in the request pipeline is responsible for invoking the next middleware in the pipeline or short-circuiting the pipeline.\" Kestrel confirmed by run: response header \"Server: Kestrel\".",
+        "source": "refs/aspnetcore-docs/.../fundamentals/middleware/index.md:665,23 and .../middleware/includes/middleware8.md:7,15; live run of the stage-1 lab 2026-09-24"
       },
       {
         "n": 2,
         "verdict": "verified",
-        "evidence": "middleware/index.md (>= aspnetcore-8.0): \"The order that middleware appears in the app's `Program` file defines the order in which middleware are invoked on a request with the reverse order for the response.\" Pipeline figure alt text: \"After the third middleware processes the request, the request passes back through the prior two middlewares in reverse order for additional processing after their next() statements before leaving the app as a response to the client.\" The two-Use console sample prints (1) (2) (2) (1).",
-        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/middleware/index.md"
+        "evidence": "middleware/index.md: \"The order you add middleware components in the `Program.cs` file defines the order in which the middleware components are invoked on requests and the reverse order for the response.\" Pipeline figure alt text: \"the request passes back through the prior two middlewares in reverse order for additional processing after their next() statements before leaving the app as a response to the client.\"",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/middleware/index.md:667,43"
       },
       {
         "n": 3,
         "verdict": "verified",
-        "evidence": "middleware/index.md: \"Middleware added to the pipeline before the terminal middleware still processes code after their `next.Invoke` statements.\" Confirmed by execution on the stage-1 lab: POST /api/v1/orders with no Authorization header is rejected by UseAuthorization (401), yet the api log still shows \"info: DonHang.Api.Middleware.RequestLoggingMiddleware[0]\" / \"POST /api/v1/orders responded 401 in 17ms\" - its after-next code ran.",
-        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/middleware/index.md; docker compose logs api (examples/don-hang @ stage-1)"
+        "evidence": "middleware/index.md: \"Middleware added to the pipeline before the terminal middleware still processes code after their `next.Invoke` statements.\" Confirmed by execution on the stage-1 lab (submodule at 83c0004 = stage-1^{commit}, 2026-09-24): POST /api/v1/orders with no Authorization header -> \"HTTP/1.1 401 Unauthorized\", and docker compose logs api then shows \"info: DonHang.Api.Middleware.RequestLoggingMiddleware[0]\" / \"POST /api/v1/orders responded 401 in 20ms\" - the after-next code of a middleware registered before the short-circuit ran.",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/middleware/index.md:127; live run examples/don-hang @ stage-1"
       },
       {
         "n": 4,
         "verdict": "verified",
-        "evidence": "git show stage-1:DonHang.Api/Controllers/OrdersController.cs - Get carries only [HttpGet(\"{id:int}\")], no [Authorize], and its body is: var order = await repository.FindAsync(id); if (order is null) return NotFound(); return Ok(ToDto(order)); Execution with no token: curl -i http://localhost:8080/api/v1/orders/999999 -> \"HTTP/1.1 404 Not Found\", Content-Type application/problem+json.",
+        "evidence": "git show stage-1:DonHang.Api/Controllers/OrdersController.cs - Get carries only [HttpGet(\"{id:int}\")] (no [Authorize], unlike Create and Cancel) and its body is: var order = await repository.FindAsync(id); if (order is null) return NotFound(); return Ok(ToDto(order)); Run with no token: curl -i http://localhost:8080/api/v1/orders/999999 -> \"HTTP/1.1 404 Not Found\", Content-Type application/problem+json.",
         "source": "examples/don-hang @ stage-1: DonHang.Api/Controllers/OrdersController.cs; live run 2026-09-24"
       },
       {
         "n": 5,
         "verdict": "verified",
-        "evidence": "Ran the stage-1 lab (docker compose up -d --build db api lab web at commit 83c0004). curl -i http://localhost:8080/api/v1/orders/999999 -> \"HTTP/1.1 404 Not Found\". docker compose logs api: \"info: DonHang.Api.Middleware.RequestLoggingMiddleware[0]\" / \"      GET /api/v1/orders/999999 responded 404 in 1006ms\" - the exact line shape the lesson quotes.",
-        "source": "examples/don-hang @ stage-1, live run 2026-09-24"
+        "evidence": "Ran the lab (docker compose up -d --wait db api lab web, submodule at stage-1 = 83c0004). curl -i http://localhost:8080/api/v1/orders/999999 -> \"HTTP/1.1 404 Not Found\" ... \"Server: Kestrel\", \"Via: 1.1 Caddy\". docker compose logs api -> \"info: DonHang.Api.Middleware.RequestLoggingMiddleware[0]\" / \"      GET /api/v1/orders/999999 responded 404 in 1001ms\" - exactly the line shape Try it quotes. appsettings.json sets Logging:LogLevel:Default=Information, so the line is not filtered out.",
+        "source": "examples/don-hang @ stage-1, live run 2026-09-24 (host 8080 -> lab box -> Caddy handle /api/v1/* -> reverse_proxy api:8080)"
       },
       {
         "n": 6,
         "verdict": "verified",
-        "evidence": "tools/extract-code DonHang.Api/Program.cs --tag stage-1 --lines 65-74 returns exactly the lesson's block, character for character: the two comment lines, then app.UseMiddleware<ExceptionHandlingMiddleware>(); app.UseMiddleware<RequestLoggingMiddleware>(); app.UseCors(); app.UseAuthentication(); app.UseAuthorization(); app.MapControllers(); blank line; app.Run(); The reverse order for a response is the docs rule quoted under claim 2.",
+        "evidence": "git show stage-1:DonHang.Api/Program.cs | sed -n '65,74p' returns the lesson's block character for character: \"// Order matters: ...\" / \"// the terminal middleware (auth, routing) ...\" / app.UseMiddleware<ExceptionHandlingMiddleware>(); app.UseMiddleware<RequestLoggingMiddleware>(); app.UseCors(); app.UseAuthentication(); app.UseAuthorization(); app.MapControllers(); blank line; app.Run(); The reverse-order half is the documentation rule quoted under claim 2.",
         "source": "examples/don-hang @ stage-1: DonHang.Api/Program.cs lines 65-74"
       },
       {
         "n": 7,
         "verdict": "verified",
-        "evidence": "Execution on the stage-1 lab: curl -i -X POST http://localhost:8080/api/v1/orders -H 'Content-Type: application/json' -d '{\"items\":[...]}' with no Authorization header -> \"HTTP/1.1 401 Unauthorized\", \"Www-Authenticate: Bearer\", \"Content-Length: 0\". docker compose logs api then shows \"info: DonHang.Api.Middleware.RequestLoggingMiddleware[0]\" / \"      POST /api/v1/orders responded 401 in 17ms\". OrdersController.Create carries [Authorize], so UseAuthorization is the step that rejects it.",
-        "source": "examples/don-hang @ stage-1, live run 2026-09-24"
+        "evidence": "Live run 2026-09-24 on the stage-1 lab: curl -i -X POST http://localhost:8080/api/v1/orders -H 'Content-Type: application/json' -d '{\"items\":[...]}' with no Authorization header -> \"HTTP/1.1 401 Unauthorized\", \"Content-Length: 0\", \"Www-Authenticate: Bearer\"; docker compose logs api -> \"POST /api/v1/orders responded 401 in 20ms\" from RequestLoggingMiddleware. OrdersController.Create carries [Authorize], so UseAuthorization is the step that rejects. The repo's own outputs/stage-1/scripts/backend/auth-and-orders.txt records the same 401.",
+        "source": "examples/don-hang @ stage-1, live run 2026-09-24; outputs/stage-1/scripts/backend/auth-and-orders.txt"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "middleware/index.md: \"The call to WebApplication.Run at the end of the code block runs the app and blocks the calling thread until host shutdown.\" web-host.md: \"The `Run` method starts the web app and blocks the calling thread until the host is shut down.\" Observed on the run: after start the api container prints \"Now listening on: http://[::]:8080\" then \"Application started. Press Ctrl+C to shut down.\"",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/middleware/index.md:55 and fundamentals/host/web-host.md:440; live run 2026-09-24"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "middleware/index.md: \"Authentication doesn't short-circuit unauthenticated requests. Although authentication middleware authenticates requests, authorization occurs after the framework selects ... a controller and action in an MVC app.\" Claim added and verified in this same round-3 pass, in response to this round's major issue (section 5, 'even though UseAuthentication itself never rejects a request' was an unlisted claim; text unchanged, only the ledger entry was missing).",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/middleware/index.md"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "git show stage-1:DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs: its InvokeAsync body is try { await next(context); } catch (KeyNotFoundException ex) {...} catch (ArgumentException ex) {...} catch (Exception ex) {...} - nothing follows the await inside the try, and nothing follows the try/catch block itself. Claim added and verified in this same round-3 pass, in response to this round's minor issue (section 4, 'ExceptionHandlingMiddleware ... still run their after-next code' was untrue as written; the lesson text was corrected in the same round).",
+        "source": "examples/don-hang/DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs at tag stage-1"
       }
     ],
     "issues": [
       {
-        "severity": "blocker",
-        "section": "quiz q6",
-        "kind": "quiz",
-        "quote": "Yes — registered first means its `next()` returns last, so a response always exists by then",
-        "text": "The marked answer is false in ASP.NET Core 10. After-`next` code cannot add an `X-Response-Time` header to a response the endpoint produced: by then the response has started (OrdersController.Get returns Ok(...), which writes the body) and setting a header throws. Docs: \"After an HttpResponse is started, changes result in an exception. For example, setting headers or a response status code throw an exception after the response starts.\" The scenario explicitly demands the header on every response, so no option offered is correct and the key teaches a pattern that crashes.",
-        "fix": "Make the after-`next` work something that does not mutate the response: rename the middleware `ResponseTimingLogMiddleware` and have it *log* how long the request took (same shape as RequestLoggingMiddleware) instead of adding a header. In the context, replace \"adds a custom `X-Response-Time` header to every response before it leaves the app\" with \"logs how long every response took before it leaves the app\", and adjust option d and its explanation to the logging wording. Key \"a\" then holds as written."
-      },
-      {
-        "severity": "major",
-        "section": "quiz q3",
-        "kind": "quiz",
-        "quote": "the first `app.Use...()` call whose after-`next` code sees the response is: `app.___();`",
-        "text": "Ambiguous key. The stem presupposes `UseAuthorization` has after-`next` code at all; the lesson never says it does, and q5's own explanation for option c states the opposite principle: \"whether any specific middleware has after-`next` code at all is a fact about that middleware's own implementation, not about its position\". A learner applying that sentence can rule `UseAuthorization` out and answer `UseCors`, which the single accepted string rejects.",
-        "fix": "Ask about order, not about code that may not exist: \"Using the order in `DonHang.Api/Program.cs`, once a request has reached the endpoint, the first `app.Use...()` call the response passes back through on its way out is: `app.___();`\". Keep answer [\"UseAuthorization\"] and the existing explanation."
-      },
-      {
         "severity": "major",
         "section": 5,
         "kind": "accuracy",
-        "quote": "\"routing\" is the automatic step that matched an endpoint before any of these six lines ran, the same step the diagram already showed",
-        "text": "Wrong gloss of the source comment, and it contradicts the prerequisite lesson, which already told the learner: \"The comment's 'auth, routing' names this whole last group - the routing it means is `app.MapControllers()` choosing which method to call, a later and different step from the automatic routing in 'How it works' that first matched the endpoint.\" The automatic matching step is not one of the six lines and never answers a request, so it cannot be what the comment calls terminal middleware.",
-        "fix": "Align with the prereq: \"'routing' there is `app.MapControllers()`, the line that runs whichever controller method was matched - a later, different step from the automatic matching the diagram showed, which had already happened before any of these six lines ran.\""
-      },
-      {
-        "severity": "major",
-        "section": 7,
-        "kind": "accuracy",
-        "quote": "the whole rest of the trip — routing, every later middleware, and `OrdersController.Get` itself — has already run and decided the answer",
-        "text": "The suggested answer puts routing on the wrong side of `next`. Routing runs at the very start of the pipeline, before `RequestLoggingMiddleware` - the lesson says so itself in sections 4 and 5 (\"routing already matched E\"; \"before any of these six lines ran\"). Docs: \"If you don't call `app.UseRouting`, the Routing middleware runs at the beginning of the pipeline by default\", and this Program.cs never calls it. So routing is not part of \"the rest of the trip\" that runs after this middleware's own `next`.",
-        "fix": "Drop routing from the list: \"... and by then the whole rest of the trip - every later middleware and `OrdersController.Get` itself - has already run and decided the answer.\" (Routing had matched the endpoint before this middleware ever ran.)"
-      },
-      {
-        "severity": "major",
-        "section": 5,
-        "kind": "accuracy",
-        "quote": "it is what starts Kestrel listening for connections in the first place",
-        "text": "Unlisted claim: this behaviour statement about `app.Run()` appears in no entry of .meta.json claims. It is also more specific than the documentation, which describes the call in terms of running the app, not of starting Kestrel: \"The call to WebApplication.Run at the end of the code block runs the app and blocks the calling thread until host shutdown.\" Kestrel being the server that then listens is a separate default, not what `Run` is documented to do.",
-        "fix": "Match the documented wording: \"it is the call that runs the app - starting the server that then listens for connections - and blocks until the app shuts down.\" Add the sentence to .meta.json claims (kind behavior, version_key aspnetcore, source ASP.NET Core middleware fundamentals)."
-      },
-      {
-        "severity": "minor",
-        "section": 5,
-        "kind": "accuracy",
-        "quote": "only `UseAuthorization` is the one that can reject a request in this lesson's examples",
-        "text": "Counting `UseAuthentication` among the calls \"able to answer a request outright\" conflicts with the documentation: \"Authentication doesn't short-circuit unauthenticated requests. Although authentication middleware authenticates requests, authorization occurs after the framework selects ... a controller and action in an MVC app.\" The hedge \"in this lesson's examples\" leaves a junior thinking `UseAuthentication` could reject a request in some other example.",
-        "fix": "Replace the hedge with the documented fact: \"`UseAuthentication` works out who is asking and never rejects a request by itself; `UseAuthorization` is the only one of the two that can stop one.\""
+        "quote": "even though `UseAuthentication` itself never rejects a request",
+        "text": "Unlisted claim: an absolute behavioural statement about a framework component that appears in no entry of .meta.json claims (claims 1-8 never mention UseAuthentication). The documentation does support it - \"Authentication doesn't short-circuit unauthenticated requests. Although authentication middleware authenticates requests, authorization occurs after the framework selects ... a controller and action in an MVC app.\" - so the sentence may stay as written, but the ledger hides that it was checked.",
+        "fix": "Add to .meta.json claims: {\"n\": 9, \"text\": \"UseAuthentication identifies the caller and does not itself short-circuit or reject a request; UseAuthorization is the step that rejects.\", \"kind\": \"behavior\", \"version_key\": \"aspnetcore\", \"source_hint\": \"ASP.NET Core docs, Middleware fundamentals: 'Authentication doesn't short-circuit unauthenticated requests'\", \"needs_verification\": true, \"section\": 5}. No change needed to the lesson text."
       },
       {
         "severity": "minor",
         "section": 3,
         "kind": "accuracy",
-        "quote": "`context` — the object every middleware's `next` call carries",
-        "text": "Over-general, and unlisted in the claims ledger. `next` does not always carry the context: the `Use(Func<HttpContext, Func<Task>, Task>)` overload hands a middleware a `next` that takes no argument at all. The object being defined is the `HttpContext` each middleware is handed - which is how the prerequisite lesson introduced it (\"passing an `HttpContext` - the request and the response bundled into one object\").",
-        "fix": "Restate as the prereq did: \"`context` - the `HttpContext` object each middleware is handed, holding both this one request and the response being built for it.\""
+        "quote": "it runs before any middleware and has no line of its own in `Program.cs`",
+        "text": "\"before any middleware\" is too strong on two counts. Routing is itself middleware - middleware/index.md: \"If you don't call `app.UseRouting`, the Routing middleware runs at the beginning of the pipeline by default\" - and it is not always first: \"UseDeveloperExceptionPage is added first when the HostingEnvironment is 'Development'. UseRouting is added second\". The lab's api container runs with ASPNETCORE_ENVIRONMENT=Development (its log prints \"Hosting environment: Development\"), so a middleware does run before routing there. The second half is correct: Program.cs never calls UseRouting.",
+        "fix": "Narrow it to what the lesson needs: \"routing - the automatic step that decides which endpoint a request's path and method match; it runs before any of the middleware registered in `Program.cs`, and has no line of its own there.\""
       },
       {
         "severity": "minor",
-        "section": "quiz q6",
-        "kind": "quiz",
-        "quote": "a short-circuit still writes a real response with a body and headers",
-        "text": "Option d's explanation asserts a short-circuit writes a body, which is false for the very short-circuit this lesson uses. The 401 produced by `UseAuthorization` on the running stage-1 lab has \"Content-Length: 0\" and no body at all - only the status line and `Www-Authenticate: Bearer`.",
-        "fix": "Drop the body from the claim: \"a short-circuit still writes a real response - a status code and headers - by the time `ResponseTimingHeaderMiddleware`'s own `next()` returns\" (and the matching vi sentence)."
+        "section": 4,
+        "kind": "code",
+        "quote": "`ExceptionHandlingMiddleware` and `RequestLoggingMiddleware` — both registered before it — still run their after-`next` code",
+        "text": "Untrue of ExceptionHandlingMiddleware as written at stage-1: it has no after-`next` code. Its whole body is try { await next(context); } catch (KeyNotFoundException ex) {...} catch (ArgumentException ex) {...} catch (Exception ex) {...} - nothing follows the await inside the try, and nothing follows the try/catch. On a 401 it executes no statement on the way out; control simply returns through it. RequestLoggingMiddleware is the only one of the two with code after `next`.",
+        "fix": "Say what is true of both: \"...control still returns through `ExceptionHandlingMiddleware` and `RequestLoggingMiddleware` - both registered before it - because from where they stand, `next` returned: the logger runs its after-`next` code and logs the 401, and the exception handler's `try` block simply finishes with nothing to catch.\""
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "quote": "but travels out through `RequestLoggingMiddleware` and `ExceptionHandlingMiddleware` regardless — as you saw in the previous lesson's Try it.",
+        "text": "The citation covers only half the sentence. backend.l1.middleware-pipeline's Try it yields one observable fact - \"curl prints `401`; the log line still reads `POST /api/v1/orders responded 401 in ...ms`\" - which is the RequestLoggingMiddleware half. Nothing in that Try it shows (or could show) ExceptionHandlingMiddleware on the way out: it writes and logs nothing unless an exception is thrown. \"As you saw\" over-reaches for the second name.",
+        "fix": "Attach the citation to what was observed: \"...but travels out through `RequestLoggingMiddleware` - which is why the previous lesson's Try it still found `POST /api/v1/orders responded 401` in the log - and through `ExceptionHandlingMiddleware` before it, which has nothing to do on the way out of a request that threw nothing.\""
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "quote": "but `app.MapControllers()`, the line that runs whichever method was matched",
+        "text": "`app.MapControllers()` registers the controller endpoints; it is not itself the step that runs the matched method. Docs (middleware8.md, >= aspnetcore-8.0): \"UseEndpoints is added at the end of the middleware pipeline if endpoints are configured\" and \"User configured middleware and endpoints are added between UseRouting and UseEndpoints\" - the matched endpoint is executed there. The prerequisite lesson puts it correctly: \"`app.MapControllers()` registers endpoints, which are invoked only after every middleware has run.\" Ordering is unaffected: it is the last of the six lines.",
+        "fix": "Use the prereq's wording: \"...but `app.MapControllers()`, the line that registers the controller methods as endpoints - the last of the six, where whichever method was matched actually runs.\""
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "quote": "C->>K: request bytes",
+        "text": "Outline item 1 says \"Kestrel accepts the TCP connection and parses it\", but the prose never states it: Kestrel appears only as a diagram participant with \"request bytes\"/\"response bytes\" arrows the text never picks up, plus one line in Connections. Quiz q4 then asks the learner to order \"Kestrel parses the incoming bytes into a request\" first - a step the lesson body never establishes.",
+        "fix": "Add a half-clause to the sentence starting \"In this pipeline, a request travels forward once\": say the trip starts when Kestrel turns the client's incoming bytes into a request and ends when it writes the response back out as bytes, then keep the existing list."
       }
     ],
     "scope": {
