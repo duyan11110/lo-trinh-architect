@@ -47,7 +47,7 @@ flowchart LR
 
 That's exactly why `PUT` is idempotent and `PATCH` isn't, by default. Sending the same full state twice leaves the resource in that one state both times. A `PATCH` body can instead describe a change relative to the current state (say, "increase quantity by 1"), so applying it twice moves the resource further each time — nothing about `PATCH`'s shape rules that out, even when one particular request happens not to.
 
-`DELETE` names an existing resource too, to remove it; its request carries no body at all, since the URL alone already says which resource to remove. `DELETE` is idempotent for a different reason than `PUT`: not because it carries a full state, but because "gone" is a state a resource can only be in once. Calling `DELETE` on the same resource five times in a row has the same end effect as calling it once — gone either way — even if the first call gets a different answer than the rest.
+`DELETE` names an existing resource too, to remove it; its request normally carries no body, since the URL alone already says which resource to remove. `DELETE` is idempotent for a different reason than `PUT`: not because it carries a full state, but because "gone" is a state a resource can only be in once. Calling `DELETE` on the same resource five times in a row has the same end effect as calling it once — gone either way — even if the first call gets a different answer than the rest.
 
 ## In the Đơn Hàng system
 
@@ -63,7 +63,7 @@ This API has no real `PUT` or `DELETE` endpoint at this stage — the paragraphs
     }
 ```
 
-`[HttpPatch("{id:int}/cancel")]` answers `PATCH /api/v1/orders/{id}/cancel` — the same `{id:int}` route piece `Get(int id)` uses, which matches only a whole-number id, with `cancel` naming the specific change this endpoint makes. `[Authorize]` means this also only runs for a signed-in caller, the same rule `Create` follows. `Cancel(int id)` takes no request body at all: unlike `Create`, which reads a `CreateOrderRequest`, this method's only input is the `id` in the URL. That's `PATCH` in its simplest form — the "set of changes" here is fixed by the endpoint itself (become cancelled), so there's nothing left for the client to describe in a body.
+`[HttpPatch("{id:int}/cancel")]` answers `PATCH /api/v1/orders/{id}/cancel` — the same `{id:int}` route piece `Get(int id)` uses, which matches only a whole number within the 32-bit range, with `cancel` naming the specific change this endpoint makes. `[Authorize]` means this also only runs for a signed-in caller, the same rule `Create` follows. `Cancel(int id)` takes no request body at all: unlike `Create`, which reads a `CreateOrderRequest`, this method's only input is the `id` in the URL. That's `PATCH` in its simplest form — the "set of changes" here is fixed by the endpoint itself (become cancelled), so there's nothing left for the client to describe in a body.
 
 `orderService.CancelOrderAsync(id)` does the actual status change; a later module opens that up. `Ok(ToDto(order))` answers `200` with the updated order — same `ToDto` mapping `Create` uses, this time reflecting `status: "cancelled"` instead of `"new"`, while `CustomerId`, `PlacedAt`, and `Items` all stay exactly as they were.
 
