@@ -31,7 +31,7 @@ A teammate asks you to add a way to cancel an order and proposes the path `/api/
 
 ## Core concepts
 
-- **resource** — a thing named by a noun in the URL (the path half of the method-and-path pair from the last lesson), like an order or a product; the URL says which thing, the HTTP method says what to do to it.
+- **resource** — by this lesson's convention, a thing named by a noun in the URL (the path half of the method-and-path pair from the last lesson), like an order or a product; the URL says which thing, the HTTP method says what to do to it.
 - collection URL — a URL naming every resource of one kind (`/api/v1/orders`); GET on it lists them all.
 - item URL — a URL naming one specific resource (`/api/v1/orders/1`); GET on it reads just that one.
 - method, not URL, carries the verb — the same item URL means something different depending on the method: GET reads it, PUT or PATCH changes it, DELETE removes it.
@@ -50,9 +50,9 @@ flowchart LR
 
 This diagram is the general pattern every resource can follow, not a promise that Đơn Hàng answers every branch of it today — its own orders collection, below, has no GET yet.
 
-`/api/v1/orders` and `/api/v1/orders/{id}` are two different resources, not two spellings of one path — the plural, bare path names the whole collection, and adding an id narrows it to one item. Both accept several methods, and each method keeps its usual meaning from [[foundation.l1.http-methods]] no matter which of the two URLs it's applied to: GET always reads, POST always creates, and so on. Nothing about *what to do* lives in the URL itself; a path like `/api/v1/cancelOrder` tries to put a verb where a noun belongs, which is exactly why that path does not name a resource at all.
+`/api/v1/orders` and `/api/v1/orders/{id}` are two different resources, not two spellings of one path — the plural, bare path names the whole collection, and adding an id narrows it to one item. Both accept several methods, and each method keeps its usual meaning from [[foundation.l1.http-methods]] no matter which of the two URLs it's applied to: GET reads, POST hands the collection something to process — creating a new order, in Đơn Hàng's case — and so on. The resource's own name never becomes the verb; where an action needs a name of its own, it is appended after the item URL instead of replacing it, as the Đơn Hàng section below shows. A path like `/api/v1/cancelOrder` tries to put a verb where a noun belongs, which is why it is not a resource name under this convention.
 
-By convention, POST goes on the collection URL and PUT, PATCH, and DELETE go on an item URL, because each of those three needs exactly one existing thing to replace, change, or remove. HTTP itself does not enforce this split — it is a convention this lesson and Đơn Hàng both follow, not a rule the protocol checks.
+By convention, POST goes on the collection URL and PUT, PATCH, and DELETE go on an item URL, because each of those three acts on one specific resource, so the URL has to name that one and not the whole set. HTTP itself does not enforce this split — it is a convention this lesson and Đơn Hàng both follow, not a rule the protocol checks.
 
 ## In the Đơn Hàng system
 
@@ -106,9 +106,9 @@ public sealed class ProductsController(DonHangDbContext db) : ControllerBase
     }
 ```
 
-`[HttpGet("{id:int}")]` answers the item URL, `GET /api/v1/orders/{id}`, for one order at a time — the same shape as `ProductsController.Get` above. `[HttpPatch("{id:int}/cancel")]`, on `Cancel`, is the teammate's real answer: `PATCH /api/v1/orders/{id}/cancel`, not `/api/v1/cancelOrder`. The order's own path, `/api/v1/orders/{id}`, never disappears; `cancel` is added after it, naming an action that doesn't fit a plain replace-the-whole-thing or change-a-field request, instead of a verb replacing the resource's own noun-path.
+`[HttpGet("{id:int}")]` answers the item URL, `GET /api/v1/orders/{id}`, for one order at a time — the same shape as `ProductsController.Get` above. `[HttpPatch("{id:int}/cancel")]`, on `Cancel`, is the teammate's real answer: `PATCH /api/v1/orders/{id}/cancel`, not `/api/v1/cancelOrder`. The order's own path, `/api/v1/orders/{id}`, never disappears; `cancel` is a named action of its own — the server decides what cancelling means, instead of a client writing a status field directly — so it gets a segment after the item URL rather than replacing it.
 
-Not every `/api/v1/...` path names a resource this way. A third class, `AuthController`, answers `/api/v1/auth`, for signing in. That is fine, not the same mistake as `/api/v1/cancelOrder`: no order, product, or other thing is being named at `/api/v1/auth`, so no noun is being pushed aside for a verb — there was never a resource's path to keep in the first place.
+Not every `/api/v1/...` path names a resource this way. A third class, `AuthController`, groups its one endpoint under the prefix `/api/v1/auth`: `POST /api/v1/auth/login`. `login` is a verb, same as `cancel` — and that's fine for the same reason: no order, product, or other thing is being named here, so no noun is being pushed aside for it. `/api/v1/cancelOrder` is different because an order already exists and already has its own path to keep.
 
 ## Beginners often think…
 
@@ -125,7 +125,7 @@ Expected result: the first returns `200` with a JSON array of every product; the
 
 <details><summary>Suggested answer</summary>
 
-`ProductsController` maps both URLs to two different methods: `List()` answers the bare collection URL and always returns an array, even if it later held zero or one product; `Get(int id)` answers the item URL, taking `{id}` from the URL as its own parameter and using it to ask the database for exactly one product — if none matches, it returns `404` instead of a product. That per-request lookup, not something decided before GET runs, is what makes the response a single object instead of an array.
+`ProductsController` maps both URLs to two different methods: `List()` answers the bare collection URL and always returns an array, even if it later held zero or one product; `Get(int id)` answers the item URL, taking `{id}` from the URL as its own parameter and using it to ask the database for exactly one product. That per-request lookup, not something decided before GET runs, is what makes the response a single object instead of an array.
 
 </details>
 
@@ -141,5 +141,5 @@ Expected result: the first returns `200` with a JSON array of every product; the
 1. A resource is a thing named by a noun in the URL; the HTTP method, not the URL, says what to do to it.
 2. A collection URL (`/api/v1/orders`) and an item URL (`/api/v1/orders/1`) are two different resources, not two spellings of one.
 3. GET on a collection lists everything; GET on an item reads just that one — the method's meaning never changes between them.
-4. POST usually fits a collection URL; PUT, PATCH, and DELETE usually fit an item URL, since each needs exactly one resource to act on.
+4. POST usually fits a collection URL; PUT, PATCH, and DELETE usually fit an item URL, since each acts on one resource, not the whole set.
 5. `/api/v1/cancelOrder` puts a verb where a noun belongs — Đơn Hàng's fix keeps the order's own path, adding the action after it: `PATCH /api/v1/orders/{id}/cancel`.
