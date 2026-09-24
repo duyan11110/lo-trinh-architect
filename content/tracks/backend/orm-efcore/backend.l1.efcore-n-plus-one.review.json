@@ -1,0 +1,141 @@
+{
+  "id": "backend.l1.efcore-n-plus-one",
+  "technical": {
+    "reviewed_at": "2026-09-24T23:45:00+07:00",
+    "reviewer": "claude-opus-5[1m]",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Could not re-run: the loop version was never committed (repo clean at 4fca60a, `git status` empty), so I treat the author's recorded live run as the evidence. Corroborated what I could: `select customer_id, count(*) from orders group by customer_id` on donhang-db returns customer_id 1 -> 7, so 1 + 7 = 8 is arithmetically the N+1 count. Per-iteration LINQ queries do round-trip each time (EF Core docs: \"another query *per blog*... this is sometimes called the *N+1* problem\").",
+        "source": "live: docker exec donhang-db psql -c 'select customer_id, count(*) from orders group by customer_id'; efcore-docs entity-framework/core/performance/efficient-querying.md"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Re-ran live on the stage-1 lab: set log_statement='all', logged in as anh.tran@example.com, called GET /api/v1/orders (HTTP 200, 7 entries). donhang-db logged exactly one statement for the call: \"execute <unnamed>: SELECT o.id, o.customer_id, o.placed_at, o.status, c.id, c.city, c.email, c.full_name, c.password_hash FROM orders AS o INNER JOIN customers AS c ON o.customer_id = c.id WHERE o.customer_id = $1 ORDER BY o.id\". log_statement reset to 'none' afterwards (verified via SHOW).",
+        "source": "live run 2026-09-24 on donhang-db / donhang-api (stage-1 lab)"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "efficient-querying.md, \"Beware of lazy loading\": \"each iteration in the inner foreach triggers an additional database query, in its own roundtrip. As a result, after the initial query loading all the blogs, we then have another query *per blog*, loading all its posts; this is sometimes called the *N+1* problem\"; and \"Because lazy loading makes it extremely easy to inadvertently trigger the N+1 problem, it is recommended to avoid it. Eager or explicit loading make it very clear in the source code when a database roundtrip occurs.\"",
+        "source": "refs/efcore-docs/entity-framework/core/performance/efficient-querying.md:137,146"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "`git show stage-1:DonHang.Infrastructure/EfOrderRepository.cs` lines 9-14 are character-for-character what the lesson quotes: FindAsync = `db.Orders.Include(o => o.Items).FirstOrDefaultAsync(o => o.Id == id)`; ListByCustomerAsync = `db.Orders.Where(o => o.CustomerId == customerId).Include(o => o.Customer).OrderBy(o => o.Id).ToListAsync()`. One Include each.",
+        "source": "examples/don-hang @ stage-1 (commit 4fca60a): DonHang.Infrastructure/EfOrderRepository.cs:9-14"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "`git show stage-1:DonHang.Api/Controllers/OrdersController.cs` lines 48-56 match the quoted block exactly, including `[Authorize]`, `[HttpGet]`, `int.Parse(User.FindFirstValue(JwtRegisteredClaimNames.Sub)!)` and `orders.Select(o => new OrderSummaryDto(o.Id, o.Status, o.Customer!.FullName)).ToList()`. Class-level `[Route(\"api/v1/orders\")]` (line 11) confirms the route the lesson names.",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/Controllers/OrdersController.cs:11,48-56"
+      },
+      {
+        "n": 6,
+        "verdict": "rephrased",
+        "evidence": "No lazy loading is configured: `git grep` over stage-1 finds no UseLazyLoadingProxies / Proxies package; the only registration is `services.AddDbContext<DonHangDbContext>(options => options.UseNpgsql(connectionString))`. But \"or left null\" is too absolute: eager.md tip: \"Entity Framework Core will automatically fix-up navigation properties to any other entities that were previously loaded into the context instance. So even if you don't explicitly include the data for a navigation property, the property may still be populated...\"",
+        "source": "examples/don-hang @ stage-1 ServiceCollectionExtensions.cs:14; refs/efcore-docs/entity-framework/core/querying/related-data/eager.md:28",
+        "suggested_text": "DonHangDbContext configures no lazy loading, so accessing order.Customer never triggers a query; it is populated only if the query eager-loaded it with Include, or if that customer was already loaded into the same DbContext instance (navigation fix-up). Otherwise it stays null."
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Orphaned claim added after this round's own review ran, to close the major issue on single-query mode being an unlisted assumption (see issues[3], section 5). Verified using the same source already cited in that issue's fix: entity-framework/core/querying/single-split-queries.md states EF Core folds related entities into the primary query via JOINs (\"EF loads related entities by introducing JOINs into a single query\") and that \"EF Core uses single query mode by default in the absence of any configuration\", with AsSplitQuery/UseQuerySplittingBehavior as the only overrides.",
+        "source": "refs/efcore-docs/entity-framework/core/querying/single-split-queries.md (cited in this review's own issues[3])"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "blocker",
+        "section": 6,
+        "kind": "accuracy",
+        "text": "Arithmetic contradicts the lesson's own N+1 formula and section 4. With two orders the loop version sends 1 + 2 = 3 calls, not 2. Section 4 already says \"for a customer with one order, the loop version costs two calls against `.Include`'s one\", and quiz q6's option-d explanation says \"2 to 4 total for 1-3 orders\" — both incompatible with the sentence as written.",
+        "fix": "Rewrite as: \"the extra cost starts at the second row: three calls instead of one for a customer with just two orders.\" (Or keep \"two calls instead of one\" and change the example to a customer with one order.)",
+        "quote": "the extra cost starts at the second row: two calls instead of one for a customer with just two orders"
+      },
+      {
+        "severity": "blocker",
+        "section": "quiz.q5",
+        "kind": "quiz",
+        "text": "The marked key (a, ~61) and the rejection of option b both assume `db.Products.FindAsync(id)` always queries. EF Core docs: \"Find first checks if the entity is already tracked, and if so returns the entity immediately. A database query is only made if the entity is not tracked locally.\" With 60 item reads over a repeating product catalogue, the real count is 1 + (number of distinct products), so ~61 only holds if all 60 products differ. Distractor b's explanation (\"a product ordered many times gets queried many times\") is flatly wrong.",
+        "fix": "Change the call in the stem to one that always round-trips, e.g. `await db.Products.FirstOrDefaultAsync(p => p.Id == item.ProductId)`, and keep key (a); rewrite b's explanation to \"nothing here groups the item reads into one query per distinct product\". If `FindAsync` must stay, the key has to become \"1 + one per distinct product\" and the lesson must first teach change-tracker lookups.",
+        "quote": "Around 61 — 1 for the orders, plus roughly one more per item across every order"
+      },
+      {
+        "severity": "major",
+        "section": "quiz.q4",
+        "kind": "quiz",
+        "text": "The question asks to order four facts \"in the order they happen\", but option c describes the shipped `.Include` version, which is a separate execution with its own timeline — it does not happen after b and before d in any observable sense. c could equally be placed first. The key a-b-c-d is therefore arbitrary, not derivable from the lesson.",
+        "fix": "Either drop c and d's cross-version framing (order only the loop version's three steps, then its total), or restate the stem as \"the order the lesson presents them\" and make c explicitly the after-the-fact comparison, e.g. \"Re-running the same request on the shipped version returns the same 3 orders in one query\".",
+        "quote": "Put these four facts about a customer with 3 orders in the order they happen"
+      },
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Wrong entity: the query in this lesson returns a customer's orders (`db.Orders.Where(o => o.CustomerId == customerId).Include(o => o.Customer)`), so the list whose size varies is the order list; the customer list has exactly one row here. As written a junior reads it as if `.Include` were loading a list of customers.",
+        "fix": "Replace with: \"Whether the order list has one row or a thousand, that query count stays exactly one\".",
+        "quote": "Whether the customer list has one row or a thousand, that query count stays exactly one"
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "Unlisted claim: \"one `.Include(...)` call, one JOIN, one query, regardless of how many `OrderItem` rows an order has\" (and the same assertion in sections 3 and 4). This is true only because EF Core's default is single-query mode for collection navigations — configurable per query (`AsSplitQuery`) or globally (`UseQuerySplittingBehavior`). It is version/configuration dependent and is not in the claims ledger.",
+        "fix": "Add a claim with version_key efcore citing entity-framework/core/querying/single-split-queries.md (\"EF loads related entities by introducing JOINs into a single query\"; \"EF Core uses single query mode by default in the absence of any configuration\"), and add the condition to the prose: \"with EF Core's default single-query behaviour, which this project does not change\".",
+        "quote": "one `.Include(...)` call, one JOIN, one query, regardless of how many `OrderItem` rows an order has"
+      },
+      {
+        "severity": "minor",
+        "section": 2,
+        "kind": "accuracy",
+        "text": "\"query each order's customer separately\" does not say how. All 7 orders belong to the same customer, so a loop written with `db.Customers.FindAsync(o.CustomerId)` would send 2 statements, not 8 (Find returns a tracked entity without querying). The 8 in the situation and in claim 1 holds only for a LINQ query per iteration.",
+        "fix": "Name the shape: \"...loop over them and run a query for each order's customer (`db.Customers.FirstOrDefaultAsync(c => c.Id == o.CustomerId)`)\". Same wording in the ledger's claim 1 text.",
+        "quote": "loop over them and query each order's customer separately"
+      },
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "accuracy",
+        "text": "\"would leave `order.Customer` `null`\" ignores EF Core navigation fix-up: a customer already loaded into the same DbContext instance is attached to the navigation without any Include. True for this request path (List() loads nothing else), but stated as a general rule.",
+        "fix": "Add the condition: \"...would leave `order.Customer` `null` unless that customer had already been loaded into the same DbContext instance.\" Update claim 6 accordingly.",
+        "quote": "would leave `order.Customer` `null`, not slow"
+      },
+      {
+        "severity": "minor",
+        "section": 3,
+        "kind": "accuracy",
+        "text": "`.Include(...)` is not a LINQ call: it is an EF Core extension method on `IQueryable<T>` (EF Core docs: \"You can use the `Include` method to specify related data to be included in query results\"). Calling it \"the LINQ call\" muddles the boundary the prereq lesson draws between LINQ and EF Core.",
+        "fix": "Rewrite as: \"`.Include(...)` — the EF Core method you chain onto a LINQ query to ask for eager loading\".",
+        "quote": "`.Include(...)` — the LINQ call that asks EF Core for eager loading"
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "opinion-as-fact",
+        "text": "Unlisted comparative claim with no source and no condition. Whether the joined query costs the server more than one plain SELECT depends on indexes, row width and duplication; the docs discuss the risk only as cartesian explosion for collection navigations, not as a general rule.",
+        "fix": "Either drop the clause, or condition it: \"the joined query returns wider rows (the customer's columns repeat on every order row), but PostgreSQL still only gets asked once\".",
+        "quote": "the database does more work per query, but PostgreSQL still only gets asked once"
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "gap",
+        "text": "The Try it steps cannot produce the stated expected result. Counting response entries shows nothing about query counts; the learner never sees a query log, so \"still runs exactly one query\" is asserted, not observed. I confirmed the one-query fact myself only by turning on `log_statement='all'` on donhang-db, which the steps never mention.",
+        "fix": "Either add a step that shows the statement (e.g. `docker exec donhang-db psql -U donhang -d donhang -c \"ALTER SYSTEM SET log_statement='all'\" -c 'select pg_reload_conf()'`, repeat the call, `docker logs donhang-db`, then reset), or restate the expected result as something the current steps do show (every entry carries `customerName`, filled by the one query's JOIN).",
+        "quote": "however many orders come back, `ListByCustomerAsync` still runs exactly one query to produce them all"
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": [
+        "quiz q5 requires knowing that `DbSet.FindAsync` serves already-tracked entities from the change tracker without querying — a behaviour the lesson never teaches (see the q5 blocker)"
+      ]
+    },
+    "verdict": "fix-required"
+  }
+}

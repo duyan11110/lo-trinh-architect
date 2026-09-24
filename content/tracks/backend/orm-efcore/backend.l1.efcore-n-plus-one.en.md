@@ -26,13 +26,13 @@ reviewed_at: null
 
 ## The situation
 
-A teammate is about to write a method with the same shape as `ListByCustomerAsync`: fetch a customer's orders, each one together with its customer's name. Before reaching for `.Include(o => o.Customer)`, they try the version that reads more obviously — fetch the orders, then loop over them and query each order's customer separately. With PostgreSQL's query logging turned on, one customer with 7 orders produces 8 `SELECT` statements this way: one for the orders, then one more per order for its customer. The code that actually shipped, using `.Include`, sends exactly one. Why does looping and querying inside the loop cost so much more, and how does `.Include` avoid it?
+A teammate is about to write a method with the same shape as `ListByCustomerAsync`: fetch a customer's orders, each one together with its customer's name. Before reaching for `.Include(o => o.Customer)`, they try the version that reads more obviously — fetch the orders, then loop over them and run a query for each order's customer (`db.Customers.FirstOrDefaultAsync(c => c.Id == o.CustomerId)`). With PostgreSQL's query logging turned on, one customer with 7 orders produces 8 `SELECT` statements this way: one for the orders, then one more per order for its customer. The code that actually shipped, using `.Include`, sends exactly one. Why does looping and querying inside the loop cost so much more, and how does `.Include` avoid it?
 
 ## Core concepts
 
 - **N+1 (query problem)** — a performance bug: looping over `N` rows and querying separately for each one costs `N+1` database calls, one for the rows and one more per row, instead of one call that returns everything together.
 - **eager loading** — fetching related data in the same query as the rows that need it, instead of a separate query for it later.
-- `.Include(...)` — the LINQ call that asks EF Core for eager loading; EF Core folds the related table into the same SQL statement as a JOIN.
+- `.Include(...)` — the EF Core method you chain onto a LINQ query to ask for eager loading; EF Core folds the related table into the same SQL statement as a JOIN.
 
 ## How it works
 
@@ -46,7 +46,7 @@ flowchart LR
 
 The N+1 shape starts innocently: a query fetches a list of rows — here, one customer's orders — and that's one call. Then, for each row in that list, a second query fetches the one related row it needs — here, that order's customer. One call per order, on top of the first one, is where the name comes from: `N` orders mean `N` extra calls, plus the original one, `N+1` in total. Nothing about this is a bug in any single line; each query, on its own, does exactly what it's written to do. The cost comes from writing that second query inside a loop instead of asking for the related rows up front.
 
-`.Include(...)` sidesteps the loop entirely. Instead of a separate query per row, it tells EF Core to fetch the related table in the *same* query as the rows themselves, joining the two server-side and returning one combined result set. Whether the customer list has one row or a thousand, that query count stays exactly one — the database does more work per query, but PostgreSQL still only gets asked once.
+`.Include(...)` sidesteps the loop entirely. Instead of a separate query per row, it tells EF Core to fetch the related table in the *same* query as the rows themselves, joining the two server-side and returning one combined result set. Whether the order list has one row or a thousand, that query count stays exactly one — the joined query returns wider rows (the customer's columns repeat on every order row), but PostgreSQL still only gets asked once.
 
 The gap between the two grows with the data, not with the code: for a customer with one order, the loop version costs two calls against `.Include`'s one — barely worth noticing. For the seven-order customer above, it's eight against one. Neither version's source code changes as more orders are added; only the loop version's call count does.
 
@@ -63,7 +63,7 @@ The gap between the two grows with the data, not with the code: for a customer w
         db.Orders.Where(o => o.CustomerId == customerId).Include(o => o.Customer).OrderBy(o => o.Id).ToListAsync();
 ```
 
-`FindAsync` eager-loads `Items` the same way `ListByCustomerAsync` eager-loads `Customer`: one `.Include(...)` call, one JOIN, one query, regardless of how many `OrderItem` rows an order has. Neither method loops over anything to fetch related data — the JOIN does that work inside the single query PostgreSQL runs.
+`FindAsync` eager-loads `Items` the same way `ListByCustomerAsync` eager-loads `Customer`: with EF Core's default single-query behaviour, which this project does not change, one `.Include(...)` call, one JOIN, one query, regardless of how many `OrderItem` rows an order has. Neither method loops over anything to fetch related data — the JOIN does that work inside the single query PostgreSQL runs.
 
 `OrdersController.List()`, behind `GET /api/v1/orders`, is why `Customer` has to already be loaded before the loop that builds the response:
 
@@ -83,19 +83,21 @@ The gap between the two grows with the data, not with the code: for a customer w
 
 ## Beginners often think…
 
-- **"Accessing `order.Customer` inside a loop is always fast, since the data is already on the `order` object."** → Actually that's only true because `ListByCustomerAsync` eager-loaded `Customer` before the loop in `List()` ever ran; this codebase has no lazy loading configured, so a different method that returned orders without `.Include(o => o.Customer)` would leave `order.Customer` `null`, not slow. The real risk isn't reading `.Customer` in a loop — it's a query method written to fetch each row's related data with a separate query, before any loop over the results even starts.
-- **"N+1 only matters at a scale this course's example database will never reach."** → Actually the extra cost starts at the second row: two calls instead of one for a customer with just two orders. You notice this because the loop version's query count grows by one for every order added, while the eager-loaded version's count never changes from one.
+- **"Accessing `order.Customer` inside a loop is always fast, since the data is already on the `order` object."** → Actually that's only true because `ListByCustomerAsync` eager-loaded `Customer` before the loop in `List()` ever ran; this codebase has no lazy loading configured, so a different method that returned orders without `.Include(o => o.Customer)` would leave `order.Customer` `null` unless that customer had already been loaded into the same `DbContext` instance, not slow. The real risk isn't reading `.Customer` in a loop — it's a query method written to fetch each row's related data with a separate query, before any loop over the results even starts.
+- **"N+1 only matters at a scale this course's example database will never reach."** → Actually the extra cost starts at the second row: three calls instead of one for a customer with just two orders. You notice this because the loop version's query count grows by one for every order added, while the eager-loaded version's count never changes from one.
 
 ## Try it (3 minutes)
 
-1. From the Đơn Hàng project's root folder, with the example system running (`scripts/up.sh`), run steps 1 and 2 of `creating-a-resource`'s Try it: the login for `anh.tran@example.com` (`donhang-dev-password`), then call `GET /api/v1/orders` with the token.
-2. Count the entries in the response, and compare that count against `EfOrderRepository.ListByCustomerAsync`'s single `.Include(o => o.Customer)`.
+1. From the Đơn Hàng project's root folder, with the example system running (`scripts/up.sh`), turn on PostgreSQL's query log: `docker exec donhang-db psql -U donhang -d donhang -c "ALTER SYSTEM SET log_statement = 'all';" -c "SELECT pg_reload_conf();"`.
+2. Run steps 1 and 2 of `creating-a-resource`'s Try it: the login for `anh.tran@example.com` (`donhang-dev-password`), then call `GET /api/v1/orders` with the token.
+3. Check the log for that one call: `docker logs donhang-db --since 1m | grep -i "execute <unnamed>: SELECT"`.
+4. Turn logging back off: `docker exec donhang-db psql -U donhang -d donhang -c "ALTER SYSTEM SET log_statement = 'none';" -c "SELECT pg_reload_conf();"`.
 
-Expected result: however many orders come back, `ListByCustomerAsync` still runs exactly one query to produce them all — the entry count changes the number of rows one query returns, not the number of queries.
+Expected result: exactly one `SELECT` statement in the log for the whole call, no matter how many orders come back — `ListByCustomerAsync`'s single `.Include(o => o.Customer)` joins the customer in server-side, so the response's entry count changes the number of rows that one statement returns, not the number of statements.
 
 <details><summary>Suggested answer</summary>
 
-`.Include(o => o.Customer)` is written once, in the query itself, not once per order — so the number of orders a customer has never changes how many times it runs. A version that queried each order's customer inside a loop would send one more query for every entry in that same response; `ListByCustomerAsync` sends the same one query whether the response has one entry or a hundred.
+`.Include(o => o.Customer)` is written once, in the query itself, not once per order — so the number of orders a customer has never changes how many times it runs; the log shows exactly one `SELECT`. A version that queried each order's customer inside a loop would show one more `SELECT` per order in that same log.
 
 </details>
 
