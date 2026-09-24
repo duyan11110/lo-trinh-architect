@@ -33,7 +33,7 @@ You can now recite the order `DonHang.Api/Program.cs` puts things in: exceptions
 - request lifecycle — the complete path one request takes: Kestrel, every middleware in order, then the endpoint routing already matched (or a short-circuit), then back out through the same middleware in reverse.
 - on the way in — the first half of each middleware's work, the code before its `next` call, which every middleware up to a short-circuit runs once, in registration order.
 - on the way out — the second half of each middleware's work, the code after its `next` call, which runs once a response exists, whichever step produced it.
-- `context` — the object every middleware's `next` call carries, holding both this one request and the response being built for it.
+- `context` — the `HttpContext` object each middleware is handed, holding both this one request and the response being built for it.
 
 ## How it works
 
@@ -80,9 +80,9 @@ app.MapControllers();
 app.Run();
 ```
 
-The comment's "terminal middleware" means the last calls able to answer a request outright instead of only passing it on; "auth" there is `UseAuthentication` and `UseAuthorization` together, and "routing" is the automatic step that matched an endpoint before any of these six lines ran, the same step the diagram already showed.
+The comment's "terminal middleware" means the last calls able to answer a request outright instead of only passing it on; "auth" there covers `UseAuthentication` and `UseAuthorization` together, and "routing" there is `app.MapControllers()`, the line that runs whichever method was matched — a later, different step from the automatic matching the diagram showed, which had already happened before any of these six lines ran.
 
-Reading top to bottom names the forward order for these six calls: exception handling, logging, CORS, `UseAuthentication`, `UseAuthorization`, then whichever endpoint routing already matched. `UseCors` and `UseAuthentication` are only names holding positions in that list here — what each one does is not this lesson's subject. `UseAuthentication` and `UseAuthorization` are two separate calls; only `UseAuthorization` is the one that can reject a request in this lesson's examples. The final `app.Run();` line is not a step of the trip either — it is what starts Kestrel listening for connections in the first place. Nothing in this file spells out the reverse order — it does not need to, because the reverse order is always exactly this list backward, for every request, whether it reaches `app.MapControllers()` or stops one line earlier, at `UseAuthorization`. A `POST /api/v1/orders` with no `Authorization` header travels in only as far as `UseAuthorization`, but travels out through `RequestLoggingMiddleware` and `ExceptionHandlingMiddleware` regardless — confirmed by running the request against the stage-1 lab: it comes back `401`, and `docker compose logs api` still shows `RequestLoggingMiddleware`'s line for it.
+Reading top to bottom names the forward order for these six calls: exception handling, logging, CORS, `UseAuthentication`, `UseAuthorization`, then whichever endpoint routing already matched. `UseCors` and `UseAuthentication` are only names holding positions in that list here — what each one does is not this lesson's subject. `UseAuthentication` works out who is asking and never rejects a request by itself; `UseAuthorization` is the only one of the two that can stop one. The final `app.Run();` line is not a step of the trip either — it is the call that runs the app, starting the server that then listens for connections, and blocks until the app shuts down. Nothing in this file spells out the reverse order — it does not need to, because the reverse order is always exactly this list backward, for every request, whether it reaches `app.MapControllers()` or stops one line earlier, at `UseAuthorization`. A `POST /api/v1/orders` with no `Authorization` header travels in only as far as `UseAuthorization`, but travels out through `RequestLoggingMiddleware` and `ExceptionHandlingMiddleware` regardless — confirmed by running the request against the stage-1 lab: it comes back `401`, and `docker compose logs api` still shows `RequestLoggingMiddleware`'s line for it.
 
 ## Beginners often think…
 
@@ -100,7 +100,7 @@ Question: how could `RequestLoggingMiddleware` log a `404` it never decided, wit
 
 <details><summary>Suggested answer</summary>
 
-`RequestLoggingMiddleware` reads `context.Response.StatusCode` after `await next(context)` returns, and by then the whole rest of the trip — routing, every later middleware, and `OrdersController.Get` itself — has already run and decided the answer. The middleware does not know or care whether that answer came from the endpoint or from an earlier short-circuit; it logs whatever is there once its own `next` call comes back.
+`RequestLoggingMiddleware` reads `context.Response.StatusCode` after `await next(context)` returns, and by then the whole rest of the trip — every later middleware and `OrdersController.Get` itself — has already run and decided the answer. (Routing had already matched the endpoint before this middleware ever ran, so it plays no part in what happens after `next`.) The middleware does not know or care whether that answer came from the endpoint or from an earlier short-circuit; it logs whatever is there once its own `next` call comes back.
 
 </details>
 
