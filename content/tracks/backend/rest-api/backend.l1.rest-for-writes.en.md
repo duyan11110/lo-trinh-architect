@@ -15,9 +15,9 @@ vocab: []
 example_tag: stage-1
 versions_used: [aspnetcore, http]
 content_version: 1
-status: draft
-approved_by: null
-reviewed_at: null
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-25T01:00:00+07:00"
 ---
 
 ## Before you start
@@ -43,11 +43,11 @@ flowchart LR
   E[DELETE] -->|normally no body| F[Resource gone — idempotent]
 ```
 
-`POST`, from the last lesson, and these three write methods all change something, but each answers a different question about what the client already knows. `POST /api/v1/orders` never names the new order in the URL, since the client doesn't know its id yet. `PUT` and `PATCH` both name one resource in the URL — usually one that already exists. A `PUT` may also create the resource at that URL, answering `201` instead — but only where the client itself picks the id it puts in the URL, instead of the server picking one as with `POST`. Only `PUT` asks for the resource's entire state, every field, because its body *is* the new state in full; `PATCH` never does, since its body describes a change, so untouched fields simply aren't mentioned.
+`POST`, from the last lesson, and these three write methods all change something, but each answers a different question about what the client already knows. `POST /api/v1/orders` never names the new order in the URL, since the client doesn't know its id yet. `PUT` and `PATCH` both name one resource in the URL — usually one that already exists. A `PUT` may also create the resource at that URL, answering `201` instead — but only where the client itself picks the id, unlike `POST`. Đơn Hàng never works that way: the server always picks the id here, as the last lesson showed. Only `PUT` asks for the resource's entire state, every field, because its body *is* the new state in full; `PATCH` never does, since its body describes a change, so untouched fields simply aren't mentioned.
 
 That's exactly why `PUT` is idempotent and `PATCH` isn't, by default. Sending the same full state twice leaves the resource in that one state both times. A `PATCH` body can instead describe a change relative to the current state (say, "increase quantity by 1"), so applying it twice moves the resource further each time — nothing about `PATCH`'s shape rules that out, even when one particular request happens not to move the resource further.
 
-`DELETE` names an existing resource too, to remove it; its request normally carries no body, since the URL alone already says which resource to remove. `DELETE` is idempotent for a different reason than `PUT`: not because it carries a full state, but because "gone" is a state a resource can only be in once. Calling `DELETE` on the same resource five times in a row has the same end effect as calling it once — gone either way — even if the first call gets a different answer than the rest.
+`DELETE` names an existing resource too, to remove it; its request normally carries no body, since the URL alone already says which resource to remove. `DELETE` is idempotent for a different reason than `PUT`: not because it carries a full state, but because "gone" is a state a resource can only be in once. Calling `DELETE` on the same resource five times has the same end effect as calling it once — gone either way — even if the first call answers differently from the rest.
 
 ## In the Đơn Hàng system
 
