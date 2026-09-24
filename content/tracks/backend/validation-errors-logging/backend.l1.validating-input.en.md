@@ -57,7 +57,7 @@ The database's constraints stay real and enforced either way; what changes is on
 
 ## In the Đơn Hàng system
 
-`orders.customer_id` and `order_items.quantity` are exactly the two constraints this lesson is about; the `id` and `placed_at` lines are just how the tables are declared, and nothing here depends on them:
+`orders.customer_id` and `order_items.quantity` are exactly the two constraints this lesson is about; the `id` and `placed_at` lines are just how the `orders` table is declared, and nothing here depends on them:
 
 ```sql file=db/schema.sql tag=stage-1 lines=18-32
 CREATE TABLE orders (
