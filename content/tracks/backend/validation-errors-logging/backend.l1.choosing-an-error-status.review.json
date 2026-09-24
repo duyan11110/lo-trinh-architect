@@ -1,25 +1,25 @@
 {
   "id": "backend.l1.choosing-an-error-status",
   "technical": {
-    "reviewed_at": "2026-09-25T11:00:00+07:00",
+    "reviewed_at": "2026-09-25T18:40:00+07:00",
     "reviewer": "claude-opus-5[1m]",
     "claim_verdicts": [
       {
         "n": 1,
         "verdict": "verified",
-        "evidence": "git show stage-1:DonHang.Domain/OrderService.cs lines 29-35: `public async Task<Order> CancelOrderAsync(int orderId)` / `{` / `var order = await repository.FindAsync(orderId)` / `?? throw new KeyNotFoundException($\"order {orderId} not found\");` / blank / `order.Status = \"cancelled\";` / `await repository.SaveChangesAsync();`. The `??` is on the method's first statement; the assignment is three lines later and nothing between them reads `order.Status`. The lesson's block reproduces those seven lines character-for-character (whitespace normalised).",
-        "source": "examples/don-hang @ stage-1: DonHang.Domain/OrderService.cs:29-35 (git show)"
+        "evidence": "tools/extract-code DonHang.Domain/OrderService.cs --tag stage-1 --lines 29-35 returns exactly the seven lines the lesson quotes: `var order = await repository.FindAsync(orderId)` / `?? throw new KeyNotFoundException($\"order {orderId} not found\");` then blank, `order.Status = \"cancelled\";`, `await repository.SaveChangesAsync();`. The `??` is the method's first statement; nothing between it and the assignment reads `order.Status`. Block matches character-for-character.",
+        "source": "examples/don-hang @ stage-1: DonHang.Domain/OrderService.cs:29-35"
       },
       {
         "n": 2,
         "verdict": "verified",
-        "evidence": "The whole method (29-38) never reads `order.Status`: it assigns `order.Status = \"cancelled\"` unconditionally at line 34, with no `if`/`switch` anywhere in OrderService.cs. ExceptionHandlingMiddleware.cs catches only KeyNotFoundException(404), ArgumentException(400), Exception(500) — the app has no 409 path at all. Confirmed again this round by reading both files at stage-1; the shipped-order cancellation was executed live in round 1 (order 2, `shipped` -> 200 OK, row restored).",
-        "source": "examples/don-hang @ stage-1: DonHang.Domain/OrderService.cs:29-38, DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs:16-30"
+        "evidence": "Whole method 29-38 at stage-1 has no `if`/`switch`: `order.Status = \"cancelled\"` is unconditional. ExceptionHandlingMiddleware.cs catches only KeyNotFoundException (404), ArgumentException (400), Exception (500) — no 409 path exists anywhere in the app. Lab state also confirms round 1's live cancel was restored: GET /api/v1/orders/2 returns `\"status\":\"shipped\"` today, so the seeded shipped order is intact and still cancellable.",
+        "source": "examples/don-hang @ stage-1: DonHang.Domain/OrderService.cs:29-38, DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs; live GET localhost:8080/api/v1/orders/2"
       },
       {
         "n": 3,
         "verdict": "verified",
-        "evidence": "Re-run live this session (lab up: donhang-api/db/web): token from POST /api/v1/auth/login (anh.tran@example.com), then `curl -sS -i -X PATCH http://localhost:8080/api/v1/orders/99999/cancel -H \"Authorization: Bearer <token>\"` -> `HTTP/1.1 404 Not Found` and body `{\"title\":\"Not found\",\"status\":404,\"detail\":\"order 99999 not found\"}` — byte-identical to §2 and §7. Path: middleware `catch (KeyNotFoundException ex)` -> `WriteProblemAsync(context, StatusCodes.Status404NotFound, \"Not found\", ex.Message)`.",
+        "evidence": "Re-run live this round: token from POST /api/v1/auth/login (anh.tran@example.com / donhang-dev-password), then `curl -sS -i -X PATCH http://localhost:8080/api/v1/orders/99999/cancel -H \"Authorization: Bearer <token>\"` -> 404 and body `{\"title\":\"Not found\",\"status\":404,\"detail\":\"order 99999 not found\"}`, byte-identical to §2 and §7 (no extra members emitted). The same request without a token returns 401, so §2's new \"(signed in, as in Try it below)\" names the condition the result really depends on.",
         "source": "live lab localhost:8080 (2026-09-25); DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs @ stage-1"
       },
       {
@@ -31,91 +31,65 @@
       {
         "n": 5,
         "verdict": "verified",
-        "evidence": "refs/rfc/rfc9110.txt:7589-7591 verbatim: \"The 404 (Not Found) status code indicates that the origin server did not find a current representation for the target resource or is not willing to disclose that one exists.\" The claim reproduces both halves. (Lines 7591-7594 add the 410 preference clause, which the lesson no longer touches after the round-1 q6 rewrite.)",
+        "evidence": "refs/rfc/rfc9110.txt:7589-7591 verbatim: \"The 404 (Not Found) status code indicates that the origin server did not find a current representation for the target resource or is not willing to disclose that one exists.\" The claim reproduces both halves. The sentence that follows (7591-7594, the 410 preference) is not touched by the lesson.",
         "source": "refs/rfc/rfc9110.txt:7589-7595 (RFC 9110 §15.5.5)"
       },
       {
         "n": 6,
         "verdict": "verified",
-        "evidence": "refs/rfc/rfc9110.txt:7652-7654 verbatim: \"The 409 (Conflict) status code indicates that the request could not be completed due to a conflict with the current state of the target resource.\" Same section continues \"This code is used in situations where the user might be able to resolve the conflict and resubmit the request\", which the lesson's shipped-order framing does not contradict.",
+        "evidence": "refs/rfc/rfc9110.txt:7652-7654 verbatim: \"The 409 (Conflict) status code indicates that the request could not be completed due to a conflict with the current state of the target resource.\" The section continues \"This code is used in situations where the user might be able to resolve the conflict and resubmit the request\" — consistent with §4's shipped-order framing, which the lesson keeps hypothetical.",
         "source": "refs/rfc/rfc9110.txt:7652-7657 (RFC 9110 §15.5.10)"
       },
       {
         "n": 7,
         "verdict": "verified",
-        "evidence": "DonHang.Domain/IOrderRepository.cs:7 @ stage-1: `Task<Order?> FindAsync(int id);`. The only implementation, EfOrderRepository.cs:9-10, is `db.Orders.Include(o => o.Items).FirstOrDefaultAsync(o => o.Id == id)` — FirstOrDefaultAsync yields null for no match rather than throwing. Live confirmation that null becomes KeyNotFoundException and not a 500: PATCH /api/v1/orders/-5/cancel (authenticated) -> 404 `{\"title\":\"Not found\",...,\"detail\":\"order -5 not found\"}`.",
-        "source": "examples/don-hang @ stage-1: DonHang.Domain/IOrderRepository.cs:7, DonHang.Infrastructure/EfOrderRepository.cs:9-10; live lab"
+        "evidence": "DonHang.Domain/IOrderRepository.cs @ stage-1: `Task<Order?> FindAsync(int id);`. Sole implementation EfOrderRepository uses `.FirstOrDefaultAsync(o => o.Id == id)`, which yields null for no match rather than throwing. Live this round: authenticated `PATCH /api/v1/orders/-5/cancel` -> 404 `{\"title\":\"Not found\",\"status\":404,\"detail\":\"order -5 not found\"}` — the null became KeyNotFoundException, not a 500, which is what §4's \"still `404` in this app, not `400`\" rests on.",
+        "source": "examples/don-hang @ stage-1: DonHang.Domain/IOrderRepository.cs, DonHang.Infrastructure/EfOrderRepository.cs; live lab"
       },
       {
         "n": 8,
         "verdict": "rephrased",
-        "evidence": "No rfc9457 mirror exists under refs/rfc (only 6265/9110/9111/9112), so this was fetched from www.rfc-editor.org/rfc/rfc9457(.txt). §3.1 introduces the list as \"Problem detail objects can have the following members\" and names type, status, title, detail, instance; the definitions seen are \"The 'title' member is a JSON string containing a short, human-readable summary of the problem type\" and \"The 'status' member is a JSON number indicating the HTTP status code...\". No sentence stating the members \"are all optional\" was returned — \"can have\" is the strongest wording seen.",
+        "evidence": "Still no rfc9457 mirror under refs/rfc (only 6265/9110/9111/9112), so fetched again from www.rfc-editor.org/rfc/rfc9457 this round. §3.1 introduces the list as \"Problem detail objects can have the following members. If a member's value type does not match the specified type, the member MUST be ignored.\" and defines title/status/detail as quoted there. No sentence declaring the members optional was returned; \"can have\" is the strongest wording actually seen, so \"none mandated\" is an inference, not a quote.",
         "source": "https://www.rfc-editor.org/rfc/rfc9457 §3.1 (WebFetch, 2026-09-25)",
-        "suggested_text": "RFC 9457 §3.1: \"Problem detail objects can have the following members\" — type, status, title, detail, instance; none is marked required. Đơn Hàng's WriteProblemAsync fills exactly title/status/detail, which is this app's choice, not a requirement of the format."
+        "suggested_text": "RFC 9457 §3.1: \"Problem detail objects can have the following members\" — type, status, title, detail, instance; none is stated as required. Đơn Hàng's WriteProblemAsync fills exactly title/status/detail, this app's choice, not a requirement of the format."
       },
       {
         "n": 9,
         "verdict": "verified",
-        "evidence": "Orphaned claim added after this round's own review ran, to anchor the order.Status values now named in section 4. Verified using this round's own finding: db/schema.sql @ stage-1 declares orders.status with CHECK (status IN ('new', 'paid', 'shipped', 'cancelled')), and seed.sql uses all four.",
-        "source": "examples/don-hang @ stage-1: db/schema.sql (orders table CHECK); db/seed.sql (cited in this review's own verification)"
+        "evidence": "git show stage-1:db/schema.sql line 23: `CHECK (status IN ('new', 'paid', 'shipped', 'cancelled'))` — exactly these four values. db/seed.sql:24-35 uses 'new', 'paid' and 'shipped'; 'cancelled' is produced by CancelOrderAsync. This anchors §4's reworded \"Every order carries its own `Status` — `\"new\"`, `\"paid\"`, `\"shipped\"`, or `\"cancelled\"`\", which no longer implies a sequence.",
+        "source": "examples/don-hang @ stage-1: db/schema.sql:23, db/seed.sql:24-35"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Orphaned claim added after this round's own review ran, to close its minor issue #1 (the exception handler derives title from the status code, per the lesson's prior wording, when it actually supplies both as literals). Verified using this round's own finding: WriteProblemAsync(context, StatusCodes.Status404NotFound, \"Not found\", ex.Message) passes title as a literal string per catch clause, not computed from the status code.",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs (cited in this review's own minor issue #1)"
       }
     ],
     "issues": [
       {
         "severity": "minor",
-        "section": 4,
-        "kind": "diagram",
-        "text": "The prose promises each status box names an endpoint, but node G names none — it names the absence of a check. Node C also invents a route: the app has no `POST /orders`; it is `POST /api/v1/orders` (`[Route(\"api/v1/orders\")]` + `[HttpPost]` in OrdersController), and node E already uses the `.../` elision style for exactly this reason.",
-        "quote": "the diagram's three status boxes each name which endpoint illustrates them … C[400 - POST /orders] … G[409 - nothing checks this yet]",
-        "fix": "Write node C as `C[400 - POST .../orders]` to match E's elision, and make the prose exact: \"the diagram's `400` and `404` boxes name the endpoint that illustrates each; the `409` box names the check that is missing.\""
-      },
-      {
-        "severity": "minor",
-        "section": 4,
+        "section": 5,
         "kind": "accuracy",
-        "text": "Unlisted claim, and the list reads as a lifecycle. The four values are real — db/schema.sql @ stage-1 has `CHECK (status IN ('new', 'paid', 'shipped', 'cancelled'))` and seed.sql uses all four — but no claim in the ledger covers them. \"then `\"cancelled\"`\" implies cancellation follows shipping, which §5 then contradicts: a `\"new\"` or `\"paid\"` order is cancelled the same way.",
-        "quote": "Every order carries a `status` — `\"new\"`, `\"paid\"`, `\"shipped\"`, then `\"cancelled\"` — and cancelling one that's already `\"shipped\"`",
-        "fix": "Drop the implied sequence: \"Every order carries a `status` — one of `\"new\"`, `\"paid\"`, `\"shipped\"`, `\"cancelled\"` — and cancelling one that's already `\"shipped\"`…\". Add a claim to `.meta.json` with `source_hint` \"examples/don-hang @ stage-1: db/schema.sql:22-23 — CHECK (status IN ('new','paid','shipped','cancelled'))\"."
+        "text": "The clause added this round gets the mechanism half right. ExceptionHandlingMiddleware does supply both fields — `WriteProblemAsync(context, StatusCodes.Status404NotFound, \"Not found\", ex.Message)` — but the title is a literal picked per exception type alongside the status code, not derived from it; the wording invites the reader to expect a generic 404 -> \"Not found\" mapping. No ledger claim covers where title/status come from (claim 3 covers only the body as a whole).",
+        "quote": "it fills `title` and `status` itself from the status code it picked, so only `detail` comes from the exception",
+        "fix": "Drop the causal phrase: \"— it supplies `title` and `status` itself, so only `detail` comes from the exception\". Add a `fact` claim to .meta.json with source_hint \"examples/don-hang @ stage-1: DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs — catch (KeyNotFoundException ex) => WriteProblemAsync(context, Status404NotFound, 'Not found', ex.Message)\"."
       },
       {
         "severity": "minor",
-        "section": 4,
-        "kind": "opinion-as-fact",
-        "text": "\"never `400`\" is stated as a rule of HTTP, and no claim covers it. RFC 9110 §15.5.1 leaves 400 to \"something that is perceived to be a client error\", so a server that validates the id before looking it up may legitimately answer 400. What is verifiable is this app: live, authenticated `PATCH /api/v1/orders/-5/cancel` -> 404, body `{\"title\":\"Not found\",\"status\":404,\"detail\":\"order -5 not found\"}`.",
-        "quote": "as long as it's a value the route accepts, a lookup that finds nothing is still `404`, never `400`",
-        "fix": "Bind it to this app: \"…as long as it's a value the route accepts, `CancelOrderAsync` just looks it up, and a lookup that finds nothing answers `404` — the request's shape was fine, so only the id was missing.\" Add a `behavior` claim citing the live `-5` result."
-      },
-      {
-        "severity": "minor",
-        "section": 2,
-        "kind": "accuracy",
-        "text": "The sentence omits the condition the result depends on. `OrdersController.Cancel` carries `[Authorize]`; without a token the same request answers `401` with an empty body, not `404` (verified live this session). Claim 3 in the ledger says \"authenticated PATCH\"; §2 drops that word, and §7 only supplies the token two sections later.",
-        "quote": "Sending `PATCH /api/v1/orders/99999/cancel` gets `404` with `{\"title\":\"Not found\",\"status\":404,\"detail\":\"order 99999 not found\"}`.",
-        "fix": "Add the condition inline: \"Sending `PATCH /api/v1/orders/99999/cancel` as a signed-in customer gets `404` with `{…}`.\""
-      },
-      {
-        "severity": "minor",
-        "section": "backend.l1.choosing-an-error-status.q1",
+        "section": "backend.l1.choosing-an-error-status.q2",
         "kind": "quiz",
-        "text": "Explanation for option `c` overstates the third case. \"Every one of these three cases is noticed by application code\" is false for the `409` case, which this lesson's whole point is that nothing notices today — only `PlaceOrderAsync` and `CancelOrderAsync` throw, and neither throws on a shipped order. The key (`a`) is unaffected.",
-        "quote": "Every one of these three cases is noticed by application code, not the database directly — `PlaceOrderAsync` and `CancelOrderAsync` both throw their own exceptions",
-        "fix": "Reword `c`'s explanation: \"The first two cases are noticed by application code — `PlaceOrderAsync` and `CancelOrderAsync` throw their own exceptions — and the third is noticed by nothing yet; which layer notices isn't what decides the status code.\" Same change in the `vi` explanation."
-      },
-      {
-        "severity": "minor",
-        "section": "backend.l1.choosing-an-error-status.q4",
-        "kind": "quiz",
-        "text": "Stem and option `d` disagree after the round-1 rewrite. The stem says \"four questions … about a failing request\", but `d` is not a question and describes the request succeeding — the same start-vs-end contradiction that was removed from the diagram's node A. The key ordering stays unambiguous, so this is wording, not a wrong key.",
-        "quote": "Put these four questions this lesson asks about a failing request in the order it asks them. … d: None of the three questions found a problem, so the request succeeds",
-        "fix": "Change the stem to \"Put these three questions this lesson asks about a request, plus its outcome, in the order the lesson reaches them.\" Keep answer [\"a\",\"b\",\"c\",\"d\"]; apply the same wording to `vi`."
+        "text": "The key (`c`) and the rewritten option `d` are both sound, but `b`'s explanation now contradicts `d`'s and misstates the class. RFC 9110 §15.5 (refs/rfc/rfc9110.txt:7534-7535): \"The 4xx (Client Error) class of status code indicates that the client seems to have erred.\" So 4xx does say who erred — exactly what `d`'s explanation asserts (\"the server didn't do anything wrong in either case\") — while `b`'s explanation says being 4xx \"only means the client is expected to act differently before retrying\".",
+        "quote": "Being in the same `4xx` class only means the client is expected to act differently before retrying — it says nothing about the two meaning the same specific thing.",
+        "fix": "Reword `b`'s explanation (en and vi) to concede the shared part and deny the rest: \"Both being `4xx` does say the client is the one who erred — it just doesn't say the two errors are the same one: a broken request and a missing id are different failures.\""
       },
       {
         "severity": "minor",
         "section": "frontmatter",
         "kind": "scope",
-        "text": "Round-1 cross-track fix not applied (re-raised, unchanged). §5, §6 and summary line 4 now state the missing shipped-order check outright, which is the finding `management.l1.reading-a-300-line-pr` is built to have the reader discover (its outline item 2: \"surfaces the missing 'already shipped' check first\"). Its depth_notes at content/tracks/management/track.yaml:377 still says nothing about the reader already knowing the gap.",
+        "text": "Cross-track note raised in rounds 1 and 2, still unapplied (checked this round in content/tracks/management/track.yaml, entry management.l1.reading-a-300-line-pr). §5, §6 and summary line 4 state the missing shipped-order check outright, while that lesson's outline item 2 reads \"reading it in that order surfaces the missing 'already shipped' check first\", and its depth_notes still says nothing about the reader already knowing the gap.",
         "quote": "Nothing in this method checks whether `order.Status` is already `\"shipped\"` before the `order.Status = \"cancelled\"` line on the block above sets it.",
-        "fix": "No change to this lesson. Append to management.l1.reading-a-300-line-pr's depth_notes (content/tracks/management/track.yaml:377): \"Người học đã biết gap shipped-order từ backend.l1.choosing-an-error-status — dạy cách đọc PR để TÌM RA nó, không trình bày như phát hiện mới.\""
+        "fix": "No change to this lesson. Append to management.l1.reading-a-300-line-pr's depth_notes in content/tracks/management/track.yaml: \"Người học đã biết gap shipped-order từ backend.l1.choosing-an-error-status — dạy cách đọc PR để TÌM RA nó, không trình bày như phát hiện mới.\""
       }
     ],
     "scope": {

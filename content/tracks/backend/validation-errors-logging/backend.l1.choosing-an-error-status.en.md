@@ -69,7 +69,7 @@ Third, if the named thing does exist: does acting on it conflict with its curren
         await repository.SaveChangesAsync();
 ```
 
-`repository.FindAsync(orderId)` returns `null` when no order has that id; the `??` throws `KeyNotFoundException` right there, before any other line in the method runs. The same catching mechanism `validating-input` described for `ArgumentException` recognizes `KeyNotFoundException` too, answering `404` with the exception's own message as `detail` — it fills `title` and `status` itself from the status code it picked, so only `detail` comes from the exception, which is why the situation's response reads `"order 99999 not found"` verbatim.
+`repository.FindAsync(orderId)` returns `null` when no order has that id; the `??` throws `KeyNotFoundException` right there, before any other line in the method runs. The same catching mechanism `validating-input` described for `ArgumentException` recognizes `KeyNotFoundException` too, answering `404` with the exception's own message as `detail` — it supplies `title` and `status` itself, so only `detail` comes from the exception, which is why the situation's response reads `"order 99999 not found"` verbatim.
 
 Nothing in this method checks whether `order.Status` is already `"shipped"` before the `order.Status = "cancelled"` line on the block above sets it. That's the missing `409` case: cancelling a shipped order today succeeds, silently, exactly like cancelling a `"new"` or `"paid"` one — the method has no branch that would answer anything else.
 
