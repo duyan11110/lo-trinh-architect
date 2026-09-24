@@ -1,0 +1,140 @@
+{
+  "id": "backend.l1.rest-for-writes",
+  "technical": {
+    "reviewed_at": "2026-09-24T15:30:00+07:00",
+    "reviewer": "claude-opus-5[1m]",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "refs/rfc/rfc9110.txt 9.3.4: \"The PUT method requests that the state of the target resource be created or replaced with the state defined by the representation enclosed in the request message content.\"; \"If the target resource does not have a current representation and the PUT successfully creates one, then the origin server MUST inform the user agent by sending a 201 (Created) response.\"; on replacement it \"MUST send either a 200 (OK) or a 204 (No Content) response\". 9.2.2: \"PUT, DELETE, and safe request methods are idempotent.\"",
+        "source": "refs/rfc/rfc9110.txt, Sections 9.3.4 and 9.2.2 (local mirror)"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "No local mirror (refs/rfc has 6265/9110/9111/9112 only). WebFetch of rfc-editor.org/rfc/rfc5789 returned Section 2 verbatim: \"The PATCH method requests that a set of changes described in the request entity be applied to the resource identified by the Request-URI.\"; \"In a PUT request, the enclosed entity is considered to be a modified version of the resource stored on the origin server, and the client is requesting that the stored version be replaced.\"; \"PATCH is neither safe nor idempotent\"; \"A PATCH request can be issued in such a way as to be idempotent\".",
+        "source": "RFC 5789 Section 2, https://www.rfc-editor.org/rfc/rfc5789 (fetched 2026-09-24)"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "refs/rfc/rfc9110.txt §9.3.5: \"If a DELETE method is successfully applied, the origin server SHOULD send\" ... \"a 204 (No Content) status code if the action has been enacted and no further information is to be supplied, or\" ... \"a 200 (OK) status code if the action has been enacted and the response message includes a representation describing the status\" (202 also listed). §9.2.2: \"PUT, DELETE, and safe request methods are idempotent.\" and \"repeating the request will have the same intended effect, even if the original request succeeded, though the response might differ.\"",
+        "source": "refs/rfc/rfc9110.txt, Sections 9.3.5 and 9.2.2 (local mirror)"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "git -C examples/don-hang grep -n \"HttpPut\\|HttpDelete\" stage-1 -- '*.cs' returns no matches (exit 1). OrdersController at stage-1 declares only [HttpPost], [HttpGet(\"{id:int}\")], [HttpPatch(\"{id:int}/cancel\")]. Live probe against the running stage-1 lab: PUT /api/v1/orders/22 -> 405, DELETE /api/v1/orders/22 -> 405, PATCH /api/v1/orders/22/cancel -> 200.",
+        "source": "examples/don-hang at tag stage-1; live lab on localhost:8080 (2026-09-24)"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "git -C examples/don-hang show stage-1:DonHang.Api/Controllers/OrdersController.cs lines 40-46 match the lesson's code block character-for-character: [Authorize] / [HttpPatch(\"{id:int}/cancel\")] / public async Task<ActionResult<OrderDto>> Cancel(int id) { var order = await orderService.CancelOrderAsync(id); return Ok(ToDto(order)); }. The only parameter is the route int id; there is no body parameter. Confirmed live: a PATCH with no body and no Content-Type answers 200.",
+        "source": "examples/don-hang/DonHang.Api/Controllers/OrdersController.cs @ stage-1, lines 40-46"
+      },
+      {
+        "n": 6,
+        "verdict": "rephrased",
+        "evidence": "stage-1 DonHang.Domain/OrderService.cs: CancelOrderAsync finds the order (throws KeyNotFoundException when null), sets order.Status = \"cancelled\", awaits repository.SaveChangesAsync(), then calls notifier.Send(order.Id, \"order cancelled\") and returns the order. No other Order field is touched (live run: customerId, placedAt, items identical across both calls), but the per-call notification is a side effect the claim omits, and the lesson repeats the omission in §7 and the Suggested answer.",
+        "source": "examples/don-hang/DonHang.Domain/OrderService.cs @ stage-1, lines 29-38",
+        "suggested_text": "OrderService.CancelOrderAsync sets the order's Status to \"cancelled\" and saves, changing no other field of the order (CustomerId, PlacedAt, Items untouched); it also sends a notification on every call — a side effect outside the order's own state."
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Independent live run 2026-09-24 against the running stage-1 lab (container donhang-api, localhost:8080): POST /api/v1/auth/login (anh.tran@example.com) returned a token; POST /api/v1/orders returned {\"id\":22,...,\"status\":\"new\"}; PATCH /api/v1/orders/22/cancel returned HTTP/1.1 200 OK with {\"id\":22,\"customerId\":1,\"status\":\"cancelled\",\"placedAt\":...,\"items\":[...]}; the identical second PATCH returned 200 with a byte-identical body. Reproduced without relying on the author's session.",
+        "source": "live run, examples/don-hang at stage-1, localhost:8080 (2026-09-24)"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Unlisted claim: the lesson states as a rule that PUT addresses a resource that already exists. RFC 9110 §9.3.4 says PUT \"requests that the state of the target resource be created or replaced\" and that a PUT which creates one MUST answer 201 — the ledger's own claim 1 says so, but the body teaches the opposite.",
+        "quote": "`PUT` and `PATCH` both name an existing resource in the URL and say what should happen to the one thing already there",
+        "fix": "Rewrite as: \"`PUT` and `PATCH` both name one specific resource in the URL — usually one that already exists, though a `PUT` may also create the resource at that URL, in which case the answer is `201` instead of `200`/`204`.\" Keep the rest of the paragraph unchanged."
+      },
+      {
+        "severity": "major",
+        "section": 3,
+        "kind": "accuracy",
+        "text": "Unlisted claim: the reason given for PATCH not being idempotent is about two *different* requests or two *different* starting states, neither of which is what idempotence measures (repeating the same request). As written the premise does not support the conclusion.",
+        "quote": "two different `PATCH` requests can describe two different changes, so nothing guarantees repeating one has the same effect as sending it once",
+        "fix": "Give the real reason: a `PATCH` body can describe a change relative to the current state (\"add one more item\", \"increase quantity by 1\"), so applying the same request twice lands somewhere different from applying it once. Fix the same reasoning in §4 (\"two people applying the same \\\"change\\\" to two different starting states…\")."
+      },
+      {
+        "severity": "major",
+        "section": 3,
+        "kind": "term",
+        "text": "\"safe\" is used as an HTTP term (and repeated in summary line 2) but is never explained; it is not in this lesson's `vocab` (empty) and not in `known_vocab` from tools/known-vocab --before. RFC 9110 defines safe methods, but the lesson teaches nothing about them and never uses the word again.",
+        "quote": "`PATCH` is neither safe nor idempotent by default",
+        "fix": "Drop \"safe\": write \"`PATCH` is not idempotent by default\" in §3 and \"so it isn't idempotent by default\" in summary line 2. Do not add a definition of safe methods — it is outside this lesson's outline."
+      },
+      {
+        "severity": "major",
+        "section": "backend.l1.rest-for-writes.q1",
+        "kind": "quiz",
+        "text": "The key (a) is correct, but the explanation for option d asserts something RFC 9110 §9.3.4 contradicts: a PUT to a URL with no current representation may create the resource there, and then the origin server MUST answer 201 (Created).",
+        "quote": "`PUT` names an existing resource in the URL, it doesn't create one whose id the client picks",
+        "fix": "Rewrite explanation d as: \"A `PUT` body is the resource's state, not an instruction about which id to assign — the URL already says which resource is being written.\" Mirror the change in the `vi` explanation."
+      },
+      {
+        "severity": "major",
+        "section": "backend.l1.rest-for-writes.q5",
+        "kind": "quiz",
+        "text": "The scenario uses a Đơn Hàng-shaped path for an endpoint the lesson itself says does not exist (§5: \"This API has no real `PUT` or `DELETE` endpoint at this stage\"); `ProductsController` at stage-1 has GET only, and a live DELETE /api/v1/products/9 answers 405. track.yaml depth_notes forbids promising other edit/cancel endpoints.",
+        "quote": "A teammate's script sends the same `DELETE /api/v1/products/9` request twice in a row",
+        "fix": "Make the scenario explicitly hypothetical and off the Đơn Hàng API, e.g. \"A teammate's script calls the same `DELETE /widgets/9` twice against another team's service\". Keep the options and key unchanged; update the `vi` text the same way."
+      },
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "accuracy",
+        "text": "PUT's idempotence is a property of the method per RFC 9110 §9.2.2 (\"PUT, DELETE, and safe request methods are idempotent\"), not something conditional on what the client chooses to send. As written, a junior learns that a careless client can make PUT non-idempotent.",
+        "quote": "`PUT`'s idempotence depends on the client always sending the whole state, not just what changed",
+        "fix": "Rewrite as: \"`PUT` is idempotent because its body *is* the full new state — a partial body sent to a `PUT` endpoint isn't a lighter `PUT`, it's a malformed one.\""
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "code",
+        "text": "Not true of this code: `CancelOrderAsync` calls `notifier.Send(order.Id, \"order cancelled\")` on every call, so the second PATCH does produce one more effect. RFC 9110 §9.2.2 allows this (\"a server is free to log each request separately ... or implement other non-idempotent side effects for each idempotent request\"), but the lesson states the stronger, false version.",
+        "quote": "the second call changes nothing further, since the order was already cancelled by the first one",
+        "fix": "Narrow it to the resource: \"the second call leaves the order in exactly the same state the first one put it in\". Optionally add to the Suggested answer that the service still sends a notification each time, which doesn't change the order itself."
+      },
+      {
+        "severity": "minor",
+        "section": 8,
+        "kind": "accuracy",
+        "text": "This module has no `DELETE` endpoint at all (verified: no [HttpDelete] anywhere at stage-1), and the one real write endpoint appends an action segment (`/cancel`) to the item URL rather than using the bare item URL, so \"every method in this module, `GET` through `DELETE`, has followed\" the split overstates what the module actually built.",
+        "quote": "the collection-URL/item-URL split every method in this module, `GET` through `DELETE`, has followed",
+        "fix": "Rewrite as: \"the collection-URL/item-URL split these write methods build on — including `cancel`, which is appended after the item URL rather than replacing it.\""
+      },
+      {
+        "severity": "minor",
+        "section": "backend.l1.rest-for-writes.q3",
+        "kind": "quiz",
+        "text": "The `fill` answer set accepts \"204\" and \"204 No Content\" but not the equally common written form with parentheses, which is how RFC 9110 §9.3.5 itself writes it (\"a 204 (No Content) status code\").",
+        "fix": "Add \"204 (No Content)\" to the `answer` array."
+      },
+      {
+        "severity": "minor",
+        "section": "backend.l1.rest-for-writes.q5",
+        "kind": "quiz",
+        "text": "The explanation for option d credits the lesson with a note it never makes: nothing in the lesson text discusses logging or side effects and idempotence. The substance is right per RFC 9110 §9.2.2, but the learner is pointed at a passage that does not exist.",
+        "quote": "Logging each attempt is exactly the kind of side effect the lesson notes doesn't count against idempotence",
+        "fix": "Rewrite as: \"Logging each attempt is a record kept elsewhere, not a change to the resource — idempotence is judged by the resource's end state, which is the same either way.\" Update the `vi` explanation to match."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": [
+        "§3 and summary line 2 introduce the HTTP notion of a \"safe\" method (\"neither safe nor idempotent\"), which is in no outline item, not in vocab, and never explained or reused."
+      ]
+    },
+    "verdict": "fix-required"
+  }
+}
