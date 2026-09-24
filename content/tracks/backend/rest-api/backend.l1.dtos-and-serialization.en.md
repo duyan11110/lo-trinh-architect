@@ -46,7 +46,7 @@ flowchart LR
 
 A DTO is not the entity; something in the endpoint's own code has to build one from the other, field by field. `ProductsController.List()`, from the last lesson, does exactly this: `new ProductDto(p.Id, p.Name, p.PriceVnd)`, one argument per property, read off `p`, a `Product` row. Once that `ProductDto` is what the endpoint returns, serialization takes over — it walks the DTO's properties and writes one JSON field per property, with no further code from you.
 
-The same mapping runs in reverse for a request body: `POST /api/v1/orders`'s body is JSON, and deserialization turns it into a `CreateOrderRequest` before any of your code sees it — one JSON field filling one property, the same field-by-field mapping, run the other way.
+The same mapping runs in reverse for a request body: `POST /api/v1/orders`'s body is JSON, and deserialization turns it into a `CreateOrderRequest` before your endpoint's code runs — one JSON field filling one property, the same field-by-field mapping, run the other way.
 
 Property names do not survive that trip unchanged going out: by default, each property name is written in camelCase for a response — the first word lowercase, later words keeping their capital — so a C# property `PriceVnd` is written as JSON `priceVnd`. This lesson only covers that direction; what an incoming request body's field names should look like is not something Try it below exercises. Nothing in `ProductDto` asks for this, and nothing in this lesson changes it.
 
@@ -76,8 +76,8 @@ Each `record` here is a type whose only job is to hold these named values — a 
 
 ## Beginners often think…
 
-- **"Returning the same class the server uses internally is simpler and just as safe as writing a DTO."** → Actually it works only until the internal type needs a field the client should never see, or drops a field a client already depends on. `Customer`, in `DonHang.Domain`, carries a `PasswordHash` alongside a customer's name and email — returning `Customer` directly from any future endpoint would serialize that field too, unless every future change to `Customer` is checked against what every client already receives.
-- **"A JSON field's name always matches a C# property name exactly, with nothing to configure."** → Actually the default JSON options write every property name in camelCase for you: `ProductDto`'s `PriceVnd` reaches the client as `priceVnd`. You notice this in Try it below, where the response never has a capital `P` in `priceVnd`.
+- **"Returning the same class the server uses internally is simpler and just as safe as writing a DTO."** → Actually it works only until the internal type needs a field the client should never see, or drops a field a client already depends on. `Customer`, in `DonHang.Domain`, carries a `PasswordHash` alongside a customer's name and email — returning `Customer` directly from any future endpoint would serialize that field too: it appears in the response as `passwordHash`, `null` or not.
+- **"A JSON field's name always matches a C# property name exactly, with nothing to configure."** → Actually the default JSON options write every property name in camelCase for a response: `ProductDto`'s `PriceVnd` reaches the client as `priceVnd`. You notice this in Try it below, where the response never has a capital `P` in `priceVnd`.
 
 ## Try it (3 minutes)
 
@@ -103,5 +103,5 @@ Expected result: `{"id":1,"name":"Bàn phím cơ","priceVnd":1250000}` — three
 1. A DTO is a plain type shaped for the wire — only the fields a client needs — not whatever internal type the server uses.
 2. Serialization turns a returned DTO into JSON automatically, one JSON field per property, with no extra code from you.
 3. Deserialization is the same mapping in reverse: a request body's JSON becomes a DTO before your endpoint's code runs.
-4. The default JSON options write each property name in camelCase — `PriceVnd` becomes `priceVnd` — without being asked to.
+4. The default JSON options write each property name in camelCase for a response — `PriceVnd` becomes `priceVnd` — without being asked to.
 5. A DTO can match its entity's fields today and still be worth keeping separate, since only the DTO is a promise to every client.
