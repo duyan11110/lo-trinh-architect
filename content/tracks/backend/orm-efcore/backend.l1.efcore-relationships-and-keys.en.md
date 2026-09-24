@@ -38,7 +38,7 @@ A teammate wants to print each order together with its customer's name, and writ
 
 ```mermaid
 flowchart LR
-  A[orders.customer_id] -->|HasOne + HasForeignKey, gains a second property| B[order.CustomerId + order.Customer]
+  A[orders.customer_id] -->|CustomerId + Customer declared on the class, tied by HasOne + HasForeignKey| B[order.CustomerId + order.Customer]
   C[order_items.order_id, product_id] -->|HasKey with both| D[one order_items row]
 ```
 
