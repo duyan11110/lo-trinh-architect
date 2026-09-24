@@ -13,7 +13,7 @@ prereqs: [backend.l1.efcore-relationships-and-keys]
 related: []
 vocab: [migration]
 example_tag: stage-1
-versions_used: [efcore]
+versions_used: [efcore, postgresql]
 content_version: 1
 status: draft
 approved_by: null
@@ -26,11 +26,11 @@ reviewed_at: null
 
 ## The situation
 
-A teammate reads `Program.cs` and finds `MigrationBaseline.ApplyIfNeeded(context)` called right before `context.Database.Migrate()`, every time the API starts. They already know `db/schema.sql` creates `customers`, `orders`, and every other table the moment a fresh database is set up, before `DonHang.Api` ever runs. So why does `Migrate()` need to run at all on a database that already has its tables, and what exactly is `MigrationBaseline` guarding against?
+A teammate reads `Program.cs` and finds `MigrationBaseline.ApplyIfNeeded(context)` called right before `context.Database.Migrate()`, every time the API starts. They already know `db/schema.sql` creates `customers`, `orders`, and every other table the application stores rows in, the moment a fresh database is set up, before `DonHang.Api` ever runs. So why does `Migrate()` need to run at all on a database that already has its tables, and what exactly is `MigrationBaseline` guarding against?
 
 ## Core concepts
 
-- **migration** — a versioned, code-tracked description of one schema change: one change to the tables and columns themselves, not to the rows stored in them. EF Core generates the file by comparing the current model — the classes plus the `OnModelCreating` mapping from the last lesson — against a snapshot of that model as it was at the last migration, and records which migrations have run in a table, `__EFMigrationsHistory` by default, that it keeps inside the target database.
+- **migration** — a versioned, code-tracked description of one schema change: a change to the tables and columns themselves rather than to the data in them, though a migration can also carry SQL that fills in rows, as one in this lesson does. EF Core generates the file by comparing the current model — the classes plus the `OnModelCreating` mapping from the last lesson — against a snapshot of that model as it was at the last migration, and records which migrations have run in a table, `__EFMigrationsHistory` by default, that it keeps inside the target database.
 - `dotnet ef migrations add <Name>` / `dotnet ef database update` — the two commands: the first writes a new migration file from whatever changed in the model since the last one; the second applies every migration a target database hasn't recorded yet.
 - `Database.Migrate()` — the same "apply what's pending" step as `dotnet ef database update`, called from code instead of a terminal; Đơn Hàng runs it once, every time the API process starts.
 
@@ -125,7 +125,7 @@ A real migration looks nothing like that check. `AddPasswordHashToCustomers`, on
 ## Try it (3 minutes)
 
 1. From the Đơn Hàng project's root folder, with the example system running (`scripts/up.sh`), run `docker exec donhang-db psql -U donhang -d donhang -c 'select "MigrationId" from "__EFMigrationsHistory" order by "MigrationId";'` — this runs one SQL query against the example system's database and prints the rows it returns.
-2. Compare the three rows against the `.cs` migration file names under `DonHang.Infrastructure/Migrations/` (ignore the `.Designer.cs` files next to them; `DonHangDbContextModelSnapshot.cs` is the snapshot of the model that `migrations add` compares against, rewritten by EF Core each time — not a migration itself, so it has no row here either).
+2. Compare the three rows against the `.cs` migration file names under `DonHang.Infrastructure/Migrations/` (ignore the `.Designer.cs` files next to them; `DonHangDbContextModelSnapshot.cs` is the snapshot of the model that `migrations add` compares against, rewritten by EF Core each time a migration is added — not a migration itself, so it has no row here either).
 
 Expected result: the three `MigrationId` values match the three migration file names exactly, minus the `.cs` extension, `InitialCreate` first — even though `InitialCreate`'s own `CREATE TABLE` calls never actually ran; `db/schema.sql` built those tables, and `MigrationBaseline` only recorded `InitialCreate` as applied.
 
