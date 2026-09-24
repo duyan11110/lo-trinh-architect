@@ -33,7 +33,7 @@ A teammate suggests skipping a separate type for what `GET /api/v1/products/{id}
 - **DTO** (data transfer object) — a plain type shaped for the wire — for the JSON that travels in a request or a response — holding only the fields a client needs, kept separate from the internal type (the entity) the server uses for the same thing.
 - serialization — turning a DTO into JSON automatically when an endpoint returns it; each property becomes a JSON field.
 - deserialization — the reverse: turning a request body's JSON into a DTO, the same kind of mapping run the other way.
-- naming — by default, each property name is written in camelCase for a response: the first word lowercase, later words keeping their capital — a C# `PriceVnd` becomes a JSON `priceVnd`, not because you asked, but because that is the default.
+- naming — by default the server writes each property name in camelCase when it answers a request: the first word lowercase, later words keeping their capital — a C# `PriceVnd` becomes a JSON `priceVnd`, not because you asked, but because that is the default.
 
 ## How it works
 
