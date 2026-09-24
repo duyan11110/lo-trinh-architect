@@ -31,7 +31,7 @@ A teammate is reading `OrderService.PlaceOrderAsync` and finds two calls in a ro
 
 ## Core concepts
 
-- change tracker — an in-memory list `DonHangDbContext` keeps of every entity it's watching, and what's changed about each one since it was loaded or added. Calling `AddAsync` marks an entity as new in this list; nothing is written anywhere yet.
+- change tracker — an in-memory list `DonHangDbContext`, the class holding the `DbSet`s (it is `db` in `EfOrderRepository`), keeps of every entity — a C# object like `order` that stands for one row — it's watching, and what's changed about each one since it was loaded or added. Calling `AddAsync` marks an entity as new in this list, putting it in the `Added` state; putting a change in this list is what the rest of this lesson calls staging it, and nothing is written anywhere until the change is saved.
 - `SaveChangesAsync` — the call that turns every staged change in the change tracker into actual SQL and sends it, wrapping all of it in one transaction, by default: every staged change succeeds together, or none of them do.
 - database-generated id — a primary key value like `orders.id` that PostgreSQL itself assigns during `INSERT`, not something EF Core invents in C#; the entity's `Id` property stays at its default until `SaveChangesAsync` runs and copies back what the database generated.
 
@@ -45,15 +45,17 @@ flowchart LR
   D -->|id copied back| E[order.Id populated]
 ```
 
-With a database-generated identity key like `orders.id`, `AddAsync` doesn't send anything to PostgreSQL — it hands `order` to the change tracker and marks it `Added`, the same way `.Where(...)` builds a query description without running it. The object sitting in C# memory is unchanged by this call: `order.Id` is still `0`, because nothing has asked the database for one yet.
+With an identity key like `orders.id` — meaning PostgreSQL fills the column in on `INSERT` — `AddAsync` sends nothing to PostgreSQL: it hands `order` to the change tracker and marks it `Added`, the same way `.Where(...)` builds a query description without running it. `order.Id` is still `0`, because nothing has asked the database for one yet.
 
-`SaveChangesAsync` is the call that actually does something. It looks at every entity the change tracker has marked as changed — here, the `Added` order plus each `OrderItem` in `order.Items`, which `AddAsync` staged along with it — and, for each one, builds the SQL that change needs: an `INSERT` for something added, an `UPDATE` for something modified. By default, all staged changes in one call go inside one transaction: every `INSERT`/`UPDATE`/`DELETE` succeeds together, or the whole batch is rolled back and none of it reaches the database.
+`SaveChangesAsync` is the call that actually does something. It looks at every entity the change tracker has marked as changed and, for each one, builds the SQL that change needs: an `INSERT` for something added, an `UPDATE` for something modified (this lesson only follows the added case). `AddAsync` stages not only the object handed to it but the objects hanging off it, so `AddAsync(order)` also stages every `OrderItem` in `order.Items` — more than one staged change from one call. By default, all staged changes in one call go inside one transaction: every `INSERT`/`UPDATE`/`DELETE` succeeds together, or the whole batch is rolled back — undone. Each `SaveChangesAsync()` call is its own transaction: a later call cannot undo what an earlier one already saved.
 
-`orders.id` is a column PostgreSQL assigns a value to on `INSERT`, the same way `customers.id`, `products.id`, `payments.id`, and `notifications.id` do — every single-column `id` primary key in this schema (`order_items` is the one exception, keyed by the pair `order_id`/`product_id` instead). Before `SaveChangesAsync` runs, `order.Id` is just the default value for an `int`, `0` — the object has never been near the database. Once the `INSERT` completes, EF Core reads the id PostgreSQL generated and copies it onto the same `order` object still sitting in C# memory, so the line right after `SaveChangesAsync()` — `notifier.Send(order.Id, ...)` — reads a real id, not `0`.
+`orders.id` is a column PostgreSQL assigns a value to on `INSERT`, the same way `customers.id`, `products.id`, `payments.id`, and `notifications.id` do — every single-column `id` primary key in this schema (`order_items` is the one exception, keyed by the pair `order_id`/`product_id` instead).
+
+Before `SaveChangesAsync` runs, `order.Id` is just the default value for an `int`, `0` — the object has never been near the database. Once the `INSERT` completes, EF Core reads the id PostgreSQL generated and copies it onto the same `order` object still sitting in C# memory, so the line right after `SaveChangesAsync()` — `notifier.Send(order.Id, ...)` — reads a real id, not `0`.
 
 ## In the Đơn Hàng system
 
-`OrderService.PlaceOrderAsync`, in `DonHang.Domain/OrderService.cs`, is the two-step shape described above:
+`OrderService.PlaceOrderAsync`, in `DonHang.Domain/OrderService.cs`, is the two-step shape described above. `repository` and `notifier` are given to `OrderService` when it's created; the two lines to watch are in the middle:
 
 ```csharp file=DonHang.Domain/OrderService.cs tag=stage-1 lines=8-23
     public async Task<Order> PlaceOrderAsync(int customerId, List<OrderItem> items)
@@ -76,7 +78,7 @@ With a database-generated identity key like `orders.id`, `AddAsync` doesn't send
 
 `order` is built first, entirely in C# — `CustomerId`, `PlacedAt`, `Status`, `Items` all come from arguments or fixed values, nothing here touches PostgreSQL. `await AddAsync(order);` stages it; `await SaveChangesAsync();` is the line that actually writes it, and is also the line that gives `order.Id` its real value. Only after that second call does `notifier.Send(order.Id, ...)` have an id worth sending, and only after it does `return order;` hand back an object the `Location` header can build a URL from.
 
-`EfOrderRepository`, in `DonHang.Infrastructure/EfOrderRepository.cs`, shows what these two calls actually do underneath:
+`EfOrderRepository`, in `DonHang.Infrastructure/EfOrderRepository.cs`, shows what these two calls actually do underneath — `db` here is the `DonHangDbContext` itself:
 
 ```csharp file=DonHang.Infrastructure/EfOrderRepository.cs tag=stage-1 lines=16-18
     public async Task AddAsync(Order order) => await db.Orders.AddAsync(order);
@@ -93,7 +95,7 @@ Each is a one-line wrapper around the `DonHangDbContext` call of the same name: 
 
 ## Try it (3 minutes)
 
-1. From the Đơn Hàng project's root folder, run `scripts/up.sh` first and wait until it reports the system is ready. Sign in as `anh.tran@example.com` (`donhang-dev-password`) the same way `creating-a-resource` did, and send `POST /api/v1/orders` with one item.
+1. From the Đơn Hàng project's root folder, run `scripts/up.sh` first and wait until it reports the system is ready. Run `creating-a-resource`'s two Try it commands: the login for `anh.tran@example.com` (`donhang-dev-password`), then the same `POST /api/v1/orders` body, sent with the token from the login.
 2. Read the `id` field in the response, and the number at the end of the `Location` header.
 
 Expected result: both name the same, real id — never `0` — even though nothing in the request body supplied one; PostgreSQL assigned it during the `INSERT` that `SaveChangesAsync` ran.
