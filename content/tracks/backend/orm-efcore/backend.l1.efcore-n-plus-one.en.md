@@ -66,7 +66,7 @@ The gap between the two grows with the data, not with the code: for a customer w
 
 `FindAsync` eager-loads `Items` the same way `ListByCustomerAsync` eager-loads `Customer`: EF Core puts both tables in one statement by default, and this project keeps it that way, so one `.Include(...)` call means one JOIN, one query, regardless of how many `OrderItem` rows an order has. Neither method loops over anything to fetch related data — the JOIN does that work inside the single query PostgreSQL runs.
 
-`OrdersController.List()`, behind `GET /api/v1/orders`, is why `Customer` has to already be loaded before the loop that builds the response. Only the last two lines of the method matter for that: `customerId` identifies the signed-in customer, and `[Authorize]` keeps the endpoint closed to strangers — neither one changes how many queries run.
+`OrdersController.List()`, behind `GET /api/v1/orders`, is why `Customer` has to already be loaded before the loop that builds the response. Two lines matter for that: the call to `ListByCustomerAsync`, then the `.Select(...)` that reads `Customer` off what it returned. The other two lines are just context: `[Authorize]` keeps the endpoint closed to strangers, and `customerId` identifies the signed-in customer — neither one changes how many queries run.
 
 ```csharp file=DonHang.Api/Controllers/OrdersController.cs tag=stage-1 lines=48-56
     // lesson: backend.l1.efcore-n-plus-one
@@ -90,8 +90,8 @@ The gap between the two grows with the data, not with the code: for a customer w
 ## Try it (3 minutes)
 
 1. From the Đơn Hàng project's root folder, with the example system running (`scripts/up.sh`), turn on PostgreSQL's query log: `docker exec donhang-db psql -U donhang -d donhang -c "ALTER SYSTEM SET log_statement = 'all';" -c "SELECT pg_reload_conf();"`.
-2. Run steps 1 and 2 of `creating-a-resource`'s Try it: the login for `anh.tran@example.com` (`donhang-dev-password`), then call `GET /api/v1/orders` with the token.
-3. Check the log: `docker logs donhang-db --since 1m | grep -i "execute <unnamed>: SELECT"`. The login in step 2 logs `SELECT`s of its own — the statement that belongs to this call is the one selecting from `orders`.
+2. Run step 1 of `creating-a-resource`'s Try it: log in as `anh.tran@example.com` (`donhang-dev-password`). Then call `GET /api/v1/orders` with the token from that login.
+3. Check the log: `docker logs donhang-db --since 1m | grep -iA 2 "execute <unnamed>: SELECT"`. The login also logs a `SELECT` of its own — the statement that belongs to this call is the one whose next lines read `FROM orders AS o`.
 4. Turn logging back off: `docker exec donhang-db psql -U donhang -d donhang -c "ALTER SYSTEM SET log_statement = 'none';" -c "SELECT pg_reload_conf();"`.
 
 Expected result: exactly one `SELECT` from `orders` in the log, no matter how many orders come back — `ListByCustomerAsync`'s single `.Include(o => o.Customer)` joins the customer in server-side, so the response's entry count changes the number of rows that one statement returns, not the number of statements.
