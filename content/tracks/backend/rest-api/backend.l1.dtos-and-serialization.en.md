@@ -26,7 +26,7 @@ reviewed_at: null
 
 ## The situation
 
-A teammate suggests skipping a separate type for what `GET /api/v1/products/{id}` returns — just return the `Product` class the server already has internally, and save writing another type. It would work today: `Product` only has `Id`, `Name`, and `PriceVnd`, exactly the fields a client would want back. Nothing in the response would look wrong, and no test would catch a difference, because right now there isn't one. What could go wrong later, once `Product` needs to hold something a client should never see, that this response gives no hint of right now?
+A teammate suggests skipping a separate type for what `GET /api/v1/products/{id}` returns — just return the `Product` class the server already has internally, and save writing another type. It would work today: `Product` only has `Id`, `Name`, and `PriceVnd`, exactly the fields a client would want back. Nothing in the response would look wrong, and no test would catch a difference, because right now there isn't one. Today's response gives no hint of it. What goes wrong later, once `Product` has to hold something a client should never see?
 
 ## Core concepts
 
@@ -44,11 +44,11 @@ flowchart LR
   D[JSON request body] -->|deserialized| E[CreateOrderRequest DTO]
 ```
 
-A DTO is not the entity; something in the endpoint's own code has to build one from the other, field by field. `ProductsController.List()`, from the last lesson, does exactly this: `new ProductDto(p.Id, p.Name, p.PriceVnd)`, one argument per property, read off `p`, a `Product` row. Once that `ProductDto` is what the endpoint returns, serialization takes over — it walks the DTO's properties and writes one JSON field per property, with no further code from you.
+A DTO is not the entity; something in the endpoint's own code has to build one from the other, field by field. `ProductsController.List()`, the method that answers `GET /api/v1/products` from the last lesson, does exactly this: `new ProductDto(p.Id, p.Name, p.PriceVnd)`, one argument per property, read off `p`, a `Product` row. Once that `ProductDto` is what the endpoint returns, serialization takes over — it walks the DTO's properties and writes one JSON field per property, with no further code from you.
 
 The same mapping runs in reverse for a request body: `POST /api/v1/orders`'s body is JSON, and deserialization turns it into a `CreateOrderRequest` before your endpoint's code runs — one JSON field filling one property, the same field-by-field mapping, run the other way.
 
-Property names do not survive that trip unchanged going out: by default, each property name is written in camelCase for a response — the first word lowercase, later words keeping their capital — so a C# property `PriceVnd` is written as JSON `priceVnd`. This lesson only covers that direction; what an incoming request body's field names should look like is not something Try it below exercises. Nothing in `ProductDto` asks for this, and nothing in this lesson changes it.
+Property names do not survive that trip unchanged going out: by default, each property name is written in camelCase for a response — the first word lowercase, later words keeping their capital — so a C# property `PriceVnd` is written as JSON `priceVnd`. What an incoming body's field names should look like is left for a later lesson. Nothing in `ProductDto` asks for this response-side change, and nothing in this lesson changes it further.
 
 ## In the Đơn Hàng system
 
@@ -72,12 +72,12 @@ public sealed record CreateOrderRequest(List<CreateOrderItemRequest> Items);
 
 Each `record` here is a type whose only job is to hold these named values — a shape, not behavior. Each name in the parentheses is one property of that type — that is the list serialization walks. `ProductDto` happens to list the same three fields as the `Product` entity it is built from, but that is a coincidence of today's code, not a rule; they are still two separate types, and the comment above them says why: the API answers in these shapes, not the entity's.
 
-`OrderItemDto` shows the "only the fields a client needs" half of the definition on its own: the entity behind it, `OrderItem`, also carries an `OrderId`, tying each item back to its order row. `OrderItemDto` drops that field — a client reading an order already knows which order it asked for, so repeating that id on every item inside it would say nothing new.
+`OrderItemDto` shows the "only the fields a client needs" half of the definition on its own: the entity behind it, `OrderItem`, also carries an `OrderId`, tying each item back to its order row. `OrderItemDto` drops that field — a client reading an order already knows which order it asked for, so repeating that id on every item inside it would say nothing new. An `OrderItemDto` only ever appears inside an `OrderDto`, in the `Items` list above, which is exactly why the order id it would repeat is always already known.
 
 ## Beginners often think…
 
 - **"Returning the same class the server uses internally is simpler and just as safe as writing a DTO."** → Actually it works only until the internal type needs a field the client should never see, or drops a field a client already depends on. `Customer`, in `DonHang.Domain`, carries a `PasswordHash` alongside a customer's name and email — returning `Customer` directly from any future endpoint would serialize that field too: it appears in the response as `passwordHash`, `null` or not.
-- **"A JSON field's name always matches a C# property name exactly, with nothing to configure."** → Actually the default JSON options write every property name in camelCase for a response: `ProductDto`'s `PriceVnd` reaches the client as `priceVnd`. You notice this in Try it below, where the response never has a capital `P` in `priceVnd`.
+- **"A JSON field's name always matches a C# property name exactly, with nothing to configure."** → Actually, by default, each property name is written in camelCase for a response: `ProductDto`'s `PriceVnd` reaches the client as `priceVnd`. You notice this in Try it below, where the response never has a capital `P` in `priceVnd`.
 
 ## Try it (3 minutes)
 
@@ -88,7 +88,7 @@ Expected result: `{"id":1,"name":"Bàn phím cơ","priceVnd":1250000}` — three
 
 <details><summary>Suggested answer</summary>
 
-`ProductDto(int Id, string Name, int PriceVnd)` has three properties, `Id`, `Name`, and `PriceVnd`. Serialization writes one JSON field per property, but writes each name in camelCase on the way — `Id` becomes `id`, `PriceVnd` becomes `priceVnd` — which is why the response's field names never match the DTO's property names letter for letter, even though they match field for field.
+`ProductDto(int Id, string Name, int PriceVnd)` has three properties, `Id`, `Name`, and `PriceVnd`, matched field for field by the response's `id`, `name`, and `priceVnd` — never letter for letter, since serialization writes each name in camelCase on the way out.
 
 </details>
 
@@ -103,5 +103,5 @@ Expected result: `{"id":1,"name":"Bàn phím cơ","priceVnd":1250000}` — three
 1. A DTO is a plain type shaped for the wire — only the fields a client needs — not whatever internal type the server uses.
 2. Serialization turns a returned DTO into JSON automatically, one JSON field per property, with no extra code from you.
 3. Deserialization is the same mapping in reverse: a request body's JSON becomes a DTO before your endpoint's code runs.
-4. The default JSON options write each property name in camelCase for a response — `PriceVnd` becomes `priceVnd` — without being asked to.
-5. A DTO can match its entity's fields today and still be worth keeping separate, since only the DTO is a promise to every client.
+4. By default, each property name is written in camelCase for a response — `PriceVnd` becomes `priceVnd` — without being asked to.
+5. A DTO can match its entity's fields today and still stay separate, because the entity can later gain a field no client should see.
