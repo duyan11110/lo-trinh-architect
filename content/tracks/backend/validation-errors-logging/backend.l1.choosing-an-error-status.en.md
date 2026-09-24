@@ -15,9 +15,9 @@ vocab: []
 example_tag: stage-1
 versions_used: [http, http_problem_details, postgresql]
 content_version: 1
-status: draft
-approved_by: null
-reviewed_at: null
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-26T02:00:00+07:00"
 ---
 
 ## Before you start
@@ -27,11 +27,11 @@ reviewed_at: null
 
 ## The situation
 
-You're extending `PATCH /api/v1/orders/{id}/cancel`. Cancelling order `99999`, which doesn't exist, needs its own answer — separate from `validating-input`'s empty-items case, where the request itself was malformed. Sending `PATCH /api/v1/orders/99999/cancel` (signed in, as in Try it below) gets `404` with `{"title":"Not found","status":404,"detail":"order 99999 not found"}`. Same `title`/`status`/`detail` shape as that `400` — only the number and the text changed. Nothing about this request was malformed; the id it named just doesn't exist. What decides which status code fits?
+You're extending `PATCH /api/v1/orders/{id}/cancel`. Cancelling order `99999`, which doesn't exist, needs its own answer — separate from `validating-input`'s empty-items case, where the request itself was invalid. Sending `PATCH /api/v1/orders/99999/cancel` (signed in, as in Try it below) gets `404` with `{"title":"Not found","status":404,"detail":"order 99999 not found"}`. Same `title`/`status`/`detail` shape as that `400` — only the number and the text changed. Nothing about this request was invalid; the id it named just doesn't exist. What decides which status code fits?
 
 ## Core concepts
 
-- `400 Bad Request` — the request itself is invalid, the way `validating-input`'s empty-items check rejects one; that specific check fails the same way regardless of which order it would have applied to.
+- `400 Bad Request` — the request itself is invalid, the way `validating-input`'s empty-items check rejects one; that specific check fails the same way every time it runs.
 - `404 Not Found` — the request is well-formed, but names something that doesn't currently exist; the id is the problem, not the request's shape.
 - `409 Conflict` — the request is well-formed and names something real, but conflicts with that thing's current state; nothing about the request itself was wrong, only its timing.
 - Problem Details' shared shape — in this app, every one of these three status codes comes back with the same `title`/`status`/`detail` fields; RFC 9457 allows more optional fields than that, but this app's own exception handling only ever fills these three.
@@ -49,7 +49,7 @@ flowchart LR
   F -->|no| H[succeeds]
 ```
 
-The three status codes answer three different questions about a failing request. The three boxes are not one request's stages — each comes from a separate case, explained below. First: is the request itself broken? That's `validating-input`'s territory, illustrated by `POST /api/v1/orders`: a missing or invalid value in the request body, like an empty item list, is `400` no matter which order it would have applied to. `PATCH /api/v1/orders/{id}/cancel` takes no request body at all, so this question never comes up for it — every request that reaches `CancelOrderAsync` has already passed it trivially, with nothing to be malformed.
+The three status codes answer three different questions about a failing request. The three boxes are not one request's stages — each comes from a separate case, explained below. First: is the request itself broken? That's `validating-input`'s territory, illustrated by `POST /api/v1/orders`: a missing or invalid value in the request body, like an empty item list, is `400` no matter what. `PATCH /api/v1/orders/{id}/cancel` takes no request body at all, so this question never comes up for it — every request that reaches `CancelOrderAsync` has already passed it trivially, with nothing to be malformed.
 
 Second: does the thing the request names exist? `PATCH /api/v1/orders/99999/cancel` is a perfectly well-formed request — there's nothing wrong with its shape — but no order `99999` exists to cancel. That's `404`: the id is what's missing, not the request. This holds even when the id itself looks like an obviously wrong number: as long as it's a value the endpoint accepts, a lookup that finds nothing is still `404` in this app, not `400` — the request's shape was fine, so only the id was missing.
 
@@ -80,7 +80,7 @@ Nothing in this method checks whether `order.Status` is already `"shipped"` befo
 
 ## Try it (3 minutes)
 
-1. Run step 1 of `creating-a-resource`'s Try it to log in as `anh.tran@example.com` (`donhang-dev-password`) and copy the token.
+1. With the Đơn Hàng system running (`scripts/up.sh`), run step 1 of `creating-a-resource`'s Try it to log in as `anh.tran@example.com` (`donhang-dev-password`) and copy the token.
 2. Cancel an order that doesn't exist: `curl -sS -i -X PATCH http://localhost:8080/api/v1/orders/99999/cancel -H "Authorization: Bearer <token>"`.
 
 Expected result: `404` with `{"title":"Not found","status":404,"detail":"order 99999 not found"}` — the same `title`/`status`/`detail` shape `validating-input`'s `400` used, just a different status code and message, because a different question was being answered.
