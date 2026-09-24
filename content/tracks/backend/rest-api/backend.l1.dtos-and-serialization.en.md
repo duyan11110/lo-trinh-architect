@@ -30,10 +30,10 @@ A teammate suggests skipping a separate type for what `GET /api/v1/products/{id}
 
 ## Core concepts
 
-- **DTO** (data transfer object) — a plain type shaped for the wire, holding only the fields a client needs, kept separate from whatever internal type the server uses for the same thing.
+- **DTO** (data transfer object) — a plain type shaped for the wire — for the JSON that travels in a request or a response — holding only the fields a client needs, kept separate from the internal type (the entity) the server uses for the same thing.
 - serialization — turning a DTO into JSON automatically when an endpoint returns it; each property becomes a JSON field.
 - deserialization — the reverse: turning a request body's JSON into a DTO, the same kind of mapping run the other way.
-- naming — ASP.NET Core's default JSON options write each property name in camelCase: the first word lowercase, later words keeping their capital — a C# `PriceVnd` becomes a JSON `priceVnd`, not because you asked, but because that is the default.
+- naming — by default, each property name is written in camelCase for a response: the first word lowercase, later words keeping their capital — a C# `PriceVnd` becomes a JSON `priceVnd`, not because you asked, but because that is the default.
 
 ## How it works
 
@@ -44,15 +44,15 @@ flowchart LR
   D[JSON request body] -->|deserialized| E[CreateOrderRequest DTO]
 ```
 
-A DTO is not the entity; something in the endpoint's own code has to build one from the other, field by field. `ProductsController.List()`, from the last lesson, does exactly this: `new ProductDto(p.Id, p.Name, p.PriceVnd)`, one argument per property, read off a `Product` row. Once that `ProductDto` is what the endpoint returns, serialization takes over — it walks the DTO's properties and writes one JSON field per property, with no further code from you.
+A DTO is not the entity; something in the endpoint's own code has to build one from the other, field by field. `ProductsController.List()`, from the last lesson, does exactly this: `new ProductDto(p.Id, p.Name, p.PriceVnd)`, one argument per property, read off `p`, a `Product` row. Once that `ProductDto` is what the endpoint returns, serialization takes over — it walks the DTO's properties and writes one JSON field per property, with no further code from you.
 
 The same mapping runs in reverse for a request body: `POST /api/v1/orders`'s body is JSON, and deserialization turns it into a `CreateOrderRequest` before any of your code sees it — one JSON field filling one property, the same field-by-field mapping, run the other way.
 
-Property names do not survive that trip unchanged going out. ASP.NET Core's default JSON options write each property name in camelCase for a response: the first word lowercase, later words keeping their capital, so a C# property `PriceVnd` is written as JSON `priceVnd`. Nothing in `ProductDto` asks for this — it is what the serializer does to every property, every time, unless told otherwise.
+Property names do not survive that trip unchanged going out: by default, each property name is written in camelCase for a response — the first word lowercase, later words keeping their capital — so a C# property `PriceVnd` is written as JSON `priceVnd`. This lesson only covers that direction; what an incoming request body's field names should look like is not something Try it below exercises. Nothing in `ProductDto` asks for this, and nothing in this lesson changes it.
 
 ## In the Đơn Hàng system
 
-`DonHang.Api/Dtos.cs` holds the shapes these endpoints answer in and read from, kept in one file separate from `DonHang.Domain`'s entities — the first records in the file, below, are the ones this lesson uses:
+`DonHang.Api/Dtos.cs` holds the shapes these endpoints answer in and read from, kept in one file separate from `DonHang.Domain`, the project that holds the server's internal types — the first records in the file, below, are the ones this lesson uses:
 
 ```csharp file=DonHang.Api/Dtos.cs tag=stage-1 lines=1-13
 namespace DonHang.Api;
@@ -70,7 +70,7 @@ public sealed record CreateOrderItemRequest(int ProductId, int Quantity, int Uni
 public sealed record CreateOrderRequest(List<CreateOrderItemRequest> Items);
 ```
 
-Each `record` here is a type whose only job is to hold these named values — a shape, not behavior. `ProductDto` happens to list the same three fields as the `Product` entity it is built from, but that is a coincidence of today's code, not a rule; they are still two separate types, and the comment above them says why: the API answers in these shapes, not the entity's.
+Each `record` here is a type whose only job is to hold these named values — a shape, not behavior. Each name in the parentheses is one property of that type — that is the list serialization walks. `ProductDto` happens to list the same three fields as the `Product` entity it is built from, but that is a coincidence of today's code, not a rule; they are still two separate types, and the comment above them says why: the API answers in these shapes, not the entity's.
 
 `OrderItemDto` shows the "only the fields a client needs" half of the definition on its own: the entity behind it, `OrderItem`, also carries an `OrderId`, tying each item back to its order row. `OrderItemDto` drops that field — a client reading an order already knows which order it asked for, so repeating that id on every item inside it would say nothing new.
 
@@ -81,7 +81,7 @@ Each `record` here is a type whose only job is to hold these named values — a 
 
 ## Try it (3 minutes)
 
-1. With the lab running, run `curl -s http://localhost:8080/api/v1/products/1`.
+1. From the Đơn Hàng project's root folder, start the example system with `scripts/up.sh`, then run `curl -s http://localhost:8080/api/v1/products/1`.
 2. Look at the field names in the response.
 
 Expected result: `{"id":1,"name":"Bàn phím cơ","priceVnd":1250000}` — three fields, matching `ProductDto`'s three properties, but each name starts with a lowercase letter: `id`, not `Id`; `priceVnd`, not `PriceVnd`.
