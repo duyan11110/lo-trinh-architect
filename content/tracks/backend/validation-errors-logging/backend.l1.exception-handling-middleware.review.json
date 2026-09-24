@@ -1,0 +1,151 @@
+{
+  "id": "backend.l1.exception-handling-middleware",
+  "technical": {
+    "reviewed_at": "2026-09-25T06:20:00+07:00",
+    "reviewer": "claude-opus-5[1m]",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "git show stage-1:DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs:16-30 has exactly three catch clauses in this order: catch (KeyNotFoundException ex) -> LogWarning(ex, \"request for a resource that does not exist\") + WriteProblemAsync(context, Status404NotFound, \"Not found\", ex.Message); catch (ArgumentException ex) -> LogWarning(ex, \"request rejected as invalid\") + Status400BadRequest, \"Invalid request\", ex.Message; catch (Exception ex) -> LogError(ex, \"unhandled exception\") + Status500InternalServerError, \"Server error\", \"something went wrong\".",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs:16-30"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "C# language reference, exception-handling statements: \"When an exception occurs, the runtime checks catch clauses in the specified order, from top to bottom. At most, only one `catch` block runs for any thrown exception.\" and \"Use a *catch clause* to specify the base type of exceptions you want to handle\" (so a base type matches derived exceptions).",
+        "source": "refs/dotnet-docs/docs/csharp/language-reference/statements/exception-handling-statements.md:71,79"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "git show stage-1:DonHang.Api/Program.cs:67-68: \"app.UseMiddleware<ExceptionHandlingMiddleware>(); app.UseMiddleware<RequestLoggingMiddleware>();\" — of the two, ExceptionHandlingMiddleware is registered first and is the outer one. Confirmed at runtime: the stack trace logged in the live test ends \"at DonHang.Api.Middleware.RequestLoggingMiddleware.InvokeAsync ... at DonHang.Api.Middleware.ExceptionHandlingMiddleware.InvokeAsync ... line 14\". NOTE: outermost of the two is not outermost of the pipeline (see issue on section 4).",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/Program.cs:67-68"
+      },
+      {
+        "n": 4,
+        "verdict": "rephrased",
+        "evidence": "Reproduced 2026-09-25 (db stopped, then restarted, healthy): curl -sS -i http://localhost:8080/api/v1/orders/1 -> \"HTTP/1.1 500 Internal Server Error\" + {\"title\":\"Server error\",\"status\":500,\"detail\":\"something went wrong\"}; docker logs donhang-api -> \"fail: DonHang.Api.Middleware.ExceptionHandlingMiddleware[0] / unhandled exception / System.InvalidOperationException: An exception has been raised that is likely due to a transient failure. ---> Npgsql.PostgresException (0x80004005): 57P01: terminating connection due to administrator command\". Inner type is PostgresException, not NpgsqlException.",
+        "source": "live run in examples/don-hang (docker compose stop db / curl / docker logs / start db)",
+        "suggested_text": "Live this session: with the db container stopped, GET /api/v1/orders/1 returned 500 with {title:Server error,status:500,detail:something went wrong}; docker logs showed ExceptionHandlingMiddleware log a System.InvalidOperationException (\"likely due to a transient failure\") wrapping Npgsql.PostgresException 57P01, after two earlier fail: lines from EF Core itself."
+      },
+      {
+        "n": 5,
+        "verdict": "wrong",
+        "evidence": "The Status/Title/Detail-only part is right (no Type/Instance in the code, none in the observed body). The content type is not: the live 500 came back \"Content-Type: application/json; charset=utf-8\" through a plain `reverse_proxy api:8080` that rewrites nothing. Cause: WriteProblemAsync sets ContentType, then `WriteAsJsonAsync<TValue>(HttpResponse, TValue, CancellationToken)` overwrites it — docs: \"Write the specified value as JSON to the response body. The response content-type will be set to application/json; charset=utf-8.\" Only the overloads taking a contentType argument keep problem+json.",
+        "source": "live curl -i + https://learn.microsoft.com/dotnet/api/microsoft.aspnetcore.http.httpresponsejsonextensions.writeasjsonasync (aspnetcore-10.0)",
+        "suggested_text": "WriteProblemAsync sets only Status, Title and Detail on a ProblemDetails object (no Type or Instance). It assigns ContentType = \"application/problem+json\", but WriteAsJsonAsync overwrites that, so the response actually goes out as application/json; charset=utf-8 — the body has the Problem Details shape, not the Problem Details media type."
+      },
+      {
+        "n": 6,
+        "verdict": "rephrased",
+        "evidence": "\"when explicitly enabled\" is wrong for this app. Docs: \"ASP.NET Core apps enable the developer exception page by default when both: Running in the Development environment. The app was created with the current templates, that is, by using WebApplication.CreateBuilder.\" Program.cs:10 uses WebApplication.CreateBuilder and docker-compose.yml:93 sets ASPNETCORE_ENVIRONMENT: \"Development\", so without this middleware the lab would answer 500 with a full stack trace, automatically. \"UseDeveloperExceptionPage is added first when the HostingEnvironment is Development.\"",
+        "source": "refs/aspnetcore-docs/aspnetcore/includes/developer-exception-page.md; fundamentals/middleware/includes/middleware8.md",
+        "suggested_text": "Without this middleware, an unhandled exception does not produce the app's own Problem Details shape: in the Development environment (what docker-compose.yml sets) WebApplication enables the developer exception page by default and returns a 500 carrying the stack trace; in other environments the client gets the host's own bare 500."
+      }
+    ],
+    "issues": [
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Not every other middleware runs inside this try. Docs: \"UseDeveloperExceptionPage is added first when the HostingEnvironment is Development\", \"UseRouting is added second, if the user code didn't already call UseRouting and endpoints are configured\", \"User configured middleware and endpoints are added between UseRouting and UseEndpoints.\" Program.cs calls neither, and compose sets ASPNETCORE_ENVIRONMENT=Development, so two framework middleware run outside this try. backend.l1.middleware-pipeline itself says routing runs \"Before any of Đơn Hàng's own middleware\".",
+        "quote": "since [[backend.l1.middleware-pipeline]] already showed this class is registered first, everything downstream, every other middleware and every endpoint, runs inside that single `try`",
+        "fix": "Match the prereq's wording: \"…already showed this class is the first of Đơn Hàng's own middleware, every middleware Program.cs registers after it and the endpoint itself run inside that single `try`\". Same edit for five-line summary line 1 (\"registered first\" -> \"registered first among the app's own middleware\")."
+      },
+      {
+        "severity": "major",
+        "section": 6,
+        "kind": "accuracy",
+        "text": "\"failing with no response at all\" is not what happens without this middleware, least of all in this lab. The developer exception page is enabled by default in the Development environment for apps built with WebApplication.CreateBuilder (both true here: Program.cs:10, docker-compose.yml:93), so the client would get a 500 carrying the stack trace — the opposite of no response. The misconception's rebuttal therefore rests on a false alternative.",
+        "quote": "turning the exception into a `500` response instead of the request failing with no response at all",
+        "fix": "Rewrite the rebuttal to the true alternative: \"…turning the exception into one fixed `500` Problem Details body instead of the developer exception page's stack trace (what this app would return in Development without it) or the host's own bare 500 elsewhere.\" Keep the parseable-body point; drop \"no response at all\" and \"not a hang\"."
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "\"only exists in the LogError call\" is contradicted by the live run: `docker logs donhang-api` for that one request contains three fail: blocks — \"fail: Microsoft.EntityFrameworkCore.Database.Command[20102]\", \"fail: Microsoft.EntityFrameworkCore.Query[10100]\", each already carrying the same System.InvalidOperationException/Npgsql.PostgresException stack trace, and only then \"fail: DonHang.Api.Middleware.ExceptionHandlingMiddleware[0]\". The middleware's call is the last logger to see it, not the only one.",
+        "quote": "The exception itself, type and stack trace included, only exists in the `LogError` call right before that response is written.",
+        "fix": "Say what is true of the response, not of the whole log: \"The exception itself, type and stack trace included, never leaves the server: the `LogError` call puts it in the log, the response body never carries it.\""
+      },
+      {
+        "severity": "major",
+        "section": 7,
+        "kind": "example",
+        "text": "The Try it steps cannot all run from one directory. Step 1 says `scripts/up.sh` (the path only works with examples/don-hang as cwd, as in every sibling lesson) but steps 1 and 3 pass `-f examples/don-hang/docker-compose.yml`, a repo-root path that does not exist from examples/don-hang. A learner who follows the text literally fails step 3 and leaves the shared lab with the database down.",
+        "quote": "docker compose -f examples/don-hang/docker-compose.yml stop db",
+        "fix": "Use repo-relative commands like the sibling lessons: `docker compose stop db` and `docker compose start db` (cwd examples/don-hang, same as `scripts/up.sh`), and `docker compose logs api --since 1m` or keep `docker logs donhang-api --since 1m`, which works from anywhere."
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "code",
+        "text": "Claim 5 in the ledger states the middleware \"writes it with content type application/problem+json\". Execution disagrees: the live 500 returned \"Content-Type: application/json; charset=utf-8\". WriteProblemAsync assigns ContentType and then calls WriteAsJsonAsync, whose documented behaviour for the overload used is \"The response content-type will be set to application/json; charset=utf-8.\" The lesson body never states a media type, so no lesson sentence is wrong — but the ledger entry is, and the source file's own comment says \"one RFC 9457 problem+json response\".",
+        "quote": "writes it with content type application/problem+json",
+        "fix": "Correct claim 5 in .meta.json to the suggested_text given in claim_verdicts (code sets problem+json, WriteAsJsonAsync overwrites it with application/json). If the response really should be problem+json, that is a repo change (prompt 08): use the WriteAsJsonAsync overload that takes a contentType argument; do not change the lesson to describe code that does not exist."
+      },
+      {
+        "severity": "major",
+        "section": 3,
+        "kind": "accuracy",
+        "text": "Unlisted claim: the bullet defines what the two log levels mean, in general terms and with no claim behind it. The framework documents them differently: Warning is \"For abnormal or unexpected events. Typically includes errors or conditions that don't cause the app to fail\"; Error is \"For errors and exceptions that can't be handled.\" Neither definition is about whether someone anticipated the failure — that is this app's own convention, presented as the meaning of the levels.",
+        "quote": "log severity — `LogWarning` marks a caught, expected shape of failure (a bad request, a missing id); `LogError` marks one nothing anticipated.",
+        "fix": "Attribute the convention to the app: \"log severity — this middleware calls `LogWarning` for the two failure shapes it has a specific case for and `LogError` for anything else, so filtering on `Error` finds the unclassified ones.\" Then add it to `claims` in .meta.json as a `fact` claim about the repo code."
+      },
+      {
+        "severity": "major",
+        "section": 6,
+        "kind": "gap",
+        "text": "Outline item 2 is half-covered: \"Without this middleware, an unhandled exception either crashes the request with no response, or leaks a raw stack trace — neither of which a client can parse as Problem Details.\" The lesson only ever touches the first half (inside a misconception, and stated wrongly), and never establishes the stack-trace-leak alternative, which is precisely what this Development-environment lab would do.",
+        "quote": "An exception an endpoint doesn't catch just means that one request fails silently; nothing else needs to run.",
+        "fix": "In section 6 (or one sentence in section 2), establish both alternatives the outline names: without the middleware the client gets the developer exception page's raw stack trace in Development, or the host's bare 500 otherwise — neither parseable as the `title`/`status`/`detail` body the rest of this module taught."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "\"always answers 500\" holds only while the response has not started. Docs: \"Don't call next.Invoke during or after the response is sent to the client. After an HttpResponse is started, changes result in an exception. For example, setting headers or a response status code throw an exception after the response starts.\" WriteProblemAsync sets Response.StatusCode with no HasStarted check, so an exception thrown after the body began streaming produces a broken response, not a 500.",
+        "quote": "That branch always answers `500`, always with the same fixed `detail`, regardless of what the underlying exception actually was.",
+        "fix": "Add the condition: \"That branch answers `500` with the same fixed `detail` whatever the underlying exception was, as long as nothing downstream has already started writing the response.\""
+      },
+      {
+        "severity": "minor",
+        "section": 2,
+        "kind": "accuracy",
+        "text": "\"a database timeout\" is not what the lab produces, and section 2 promises the reader the Try it case. Stopping the db yields \"System.InvalidOperationException: An exception has been raised that is likely due to a transient failure. ---> Npgsql.PostgresException (0x80004005): 57P01: terminating connection due to administrator command\" — a dropped connection, not a timeout. The phrase recurs in sections 4, 5 and the suggested answer.",
+        "quote": "a database timeout is a case neither of those specific catches ever anticipated",
+        "fix": "Replace \"a database timeout\" with \"a lost database connection\" (or \"a database failure\") in all four places: section 2, section 4 (\"including the situation's database failure\" is already fine), section 5, and the suggested answer in section 7."
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "example",
+        "text": "The expected log is understated. The live run wrote three fail: blocks for that one request — Microsoft.EntityFrameworkCore.Database.Command[20102], Microsoft.EntityFrameworkCore.Query[10100], then DonHang.Api.Middleware.ExceptionHandlingMiddleware[0] — separated by ~60 lines of stack trace, and there is no RequestLoggingMiddleware info: line for it at all. \"the line right above it\" does not match what the learner sees.",
+        "quote": "find the `fail: DonHang.Api.Middleware.ExceptionHandlingMiddleware[0]` line right above it — that's where the real exception lives",
+        "fix": "State the real shape: \"three `fail:` blocks appear for that one request — two from Entity Framework Core, then `fail: DonHang.Api.Middleware.ExceptionHandlingMiddleware[0] / unhandled exception`, the last of the three. That last one is this middleware's own. No `RequestLoggingMiddleware` line appears for this request.\""
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "backend.l1.choosing-an-error-status shows `404` with the exception's own message as `detail` and discusses `400`, but it shows no logging at all (no `LogWarning`, no logger call anywhere in that lesson), and the `400`-with-ex.Message case belongs to backend.l1.validating-input. As written the sentence credits that lesson with a pattern it never showed.",
+        "quote": "The two specific catches use `LogWarning` and pass `ex.Message` as `detail`, the same pattern [[backend.l1.choosing-an-error-status]] already showed for `404` and `400`.",
+        "fix": "Split the credit: \"The two specific catches pass `ex.Message` as `detail`, the pattern [[backend.l1.choosing-an-error-status]] already showed for `404` and [[backend.l1.validating-input]] for `400`; both log at `LogWarning`, which is new here.\""
+      },
+      {
+        "severity": "minor",
+        "section": "backend.l1.exception-handling-middleware.q5",
+        "kind": "quiz",
+        "text": "The key ('a') is correct and every distractor is genuinely wrong, but the stem misattributes the level: ASP.NET Core assigns nothing here — the app's own code picks the level by calling LogWarning or LogError. The stem also invites the reading that Error-level entries come only from this middleware, while the same live request produced two fail: entries from Microsoft.EntityFrameworkCore.",
+        "quote": "using only the log level ASP.NET Core assigned each entry",
+        "fix": "Reword the stem to \"using only the log level this middleware gave each entry\" and scope the filter to its category, e.g. \"among `DonHang.Api.Middleware.ExceptionHandlingMiddleware` entries\". Keep answer 'a' and all explanations."
+      }
+    ],
+    "scope": {
+      "outline_covered": false,
+      "beyond_scope": []
+    },
+    "verdict": "rewrite"
+  }
+}

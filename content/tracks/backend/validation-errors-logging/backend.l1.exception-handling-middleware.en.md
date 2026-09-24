@@ -23,17 +23,17 @@ reviewed_at: null
 ## Before you start
 
 - [[backend.l1.structured-logging]] — you know `RequestLoggingMiddleware`'s own log line never runs when a handler throws, since the exception unwinds past it before that call.
-- [[backend.l1.middleware-pipeline]] — you know a middleware runs code before and after `next()`, and that being registered first means wrapping everything downstream.
+- [[backend.l1.middleware-pipeline]] — you know a middleware runs code before and after `next()`, and that being registered first among the app's own middleware means wrapping everything after it.
 
 ## The situation
 
-Postgres restarts mid-request while a customer is browsing an order: `GET /api/v1/orders/1` reaches `OrdersController.Get`, which asks Entity Framework Core to load the order, but the database connection fails before Postgres comes back. This isn't `PlaceOrderAsync`'s `ArgumentException` or `CancelOrderAsync`'s `KeyNotFoundException` — a database timeout is a case neither of those specific catches ever anticipated. The request still comes back `500` with `{"title":"Server error","status":500,"detail":"something went wrong"}` — no stack trace, no hang. What answers a request when the exception thrown is one nobody wrote a specific case for?
+Postgres restarts mid-request while a customer is browsing an order: `GET /api/v1/orders/1` reaches `OrdersController.Get`, which asks Entity Framework Core to load the order, but the database connection drops before Postgres comes back. This isn't `PlaceOrderAsync`'s `ArgumentException` or `CancelOrderAsync`'s `KeyNotFoundException` — a lost database connection is a case neither of those specific catches ever anticipated. The request still comes back `500` with `{"title":"Server error","status":500,"detail":"something went wrong"}`, a body a client can parse. What answers a request when the exception thrown is one nobody wrote a specific case for?
 
 ## Core concepts
 
 - catch clause order — C# tries a `try` block's `catch` clauses top to bottom; the first one whose type matches the thrown exception runs, so a specific type listed before `catch (Exception)` intercepts it there instead.
 - generic `500` response — the same `title`/`status`/`detail` shape `400` and `404` use, but with a fixed `title` and a `detail` that never repeats the exception's own message, unlike those two.
-- log severity — `LogWarning` marks a caught, expected shape of failure (a bad request, a missing id); `LogError` marks one nothing anticipated.
+- log severity — this middleware calls `LogWarning` for the two failure shapes it has a specific case for and `LogError` for anything else, so filtering on `Error` finds the unclassified ones.
 
 ## How it works
 
@@ -46,9 +46,9 @@ flowchart LR
   B -->|any other exception| F[500, LogError, fixed detail]
 ```
 
-In the situation above, `ExceptionHandlingMiddleware.InvokeAsync` wraps one `try` around `await next(context)` — since [[backend.l1.middleware-pipeline]] already showed this class is registered first, everything downstream, every other middleware and every endpoint, runs inside that single `try`. When `next(context)` returns normally, nothing here changes the response, exactly as the diagram's `C` shows.
+In the situation above, `ExceptionHandlingMiddleware.InvokeAsync` wraps one `try` around `await next(context)` — since [[backend.l1.middleware-pipeline]] already showed this class is the first of Đơn Hàng's own middleware, every middleware `Program.cs` registers after it and the endpoint itself run inside that single `try`. When `next(context)` returns normally, nothing here changes the response, exactly as the diagram's `C` shows.
 
-When it throws instead, C# checks this method's `catch` clauses in the order they're written. `KeyNotFoundException` is listed first, so `CancelOrderAsync`'s missing-order case is caught there, answering `404`. `ArgumentException` is listed second, catching `PlaceOrderAsync`'s empty-item-list case as `400`. Both of those are already familiar from earlier lessons in this module — what's new here is the last clause: `catch (Exception ex)` matches anything neither of the two more specific types above it already claimed, including the situation's database failure. That branch always answers `500`, always with the same fixed `detail`, regardless of what the underlying exception actually was.
+When it throws instead, C# checks this method's `catch` clauses in the order they're written. `KeyNotFoundException` is listed first, so `CancelOrderAsync`'s missing-order case is caught there, answering `404`. `ArgumentException` is listed second, catching `PlaceOrderAsync`'s empty-item-list case as `400`. Both of those are already familiar from earlier lessons in this module — what's new here is the last clause: `catch (Exception ex)` matches anything neither of the two more specific types above it already claimed, including the situation's lost connection. That branch answers `500` with the same fixed `detail` whatever the underlying exception was, as long as nothing downstream has already started writing the response.
 
 ## In the Đơn Hàng system
 
@@ -79,26 +79,26 @@ When it throws instead, C# checks this method's `catch` clauses in the order the
     }
 ```
 
-The two specific catches use `LogWarning` and pass `ex.Message` as `detail`, the same pattern [[backend.l1.choosing-an-error-status]] already showed for `404` and `400`. The last catch uses `LogError` instead, and its `detail` is the fixed string `"something went wrong"`, never `ex.Message` — nothing about a database timeout, a null reference, or any other unclassified failure ever reaches the client. The exception itself, type and stack trace included, only exists in the `LogError` call right before that response is written.
+The two specific catches pass `ex.Message` as `detail`, the pattern [[backend.l1.choosing-an-error-status]] already showed for `404` and [[backend.l1.validating-input]] for `400`; both log at `LogWarning`, which is new here. The last catch uses `LogError` instead, and its `detail` is the fixed string `"something went wrong"`, never `ex.Message` — nothing about a lost connection, a null reference, or any other unclassified failure ever reaches the client. The exception itself, type and stack trace included, never leaves the server: the `LogError` call puts it in the log, the response body never carries it.
 
 ## Beginners often think…
 
-- **"An exception an endpoint doesn't catch just means that one request fails silently; nothing else needs to run."** → Actually this middleware's own `catch (Exception)` clause still runs for anything not more specifically caught above it, turning the exception into a `500` response instead of the request failing with no response at all. You notice this when the situation's database failure still comes back with a body a client can parse, not a hang.
+- **"An exception an endpoint doesn't catch just means that one request fails silently; nothing else needs to run."** → Actually an uncaught exception never fails silently: in the Development environment this lab runs in, ASP.NET Core's own developer exception page answers automatically with a `500` carrying the full stack trace, and in other environments the host answers its own bare `500` — neither a client can parse as this app's `title`/`status`/`detail` shape. This middleware's `catch (Exception)` clause intercepts the exception before it would ever reach either of those, replacing them with one fixed, parseable body instead. You notice this when the situation's lost connection still comes back with a body a client can parse, not a stack trace.
 - **"Logging the exception and returning a response to the client are the same step; doing one does the other."** → Actually `logger.LogError(ex, "unhandled exception")` and `await WriteProblemAsync(...)` are two separate calls in the same `catch` block; the first records the real exception, the second decides what the client sees, and only the second ever reaches the client. You notice this when the response reads `"something went wrong"` while the log line right above it carries the real exception and its stack trace.
 
 ## Try it (3 minutes)
 
-1. With the Đơn Hàng system running (`scripts/up.sh`), stop just the database: `docker compose -f examples/don-hang/docker-compose.yml stop db`.
+1. From the Đơn Hàng project's root folder, with the example system running (`scripts/up.sh`), stop just the database: `docker compose stop db`.
 2. Send `curl -sS -i http://localhost:8080/api/v1/orders/1`.
-3. Restart the database before continuing: `docker compose -f examples/don-hang/docker-compose.yml start db`.
+3. Restart the database before continuing: `docker compose start db`.
 
-Expected result: `500` with `{"title":"Server error","status":500,"detail":"something went wrong"}`. Read `docker logs donhang-api --since 1m` and find the `fail: DonHang.Api.Middleware.ExceptionHandlingMiddleware[0]` line right above it — that's where the real exception lives.
+Expected result: `500` with `{"title":"Server error","status":500,"detail":"something went wrong"}`. `docker logs donhang-api --since 1m` shows three `fail:` blocks for that one request — two from Entity Framework Core, then `fail: DonHang.Api.Middleware.ExceptionHandlingMiddleware[0] / unhandled exception`, the last of the three and this middleware's own. No `RequestLoggingMiddleware` line appears for this request.
 
-Would the response body look any different if the underlying failure were something else entirely, like a missing configuration value instead of a database timeout?
+Would the response body look any different if the underlying failure were something else entirely, like a missing configuration value instead of a lost database connection?
 
 <details><summary>Suggested answer</summary>
 
-No — the response would be identical either way. `catch (Exception ex)` matches any type not already claimed by `KeyNotFoundException` or `ArgumentException`, and its `detail` is the fixed string `"something went wrong"`, never derived from `ex`. The client's body can't distinguish a database timeout from a missing configuration value from any other unclassified failure; only `docker logs`, reading the `LogError` call's exception object, can.
+No — the response would be identical either way. `catch (Exception ex)` matches any type not already claimed by `KeyNotFoundException` or `ArgumentException`, and its `detail` is the fixed string `"something went wrong"`, never derived from `ex`. The client's body can't distinguish a lost database connection from a missing configuration value from any other unclassified failure; only `docker logs`, reading the `LogError` call's exception object, can.
 
 </details>
 
@@ -106,11 +106,11 @@ No — the response would be identical either way. `catch (Exception ex)` matche
 
 - [[backend.l1.structured-logging]] — the same middleware pipeline, now read for where an exception is caught instead of what gets logged around it.
 - [[backend.l1.choosing-an-error-status]] — the `400`/`404` cases this lesson's generic `500` catch sits behind; all three write the same Problem Details shape.
-- [[backend.l1.middleware-pipeline]] — being registered first is what lets this one `try` wrap every other middleware and endpoint.
+- [[backend.l1.middleware-pipeline]] — being registered first among the app's own middleware is what lets this one `try` wrap every middleware and endpoint after it.
 
 ## Five-line summary
 
-1. An exception-handling middleware, registered first, wraps a `try` around everything downstream and turns any exception it has no specific case for into a generic `500`.
+1. An exception-handling middleware, first among the app's own middleware, wraps everything after it in one `try` and turns any unclassified exception into a generic `500`.
 2. `catch` clauses run top to bottom; `KeyNotFoundException` and `ArgumentException` are caught before `catch (Exception)` ever sees them.
 3. The generic catch always answers `{"title":"Server error","status":500,"detail":"something went wrong"}`, never the exception's own message.
 4. `LogWarning` marks the two specific, expected-shape failures; `LogError` marks the one nothing anticipated.
