@@ -34,7 +34,7 @@ You're writing the Đơn Hàng client's error handling. At stage-0 the lab answe
 - **Problem Details (RFC 9457)** — a standard JSON shape for an error response, defined by RFC 9457, the standards document that names it; this lesson uses four of its fields, `type`, `title`, `status`, `detail`, instead of a shape each endpoint invents on its own.
 - `type` — a URI reference, a string in the form of a URL, used only as a name for this kind of problem, not as an address the client fetches; when it's left out, it defaults to `"about:blank"`, meaning nothing more specific than the status code itself.
 - `title` — a short, human-readable summary of that problem kind, meant to read the same on every occurrence of this kind of error.
-- `status` — the same HTTP status code already on the response's status line, the response's first line, where the status code always travels, outside the body — repeated inside the body.
+- `status` — the same HTTP status code already on the response's status line, the first line of an HTTP/1.1 response, where the status code travels outside the body — repeated inside the body.
 - `detail` — a human-readable explanation specific to this one occurrence, naming the field or id involved.
 
 RFC 9457 defines one more field, `instance`, and lets an API add fields of its own — a body carrying extra fields beyond these four is still Problem Details.
@@ -53,11 +53,11 @@ Problem Details doesn't change which status code an endpoint returns for a given
 
 `type` and `title` describe the *kind* of problem, so they stay fixed across every response of that kind — every "order not found" response would use the same `title`. `status` copies the exact number already sitting on the response's status line. The status line is still the authoritative one; the body's copy is there for code that kept only the parsed body, having already turned the body's JSON into an object and no longer holding the response it came from. `detail` is the one field that changes per response: it names the specific thing that went wrong this time — which order id, which field, which conflict — while `type` and `title` stay fixed for that error kind.
 
-None of this touches which status code gets picked for which failure. A `400` still means the request itself was malformed or failed validation, a `404` still means the server has no current representation for that resource, a `409` still means a conflict with the resource's current state — Problem Details only fixes the shape of what rides along with whichever one of those an endpoint returns.
+None of this touches which status code gets picked for which failure. A `400` still means the request itself was malformed, a `404` still means the server has no current representation for that resource, a `409` still means a conflict with the resource's current state — Problem Details only fixes the shape of what rides along with whichever one of those an endpoint returns.
 
 ## In the Đơn Hàng system
 
-At stage-0, fixed responses from Caddy (a web server) stood in for a real API, and they already showed what having no shared shape looks like — the blocks below are from that file, and you only need to read what each one sends back, not its syntax. A missing order returned JSON — `@missingOrder` is the name this file gives to requests for `/api/v1/orders/999`:
+At stage-0, fixed responses from Caddy (a web server) stood in for a real API, and they already showed what having no shared shape looks like — the blocks below are copied from Caddy's own file, and you only need to read what each one sends back, not its syntax. A missing order returned JSON — `@missingOrder` is the name this file gives to requests for `/api/v1/orders/999`:
 
 ```caddyfile file=Caddyfile tag=stage-0 lines=52-55
 		handle @missingOrder {
