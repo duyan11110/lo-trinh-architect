@@ -1,89 +1,116 @@
 {
   "id": "backend.l1.get-and-status-codes",
   "technical": {
-    "reviewed_at": "2026-09-24T12:40:00+07:00",
+    "reviewed_at": "2026-09-24T12:55:00+07:00",
     "reviewer": "claude-opus-5[1m]",
     "claim_verdicts": [
       {
         "n": 1,
         "verdict": "verified",
-        "evidence": "git show stage-1:DonHang.Api/Controllers/ProductsController.cs, lines 13-20: \"[HttpGet] public async Task<ActionResult<List<ProductDto>>> List() { var products = await db.Products.Select(p => new ProductDto(p.Id, p.Name, p.PriceVnd)).ToListAsync(); return Ok(products); }\". One return statement, no if/ternary/count check anywhere in the method body, so row count cannot influence the status code.",
-        "source": "examples/don-hang @ stage-1: DonHang.Api/Controllers/ProductsController.cs lines 13-20"
+        "evidence": "git show stage-1:DonHang.Api/Controllers/ProductsController.cs lines 13-20: `[HttpGet] public async Task<ActionResult<List<ProductDto>>> List() { var products = await db.Products.Select(p => new ProductDto(p.Id, p.Name, p.PriceVnd)).ToListAsync(); return Ok(products); }` - one return, no `if`, no Count/Any check. Live: `curl -i http://localhost:8080/api/v1/products` on the running stage-1 lab returned `HTTP/1.1 200 OK`, `Content-Type: application/json`, body a JSON array of 8 products.",
+        "source": "examples/don-hang @ stage-1, ProductsController.cs:13-20; lab run 2026-09-24"
       },
       {
         "n": 2,
         "verdict": "verified",
-        "evidence": "Source lines 22-28: \"var product = await db.Products.FindAsync(id); if (product is null) return NotFound(); return Ok(new ProductDto(product.Id, product.Name, product.PriceVnd));\" — the null branch returns before the ProductDto constructor runs. Executed against the running lab: GET /api/v1/products/1 -> \"HTTP/1.1 200 OK ... {\"id\":1,\"name\":\"Bàn phím cơ\",\"priceVnd\":1250000}\"; GET /api/v1/products/999999 -> \"HTTP/1.1 404 Not Found\".",
-        "source": "examples/don-hang @ stage-1: ProductsController.cs lines 22-28; curl against docker compose lab, 2026-09-24"
+        "evidence": "Source lines 22-28: `[HttpGet(\"{id:int}\")] ... var product = await db.Products.FindAsync(id); if (product is null) return NotFound(); return Ok(new ProductDto(product.Id, product.Name, product.PriceVnd));` - the NotFound() return precedes the only `new ProductDto(...)` on the success path. Live: /api/v1/products/1 -> 200 with one product object; /api/v1/products/999999 -> 404, so FindAsync returned null for the absent row.",
+        "source": "examples/don-hang @ stage-1, ProductsController.cs:22-28; lab run 2026-09-24"
       },
       {
         "n": 3,
         "verdict": "verified",
-        "evidence": "The whole file at stage-1 is 29 lines; the only db usages are \"await db.Products.Select(...).ToListAsync()\" and \"await db.Products.FindAsync(id)\". No Add, Update, Remove, Attach or SaveChanges/SaveChangesAsync call appears in either method (or anywhere in the file).",
-        "source": "examples/don-hang @ stage-1: DonHang.Api/Controllers/ProductsController.cs (full file)"
+        "evidence": "The whole class body (lines 10-29) contains only `db.Products.Select(...).ToListAsync()` and `db.Products.FindAsync(id)`. No Add, Update, Remove, Attach, SaveChanges/SaveChangesAsync, ExecuteUpdate/ExecuteDelete appears anywhere in the file.",
+        "source": "examples/don-hang @ stage-1, DonHang.Api/Controllers/ProductsController.cs"
       },
       {
         "n": 4,
         "verdict": "verified",
-        "evidence": "Ran the lab (docker compose up db api lab web at stage-1) and the lesson's exact commands. curl -i http://localhost:8080/api/v1/products/1 -> \"HTTP/1.1 200 OK / Content-Type: application/json; charset=utf-8 / Via: 1.1 Caddy\" + {\"id\":1,\"name\":\"Bàn phím cơ\",\"priceVnd\":1250000}. curl -i http://localhost:8080/api/v1/products/999999 -> \"HTTP/1.1 404 Not Found / Content-Type: application/problem+json\" + {\"type\":\"...rfc9110#section-15.5.5\",\"title\":\"Not Found\",\"status\":404,\"traceId\":\"...\"}. id 1 is seeded in db/seed.sql. Body carries no product, but it is not empty — see issue on section 7.",
-        "source": "examples/don-hang @ stage-1, curl via published port 8080, 2026-09-24"
+        "evidence": "Ran the stage-1 lab (docker compose up -d --build --wait lab web db api) and curled through Caddy on 8080. /api/v1/products/1 -> `HTTP/1.1 200 OK`, `Content-Type: application/json; charset=utf-8`, body one product object. /api/v1/products/999999 -> `HTTP/1.1 404 Not Found`, `Content-Type: application/problem+json; charset=utf-8`, body {\"type\":\"https://tools.ietf.org/html/rfc9110#section-15.5.5\",\"title\":\"Not Found\",\"status\":404,\"traceId\":\"...\"} - no product fields.",
+        "source": "examples/don-hang @ stage-1 lab, curl -i, 2026-09-24 (Caddyfile: handle /api/v1/* -> reverse_proxy api:8080)"
       },
       {
         "n": 5,
+        "verdict": "verified",
+        "evidence": "RFC 9110 9.2.1: \"Request methods are considered 'safe' if their defined semantics are essentially read-only; i.e., the client does not request, and does not expect, any state change on the origin server as a result of applying a safe method to a target resource.\" and \"the GET, HEAD, OPTIONS, and TRACE methods are defined to be safe.\" 9.2.2: \"Of the request methods defined by this specification, PUT, DELETE, and safe request methods are idempotent.\" Safe implies idempotent, so safe is the stronger promise.",
+        "source": "refs/rfc/rfc9110.txt lines 3813-3866 (RFC 9110 sections 9.2.1, 9.2.2)"
+      },
+      {
+        "n": 6,
         "verdict": "rephrased",
-        "evidence": "RFC 9110 §9.2.1: \"Request methods are considered 'safe' if their defined semantics are essentially read-only; i.e., the client does not request, and does not expect, any state change on the origin server\"; and \"This definition of safe methods does not prevent an implementation from including behavior... that causes side effects\". §9.2.2: \"PUT, DELETE, and safe request methods are idempotent\" — safe does imply idempotent, but \"must not change server state\" is stronger than the standard allows.",
-        "source": "refs/rfc/rfc9110.txt §9.2.1, §9.2.2 (https://www.rfc-editor.org/rfc/rfc9110)",
-        "suggested_text": "By HTTP convention GET is a safe method: the client does not request and does not expect any change to the resource, and safe methods are also idempotent, so safe is the stronger of the two promises."
+        "evidence": "No pinned document states a collection GET is \"never a 404\". It follows from RFC 9110 15.5.5 only while the collection resource itself exists: \"The 404 (Not Found) status code indicates that the origin server did not find a current representation for the target resource or is not willing to disclose that one exists.\" An empty array is a current representation of an existing collection, so 404 would be wrong; but nothing in the spec ties 404 to item URLs. Live proof of the other case: GET /api/v1/products/abc (no matching route) answered 404 with no body.",
+        "source": "refs/rfc/rfc9110.txt line 7587 (RFC 9110 section 15.5.5); lab run 2026-09-24",
+        "suggested_text": "collection GET stays `200` - a collection URL names the whole set, and an empty set is still a representation of it, so the row count never turns the answer into a `404` (a URL that names no collection at all is a different case: there is nothing there to represent)."
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "RFC 9110 15.5.5: \"The 404 (Not Found) status code indicates that the origin server did not find a current representation for the target resource or is not willing to disclose that one exists. A 404 status code does not indicate whether this lack of representation is temporary or permanent; the 410 (Gone) status code is preferred over 404 if the origin server knows ... that the condition is likely to be permanent.\" Both halves of the claim are literal in that paragraph.",
+        "source": "refs/rfc/rfc9110.txt lines 7587-7595 (RFC 9110 section 15.5.5)"
+      },
+      {
+        "n": 8,
+        "verdict": "rephrased",
+        "evidence": "Prepending is documented: \"The route templates you define on the controller are prepended to route templates on the actions.\" (mvc/controllers/routing.md:414), so [Route(\"api/v1/products\")] + [HttpGet] = GET /api/v1/products, + [HttpGet(\"{id:int}\")] = /api/v1/products/{id}. But `int` is not \"a whole number\": the constraint table gives `{id:int}` example values \"123456789, -123456789\", \"Matches any integer\". Live: /api/v1/products/-1 reached Get (404 application/problem+json), while /api/v1/products/abc and /1.5 matched no route (404, no body).",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/routing.md:505; mvc/controllers/routing.md:414; lab run 2026-09-24",
+        "suggested_text": "`[HttpGet(\"{id:int}\")]` above `Get(int id)` answers that same URL followed by an integer (a negative one matches too), which arrives as the `id` parameter; a segment that is not an integer, like `/api/v1/products/abc`, matches no route at all."
       }
     ],
     "issues": [
       {
         "severity": "major",
-        "section": 4,
-        "kind": "accuracy",
-        "text": "Contradicted by the governing standard. RFC 9110 §9.2.1 says the safe-method definition \"does not prevent an implementation from including behavior that... causes side effects\", giving access logging and \"charging an advertising account\" as safe examples; §9.2.2 adds \"a server is free to log each request separately\". A server-side view counter the client never asked for is not, by itself, a breach of GET's semantics; writing to the resource the client asked to read is.",
-        "quote": "A GET method that logged a view count, marked something as read, or changed a row would still be answering the right status codes and still be violating this rule",
-        "fix": "Restate the rule around what the client requested: \"A GET must not change the resources it serves — the client asked to read, not to write.\" Drop \"logged a view count\" from the list of violations (logging is explicitly safe) and keep the two unambiguous cases: \"marked something as read, or changed a row\"."
-      },
-      {
-        "severity": "major",
-        "section": 3,
-        "kind": "accuracy",
-        "text": "Unlisted claim: the lesson's central 200/404 rule for collection URLs is stated as unconditional fact but appears nowhere in .meta.json claims (claims 1-3 are about the code, claim 5 about safety). No HTTP standard mandates it: RFC 9110 defines neither \"collection URL\" nor a status code for an empty result set; it is a REST convention. \"always\" is also false outside the found/not-found question (401, 403, 500 are all possible answers to a collection GET).",
-        "quote": "collection GET always `200` — a collection URL names the whole set, and the set still exists even with zero members in it right now",
-        "fix": "Add this to .meta.json claims (kind behavior). In the bullet and in summary line 2, scope the rule: \"a collection GET answers `200` whatever the row count — an empty set is still a successful answer, never a `404`\". Drop the bare \"always\"."
-      },
-      {
-        "severity": "major",
-        "section": 3,
-        "kind": "accuracy",
-        "text": "Unlisted claim: the definition of `404` is given as fact but is not in the claims ledger, and it is narrower than the standard. RFC 9110 §15.5.5: \"The 404 (Not Found) status code indicates that the origin server did not find a current representation for the target resource or is not willing to disclose that one exists.\" \"Does not exist\" excludes the hidden-resource case and asserts more about the world than a 404 actually does.",
-        "quote": "`404` means the one specific thing the URL named does not exist",
-        "fix": "Add the claim to .meta.json (kind behavior, source RFC 9110 §15.5.5) and soften to: \"`404` means the server has nothing to return for the one specific thing the URL named.\" Apply the same wording to summary line 1 and to quiz q1 option a."
-      },
-      {
-        "severity": "minor",
-        "section": 7,
-        "kind": "accuracy",
-        "text": "The expected result understates what the learner sees. The 404 response is not bodiless: observed at stage-1, Content-Type is application/problem+json and the body is {\"type\":\"https://tools.ietf.org/html/rfc9110#section-15.5.5\",\"title\":\"Not Found\",\"status\":404,\"traceId\":\"...\"}. A reader told \"no product in the body\" who then sees a JSON object will think the lab disagrees with the lesson.",
-        "quote": "the second returns `404`, with no product in the body",
-        "fix": "Write: \"the second returns `404`; its body is a short JSON error description with no product data in it\". Keep the rest of the sentence unchanged."
-      },
-      {
-        "severity": "minor",
-        "section": "backend.l1.get-and-status-codes.q4",
-        "kind": "quiz",
-        "text": "Ambiguous ordering. Option c (\"The response body has no product in it\") is a property of the response, option d (\"The client reads a `404` status line\") a client-side event; on the wire the status line arrives before the body, so a learner ordering by what the client sees will answer a, b, d, c. Only the server-side reading of c makes the key a, b, c, d unique.",
-        "quote": "The response body has no product in it",
-        "fix": "Reword option c to a server-side event: \"`NotFound()` produces a response whose body carries no product\". The key a, b, c, d then stays correct and unambiguous."
-      },
-      {
-        "severity": "minor",
         "section": "backend.l1.get-and-status-codes.q5",
         "kind": "quiz",
-        "text": "Distractor b is defensible under the standard the lesson leans on. RFC 9110 §9.2.1 treats side effects the client did not request (logging, charging an ad account) as compatible with a safe method, so \"Nothing is wrong, as long as the response still correctly returns 200 or 404\" is arguably right for a view counter. The key a is only correct under the lesson's stronger-than-RFC phrasing flagged in the section 4 issue.",
-        "quote": "Nothing is wrong, as long as the response still correctly returns `200` or `404`",
-        "fix": "After fixing section 4, reword b to be unambiguously wrong: \"Nothing is wrong: a GET may write to the data it serves whenever the status code is still right.\" Keep the key as a."
+        "text": "\"record, in the database, that a product was viewed\" is the case RFC 9110 9.2.1 excludes from the safe-method rule: \"most servers append request information to access log files at the completion of every response, regardless of the method, and that is considered safe\". A view record in its own table is that bookkeeping, not a change to the product the client asked to read - so keyed answer (a) holds only if the view count sits on the product row - which the question never says. The lesson narrows its rule to \"the resource the client asked to read\", so a literal reader can defend (b).",
+        "fix": "Make the write land on the served resource: change the context to \"also increment a `view_count` column on that product's own row - inside the same GET method, before returning the result\", and option (a) to \"...; incrementing `view_count` changes the very product row the client asked to read\". Leave b/c/d unchanged.",
+        "quote": "A teammate wants `Get(int id)` to also record, in the database, that a product was viewed"
+      },
+      {
+        "severity": "minor",
+        "section": 3,
+        "kind": "opinion-as-fact",
+        "text": "\"never a `404`\" (section 3, repeated in summary line 2) states a REST convention as an absolute rule. RFC 9110 15.5.5 ties 404 to \"did not find a current representation for the target resource\" and nowhere distinguishes collection URLs from item URLs; the lesson's own ledger admits this (claim 6: \"This is a REST convention, not an HTTP-mandated rule\") while the lesson text does not. A collection-shaped URL that names nothing at all does answer 404 - verified in the lab: GET /api/v1/products/abc returns 404.",
+        "fix": "Add the condition that carries the rule, in section 3 and summary line 2: the collection exists either way, so an empty array is still a representation of it and the row count never turns the answer into `404`. Claim 6's suggested_text can be used verbatim.",
+        "quote": "whatever the row count, an empty set is still a successful answer, never a `404`"
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "\"`ToListAsync()` returns every product row\" is not what that line does: the query is `db.Products.Select(p => new ProductDto(...)).ToListAsync()`, so what comes back is a `List<ProductDto>` - one DTO per product row, built from three columns - not the rows. The next sentence hangs the status code on that list, so the imprecision propagates.",
+        "fix": "Rewrite as: \"`ToListAsync()` runs the query and hands back one `ProductDto` per product row, and `FindAsync(id)` hands back the one row with that id, or `null` if there is none.\"",
+        "quote": "`ToListAsync()` returns every product row"
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "\"followed by a whole number\" misstates the `{id:int}` constraint, documented as \"Matches any integer\" with example values `123456789, -123456789`. Confirmed in the lab: `/api/v1/products/-1` reaches `Get` (404 with a problem+json body, i.e. FindAsync ran), while `/api/v1/products/abc` matches no route (404 with no body) - two different 404s the lesson as written cannot tell apart.",
+        "fix": "Replace \"a whole number\" with \"an integer (a negative one matches too)\" and add that a segment which is not an integer, `/api/v1/products/abc`, matches no route rather than reaching `Get`.",
+        "quote": "answers that same URL followed by a whole number, which arrives as the `id` parameter"
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "diagram",
+        "text": "The flowchart's collection branch reads \"200, JSON array - empty array if none match\", but `List()` has no filter to match against at stage-1 - section 2 says so itself (\"`ProductsController.List()` has no filter yet\"). \"none match\" describes the teammate's proposed filter, not the code the diagram is drawn from.",
+        "fix": "Change the node text to \"200, JSON array - empty array if the table has no rows\".",
+        "quote": "C[200, JSON array - empty array if none match]"
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "scope",
+        "text": "depth_notes in track.yaml say the lesson must not explain db.Products/EF Core inside ProductsController (orm-efcore module comes later), but the paragraph after the code block now explains exactly that: what `db` is, what `ToListAsync()` returns, what `FindAsync(id)` returns. The `FindAsync` -> `null` half is load-bearing for the 404 branch (claim 2) and should stay; the `ToListAsync` half justifies no status code.",
+        "fix": "Either trim to what the status-code branch needs (keep `FindAsync(id)` returning `null`; otherwise just say `db` is only read, never written), or amend depth_notes in content/tracks/backend/track.yaml to allow this one orienting sentence, so the next reviewer does not reopen it.",
+        "quote": "the only two things it does here are reads - `ToListAsync()` returns every product row"
+      },
+      {
+        "severity": "minor",
+        "section": "backend.l1.get-and-status-codes.q2",
+        "kind": "quiz",
+        "text": "Distractor (d), \"only `Get(int id)` is allowed to answer `404`; `List()` must always answer `200` no matter what\", is hard to rule out from the lesson text, which says a collection GET is \"never a `404`\" and only an item URL \"can `404`\". It is false only because of \"no matter what\" (a failing query answers 500), a case the lesson never raises. Keyed answer (c) is correct and better grounded, but (d) is not cleanly wrong.",
+        "fix": "Make (d) unmistakably false, e.g. \"False, because the HTTP spec reserves `404` for item URLs, so a collection endpoint is not permitted to send it\" - the spec says no such thing (RFC 9110 15.5.5) - and keep its existing right-verdict/wrong-reason explanation.",
+        "quote": "False, because only `Get(int id)` is allowed to answer `404`; `List()` must always answer `200` no matter what."
       }
     ],
     "scope": {

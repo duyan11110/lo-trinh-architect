@@ -31,7 +31,7 @@ A teammate is adding a price filter to `GET /api/v1/products` and asks: when no 
 ## Core concepts
 
 - `200` vs `404` — `200` means the request for that URL succeeded and here is the answer; `404` means the server has nothing to return for the one specific thing the URL named.
-- collection GET stays `200` — a collection URL names the whole set; whatever the row count, an empty set is still a successful answer, never a `404`.
+- collection GET stays `200` — a collection URL names the whole set, and an empty set is still a representation of it; the row count never turns the answer into a `404` (a URL that names no collection at all is a different case: there is nothing there to represent).
 - item GET can `404` — an item URL names one specific thing; if the server has nothing for it, `404` is the honest answer, since `200` would claim to have found something it didn't.
 - GET must not write — a GET must not change the resource it serves; the client asked to read, not to write, and that promise holds even on the very first call, not just on repeats (which is all being idempotent covers).
 
@@ -40,7 +40,7 @@ A teammate is adding a price filter to `GET /api/v1/products` and asks: when no 
 ```mermaid
 flowchart TD
   A[GET request] --> B{Collection URL or item URL?}
-  B -->|collection| C[200, JSON array — empty array if none match]
+  B -->|collection| C[200, JSON array — empty array if the table has no rows]
   B -->|item| D{Does that one thing exist?}
   D -->|yes| E[200, one object]
   D -->|no| F[404]
@@ -80,7 +80,7 @@ public sealed class ProductsController(DonHangDbContext db) : ControllerBase
     }
 ```
 
-`[HttpGet]` above `List()` answers `GET /api/v1/products`; `[HttpGet("{id:int}")]` above `Get(int id)` answers that same URL followed by a whole number, which arrives as the `id` parameter — that's how `GET /api/v1/products/999999` in Try it below ends up running `Get`, not `List`. `db` is how this class reaches the Đơn Hàng database; the only two things it does here are reads — `ToListAsync()` returns every product row, and `FindAsync(id)` returns the one row with that id, or `null` if there is none.
+`[HttpGet]` above `List()` answers `GET /api/v1/products`; `[HttpGet("{id:int}")]` above `Get(int id)` answers that same URL followed by an integer (a negative one matches too), which arrives as the `id` parameter — a segment that isn't an integer, like `/api/v1/products/abc`, matches no route at all. That's how `GET /api/v1/products/999999` in Try it below ends up running `Get`, not `List`. `db` is how this class reaches the Đơn Hàng database, and both methods only ever read from it: `List()` runs a query and hands back one `ProductDto` per product row, and `FindAsync(id)` hands back the one row with that id, or `null` if there is none.
 
 `List()` has exactly one `return`, `Ok(products)`, with no branch on how many rows `products` holds — an empty list still reaches that same line and gets the same `200`. `Get(int id)` has two returns: `NotFound()` when `db.Products.FindAsync(id)` comes back `null`, and `Ok(...)` only once a real row exists to build a `ProductDto` from. Neither method writes to `db` anywhere — both only read, matching the rule that a GET must not change anything.
 
@@ -112,7 +112,7 @@ Expected result: the first returns `200` with one product's JSON; the second ret
 ## Five-line summary
 
 1. `200` means the URL's request succeeded; `404` means the server has nothing to return for the one thing the URL named.
-2. A collection URL's GET stays `200` whatever the row count — an empty set is still a successful answer, never a `404`.
+2. A collection URL's GET stays `200` whatever the row count — an empty set is still a representation of the collection, not a `404`.
 3. An item URL's GET can answer `404`, because it names one specific thing the server may have nothing for.
 4. `List()` has one unconditional `return Ok(...)`; `Get(int id)` branches between `NotFound()` and `Ok(...)` based on one lookup.
 5. A GET must not write to the resource it serves, even on its first call — stronger than just being idempotent.
