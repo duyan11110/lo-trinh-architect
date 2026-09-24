@@ -53,7 +53,7 @@ Because a migration is a file checked into source control, like `AddPasswordHash
 
 ## In the Đơn Hàng system
 
-`MigrationBaseline.ApplyIfNeeded`, in `DonHang.Infrastructure/MigrationBaseline.cs`, is the check described above. `ExecuteScalar` runs a query and hands back the single value it produces; `ExecuteNonQuery` runs SQL that produces none. Each `to_regclass` query below returns the table's name when the table exists, and `null` — `DBNull` in C# — when it does not, so `is DBNull` reads as "that table isn't there yet". The second check only returns early on a database where `customers` is also missing — one set up some other way than `db/schema.sql` — in which case `ApplyIfNeeded` does nothing and lets `Migrate()` run `InitialCreate` normally, the way it would on any brand-new database:
+`MigrationBaseline.ApplyIfNeeded`, in `DonHang.Infrastructure/MigrationBaseline.cs`, is the check described above. `ExecuteScalar` runs a query and hands back the first value in its result; `ExecuteNonQuery` runs SQL whose result is not read back. Each `to_regclass` query below returns the table's name when the table exists, and `null` — `DBNull` in C# — when it does not, so `is DBNull` reads as "that table isn't there yet". The second check only returns early on a database where `customers` is also missing — one set up some other way than `db/schema.sql` — in which case `ApplyIfNeeded` does nothing and lets `Migrate()` run `InitialCreate` normally, the way it would on any brand-new database:
 
 ```csharp file=DonHang.Infrastructure/MigrationBaseline.cs tag=stage-1 lines=16-40
     public static void ApplyIfNeeded(DonHangDbContext context)
@@ -124,7 +124,7 @@ A real migration looks nothing like that check. `AddPasswordHashToCustomers`, on
 
 ## Try it (3 minutes)
 
-1. From the Đơn Hàng project's root folder, with the example system running (`scripts/up.sh`), run `docker exec donhang-db psql -U donhang -d donhang -c 'select "MigrationId" from "__EFMigrationsHistory" order by "MigrationId";'` — this runs one SQL query against the example system's database and prints the rows it returns. `donhang-db` is the name `scripts/up.sh` gives that database; if the command errors, the system probably isn't running yet.
+1. From the Đơn Hàng project's root folder, with the example system running (`scripts/up.sh`), run `docker exec donhang-db psql -U donhang -d donhang -c 'select "MigrationId" from "__EFMigrationsHistory" order by "MigrationId";'` — this runs one SQL query against the example system's database and prints the rows it returns. `donhang-db` is the name the example system's database runs under once it is up; if the command errors, the system probably isn't running yet.
 2. Compare the three rows against the `.cs` migration file names under `DonHang.Infrastructure/Migrations/` (ignore the `.Designer.cs` files next to them; `DonHangDbContextModelSnapshot.cs` is the snapshot of the model that `migrations add` compares against, rewritten by EF Core each time a migration is added — not a migration itself, so it has no row here either).
 
 Expected result: the three `MigrationId` values match the three migration file names exactly, minus the `.cs` extension, `InitialCreate` first — even though `InitialCreate`'s own `CREATE TABLE` calls never actually ran; `db/schema.sql` built those tables, and `MigrationBaseline` only recorded `InitialCreate` as applied.
