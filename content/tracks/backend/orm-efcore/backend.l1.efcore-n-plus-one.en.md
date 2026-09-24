@@ -15,9 +15,9 @@ vocab: [n-plus-one, eager-loading]
 example_tag: stage-1
 versions_used: [efcore, postgresql]
 content_version: 1
-status: draft
-approved_by: null
-reviewed_at: null
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-25T08:00:00+07:00"
 ---
 
 ## Before you start
@@ -106,6 +106,7 @@ Expected result: exactly one `SELECT` from `orders` in the log, no matter how ma
 
 - [[backend.l1.querying-with-linq]] — `.Include(...)` folding a JOIN into one SQL statement, the mechanism this lesson relies on to avoid a query per row.
 - [[backend.l1.saving-changes]] — the write side's one-call-does-everything shape; `SaveChangesAsync` batches staged changes the same way `.Include` batches related rows, both trading a loop of separate calls for one combined one.
+- [[backend.l1.creating-a-resource]] — the login command this lesson's Try it reuses to get a token.
 
 ## Five-line summary
 
