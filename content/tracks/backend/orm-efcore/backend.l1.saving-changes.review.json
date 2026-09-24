@@ -1,0 +1,104 @@
+{
+  "id": "backend.l1.saving-changes",
+  "technical": {
+    "reviewed_at": "2026-09-24T22:35:00+07:00",
+    "reviewer": "claude-opus-5[1m]",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "EF Core docs, Basic SaveChanges > Adding Data: \"Use the DbSet<TEntity>.Add method to add new instances of your entity classes. The data will be inserted into the database when you call SaveChanges\". Change Tracking > Entity states: \"`Added` entities are new and have not yet been inserted into the database. This means they will be inserted when SaveChanges is called.\"",
+        "source": "refs/efcore-docs/entity-framework/core/saving/basic.md L17; refs/efcore-docs/entity-framework/core/change-tracking/index.md L47"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "EF Core docs, Using Transactions > Default transaction behavior: \"By default, if the database provider supports transactions, all changes in a single call to SaveChanges are applied in a transaction. If any of the changes fail, then the transaction is rolled back and none of the changes are applied to the database.\" basic.md NOTE: \"For most database providers, `SaveChanges` is transactional. This means all the operations either succeed or fail and the operations are never be left partially applied.\" Npgsql is a relational provider, so the condition holds here.",
+        "source": "refs/efcore-docs/entity-framework/core/saving/transactions.md L17; saving/basic.md L47"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "EF Core docs, Generated Values > Primary keys: \"By convention, non-composite primary keys of type short, int, long, or Guid are set up to have values generated for inserted entities if a value isn't provided by the application. Your database provider typically takes care of the necessary configuration\". Repo at stage-1 confirms the PostgreSQL mechanism: InitialCreate migration declares orders.id as `table.Column<int>(...).Annotation(\"Npgsql:ValueGenerationStrategy\", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn)`.",
+        "source": "refs/efcore-docs/entity-framework/core/modeling/generated-properties.md (Primary keys); examples/don-hang@stage-1 DonHang.Infrastructure/Migrations/20260923154631_InitialCreate.cs"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "`tools/extract-code DonHang.Domain/OrderService.cs --tag stage-1 --lines 8-23` diffed against the lesson block at .en.md:59-74: no differences. The method builds `new Order { CustomerId, PlacedAt, Status, Items }`, then `await repository.AddAsync(order); await repository.SaveChangesAsync(); notifier.Send(order.Id, \"order placed\"); return order;`. `Order.Id` is `public int Id { get; set; }` in DonHang.Domain/Entities.cs with no initialiser, and nothing assigns it before those calls.",
+        "source": "examples/don-hang@stage-1 DonHang.Domain/OrderService.cs:8-23, DonHang.Domain/Entities.cs"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "`tools/extract-code DonHang.Infrastructure/EfOrderRepository.cs --tag stage-1 --lines 16-18` diffed against .en.md:82-84: no differences. Source is exactly `public async Task AddAsync(Order order) => await db.Orders.AddAsync(order);` and `public Task SaveChangesAsync() => db.SaveChangesAsync();`, where `db` is the primary-constructor `DonHangDbContext` parameter.",
+        "source": "examples/don-hang@stage-1 DonHang.Infrastructure/EfOrderRepository.cs:16-18"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Live run against the running stage-1 lab this session: POST /api/v1/auth/login (anh.tran@example.com) then POST /api/v1/orders with {\"items\":[{\"productId\":1,\"quantity\":1,\"unitPriceVnd\":1250000}]} returned `HTTP/1.1 201 Created`, `Location: http://localhost:8080/api/v1/orders/15`, body `{\"id\":15,\"customerId\":1,\"status\":\"new\",...}`. The request body supplied no id. `psql -c \"select * from order_items where order_id=15\"` returns one row, so the same call also inserted the item.",
+        "source": "live run, localhost:8080 (donhang-api container), 2026-09-24"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Claim added in this same round-1 pass, using this reviewer's own already-gathered evidence: the section-4 major issue already quoted change-tracking/miscellaneous.md's \"Add versus AddAsync\" — \"some forms of value generation may access the database in order to generate a key value. The only value generator that does this and ships with EF Core is HiLoValueGenerator\" — confirming the general claim while orders.id's identity-column generation needs no such access.",
+        "source": "refs/efcore-docs entity-framework/core/change-tracking/miscellaneous.md (quoted in this review's section-4 major issue)"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Claim added in this same round-1 pass, using this reviewer's own already-gathered evidence: the section-4 major issue already cited explicit-tracking.md (\"real key values are read back from the database\" once SaveChanges runs) and miscellaneous.md (\"Temporary values are stored in the change tracker and not set onto entity instances directly\"), together explaining why order.Id reads 0 before the save and a real value after.",
+        "source": "refs/efcore-docs entity-framework/core/change-tracking/{explicit-tracking,miscellaneous}.md (quoted in this review's section-4 major issue)"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "False about this lesson's own example. `AddAsync(order)` also stages every `OrderItem` in `order.Items`: EF Core docs, basic.md TIP — \"The `Add`, `Attach`, and `Update` methods all work on the full graph of entities passed to them\" — and change-tracking/index.md lists \"Detected as new entities connected to existing tracked entities\" as a way entities become tracked. Live run: one POST with one item produced a row in `orders` AND a row in `order_items` from a single `SaveChangesAsync()`.",
+        "quote": "It looks at every entity the change tracker has marked as changed — here, just the one `Added` order",
+        "fix": "Replace with: \"here, the `Added` order plus each `OrderItem` in `order.Items`, which `AddAsync` staged along with it\". This also removes the false impression created two sentences later that `PlaceOrderAsync` stages only one change — it stages 1 + N, so the transaction point applies to this very example."
+      },
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "\"every other primary key in this schema\" is false: `order_items` has the composite primary key `(order_id, product_id)` (InitialCreate: `table.PrimaryKey(\"PK_order_items\", x => new { x.order_id, x.product_id })`, no ValueGenerationStrategy annotation), and EF Core only generates values \"by convention\" for non-composite keys — those values come from the client-supplied `ProductId`/`OrderId`, not from PostgreSQL.",
+        "quote": "the same way `customers.id` and every other primary key in this schema does",
+        "fix": "Narrow to the tables that actually have an identity column: \"the same way `customers.id`, `products.id`, `payments.id` and `notifications.id` do\" — or write \"every single-column `id` primary key in this schema\". Do not include `order_items`."
+      },
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Stated as a property of `AddAsync` in general, which the docs contradict. EF Core docs, change-tracking/miscellaneous.md \"`Add` versus `AddAsync`\": \"some forms of value generation _may_ access the database in order to generate a key value. The only value generator that does this and ships with EF Core is HiLoValueGenerator\". The sentence is true only because `orders.id` is an identity column; as written it is an absolute the documentation qualifies. The claim is also absent from the ledger.",
+        "quote": "`AddAsync` doesn't send anything to PostgreSQL — it hands `order` to the change tracker and marks it `Added`",
+        "fix": "Add the condition: \"With a database-generated identity key like `orders.id`, `AddAsync` doesn't send anything to PostgreSQL — it hands `order` to the change tracker and marks it `Added`.\" Same fix for the q1 explanation wording \"`AddAsync` never sends anything to PostgreSQL\", and add a claim to `.meta.json` citing change-tracking/miscellaneous.md."
+      },
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Unlisted claim: the copy-back behaviour (the id PostgreSQL generates is written onto the same in-memory `order` object by `SaveChangesAsync`) is asserted in sections 3, 4 and summary line 5, but no claim in `.meta.json` covers it — claim 3 covers only where the value is generated, claim 6 only what the HTTP response shows. It is a `behavior` claim and needs a source.",
+        "quote": "EF Core reads the id PostgreSQL generated and copies it onto the same `order` object still sitting in C# memory",
+        "fix": "Add a claim to `.meta.json` (kind `behavior`, version_key `efcore`) sourced to change-tracking/explicit-tracking.md: \"temporary key values have been generated for each entity. These values are used by EF Core until SaveChanges is called, at which point real key values are read back from the database\", plus change-tracking/miscellaneous.md: \"Temporary values are stored in the change tracker and not set onto entity instances directly\" (which is why `order.Id` reads `0` before the save)."
+      },
+      {
+        "severity": "minor",
+        "section": "backend.l1.saving-changes.q1",
+        "kind": "quiz",
+        "text": "Distractor `c` (\"Assigns `order.Id` a temporary value that `SaveChangesAsync` later replaces\") is only wrong on a distinction the lesson never draws: EF Core does generate a temporary key value for an `Added` entity and replaces it after the save, but per change-tracking/miscellaneous.md \"Temporary values are stored in the change tracker and not set onto entity instances directly\". A reader who has seen temporary key values can defend `c`.",
+        "quote": "Assigns `order.Id` a temporary value that `SaveChangesAsync` later replaces",
+        "fix": "Reword `c` so it is unambiguously about the object in C#, e.g. \"Writes a placeholder value onto the `order.Id` property of the C# object, which `SaveChangesAsync` later overwrites\", and keep the existing explanation (`order.Id` stays `0`)."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "fix-required"
+  }
+}
