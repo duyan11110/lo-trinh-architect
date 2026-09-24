@@ -13,7 +13,7 @@ prereqs: [backend.l1.validating-input]
 related: []
 vocab: []
 example_tag: stage-1
-versions_used: [http, http_problem_details]
+versions_used: [http, http_problem_details, postgresql]
 content_version: 1
 status: draft
 approved_by: null
@@ -26,7 +26,7 @@ reviewed_at: null
 
 ## The situation
 
-You're extending `PATCH /api/v1/orders/{id}/cancel`. Cancelling order `99999`, which doesn't exist, needs its own answer — separate from `validating-input`'s empty-items case, where the request itself was malformed. Sending `PATCH /api/v1/orders/99999/cancel` gets `404` with `{"title":"Not found","status":404,"detail":"order 99999 not found"}`. Same `title`/`status`/`detail` shape as that `400` — only the number and the text changed. Nothing about this request was malformed; the id it named just doesn't exist. What decides which status code fits?
+You're extending `PATCH /api/v1/orders/{id}/cancel`. Cancelling order `99999`, which doesn't exist, needs its own answer — separate from `validating-input`'s empty-items case, where the request itself was malformed. Sending `PATCH /api/v1/orders/99999/cancel`, with a valid token, gets `404` with `{"title":"Not found","status":404,"detail":"order 99999 not found"}`. Same `title`/`status`/`detail` shape as that `400` — only the number and the text changed. Nothing about this request was malformed; the id it named just doesn't exist. What decides which status code fits?
 
 ## Core concepts
 
@@ -40,7 +40,7 @@ You're extending `PATCH /api/v1/orders/{id}/cancel`. Cancelling order `99999`, w
 ```mermaid
 flowchart LR
   A[a request arrives] --> B{is the request itself broken?}
-  B -->|yes| C[400 - POST /orders]
+  B -->|yes| C[400 - POST /api/v1/orders]
   B -->|no| D{does it name something real?}
   D -->|no| E[404 - PATCH .../cancel]
   D -->|yes| F{does its state conflict?}
@@ -48,11 +48,11 @@ flowchart LR
   F -->|no| H[succeeds]
 ```
 
-The three status codes answer three different questions about a failing request — not necessarily three checks inside one single endpoint; the diagram's three status boxes each name which endpoint illustrates them. First: is the request itself broken? That's `validating-input`'s territory, illustrated by `POST /api/v1/orders`: a missing or invalid value in the request body, like an empty item list, is `400` no matter which order it would have applied to. `PATCH /api/v1/orders/{id}/cancel` takes no request body at all, so this question never comes up for it — every request that reaches `CancelOrderAsync` has already passed it trivially, with nothing to be malformed.
+The three status codes answer three different questions about a failing request — not necessarily three checks inside one single endpoint; the diagram's three status boxes each name what illustrates them. First: is the request itself broken? That's `validating-input`'s territory, illustrated by `POST /api/v1/orders`: a missing or invalid value in the request body, like an empty item list, is `400` no matter which order it would have applied to. `PATCH /api/v1/orders/{id}/cancel` takes no request body at all, so this question never comes up for it — every request that reaches `CancelOrderAsync` has already passed it trivially, with nothing to be malformed.
 
-Second: does the thing the request names exist? `PATCH /api/v1/orders/99999/cancel` is a perfectly well-formed request — there's nothing wrong with its shape — but no order `99999` exists to cancel. That's `404`: the id is what's missing, not the request. This holds even when the id itself looks like an obviously wrong number: as long as it's a value the route accepts, a lookup that finds nothing is still `404`, never `400` — the request's shape was fine, so only the id was missing.
+Second: does the thing the request names exist? `PATCH /api/v1/orders/99999/cancel` is a perfectly well-formed request — there's nothing wrong with its shape — but no order `99999` exists to cancel. That's `404`: the id is what's missing, not the request. This holds even when the id itself looks like an obviously wrong number: as long as it's a value the route accepts, a lookup that finds nothing is still `404` in this app, not `400` — the request's shape was fine, so only the id was missing.
 
-Third, if the named thing does exist: does acting on it conflict with its current state right now? Every order carries a `status` — `"new"`, `"paid"`, `"shipped"`, then `"cancelled"` — and cancelling one that's already `"shipped"` would be exactly this case: the request is well-formed, and the order is real, but shipping already happened, and cancelling now conflicts with that. If a check for this existed, it would answer `409`, not `400`: nothing about the request was ever wrong, only its timing relative to the order's state. `CancelOrderAsync` doesn't run that check yet, so this branch describes what should happen, not what happens today.
+Third, if the named thing does exist: does acting on it conflict with its current state right now? Every order carries a `status` — `"new"`, `"paid"`, `"shipped"`, or `"cancelled"` — and cancelling one that's already `"shipped"` would be exactly this case: the request is well-formed, and the order is real, but shipping already happened, and cancelling now conflicts with that. If a check for this existed, it would answer `409`, not `400`: nothing about the request was ever wrong, only its timing relative to the order's state. `CancelOrderAsync` doesn't run that check yet, so this branch describes what should happen, not what happens today.
 
 ## In the Đơn Hàng system
 
