@@ -26,7 +26,7 @@ reviewed_at: null
 
 ## The situation
 
-A teammate reviewing a pull request for `POST /api/v1/orders` asks why a successful response comes back `201`, not `200` — the request worked, so why not the same code `Get(int id)` from the last lesson uses when it works? `Get(int id)` only ever hands back an order that already existed before the request arrived. `Create` is different: before the request, no such order existed anywhere; the request itself is what brings one into being. Does that difference change which status code counts as "succeeded", or what else, besides a status code, the client needs back?
+A teammate reviewing a pull request for `POST /api/v1/orders` asks why a successful response comes back `201`, not `200` — isn't `200` already what "succeeded" means, the same as `ProductsController.Get(int id)` answers with when it finds a product? `Get(int id)` only ever hands back something that already existed before the request arrived. `Create` is different: before the request, no such order existed anywhere; the request itself is what brings one into being. Does that difference change which status code counts as "succeeded", or what else, besides a status code, the client needs back?
 
 ## Core concepts
 
@@ -44,7 +44,7 @@ flowchart TD
   C --> D[Body: the new order, id included]
 ```
 
-A `POST` that creates something answers a different question than a `GET` does. `Get(int id)` from the last lesson asks "does this one thing exist?" and only has two answers, `200` or `404`, because the id in the URL was already fixed before the request arrived. `Create` never asks that question — every valid request makes a new row, so there is no not-found branch to take at all, and no id in the URL to check against anything yet, because the id doesn't exist yet either.
+A `POST` that creates something answers a different question than a `GET` does. `ProductsController.Get(int id)` from the last lesson asks "does this one thing exist?" and only has two answers, `200` or `404`, because the id in the URL was already fixed before the request arrived. `Create` never asks that question — every valid request makes a new row, so there is no not-found branch to take at all, and no id in the URL to check against anything yet, because the id doesn't exist yet either.
 
 Since the client can't know the new id in advance, it can't put it in the URL or the body — the server has to choose it and report it back. It reports it two ways at once: the `Location` header, letting the client read the new order back with a plain `GET` against its own URL, and the response body, letting the client use the created order immediately without a second request. Both carry the id the server just assigned; the client contributed nothing but the order's contents.
 
@@ -77,25 +77,26 @@ public sealed class OrdersController(OrderService orderService, IOrderRepository
     }
 ```
 
-`Create` has one `return`, unconditional, the same shape as `List()`'s one `return` from the last lesson — no found-or-not-found branch, because there is nothing to look up yet. `[Authorize]` above `[HttpPost]` means this endpoint only runs for a signed-in caller; `customerId` comes from who is signed in, never from `request`, which is why `CreateOrderRequest` (from `Dtos.cs`, two lessons ago) has no field for it. `orderService.PlaceOrderAsync(customerId, items)` does the actual work of building and saving the order — a later module opens that up; here it only matters that it hands back the `order` it just created, complete with the id the database assigned.
+`Create` has one `return`, unconditional, the same shape as `List()`'s one `return` from the last lesson — no found-or-not-found branch, because there is nothing to look up yet. The class header hands `OrdersController` two things to work with, `orderService` and `repository`; `Create` only uses `orderService` (`repository` is for the `Get` method further down, not shown here). `[Authorize]` above `[HttpPost]` means this endpoint only runs for a signed-in caller; `customerId` comes from who is signed in, never from `request`, which is why `CreateOrderRequest` (from `Dtos.cs`, two lessons ago) has no field for it. That first line inside `Create` is where the signed-in caller's id is read; how that identity reaches the endpoint is not this lesson's subject. `orderService.PlaceOrderAsync(customerId, items)` does the actual work of building and saving the order — a later module opens that up; here it only matters that it hands back the `order` it just created, complete with the id assigned when the row was saved.
 
 `CreatedAtAction(nameof(Get), new { id = order.Id }, ToDto(order))` does three things in one call. `nameof(Get)` names `OrdersController`'s own `Get(int id)`, further down the same file (not shown here), which answers `GET /api/v1/orders/{id}`; `CreatedAtAction` fills that route in with the new order's id to build the `Location` header. It also answers `201`, and it puts `ToDto(order)` — mapping the saved `order` into the `OrderDto` shape from `Dtos.cs` (two lessons ago), by a small private helper further down the same file — in the response body. Nothing about `id`, here, comes from `request`: `CreateOrderRequest` only carries `Items`, so there was never anywhere for the client to put one.
 
 ## Beginners often think…
 
-- **"A successful `POST` should return `200`, the same as a successful `GET`."** → Actually `201` says something `200` doesn't: that the request didn't just succeed, it made a new resource exist. `Create` answers `201` precisely because, unlike `Get(int id)`, it has no existing row to simply confirm — it just made the row that `id` now points at.
-- **"The client can send its own id for the new order, and the server should just use it."** → Actually `CreateOrderRequest` has no id field at all — only `Items` — so there is nowhere in the request to put one. `order.Id` in the code above comes from the database, after `PlaceOrderAsync` saves the row, not from anything the client sent.
+- **"A successful `POST` should return `200`, the same as a successful `GET`."** → Actually `201` says something `200` doesn't: that the request didn't just succeed, it made a new resource exist. `Create` answers `201` precisely because, unlike `ProductsController.Get(int id)`, it has no existing row to simply confirm — it just made the row that `id` now points at.
+- **"The client can send its own id for the new order, and the server should just use it."** → Actually `CreateOrderRequest` has no id field at all — only `Items` — so there is nowhere in the request to put one. `order.Id` in the code above is assigned when `PlaceOrderAsync` saves the row, not from anything the client sent.
 
 ## Try it (3 minutes)
 
-1. From the Đơn Hàng project's root folder, with the example system running (`scripts/up.sh`), sign in as a seeded customer to get a token: `curl -sS -X POST http://localhost:8080/api/v1/auth/login -H 'Content-Type: application/json' -d '{"email":"anh.tran@example.com","password":"donhang-dev-password"}'` — copy the `token` field's value from the response.
+1. From the Đơn Hàng project's root folder, with the example system running (`scripts/up.sh`), sign in as a customer the example data already contains, to get a token: `curl -sS -X POST http://localhost:8080/api/v1/auth/login -H 'Content-Type: application/json' -d '{"email":"anh.tran@example.com","password":"donhang-dev-password"}'` — copy the `token` field's value from the response. That value is the string that tells the server which customer is calling; step 2 sends it back in the `Authorization` header, which is what `[Authorize]` checks.
 2. Use that token to create an order: `curl -i -X POST http://localhost:8080/api/v1/orders -H 'Content-Type: application/json' -H "Authorization: Bearer <token>" -d '{"items":[{"productId":2,"quantity":1,"unitPriceVnd":450000}]}'` (replace `<token>` with the value copied in step 1).
+3. Run the exact same command from step 2 again, unchanged, and compare the two `Location` headers.
 
-Expected result: `201 Created`, a `Location` header reading `.../api/v1/orders/<the new order's id>`, and a body with that same id, `"status":"new"`, and the one item you sent. Running step 2 again with the same body creates a second order with a different id — the request is identical, but the result isn't, because `Create` isn't asking "does this exist?" the way `Get(int id)` does.
+Expected result: step 2 returns `201 Created`, a `Location` header reading `.../api/v1/orders/<the new order's id>`, and a body with that same id, `"status":"new"` (set inside `PlaceOrderAsync`, not by `Create` — not something to look for in the code above), and the one item you sent. Step 3 returns another `201`, with a different id in both `Location` and the body — the request was identical, but the result isn't, because `Create` isn't asking "does this exist?" the way `ProductsController.Get(int id)` does.
 
 <details><summary>Suggested answer</summary>
 
-Step 1's response is `{"token":"..."}`; that token proves who is signed in. Step 2's `[Authorize]` endpoint reads that identity — not anything in the JSON body — to decide whose order this is. `Create` then runs unconditionally: build the items, call `PlaceOrderAsync`, and answer `201` with `Location` and a body built from whatever id the database just assigned. Running step 2 twice makes two rows, two ids, two `201`s — `POST` was never promising the second call would leave things as they were.
+Step 1's response is `{"token":"..."}`; that token proves who is signed in. Step 2's `[Authorize]` endpoint reads that identity — not anything in the JSON body — to decide whose order this is. `Create` then runs unconditionally: build the items, call `PlaceOrderAsync`, and answer `201` with `Location` and a body built from whatever id was just assigned. Steps 2 and 3 make two rows, two ids, two `201`s — `POST` was never promising the second call would leave things as they were.
 
 </details>
 
