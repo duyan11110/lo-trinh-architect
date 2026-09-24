@@ -26,12 +26,12 @@ reviewed_at: null
 
 ## The situation
 
-A teammate is adding a price filter to `GET /api/v1/products` and asks: when no product matches the filter, should the endpoint answer `404`, since there's nothing to show, or `200`? `ProductsController.List()` has no filter yet, so this isn't about the filter itself — it's about what a GET on the whole-set URL `/api/v1/products` already promises, filter or not. Does an empty result mean the same thing for `GET /api/v1/products` as it does for `GET /api/v1/products/{id}`?
+A teammate is adding a price filter to `GET /api/v1/products` and asks: when no product matches the filter, should the endpoint answer `404`, since there's nothing to show, or `200`? `ProductsController.List()` has no filter yet, so this isn't about the filter itself. The question is what a GET on the whole-set URL `/api/v1/products` already promises, filter or not. Does an empty result mean the same thing for `GET /api/v1/products` as it does for `GET /api/v1/products/{id}`?
 
 ## Core concepts
 
 - `200` vs `404` — `200` means the request for that URL succeeded and here is the answer; `404` means the server has nothing to return for the one specific thing the URL named.
-- collection GET stays `200` — a collection URL names the whole set, and an empty set is still a representation of it; the row count never turns the answer into a `404` (a URL that names no collection at all is a different case: there is nothing there to represent).
+- collection GET stays `200` — a collection URL names the whole set, and an empty set is still a complete answer about that set; the row count never turns the answer into a `404` (a URL the server has no collection behind at all, like `/api/v1/gadgets`, is a different case: there is nothing there at all, so this rule says nothing about it).
 - item GET can `404` — an item URL names one specific thing; if the server has nothing for it, `404` is the honest answer, since `200` would claim to have found something it didn't.
 - GET must not write — a GET must not change the resource it serves; the client asked to read, not to write, and that promise holds even on the very first call, not just on repeats (which is all being idempotent covers).
 
@@ -56,7 +56,7 @@ The "GET must not write" rule isn't about what a GET returns — it's about what
 
 `ProductsController` shows both branches, side by side:
 
-```csharp file=DonHang.Api/Controllers/ProductsController.cs tag=stage-1 lines=8-28
+```csharp file=DonHang.Api/Controllers/ProductsController.cs tag=stage-1 lines=8-29
 [ApiController]
 [Route("api/v1/products")]
 public sealed class ProductsController(DonHangDbContext db) : ControllerBase
@@ -78,11 +78,12 @@ public sealed class ProductsController(DonHangDbContext db) : ControllerBase
         if (product is null) return NotFound();
         return Ok(new ProductDto(product.Id, product.Name, product.PriceVnd));
     }
+}
 ```
 
-`[HttpGet]` above `List()` answers `GET /api/v1/products`; `[HttpGet("{id:int}")]` above `Get(int id)` answers that same URL followed by an integer (a negative one matches too), which arrives as the `id` parameter — a segment that isn't an integer, like `/api/v1/products/abc`, matches no route at all. That's how `GET /api/v1/products/999999` in Try it below ends up running `Get`, not `List`. `db` is how this class reaches the Đơn Hàng database, and both methods only ever read from it: `List()` runs a query and hands back one `ProductDto` per product row, and `FindAsync(id)` hands back the one row with that id, or `null` if there is none.
+The lines that matter here are the two `[HttpGet]` attributes and the `return` lines; the class header is the same shape for every class like this one and doesn't affect the status code. `[Route("api/v1/products")]` on the class gives both methods the same URL start, and the attribute above each method adds the rest: `[HttpGet]` above `List()` answers `GET /api/v1/products`; `[HttpGet("{id:int}")]` above `Get(int id)` answers that same URL followed by an integer (a negative one matches too), which arrives as the `id` parameter — a segment that isn't an integer, like `/api/v1/products/abc`, matches no route at all. That's how `GET /api/v1/products/999999` in Try it below ends up running `Get`, not `List`. `db` is how this class reaches the Đơn Hàng database, and both methods only ever read from it: `List()` runs a query and hands back one `ProductDto` per product row, and `FindAsync(id)` hands back the one row with that id, or `null` if there is none.
 
-`List()` has exactly one `return`, `Ok(products)`, with no branch on how many rows `products` holds — an empty list still reaches that same line and gets the same `200`. `Get(int id)` has two returns: `NotFound()` when `db.Products.FindAsync(id)` comes back `null`, and `Ok(...)` only once a real row exists to build a `ProductDto` from. Neither method writes to `db` anywhere — both only read, matching the rule that a GET must not change anything.
+`List()` has exactly one `return`, `Ok(products)`, with no branch on how many rows `products` holds — an empty list still reaches that same line and gets the same `200`. `Get(int id)` has two returns: `NotFound()`, the call that sends the `404`, when `db.Products.FindAsync(id)` comes back `null`, and `Ok(...)`, the call that sends the `200`, only once a real row exists to build a `ProductDto` from. Neither method writes to `db` anywhere — both only read, matching the rule that a GET must not change anything.
 
 ## Beginners often think…
 
@@ -91,7 +92,7 @@ public sealed class ProductsController(DonHangDbContext db) : ControllerBase
 
 ## Try it (3 minutes)
 
-1. From the Đơn Hàng project's root folder, start the example system with `scripts/up.sh` — it starts the Đơn Hàng system on port 8080; wait until it stops printing before running the next command. Then run `curl -i http://localhost:8080/api/v1/products/1` (a product id that exists) — `-i` makes the status code and headers print above the body, which is where you read the `200` or `404`.
+1. From the Đơn Hàng project's root folder, start the example system with `scripts/up.sh` — it starts the Đơn Hàng system on port 8080; wait until it stops printing before running the next command. Then run `curl -i http://localhost:8080/api/v1/products/1` (a product id that exists) — `curl` sends one request from the terminal and prints the answer; `-i` makes the status code and headers print above the body, which is where you read the `200` or `404`.
 2. Then run `curl -i http://localhost:8080/api/v1/products/999999` (a product id that doesn't).
 3. Then run `curl -i http://localhost:8080/api/v1/products` (no id).
 
@@ -112,7 +113,7 @@ Expected result: the first returns `200` with one product's JSON; the second ret
 ## Five-line summary
 
 1. `200` means the URL's request succeeded; `404` means the server has nothing to return for the one thing the URL named.
-2. A collection URL's GET stays `200` whatever the row count — an empty set is still a representation of the collection, not a `404`.
+2. A collection URL's GET stays `200` whatever the row count — an empty set is a complete, successful answer about the collection, not a `404`.
 3. An item URL's GET can answer `404`, because it names one specific thing the server may have nothing for.
 4. `List()` has one unconditional `return Ok(...)`; `Get(int id)` branches between `NotFound()` and `Ok(...)` based on one lookup.
 5. A GET must not write to the resource it serves, even on its first call — stronger than just being idempotent.
