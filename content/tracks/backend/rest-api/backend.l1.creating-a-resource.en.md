@@ -26,7 +26,7 @@ reviewed_at: null
 
 ## The situation
 
-A teammate reviewing a pull request for `POST /api/v1/orders` asks why a successful response comes back `201`, not `200` — isn't `200` already what "succeeded" means, the same as `ProductsController.Get(int id)` answers with when it finds a product? `ProductsController.Get(int id)` only ever hands back something that already existed before the request arrived. `Create` is different: before the request, no such order existed anywhere; the request itself is what brings one into being. Does that difference change which status code counts as "succeeded", or what else, besides a status code, the client needs back?
+A teammate reviewing a pull request for `POST /api/v1/orders` asks why a successful response comes back `201`, not `200` — isn't `200` already what "succeeded" means, the same as `ProductsController.Get(int id)` answers with when it finds a product? `ProductsController.Get(int id)` only ever hands back something that already existed before the request arrived. `OrdersController.Create`, the method behind that `POST`, is different: before the request, no such order existed anywhere; the request itself is what brings one into being. Does that difference change which status code counts as "succeeded", or what else, besides a status code, the client needs back?
 
 ## Core concepts
 
@@ -48,7 +48,7 @@ A `POST` that creates something answers a different question than a `GET` does. 
 
 Since the client can't know the new id in advance, it can't put it in the URL or the body — the server has to choose it and report it back. It reports it two ways at once: the `Location` header, letting the client read the new order back with a plain `GET` against its own URL, and the response body, letting the client use the created order immediately without a second request. Both carry the id the server just assigned; the client contributed nothing but the order's contents.
 
-Repeating the exact same `POST` changes the server again each time; repeating a `GET` never does. Each successful `Create` call makes one more row, with its own new id, whether or not an earlier call already created an order with identical items. Nothing here is about the response looking wrong — two `201` responses side by side, for two different orders, are both correct answers, because two different requests happened.
+Repeating the exact same `POST` changes the server again each time; repeating a `GET` never does. Each successful `Create` call makes one more row, with its own new id, whether or not an earlier call already created an order with identical items. The two `201` answers aren't supposed to be the same answer: each one reports a different new order, so both are correct.
 
 ## In the Đơn Hàng system
 
@@ -77,7 +77,11 @@ public sealed class OrdersController(OrderService orderService, IOrderRepository
     }
 ```
 
-`Create` has one `return`, unconditional, the same shape as `List()`'s one `return` from the last lesson — no found-or-not-found branch, because there is nothing to look up yet. The class header hands `OrdersController` two things to work with, `orderService` and `repository`; `Create` only uses `orderService` (`repository` is for the `Get` method further down, not shown here). `[Authorize]` above `[HttpPost]` means this endpoint only runs for a signed-in caller; `customerId` comes from who is signed in, never from `request`, which is why `CreateOrderRequest` (from `Dtos.cs`, two lessons ago) has no field for it. That first line inside `Create` is where the signed-in caller's id is read; how that identity reaches the endpoint is not this lesson's subject. `orderService.PlaceOrderAsync(customerId, items)` does the actual work of building and saving the order — a later module opens that up; here it only matters that it hands back the `order` it just created, complete with the id assigned when the row was saved.
+The `// lesson:` comments inside the block are bookmarks in the Đơn Hàng codebase marking which lesson uses each part — including the one naming a later lesson — and can be ignored while reading this one.
+
+`Create` has one `return`, unconditional, the same shape as `List()`'s one `return` from the last lesson — no found-or-not-found branch, because there is nothing to look up yet. The class header hands `OrdersController` two things to work with, `orderService` and `repository`; `Create` only uses `orderService` (`repository` is for the `Get` method further down, not shown here).
+
+`[HttpPost]` is what makes this method the one that answers a `POST` on the path `[Route("api/v1/orders")]` gives the class; `[Authorize]` above it means this endpoint only runs for a signed-in caller. `customerId` comes from who is signed in, never from `request`, which is why `CreateOrderRequest` (from `Dtos.cs`, two lessons ago) has no field for it. That first line inside `Create` is where the signed-in caller's id is read; how that identity reaches the endpoint is not this lesson's subject. The line right after it turns each entry of `request.Items` into an `OrderItem`, which is what gets passed to `orderService.PlaceOrderAsync(customerId, items)` — the call that does the actual work of building and saving the order. A later module opens that up; here it only matters that it hands back the `order` it just created, complete with the id assigned when the row was saved.
 
 `CreatedAtAction(nameof(Get), new { id = order.Id }, ToDto(order))` does three things in one call. `nameof(Get)` names `OrdersController`'s own `Get(int id)`, further down the same file (not shown here), which answers `GET /api/v1/orders/{id}`; `CreatedAtAction` fills that route in with the new order's id to build the `Location` header. It also answers `201`, and it puts `ToDto(order)` — mapping the saved `order` into the `OrderDto` shape from `Dtos.cs` (two lessons ago), by a small private helper further down the same file — in the response body. Nothing about `id`, here, comes from `request`: `CreateOrderRequest` only carries `Items`, so there was never anywhere for the client to put one.
 
