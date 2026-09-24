@@ -27,7 +27,9 @@ reviewed_at: null
 
 ## The situation
 
-A teammate is reading `EfOrderRepository.ListByCustomerAsync`, one line: `db.Orders.Where(o => o.CustomerId == customerId).Include(o => o.Customer).OrderBy(o => o.Id).ToListAsync()`. To see what `.Where(...)` alone produces, they copy the first step onto its own line — `var query = db.Orders.Where(o => o.CustomerId == customerId);` — and set a breakpoint — a line where the debugger pauses the program — right after it, expecting to already see one customer's orders sitting in `query`. The paused variable holds something with no rows in it at all. Does `.Where(...)` filter in PostgreSQL, the database Đơn Hàng runs on, or does it load every order into C# first? And if nothing ran at `.Where(...)`, when does it?
+A teammate is reading `EfOrderRepository.ListByCustomerAsync`, one line: `db.Orders.Where(o => o.CustomerId == customerId).Include(o => o.Customer).OrderBy(o => o.Id).ToListAsync()`. To see what `.Where(...)` alone produces, they copy the first step onto its own line: `var query = db.Orders.Where(o => o.CustomerId == customerId);`.
+
+They expect `query` to already hold one customer's orders. Its declared type is `IQueryable<Order>` — not a `List<Order>`, and no rows anywhere in sight. Does `.Where(...)` filter in PostgreSQL, the database Đơn Hàng runs on, or does it load every order into C# first? And if nothing ran at `.Where(...)`, when does it?
 
 ## Core concepts
 
@@ -47,7 +49,7 @@ flowchart LR
 
 `Where`, `Include`, and `OrderBy` don't run anything by themselves — each one takes the queryable it's called on and returns a new queryable, one step longer, the way string methods return a new string. Nothing reaches PostgreSQL until the chain is enumerated; only `.ToListAsync()` — or `.FirstOrDefaultAsync()`, or a `foreach` over the query — does that. At that moment, EF Core translates the whole chain built up to then into one SQL statement, sends it once, and PostgreSQL runs the filtering, the ordering, and the JOIN there, not in C# afterward.
 
-This is why a breakpoint right after `.Where(...)` sees no database activity — as long as only the variable itself is looked at, not a debugger view that expands it and asks the query for its rows: at that point, the variable holds only a longer description of a query, not a result, because nothing has enumerated it yet. The `.Include(o => o.Customer)` step works the same way — it doesn't run a second query for the related `Customer` row; it extends the one SQL statement with a JOIN, so the single `.ToListAsync()` at the end still sends only one query, returning `Order` rows already carrying their `Customer`.
+This is why `query`, right after `.Where(...)`, is an `IQueryable<Order>` and not a `List<Order>` — its declared type already says no rows have been fetched; nothing runs until something enumerates it. The `.Include(o => o.Customer)` step works the same way — it doesn't run a second query for the related `Customer` row; it extends the one SQL statement with a JOIN, so the single `.ToListAsync()` at the end still sends only one query, returning `Order` rows already carrying their `Customer`.
 
 `ListByCustomerAsync` chains four calls: `.Where(...)` for the filter, `.Include(...)` for the JOIN, `.OrderBy(...)` for the order — three that only extend the description — then `.ToListAsync()`, the one that finally runs it. `FindAsync` is shorter — `.Include(...)` then `.FirstOrDefaultAsync(...)` — but the same rule applies: one SQL statement, built from the whole chain, run only when that last call is made.
 
@@ -77,19 +79,19 @@ public sealed class EfOrderRepository(DonHangDbContext db) : IOrderRepository
 }
 ```
 
-Each method here is a single expression, so the chain's own `Task` is what gets returned directly, with no `async`/`await` written. `FindAsync(id)` chains `.Include(o => o.Items)` then `.FirstOrDefaultAsync(o => o.Id == id)`: one order, its `Items` — the order's line-item rows in the related `order_items` table, paired in by the foreign key pointing back at this order — joined in, one SQL statement. `ListByCustomerAsync(customerId)` chains `.Where(...)`, `.Include(o => o.Customer)`, `.OrderBy(o => o.Id)`, then `.ToListAsync()`: every step adds to the same description, and only the last one runs it. `AddAsync` and `SaveChangesAsync` are different — they don't build a queryable at all, and are not this lesson's subject.
+`db`, used in every query here, is the `DonHangDbContext` this class is given when it's created — `(DonHangDbContext db)` on the class line — the object `db.Orders` belongs to. `FindAsync(id)` chains `.Include(o => o.Items)` then `.FirstOrDefaultAsync(o => o.Id == id)`: one order, its `Items` — the order's line-item rows in the related `order_items` table, paired in by the foreign key pointing back at this order — joined in, one SQL statement. `ListByCustomerAsync(customerId)` chains `.Where(...)`, `.Include(o => o.Customer)`, `.OrderBy(o => o.Id)`, then `.ToListAsync()`: every step adds to the same description, and only the last one runs it. `AddAsync` and `SaveChangesAsync` are different — they don't build a queryable at all, and are not this lesson's subject. Each method here is a single expression, so the chain's own `Task` is what gets returned directly, with no `async`/`await` written.
 
 ## Beginners often think…
 
-- **"A LINQ query loads every row into memory first, and `.Where(...)` filters the C# list afterward."** → Actually `.Where(...)` never loads anything; it extends the query description, and EF Core turns the whole chain into a `WHERE` clause PostgreSQL evaluates before any row leaves the database. You notice this when only the matching rows come back from the database — the row count your code receives does not grow when other customers' orders are added to the table.
-- **"Writing `db.Orders.Where(o => o.CustomerId == customerId)` runs the query immediately, the moment that line executes, rather than when `.ToListAsync()` is awaited."** → Actually that line only builds a queryable object; nothing is sent to PostgreSQL until something enumerates it. You notice this when a breakpoint placed right after `.Where(...)`, before any `.ToListAsync()`, shows no query has run yet.
+- **"A LINQ query loads every row into memory first, and `.Where(...)` filters the C# list afterward."** → Actually `.Where(...)` never loads anything; it extends the query description, and EF Core turns the whole chain into a `WHERE` clause PostgreSQL evaluates before any row leaves the database. You notice this in the one SQL statement EF Core sends: it ends in `WHERE customer_id = ...`, so other customers' rows never leave the database at all, instead of arriving in C# and getting discarded there.
+- **"Writing `db.Orders.Where(o => o.CustomerId == customerId)` runs the query immediately, the moment that line executes, rather than when `.ToListAsync()` is awaited."** → Actually that line only builds a queryable object; nothing is sent to PostgreSQL until something enumerates it. You notice this when a variable holding that line's result has type `IQueryable<Order>`, not `List<Order>`, right up until `.ToListAsync()` is called on it.
 
 ## Try it (3 minutes)
 
-1. From the Đơn Hàng project's root folder, with the example system running (`scripts/up.sh`), send `{"email": "anh.tran@example.com", "password": "donhang-dev-password"}` to `POST /api/v1/auth/login`, take the `token` field from the response, and call `GET /api/v1/orders` with `Authorization: Bearer <value>`. Repeat with `{"email": "chau.nguyen@example.com", "password": "donhang-dev-password"}`, another account already in the example data.
-2. Compare the two responses.
+1. From the Đơn Hàng project's root folder, with the example system running (`scripts/up.sh`), run `curl -s -X POST http://localhost:8080/api/v1/auth/login -H "Content-Type: application/json" -d '{"email": "anh.tran@example.com", "password": "donhang-dev-password"}'`. Take the `token` field from the response — it's what tells the next request which customer is signed in — and run `curl -s http://localhost:8080/api/v1/orders -H "Authorization: Bearer <token>"`, with that value in place of `<token>`.
+2. Repeat step 1 with `{"email": "chau.nguyen@example.com", "password": "donhang-dev-password"}`, another account already in the example data, and compare the two `GET /api/v1/orders` responses.
 
-Expected result: the two responses differ, each listing only that signed-in customer's own orders — even though both requests ran the exact same `ListByCustomerAsync` code path. That is only possible if the `customerId` passed to `ListByCustomerAsync` on that request, not a value fixed in advance, is what `.Where(...)` builds fresh on every call.
+Expected result: two different lists from the same code path — each request reaches PostgreSQL only at `.ToListAsync()`, and the `WHERE` in that one statement is why only that signed-in customer's own rows come back.
 
 <details><summary>Suggested answer</summary>
 
@@ -108,4 +110,4 @@ Expected result: the two responses differ, each listing only that signed-in cust
 2. Deferred execution: the description only reaches PostgreSQL once something enumerates it — `.ToListAsync()`, `.FirstOrDefaultAsync()`, a `foreach`.
 3. At that moment, EF Core translates the whole chain into one SQL statement; PostgreSQL does the filtering, ordering, and joining, not C# afterward.
 4. `.Include(...)` adds a JOIN to that one statement; it does not run a second query for the related data.
-5. Pausing right after `.Where(...)` shows no query has run yet — the variable holds a description, not rows, until that description is enumerated.
+5. Right after `.Where(...)`, a variable's declared type is still `IQueryable<Order>`, not `List<Order>` — no rows have been fetched until something enumerates it.
