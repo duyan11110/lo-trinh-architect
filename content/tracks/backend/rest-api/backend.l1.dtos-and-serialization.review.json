@@ -1,0 +1,99 @@
+{
+  "id": "backend.l1.dtos-and-serialization",
+  "technical": {
+    "reviewed_at": "2026-09-24T21:40:00+07:00",
+    "reviewer": "claude-opus-5[1m]",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "git show stage-1:DonHang.Api/Controllers/ProductsController.cs — `public sealed class ProductsController(DonHangDbContext db) : ControllerBase` … `var products = await db.Products.Select(p => new ProductDto(p.Id, p.Name, p.PriceVnd)).ToListAsync();` inside `List()`. The expression in the lesson is character-for-character the one in the source.",
+        "source": "examples/don-hang @ stage-1 (commit 83c0004): DonHang.Api/Controllers/ProductsController.cs"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "git show stage-1:DonHang.Api/Dtos.cs lines 1-13 match the lesson's block exactly, including both comment lines: `public sealed record ProductDto(int Id, string Name, int PriceVnd);`, `OrderItemDto(int ProductId, int Quantity, int UnitPriceVnd)`, `OrderDto(int Id, int CustomerId, string Status, DateTimeOffset PlacedAt, List<OrderItemDto> Items)`, `CreateOrderItemRequest(...)`, `CreateOrderRequest(List<CreateOrderItemRequest> Items)`. The file continues past line 13 with `LoginRequest`/`LoginResponse` (see issue on section 5).",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/Dtos.cs"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "git show stage-1:DonHang.Domain/Entities.cs — `public sealed class Product { public int Id { get; set; } public required string Name { get; set; } public int PriceVnd { get; set; } }`. Exactly three properties, no others.",
+        "source": "examples/don-hang @ stage-1: DonHang.Domain/Entities.cs"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Entities.cs: `public sealed class OrderItem { public int OrderId; public int ProductId; public int Quantity; public int UnitPriceVnd }` (all `{ get; set; }`). Dtos.cs: `OrderItemDto(int ProductId, int Quantity, int UnitPriceVnd)` — OrderId is the only dropped field. OrdersController.ToDto maps `i => new OrderItemDto(i.ProductId, i.Quantity, i.UnitPriceVnd)`, and OrderItemDto appears only nested in OrderDto.",
+        "source": "examples/don-hang @ stage-1: DonHang.Domain/Entities.cs, DonHang.Api/Dtos.cs, DonHang.Api/Controllers/OrdersController.cs"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Entities.cs: `public sealed class Customer { public int Id; public required string FullName; public required string Email; public required string City; public string? PasswordHash }`. PasswordHash exists and is nullable (comment: \"Null until the customer sets a password\"); the lesson's section 6 wording (\"alongside a customer's name and email\") is accurate, City also present.",
+        "source": "examples/don-hang @ stage-1: DonHang.Domain/Entities.cs"
+      },
+      {
+        "n": 6,
+        "verdict": "rephrased",
+        "evidence": "ASP.NET Core docs, Format response data (moniker >= aspnetcore-7.0, so it governs 10.0): \"configures PascalCase formatting instead of the default camelCase formatting\". .NET docs, Configure options: \"Web defaults for JsonSerializerOptions ... PropertyNamingPolicy = JsonNamingPolicy.CamelCase\". The CamelCase policy is \"First word starts with a lower case character. Successive words start with an uppercase character\" (TempCelsius -> tempCelsius) - not \"lowercase the first letter\"; and it is ASP.NET Core's web defaults, not System.Text.Json's own default, that turn it on.",
+        "source": "refs/aspnetcore-docs/aspnetcore/web-api/advanced/formatting.md; refs/dotnet-docs/docs/standard/serialization/system-text-json/configure-options.md; .../customize-properties.md",
+        "suggested_text": "ASP.NET Core's default JSON options for Web API controllers set a camelCase naming policy, so a C# property name is written camelCase in JSON: the first word starts lowercase and later words keep their capital (`PriceVnd` → `priceVnd`). System.Text.Json used on its own, outside these web defaults, leaves the C# name as written."
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Ran the lab (docker compose up -d db api at stage-1, commit 83c0004), then `curl -s -w '\\nHTTP:%{http_code}' http://api:8080/api/v1/products/1` from inside the donhang network. Output: `{\"id\":1,\"name\":\"Bàn phím cơ\",\"priceVnd\":1250000}` / `HTTP:200` — byte-identical to the Expected result. db/seed.sql confirms row (1, 'Bàn phím cơ', 1250000); Caddyfile proxies `/api/v1/*` to api:8080, so `http://localhost:8080/...` from the host is the same response when the whole lab is up.",
+        "source": "examples/don-hang @ stage-1: live run + db/seed.sql + Caddyfile"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "accuracy",
+        "quote": "one JSON field filling one property, the exact reverse of serialization",
+        "text": "Unlisted claim: deserialization is called \"the exact reverse of serialization\", which no claim in the ledger covers and which the pinned behaviour contradicts. ASP.NET Core's web defaults set PropertyNameCaseInsensitive = true, so a body with `PriceVnd`, `pricevnd` or `priceVnd` all bind to the same property — reading is not the mirror image of writing, which applies one fixed camelCase policy. Docs: \"Web defaults for JsonSerializerOptions … PropertyNameCaseInsensitive = true\".",
+        "fix": "Replace with: \"one JSON field filling one property — the same field-by-field mapping, run the other way.\" Drop \"exact reverse\", and add a claim to .meta.json for the deserialization direction (version_key aspnetcore) citing the web-defaults list."
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "accuracy",
+        "quote": "`DonHang.Api/Dtos.cs` holds every shape an endpoint answers in or reads from",
+        "text": "Unlisted claim, and false for stage-1 as written. Error bodies are a shape endpoints answer in and are not in Dtos.cs: Program.cs calls `builder.Services.AddProblemDetails()` and ExceptionHandlingMiddleware writes `new ProblemDetails { Status, Title, Detail }` with content type application/problem+json; `NotFound()` in ProductsController/OrdersController answers with no DTO at all.",
+        "fix": "Narrow the sentence to what is true, e.g.: \"`DonHang.Api/Dtos.cs` holds the shapes these endpoints answer in and read from, kept in one file separate from `DonHang.Domain`'s entities\". Then add it to .meta.json as a fact claim pointing at DonHang.Api/Dtos.cs @ stage-1."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "code",
+        "quote": "```csharp file=DonHang.Api/Dtos.cs tag=stage-1 lines=1-13",
+        "text": "The block is verbatim for lines 1-13, but Dtos.cs at stage-1 is 17 lines: it also declares `public sealed record LoginRequest(string Email, string Password);` and `public sealed record LoginResponse(string Token);`. Combined with the prose \"holds every shape\", a reader who opens the file finds two records the lesson presented as absent.",
+        "fix": "Keep lines=1-13, but say the excerpt is partial — e.g. \"the first records in the file\" — or note that the same file also holds the sign-in shapes used later. Do not extend the block: LoginRequest/LoginResponse belong to the auth-basics module."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "quote": "ASP.NET Core's default serializer lowercases the first letter of each property name for JSON",
+        "text": "Two imprecisions repeated in sections 3, 4, 6, the five-line summary and quiz q3's explanation. (1) The rule is a camelCase naming policy — \"First word starts with a lower case character. Successive words start with an uppercase character\" — not a first-letter rule; a name whose first word is an acronym does not behave as stated. (2) It is ASP.NET Core's web defaults (PropertyNamingPolicy = CamelCase) that enable it; System.Text.Json on its own keeps the C# name unchanged.",
+        "fix": "Say \"ASP.NET Core's default JSON options write each property name in camelCase — the first word lowercase, later words keeping their capital: `PriceVnd` becomes `priceVnd`\", and mirror that wording in sections 3, 6, summary line 4 and quiz q3's explanation."
+      },
+      {
+        "severity": "major",
+        "section": "quiz.q6",
+        "kind": "quiz",
+        "quote": "returning the entity directly serializes it too, unless it happens to be null for every customer tested",
+        "text": "Key `a` is still the only defensible answer, but its condition and the scenario context are wrong for the pinned defaults. ASP.NET Core does not set DefaultIgnoreCondition, and System.Text.Json writes null properties unless WhenWritingNull is opted into, so `return Ok(customer)` emits `\"passwordHash\":null` even for a customer with no password. The context's \"a JSON object with `id`, `fullName`, `email`, and `city`\" therefore cannot happen, and the explanation's \"manual testing … would miss it entirely\" is backwards.",
+        "fix": "In the context, list the observed fields as `id`, `fullName`, `email`, `city` and `passwordHash: null`, or say the tested customers have no password set yet and the field shows as null. Change option a to \"…serializes it too — it appears as `passwordHash` in every response, null or not\" and fix the explanation to match."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "fix-required"
+  }
+}

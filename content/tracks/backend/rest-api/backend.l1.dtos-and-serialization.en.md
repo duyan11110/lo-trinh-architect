@@ -33,7 +33,7 @@ A teammate suggests skipping a separate type for what `GET /api/v1/products/{id}
 - **DTO** (data transfer object) — a plain type shaped for the wire, holding only the fields a client needs, kept separate from whatever internal type the server uses for the same thing.
 - serialization — turning a DTO into JSON automatically when an endpoint returns it; each property becomes a JSON field.
 - deserialization — the reverse: turning a request body's JSON into a DTO, the same kind of mapping run the other way.
-- naming — the default serializer changes each property's casing for JSON: a C# `PriceVnd` becomes a JSON `priceVnd`, not because you asked, but because that is ASP.NET Core's default.
+- naming — ASP.NET Core's default JSON options write each property name in camelCase: the first word lowercase, later words keeping their capital — a C# `PriceVnd` becomes a JSON `priceVnd`, not because you asked, but because that is the default.
 
 ## How it works
 
@@ -46,13 +46,13 @@ flowchart LR
 
 A DTO is not the entity; something in the endpoint's own code has to build one from the other, field by field. `ProductsController.List()`, from the last lesson, does exactly this: `new ProductDto(p.Id, p.Name, p.PriceVnd)`, one argument per property, read off a `Product` row. Once that `ProductDto` is what the endpoint returns, serialization takes over — it walks the DTO's properties and writes one JSON field per property, with no further code from you.
 
-The same mapping runs in reverse for a request body: `POST /api/v1/orders`'s body is JSON, and deserialization turns it into a `CreateOrderRequest` before any of your code sees it — one JSON field filling one property, the exact reverse of serialization.
+The same mapping runs in reverse for a request body: `POST /api/v1/orders`'s body is JSON, and deserialization turns it into a `CreateOrderRequest` before any of your code sees it — one JSON field filling one property, the same field-by-field mapping, run the other way.
 
-Property names do not survive that trip unchanged. ASP.NET Core's default serializer lowercases the first letter of each property name for JSON: a C# property `PriceVnd` is written as JSON `priceVnd`. Nothing in `ProductDto` asks for this — it is what the serializer does to every property, every time, unless told otherwise.
+Property names do not survive that trip unchanged going out. ASP.NET Core's default JSON options write each property name in camelCase for a response: the first word lowercase, later words keeping their capital, so a C# property `PriceVnd` is written as JSON `priceVnd`. Nothing in `ProductDto` asks for this — it is what the serializer does to every property, every time, unless told otherwise.
 
 ## In the Đơn Hàng system
 
-`DonHang.Api/Dtos.cs` holds every shape an endpoint answers in or reads from, kept in one file separate from `DonHang.Domain`'s entities:
+`DonHang.Api/Dtos.cs` holds the shapes these endpoints answer in and read from, kept in one file separate from `DonHang.Domain`'s entities — the first records in the file, below, are the ones this lesson uses:
 
 ```csharp file=DonHang.Api/Dtos.cs tag=stage-1 lines=1-13
 namespace DonHang.Api;
@@ -77,7 +77,7 @@ Each `record` here is a type whose only job is to hold these named values — a 
 ## Beginners often think…
 
 - **"Returning the same class the server uses internally is simpler and just as safe as writing a DTO."** → Actually it works only until the internal type needs a field the client should never see, or drops a field a client already depends on. `Customer`, in `DonHang.Domain`, carries a `PasswordHash` alongside a customer's name and email — returning `Customer` directly from any future endpoint would serialize that field too, unless every future change to `Customer` is checked against what every client already receives.
-- **"A JSON field's name always matches a C# property name exactly, with nothing to configure."** → Actually the default serializer changes the casing of every property name for you: `ProductDto`'s `PriceVnd` reaches the client as `priceVnd`. You notice this in Try it below, where the response never has a capital `P` in `priceVnd`.
+- **"A JSON field's name always matches a C# property name exactly, with nothing to configure."** → Actually the default JSON options write every property name in camelCase for you: `ProductDto`'s `PriceVnd` reaches the client as `priceVnd`. You notice this in Try it below, where the response never has a capital `P` in `priceVnd`.
 
 ## Try it (3 minutes)
 
@@ -88,7 +88,7 @@ Expected result: `{"id":1,"name":"Bàn phím cơ","priceVnd":1250000}` — three
 
 <details><summary>Suggested answer</summary>
 
-`ProductDto(int Id, string Name, int PriceVnd)` has three properties, `Id`, `Name`, and `PriceVnd`. Serialization writes one JSON field per property, but lowercases the first letter of each name on the way — `Id` becomes `id`, `PriceVnd` becomes `priceVnd` — which is why the response's field names never match the DTO's property names letter for letter, even though they match field for field.
+`ProductDto(int Id, string Name, int PriceVnd)` has three properties, `Id`, `Name`, and `PriceVnd`. Serialization writes one JSON field per property, but writes each name in camelCase on the way — `Id` becomes `id`, `PriceVnd` becomes `priceVnd` — which is why the response's field names never match the DTO's property names letter for letter, even though they match field for field.
 
 </details>
 
@@ -103,5 +103,5 @@ Expected result: `{"id":1,"name":"Bàn phím cơ","priceVnd":1250000}` — three
 1. A DTO is a plain type shaped for the wire — only the fields a client needs — not whatever internal type the server uses.
 2. Serialization turns a returned DTO into JSON automatically, one JSON field per property, with no extra code from you.
 3. Deserialization is the same mapping in reverse: a request body's JSON becomes a DTO before your endpoint's code runs.
-4. The default serializer lowercases each property name's first letter for JSON — `PriceVnd` becomes `priceVnd` — without being asked to.
+4. The default JSON options write each property name in camelCase — `PriceVnd` becomes `priceVnd` — without being asked to.
 5. A DTO can match its entity's fields today and still be worth keeping separate, since only the DTO is a promise to every client.
