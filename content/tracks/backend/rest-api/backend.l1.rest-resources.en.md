@@ -15,9 +15,9 @@ vocab: [resource]
 example_tag: stage-1
 versions_used: [aspnetcore]
 content_version: 1
-status: draft
+status: reviewed
 approved_by: null
-reviewed_at: null
+reviewed_at: "2026-09-24T18:00:00+07:00"
 ---
 
 ## Before you start
@@ -86,7 +86,7 @@ public sealed class ProductsController(DonHangDbContext db) : ControllerBase
 
 `[Route("api/v1/products")]` on the class fixes the shared prefix once; `[HttpGet]` with no id, on `List()`, answers the bare collection URL, `GET /api/v1/products`. `[HttpGet("{id:int}")]`, on `Get(int id)`, adds `{id}` to that prefix — a placeholder the actual id in the request fills in, with `:int` saying only a whole number within the 32-bit range matches — answering the item URL, `GET /api/v1/products/{id}`, the one Try it calls below.
 
-`OrdersController` carries the same class-level attribute, `[Route("api/v1/orders")]`, and a `[HttpPost]` method, `Create`, answering the collection URL, `POST /api/v1/orders` (creating an order adds to the whole set — not shown again here, same shape as `[Route(...)]` above). Further down the same class, two more methods answer the item URL and the teammate's question from the situation above:
+`OrdersController` carries the same class-level attribute, `[Route("api/v1/orders")]`. It also has a `[HttpPost]` method, `Create` (not shown below — its attribute alone matters here, the same way `[Route(...)]` did above), answering the collection URL: `POST /api/v1/orders` creates an order, adding to the whole set. Further down the same class, two more methods answer the item URL and the teammate's question from the situation above:
 
 ```csharp file=DonHang.Api/Controllers/OrdersController.cs tag=stage-1 lines=30-46
     [HttpGet("{id:int}")]
@@ -108,13 +108,13 @@ public sealed class ProductsController(DonHangDbContext db) : ControllerBase
     }
 ```
 
-`[HttpGet("{id:int}")]` answers the item URL, `GET /api/v1/orders/{id}`, for one order at a time — the same shape as `ProductsController.Get` above. `[HttpPatch("{id:int}/cancel")]`, on `Cancel`, is the teammate's real answer: `PATCH /api/v1/orders/{id}/cancel`, not `/api/v1/cancelOrder`. The order's own path, `/api/v1/orders/{id}`, never disappears; `cancel` is a named action of its own — the server decides what cancelling means, instead of a client writing a status field directly — so it gets a segment after the item URL rather than replacing it.
+`[HttpGet("{id:int}")]` answers the item URL, `GET /api/v1/orders/{id}`, for one order at a time — the same shape as `ProductsController.Get` above. `[HttpPatch("{id:int}/cancel")]`, on `Cancel`, is the teammate's real answer: `PATCH /api/v1/orders/{id}/cancel`, not `/api/v1/cancelOrder`. The order's own path, `/api/v1/orders/{id}`, never disappears; `cancel` is a named action of its own — the server decides what cancelling means, instead of a client writing the order's status value directly — so it gets a segment after the item URL rather than replacing it.
 
 Not every `/api/v1/...` path names a resource this way. A third class, `AuthController`, groups its one endpoint under the prefix `/api/v1/auth`: `POST /api/v1/auth/login`. `login` is a verb, same as `cancel` — and that's fine for the same reason: no order, product, or other thing is being named here, so no noun is being pushed aside for it. `/api/v1/cancelOrder` is different because an order already exists and already has its own path to keep.
 
 ## Beginners often think…
 
-- **"A URL like `/api/v1/cancelOrder` is fine as long as it's clear what it does."** → Actually clarity isn't the test, and the fix isn't a brand-new top-level path either. Đơn Hàng's real fix for exactly this action is `PATCH /api/v1/orders/{id}/cancel`: the order's own path survives, with `cancel` added after it. You notice this in `OrdersController` above, where the resource's URL stays intact even though cancelling is exposed as its own named action rather than a client directly writing the order's status field.
+- **"A URL like `/api/v1/cancelOrder` is fine as long as it's clear what it does."** → Actually clarity isn't the test, and the fix isn't a brand-new top-level path either. Đơn Hàng's real fix for exactly this action is `PATCH /api/v1/orders/{id}/cancel`: the order's own path survives, with `cancel` added after it. You notice this in `OrdersController` above, where the resource's URL stays intact even though cancelling is exposed as its own named action rather than a client directly writing the order's status value.
 - **"Creating an order and listing orders need two different URLs, since they're different actions."** → Actually they'd be the same URL, `/api/v1/orders`, answered by whichever methods that resource needs — POST creates, as `OrdersController.Create` does; GET would list, as `ProductsController.List` does for products. `OrdersController` and `ProductsController` are different classes, same pattern: Đơn Hàng just hasn't needed a GET that lists every order yet.
 - **"The `v1` in `/api/v1/orders` refers to the version of each individual order, not this whole set of endpoints."** → Actually `v1` is fixed once for every endpoint this server answers, not per order: `/api/v1/orders/1` and `/api/v1/orders/2` carry the same `v1` even after one order has changed status several times and the other never has.
 
