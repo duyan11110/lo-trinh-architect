@@ -1,0 +1,142 @@
+{
+  "id": "backend.l1.middleware-pipeline",
+  "technical": {
+    "reviewed_at": "2026-09-24T07:05:00+07:00",
+    "reviewer": "claude-opus-5[1m]",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Middleware order (>= aspnetcore-8.0): \"The order that middleware appears in the app's Program file defines the order in which middleware are invoked on a request with the reverse order for the response.\" Reproduced on net10.0 (SDK 10.0.300): a middleware registered first printed LOG-IN before and LOG-OUT after the rest of the pipeline. Note: true of the app.Use... calls only; see issues on \"nothing reorders them\" and on app.Map....",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/middleware/index.md, section \"Middleware order\""
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "\"Each delegate can perform operations before and after the next delegate. Exception-handling delegates should be called early in the pipeline, so they can catch exceptions that occur in later stages of the pipeline.\" The same section's sample prints \"Work that can write to the response. (1)\", \"(2)\", then \"Work that doesn't write to the response. (2)\", \"(1)\" — in and out. Reproduced on net10.0.",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/middleware/index.md, \"Create a middleware pipeline with WebApplication\""
+      },
+      {
+        "n": 3,
+        "verdict": "rephrased",
+        "evidence": "\"When a delegate doesn't pass a request to the next delegate, it's called *short-circuiting the request pipeline*.\" and \"Middleware added to the pipeline before the terminal middleware still processes code after their `next.Invoke` statements.\" Not calling next is what defines a short-circuit; writing a response is the usual accompaniment, not part of the definition. The second half of the claim (nothing after it runs) is supported: \"it prevents further middleware from processing the request\".",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/middleware/index.md, lines 23, 127, 364",
+        "suggested_text": "A middleware short-circuits the pipeline by not calling the next delegate — usually after writing a response itself; nothing registered after it runs for that request."
+      },
+      {
+        "n": 4,
+        "verdict": "rephrased",
+        "evidence": "Authentication \"Challenge\": \"An authentication challenge is invoked by Authorization when an unauthenticated user requests an endpoint that requires authentication... A JWT bearer scheme returning a 401 result with a `www-authenticate: bearer` header.\" So authorization stops the request and the 401/403 is written by the scheme it challenges, not by the authorization middleware itself. Live at stage-1: response carried `Www-Authenticate: Bearer`. The \"does not call the next delegate\" half is confirmed by execution (n.7 and a net10.0 repro where the endpoint never ran).",
+        "source": "refs/aspnetcore-docs/aspnetcore/security/authentication/index.md, \"Challenge\"/\"Forbid\"",
+        "suggested_text": "For an endpoint marked [Authorize], the authorization middleware stops the request instead of calling the next step; the 401 (or 403) is written by the authentication scheme it challenges — for JWT bearer, a 401 with a `WWW-Authenticate: Bearer` header."
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "`git -C examples/don-hang show stage-1:DonHang.Api/Program.cs` lines 67-72: app.UseMiddleware<ExceptionHandlingMiddleware>(); app.UseMiddleware<RequestLoggingMiddleware>(); app.UseCors(); app.UseAuthentication(); app.UseAuthorization(); app.MapControllers(); — exactly the claimed registration order, and character-for-character what the lesson's first code block shows for lines 64-74. (stage-1^{commit} = 83c0004.)",
+        "source": "examples/don-hang @ stage-1, DonHang.Api/Program.cs:64-74"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Source at stage-1 lines 11-23: `var stopwatch = Stopwatch.StartNew(); await next(context); stopwatch.Stop(); logger.LogInformation(\"{Method} {Path} responded {StatusCode} in {ElapsedMs}ms\", context.Request.Method, context.Request.Path, context.Response.StatusCode, stopwatch.ElapsedMilliseconds);` — stopwatch, next, then log of method/path/status/elapsed after next returns. Lesson block (lines=9-24) matches the file verbatim.",
+        "source": "examples/don-hang @ stage-1, DonHang.Api/Middleware/RequestLoggingMiddleware.cs:9-24"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Ran the lab (docker compose up -d --build db api lab web at stage-1). `curl -i -s -X POST http://localhost:8080/api/v1/orders` -> \"HTTP/1.1 401 Unauthorized ... Www-Authenticate: Bearer\". `docker compose logs api` -> \"info: DonHang.Api.Middleware.RequestLoggingMiddleware[0] POST /api/v1/orders responded 401 in 72ms\". Try it works exactly as written.",
+        "source": "examples/don-hang @ stage-1, live run 2026-09-24"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "blocker",
+        "section": 5,
+        "kind": "accuracy",
+        "quote": "Moving `UseAuthorization` after `app.MapControllers()` would not just reorder two lines; it would mean an endpoint's code always ran before anyone checked whether the request was allowed to.",
+        "text": "Unlisted claim, and false. `app.MapControllers()` is not a step at that line in the chain: WebApplication \"UseRouting is added second\" (before all user middleware) and \"UseEndpoints is added at the end of the middleware pipeline\"; \"User configured middleware and endpoints are added between UseRouting and UseEndpoints\". Executed on net10.0 (SDK 10.0.300): a minimal app whose `app.MapPost(\"/api/v1/orders\", ...).RequireAuthorization()` is written BEFORE `app.UseAuthorization()` still answered 401 and the endpoint delegate never ran.",
+        "fix": "Delete this sentence. Show \"order matters\" with a move that really changes behaviour: moving `app.UseAuthorization()` above `app.UseMiddleware<RequestLoggingMiddleware>()` makes the rejected request disappear from the log (the change quiz q6 already asks about). Add the replacement statement to .meta.json claims."
+      },
+      {
+        "severity": "blocker",
+        "section": 4,
+        "kind": "diagram",
+        "quote": "E -->|Yes| G[app.MapControllers matches the endpoint]",
+        "text": "The diagram omits the routing middleware and puts endpoint matching last, after UseAuthorization. Matching happens first: \"When a routing middleware executes, it sets an `Endpoint` and route values\"; \"an authorization middleware can interrogate the endpoint's metadata collection for an authorization policy. After all of the middleware... is executed, the selected endpoint's delegate is invoked.\" Verified live on net10.0: HttpContext.GetEndpoint() inside the FIRST user middleware already returned \"HTTP: POST /api/v1/orders\".",
+        "fix": "Insert a node \"Routing: matches the endpoint\" between \"Request arrives\" and ExceptionHandlingMiddleware, and change G to \"the matched endpoint runs (OrdersController.Create)\". In prose say the endpoint is matched before the first middleware and only its execution waits for the end of the pipeline."
+      },
+      {
+        "severity": "blocker",
+        "section": 9,
+        "kind": "accuracy",
+        "quote": "`UseAuthorization` short-circuits an unauthorized request right before `app.MapControllers()` would have matched it to an endpoint.",
+        "text": "Unlisted claim, and wrong in the same way as the diagram: the endpoint is already matched before Đơn Hàng's first middleware runs; what UseAuthorization prevents is the endpoint being invoked, not matched. Docs: \"After all of the middleware in the request processing pipeline is executed, the selected endpoint's delegate is invoked.\"",
+        "fix": "Rewrite line 4 as: \"`UseAuthorization` short-circuits an unauthorized request before the endpoint routing already matched (`OrdersController.Create`) is ever invoked.\" Keep the body text consistent with it."
+      },
+      {
+        "severity": "major",
+        "section": 9,
+        "kind": "accuracy",
+        "quote": "Middleware runs in the exact order its `app.Use...` calls are registered in `Program.cs`; nothing reorders them.",
+        "text": "\"nothing reorders them\" overstates, and the matching unlisted claim \"`ExceptionHandlingMiddleware` comes first\" (section 5) is not literally true in the lab. WebApplication inserts middleware around the user's calls: \"UseDeveloperExceptionPage is added first when the HostingEnvironment is `Development`\", \"UseRouting is added second\", \"UseEndpoints is added at the end\". docker-compose.yml sets ASPNETCORE_ENVIRONMENT: Development for the api service, so two framework middleware run before ExceptionHandlingMiddleware.",
+        "fix": "Say instead: \"the middleware you register run in the exact order your `app.Use...` calls appear; ASP.NET Core adds routing and endpoint execution around them, but never reorders your own calls.\" In section 5 write \"is the first of Đơn Hàng's own middleware\". Record both as claims in .meta.json."
+      },
+      {
+        "severity": "major",
+        "section": 3,
+        "kind": "accuracy",
+        "quote": "pipeline order — the order `app.Use...`/`app.Map...` calls appear in Program.cs, which is the exact order a request travels through them.",
+        "text": "True of `app.Use...`, false of `app.Map...`: a Map call registers an endpoint in a data source, not a step at that line, and the endpoint is invoked from the auto-added UseEndpoints at the end of the chain no matter where the Map call is written (verified by execution, see the blocker on section 5).",
+        "fix": "Drop `app.Map...` from the definition: \"pipeline order — the order the `app.Use...` calls appear in `Program.cs`, which is the order a request travels through them; `app.MapControllers()` registers endpoints, which run after every middleware.\""
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "scope",
+        "quote": "`UseAuthorization`, which Đơn Hàng registers before `app.MapControllers()`, is the middleware that can short-circuit here",
+        "text": "Beyond the outline's depth_notes: \"Không nói về middleware cụ thể có sẵn (xử lý exception thật, xác thực thật) — module validation-errors-logging và auth-basics sau. Middleware dùng để minh họa ở đây là ví dụ tối giản (ví dụ: ghi log), không phải middleware sản xuất.\" The lesson's entire short-circuit spine is the production authentication/authorization stack: [Authorize], 401/403, WWW-Authenticate, UseAuthentication, UseCors.",
+        "fix": "Do not leave the conflict silent: either get track.yaml depth_notes for backend.l1.middleware-pipeline amended to allow UseAuthorization as the short-circuit illustration (author approval, prompt 08), or short-circuit with a minimal middleware. No middleware in DonHang.Api at stage-1 short-circuits, so the second option needs a repo change first."
+      },
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "scope",
+        "text": "Outline item 3 — \"An endpoint mapped with `app.MapGet` (or similar) is a terminal step: it writes a response and does not call further into the pipeline\" — is mentioned but never established. No sentence states that the endpoint writes the response and calls nothing further; the lesson only says the endpoint \"never ran\". .meta.json claims outline_items_covered [1,2,3].",
+        "fix": "Add one sentence in \"How it works\": \"The endpoint at the end is terminal — it writes the response and calls nothing further; the response then travels back out through every middleware that did call `next`.\" Then outline item 3 is established."
+      },
+      {
+        "severity": "major",
+        "section": "backend.l1.middleware-pipeline.q5",
+        "kind": "quiz",
+        "quote": "This is the registration order that makes the short-circuit in option a possible",
+        "text": "Key (a) is correct and b/c/d are wrong answers, but this explanation for option c is itself false: the relative position of `app.MapControllers()` and `app.UseAuthorization()` has no effect on behaviour (verified by execution — reversing them still returns 401 with the endpoint never running). What makes the short-circuit possible is that UseAuthorization runs between routing and endpoint execution.",
+        "fix": "Replace the c explanation (en and vi) with: \"Registration order is a fact about `Program.cs`, not a behaviour; what contradicts the teammate is what `UseAuthorization` does with a request that is not allowed.\""
+      },
+      {
+        "severity": "minor",
+        "section": "backend.l1.middleware-pipeline.q6",
+        "kind": "quiz",
+        "quote": "This would matter when the reordering also touched `app.MapControllers()` itself",
+        "text": "Repeats the false model: moving `app.MapControllers()` among the `app.Use...` calls would not change when the endpoint runs. The key (a) is correct — with UseAuthorization above RequestLoggingMiddleware, the rejected request short-circuits before the logger calls next, so no log line.",
+        "fix": "Rewrite the b explanation (en and vi) as: \"`app.MapControllers()` registers the endpoints; authorized requests still pass every middleware and reach the endpoint exactly as before.\""
+      },
+      {
+        "severity": "minor",
+        "section": 3,
+        "kind": "accuracy",
+        "quote": "one step in the pipeline every request passes through",
+        "text": "Contradicts the short-circuit bullet two lines below: a request stopped earlier never reaches later middleware, so not every request passes through every step.",
+        "fix": "\"middleware — one step in the pipeline a request passes through, in the order its `app.Use...` call was registered; each step can run code both before and after the rest of the pipeline runs.\""
+      }
+    ],
+    "scope": {
+      "outline_covered": false,
+      "beyond_scope": [
+        "The built-in authentication/authorization middleware (UseAuthentication, UseAuthorization, [Authorize], 401 vs 403, WWW-Authenticate) is the lesson's main illustration, while depth_notes reserve real authentication for auth-basics and require a minimal example middleware here.",
+        "UseCors appears in the diagram and the code block without being covered by any outline item (mentioned only, but it is framework middleware the depth_notes defer)."
+      ]
+    },
+    "verdict": "rewrite"
+  }
+}
