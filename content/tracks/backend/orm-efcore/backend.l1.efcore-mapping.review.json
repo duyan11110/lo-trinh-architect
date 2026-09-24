@@ -1,0 +1,116 @@
+{
+  "id": "backend.l1.efcore-mapping",
+  "technical": {
+    "reviewed_at": "2026-09-24T16:45:00+07:00",
+    "reviewer": "claude-opus-5[1m]",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "`git -C examples/don-hang show stage-1:DonHang.Infrastructure/DonHangDbContext.cs` lines 9-14 are exactly: `public DbSet<Customer> Customers => Set<Customer>();` `public DbSet<Product> Products => Set<Product>();` `public DbSet<Order> Orders => Set<Order>();` `public DbSet<OrderItem> OrderItems => Set<OrderItem>();` `public DbSet<Payment> Payments => Set<Payment>();` `public DbSet<Notification> Notifications => Set<Notification>();` — six properties, expression-bodied over `Set<T>()`. Tag stage-1 resolves to commit 4fca60a.",
+        "source": "examples/don-hang @ stage-1: DonHang.Infrastructure/DonHangDbContext.cs, lines 6-14"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "refs/efcore-docs/entity-framework/core/index.md: \"EF Core can serve as an object-relational mapper (O/RM), which: Enables .NET developers to work with a database using .NET objects.\"; \"A model is made up of entity classes and a context object that represents a session with the database. The context object allows querying and saving data.\"; \"Instances of your entity classes are retrieved from the database using Language Integrated Query (LINQ).\"",
+        "source": "refs/efcore-docs/entity-framework/core/index.md (\"The model\", \"Querying\")"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Verbatim in refs/efcore-docs/entity-framework/core/modeling/entity-properties.md line 30, section \"Column names\": \"By convention, when using a relational database, entity properties are mapped to table columns having the same name as the property.\" Followed by: \"If you prefer to configure your columns with different names, you can do so as following code snippet\" with Data Annotations and Fluent API tabs. No built-in snake_case convention exists: extensions/index.md lists EFCore.NamingConventions as a third-party plugin for snake_case naming.",
+        "source": "refs/efcore-docs/entity-framework/core/modeling/entity-properties.md; core/extensions/index.md"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "`git show stage-1:DonHang.Domain/Entities.cs` lines 17-22: `public sealed class Product { public int Id { get; set; } public required string Name { get; set; } public int PriceVnd { get; set; } }`. Exactly three properties, no attributes, no base class, no using of Microsoft.EntityFrameworkCore in the file (only `namespace DonHang.Domain;`).",
+        "source": "examples/don-hang @ stage-1: DonHang.Domain/Entities.cs, lines 17-22"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Source lines 30-36 are `modelBuilder.Entity<Product>(e => { e.ToTable(\"products\"); e.Property(p => p.Id).HasColumnName(\"id\"); e.Property(p => p.Name).HasColumnName(\"name\"); e.Property(p => p.PriceVnd).HasColumnName(\"price_vnd\"); });`. Same shape as the EF Core docs sample refs/efcore-docs/samples/core/Modeling/EntityProperties/FluentAPI/ColumnName.cs: `modelBuilder.Entity<Blog>().Property(b => b.BlogId).HasColumnName(\"blog_id\");`",
+        "source": "examples/don-hang @ stage-1: DonHangDbContext.cs lines 30-36; refs/efcore-docs samples/.../FluentAPI/ColumnName.cs"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Re-run live this session against the stage-1 lab (containers donhang-db, donhang-api up): `curl -s http://localhost:8080/api/v1/products/1` → `{\"id\":1,\"name\":\"Bàn phím cơ\",\"priceVnd\":1250000}` — byte-identical to the lesson's expected result. `docker exec donhang-db psql -c '\\d products'` shows columns `id, name, price_vnd`. C# property is `PriceVnd` (Entities.cs line 21).",
+        "source": "live run: curl http://localhost:8080/api/v1/products/1; psql \\d products"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "\"fail silently\" is wrong and contradicts the lesson's own quiz. With `PriceVnd` unconfigured, EF Core emits SQL against a column named `PriceVnd`; PostgreSQL answers with an error, loudly, at query time. Verified: `psql -c 'select \"PriceVnd\" from products'` → `ERROR: column \"PriceVnd\" does not exist / HINT: Perhaps you meant to reference the column \"products.price_vnd\".` Quiz q5's keyed answer already says \"the query fails\". This is also an unlisted behaviour claim — no entry in .meta.json claims covers it.",
+        "quote": "`PriceVnd` is the one that would fail silently without it",
+        "fix": "Replace with: \"`PriceVnd` is the one that breaks without it: left unconfigured, EF Core would ask PostgreSQL for a column literally named `PriceVnd`, and the query would fail at runtime — `column \\\"PriceVnd\\\" does not exist` — because the table only has `price_vnd`.\" Add a `behavior` claim to .meta.json citing the psql run."
+      },
+      {
+        "severity": "major",
+        "section": 1,
+        "kind": "code",
+        "text": "`ProductsController.List()` never produces a `Product` object. At stage-1 its body is `await db.Products.Select(p => new ProductDto(p.Id, p.Name, p.PriceVnd)).ToListAsync()` — a projection EF Core translates into SQL, so no `Product` instance is materialised there. Yet the lesson anchors its question on that method (§1 \"turns those rows into `Product` objects\", §2 \"a `Product` object it calls `p`\"). The method that does materialise a `Product` is `Get(int id)`: `var product = await db.Products.FindAsync(id);` — also the Try it endpoint.",
+        "quote": "this lesson is about the piece that turns those rows into `Product` objects in the first place",
+        "fix": "Re-anchor §1 and §2 on `ProductsController.Get(int id)`: `db.Products.FindAsync(id)` returns a `Product` object (the variable is `product`, not `p`), and the controller builds `new ProductDto(product.Id, product.Name, product.PriceVnd)` from it. Drop the claim that `List()`'s `p` is a `Product` object that EF Core built; keep `List()` only as \"the endpoint you already saw\"."
+      },
+      {
+        "severity": "major",
+        "section": 6,
+        "kind": "accuracy",
+        "text": "Unlisted claim: \"a `DbSet<Product>` doesn't hold any `Product` objects until something asks it a question\" is a behaviour claim about deferred execution, and nothing in .meta.json's six claims covers it. It happens to be supportable — refs/efcore-docs/entity-framework/core/querying/how-query-works.md: \"When you call LINQ operators, you're simply building up an in-memory representation of the query. The query is only sent to the database when the results are consumed.\" — but the author did not put it in the ledger, so it was never checked.",
+        "quote": "a `DbSet<Product>` doesn't hold any `Product` objects until something asks it a question",
+        "fix": "Add a claim to .meta.json (kind `behavior`, version_key `efcore`, section 6) quoting how-query-works.md: \"The query is only sent to the database when the results are consumed.\" Leave the lesson sentence as is."
+      },
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "accuracy",
+        "text": "\"a standing connection to a table\" is inaccurate and contradicts the quiz. A `DbSet<T>` holds no database connection; connections are opened when a query runs and the connection string belongs to the `DbContext`'s options. Quiz q1's explanation for option d says the opposite: \"a `DbSet<T>` never holds connection details itself.\"",
+        "quote": "a `DbSet<Product>` is a standing connection to a table, holding nothing until asked",
+        "fix": "Replace with: \"a `DbSet<Product>` is a standing question you can ask about a table, holding nothing until it is asked.\" (No mention of connections.)"
+      },
+      {
+        "severity": "minor",
+        "section": 3,
+        "kind": "accuracy",
+        "text": "`DbSet<T>` is a type, not a property; `Products` is the property that exposes it. EF Core docs (modeling/entity-types.md): \"types that are exposed in DbSet properties on your context are included in the model as entities\". The bullet as written makes `DbSet<T>` itself \"a property\", which collides with §5's \"Each line pairs one entity class with one `DbSet<T>` property\".",
+        "quote": "`DbSet<T>` — a property on the `DbContext` representing one table as a queryable collection of `T` objects",
+        "fix": "Rewrite the bullet as: \"`DbSet<T>` — the type of a property on the `DbContext` that stands for one table as a queryable collection of `T` objects; `DbSet<Product>` stands for the whole `products` table.\""
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "term",
+        "text": "\"unit of work\" is a term of art used without definition and is in neither `known_vocab` (tools/known-vocab --before backend.l1.efcore-mapping) nor this lesson's `vocab: [orm]`. It carries real meaning in EF Core (dbcontext-configuration/index.md: \"A `DbContext` instance is designed to be used for a _single_ unit-of-work\"), i.e. lifetime and change tracking — everything this lesson explicitly does not teach.",
+        "quote": "the object standing between your code and the database for one unit of work",
+        "fix": "Drop the phrase: \"A `DbContext` is the object standing between your code and the database: you ask its `DbSet<Product>` for data…\". If the lifetime idea is wanted later, introduce it in the lesson that owns DbContext lifetime, with a glossary term."
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "version",
+        "text": "The Suggested answer asserts a behaviour of ASP.NET Core, not EF Core, and the lesson's `versions_used: [efcore]` does not name it; .meta.json claim 6 records only the observed response, not the cause. The statement is true for the pinned version (aspnetcore 10.0) — refs/aspnetcore-docs/aspnetcore/web-api/advanced/formatting.md: \"The default formatting is camelCase.\" — but it is unlisted and unversioned in the lesson.",
+        "quote": "ASP.NET Core writes response fields in camelCase by default",
+        "fix": "Add `aspnetcore` to `versions_used` in the frontmatter and add a claim (kind `behavior`, version_key `aspnetcore`, section 7) citing web-api/advanced/formatting.md: \"The default formatting is camelCase.\" Wording of the lesson sentence can stay."
+      },
+      {
+        "severity": "minor",
+        "section": "backend.l1.efcore-mapping.q6",
+        "kind": "quiz",
+        "text": "The distractor explanation for option b credits this lesson with a distinction it never draws: the lesson never contrasts a DTO's shape with an entity's shape (it only mentions `ProductDto` in passing in §2). The DTO-vs-entity line comes from backend.l1.dtos-and-serialization, not from this text. The keyed answer (a) is correct; only the explanation misattributes.",
+        "quote": "this lesson draws that line elsewhere (a DTO is shaped for the wire; an entity like `Product` is shaped for the database)",
+        "fix": "Change the option-b explanation to attribute the distinction to the earlier lesson: \"…the DTO-vs-entity distinction comes from `dtos-and-serialization`; nothing about the bare name `Product` claims to be either one.\""
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "fix-required"
+  }
+}
