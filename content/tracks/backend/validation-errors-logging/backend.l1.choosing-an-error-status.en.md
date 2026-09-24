@@ -30,27 +30,27 @@ You're extending `PATCH /api/v1/orders/{id}/cancel`. Cancelling order `99999`, w
 
 ## Core concepts
 
-- `400 Bad Request` — the request itself is invalid, the way `validating-input`'s empty-items check rejects one; sent again unchanged, it fails the same way no matter what it names.
+- `400 Bad Request` — the request itself is invalid, the way `validating-input`'s empty-items check rejects one; that specific check fails the same way regardless of which order it would have applied to.
 - `404 Not Found` — the request is well-formed, but names something that doesn't currently exist; the id is the problem, not the request's shape.
 - `409 Conflict` — the request is well-formed and names something real, but conflicts with that thing's current state; nothing about the request itself was wrong, only its timing.
-- Problem Details' shared shape — `title`/`status`/`detail`, the same three fields regardless of which of the three status codes a failure gets.
+- Problem Details' shared shape — in this app, every one of these three status codes comes back with the same `title`/`status`/`detail` fields; RFC 9457 allows more optional fields than that, but this app's own exception handling only ever fills these three.
 
 ## How it works
 
 ```mermaid
 flowchart LR
-  A[PATCH /orders/id/cancel] --> B{request well-formed?}
-  B -->|no| C[400]
-  B -->|yes| D{order id exists?}
+  A[a request fails] --> B{is the request itself broken?}
+  B -->|yes| C[400]
+  B -->|no| D{does it name something real?}
   D -->|no| E[404]
-  D -->|yes| F{already shipped?}
-  F -->|yes| G[409]
-  F -->|no| H[cancelled, 200]
+  D -->|yes| F{does its state conflict?}
+  F -->|yes| G[409, hypothetical here]
+  F -->|no| H[succeeds]
 ```
 
-The three status codes answer three different questions, asked in order. First: is the request itself broken? That's `validating-input`'s territory — a missing or invalid value in the request, like an empty item list, is `400` no matter which order it would have applied to.
+The three status codes answer three different questions about a failing request — not necessarily three checks inside one single endpoint. First: is the request itself broken? That's `validating-input`'s territory, illustrated by `POST /api/v1/orders`: a missing or invalid value in the request body, like an empty item list, is `400` no matter which order it would have applied to. `PATCH /api/v1/orders/{id}/cancel` takes no request body at all, so this question never comes up for it — every request that reaches `CancelOrderAsync` has already passed it trivially, with nothing to be malformed.
 
-Second, once the request itself checks out: does the thing it names exist? `PATCH /api/v1/orders/99999/cancel` is a perfectly well-formed request — there's nothing wrong with its shape — but no order `99999` exists to cancel. That's `404`: the id is what's missing, not the request.
+Second: does the thing the request names exist? `PATCH /api/v1/orders/99999/cancel` is a perfectly well-formed request — there's nothing wrong with its shape — but no order `99999` exists to cancel. That's `404`: the id is what's missing, not the request.
 
 Third, if the named thing does exist: does acting on it conflict with its current state right now? Cancelling an order that's already `shipped` would be exactly this case — the request is well-formed, and the order is real, but shipping already happened, and cancelling now conflicts with that. If a check for this existed, it would answer `409`, not `400`: nothing about the request was ever wrong, only its timing relative to the order's state. `CancelOrderAsync` doesn't run that check yet, so this branch describes what should happen, not what happens today.
 
@@ -71,7 +71,7 @@ Nothing in this method checks whether `order.Status` is already `"shipped"` befo
 
 ## Beginners often think…
 
-- **"404 and 400 are interchangeable for 'something about this request didn't work'."** → Actually `400` means the request itself is broken; `404` means the request is fine but what it names isn't there. You notice this when a `404` retried with a corrected id — one that actually exists — succeeds unchanged, while a `400` retried unchanged always fails the same way.
+- **"404 and 400 are interchangeable for 'something about this request didn't work'."** → Actually `400` means the request itself is broken; `404` means the request is fine but what it names isn't there. You notice this when a `404` retried with a corrected id — one that actually exists — can succeed, while a `400` retried with the exact same broken request fails on the same defect every time.
 - **"A conflict, like cancelling an already-shipped order, should be `400`, since the client's request was 'wrong'."** → Actually the request is perfectly well-formed and names a real order; what's wrong is the order's current state, not the request. You'll meet this exact gap in `CancelOrderAsync`, which doesn't check for it yet — a shipped order can be cancelled today, silently, with no conflict response of any kind.
 
 ## Try it (3 minutes)
@@ -83,7 +83,7 @@ Expected result: `404` with `{"title":"Not found","status":404,"detail":"order 9
 
 <details><summary>Suggested answer</summary>
 
-Both responses are Problem Details bodies with `title`/`status`/`detail`, so a client parses them the same way — but the numbers mean different things. `400` says the request itself couldn't be understood or accepted as sent. `404` says the request was accepted just fine, but `99999` doesn't name a real order. Retrying the `404` with a real order's id would succeed; retrying the `400` with the same empty item list never will, since nothing about which order it names was ever the problem.
+Both responses are Problem Details bodies with `title`/`status`/`detail`, so a client parses them the same way — but the numbers mean different things. `400` says the request itself couldn't be understood or accepted as sent. `404` says the request was accepted just fine, but `99999` doesn't name a real order. Retrying the `404` with a real order's id can succeed; retrying the `400` with the same empty item list, unchanged, fails on the same defect again, since nothing about which order it names was ever the problem.
 
 </details>
 
@@ -99,4 +99,4 @@ Both responses are Problem Details bodies with `title`/`status`/`detail`, so a c
 2. All three share the same `title`/`status`/`detail` body shape; only the numbers and text differ.
 3. `CancelOrderAsync` throws `KeyNotFoundException` for a missing order id, answered as `404` with the exception's own message.
 4. Cancelling a shipped order would be a `409` if anything checked for it; `CancelOrderAsync` doesn't yet, so it's cancelled anyway.
-5. Retrying a `404` with a real id succeeds unchanged; retrying a `400` never will, since the request itself was the problem.
+5. Retrying a `404` with a real id can succeed; retrying a `400` with the same broken request won't, since the request itself was the problem.
