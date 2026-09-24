@@ -31,7 +31,7 @@ A teammate wants to add a way for a customer to cancel an order and asks which m
 ## Core concepts
 
 - `PUT` replaces a resource entirely — the request carries the resource's whole new state, and the server makes the resource match it. A successful `PUT` typically answers `200` with the resource or `204` with no body. Sending the exact same `PUT` twice leaves the resource in that same state either time, so `PUT` is idempotent.
-- `PATCH` changes part of a resource — the request carries only what should change, not the resource's whole state. Because of that, `PATCH` is not idempotent by default: its body can describe a change relative to the current state ("add one more item"), so applying the same request twice can land somewhere different from applying it once (one specific `PATCH` request can still happen to be idempotent, depending on what it changes).
+- `PATCH` changes part of a resource — the request carries only what should change, not the resource's whole state. Because of that, `PATCH` is not idempotent by default: its body can describe a change relative to the current state ("add one more item"), so applying the same request twice can land somewhere different from applying it once.
 - `DELETE` removes a resource — a successful call typically answers `204` with no body, since there's nothing left to describe. `DELETE` is idempotent: the resource ends up gone whether it's called once or several times, even though a repeat call's response can differ (the first call finds something to remove; a later one may answer `404` because there's nothing left).
 
 ## How it works
@@ -40,12 +40,12 @@ A teammate wants to add a way for a customer to cancel an order and asks which m
 flowchart LR
   A[PUT] -->|whole new state| B[Resource fully replaced — idempotent]
   C[PATCH] -->|only the change| D[Resource partly changed — not idempotent by default]
-  E[DELETE] -->|nothing| F[Resource gone — idempotent]
+  E[DELETE] -->|normally no body| F[Resource gone — idempotent]
 ```
 
-`POST`, from the last lesson, and these three write methods all change something, but each answers a different question about what the client already knows. `POST /api/v1/orders` never names the new order in the URL, since the client doesn't know its id yet. `PUT` and `PATCH` both name one resource in the URL — usually one that already exists. A `PUT` may also create the resource at that URL, answering `201` instead — but only when the client already knows the id to name, unlike `POST`, where the server picks it. Only `PUT` asks for the resource's entire state, every field, because its body *is* the new state in full; `PATCH` never does, since its body describes a change, so untouched fields simply aren't mentioned.
+`POST`, from the last lesson, and these three write methods all change something, but each answers a different question about what the client already knows. `POST /api/v1/orders` never names the new order in the URL, since the client doesn't know its id yet. `PUT` and `PATCH` both name one resource in the URL — usually one that already exists. A `PUT` may also create the resource at that URL, answering `201` instead — but only where the client itself picks the id it puts in the URL, instead of the server picking one as with `POST`. Only `PUT` asks for the resource's entire state, every field, because its body *is* the new state in full; `PATCH` never does, since its body describes a change, so untouched fields simply aren't mentioned.
 
-That's exactly why `PUT` is idempotent and `PATCH` isn't, by default. Sending the same full state twice leaves the resource in that one state both times. A `PATCH` body can instead describe a change relative to the current state (say, "increase quantity by 1"), so applying it twice moves the resource further each time — nothing about `PATCH`'s shape rules that out, even when one particular request happens not to.
+That's exactly why `PUT` is idempotent and `PATCH` isn't, by default. Sending the same full state twice leaves the resource in that one state both times. A `PATCH` body can instead describe a change relative to the current state (say, "increase quantity by 1"), so applying it twice moves the resource further each time — nothing about `PATCH`'s shape rules that out, even when one particular request happens not to move the resource further.
 
 `DELETE` names an existing resource too, to remove it; its request normally carries no body, since the URL alone already says which resource to remove. `DELETE` is idempotent for a different reason than `PUT`: not because it carries a full state, but because "gone" is a state a resource can only be in once. Calling `DELETE` on the same resource five times in a row has the same end effect as calling it once — gone either way — even if the first call gets a different answer than the rest.
 
@@ -63,19 +63,19 @@ This API has no real `PUT` or `DELETE` endpoint at this stage — the paragraphs
     }
 ```
 
-`[HttpPatch("{id:int}/cancel")]` answers `PATCH /api/v1/orders/{id}/cancel` — the same `{id:int}` route piece `Get(int id)` uses, which matches only a whole number within the 32-bit range, with `cancel` naming the specific change this endpoint makes. `[Authorize]` means this also only runs for a signed-in caller, the same rule `Create` follows. `Cancel(int id)` takes no request body at all: unlike `Create`, which reads a `CreateOrderRequest`, this method's only input is the `id` in the URL. That's `PATCH` in its simplest form — the "set of changes" here is fixed by the endpoint itself (become cancelled), so there's nothing left for the client to describe in a body.
+`[HttpPatch("{id:int}/cancel")]` answers `PATCH /api/v1/orders/{id}/cancel` — the same `{id:int}` route piece `Get(int id)` uses, which matches only a whole number within the 32-bit range (the range C#'s `int` covers), with `cancel` naming the specific change this endpoint makes. `[Authorize]` means this also only runs for a signed-in caller, the same rule `Create` follows. `Cancel(int id)` takes no request body at all: unlike `Create`, which reads a `CreateOrderRequest`, this method's only input is the `id` in the URL. That's `PATCH` in its simplest form — the "set of changes" here is fixed by the endpoint itself (become cancelled), so there's nothing left for the client to describe in a body.
 
 `orderService.CancelOrderAsync(id)` does the actual status change; a later module opens that up. `Ok(ToDto(order))` answers `200` with the updated order — same `ToDto` mapping `Create` uses, this time reflecting `status: "cancelled"` instead of `"new"`, while `CustomerId`, `PlacedAt`, and `Items` all stay exactly as they were.
 
 ## Beginners often think…
 
-- **"`PATCH` and `PUT` are interchangeable as long as the URL is the same."** → Actually they ask for different request bodies: a `PUT` body is supposed to be the resource's entire new state, while a `PATCH` body is only the change. `PUT` is idempotent because its body *is* the full new state — a partial body sent to a `PUT` endpoint isn't a lighter `PUT`, it's a broken one, since there's no other field left to fill it from.
+- **"`PATCH` and `PUT` are interchangeable as long as the URL is the same."** → Actually they ask for different request bodies: a `PUT` body is supposed to be the resource's entire new state, while a `PATCH` body is only the change. `PUT` is idempotent because its body *is* the full new state — a partial body sent to a `PUT` endpoint isn't a lighter `PUT`, it's a broken one, since the fields the body leaves out have nothing left to fill them from.
 - **"`DELETE` isn't idempotent, because the second call can't do anything — the resource is already gone."** → Actually idempotent describes the end state, not what each response says: the resource is gone after the first `DELETE` and still gone after the second, so the effect matches even though the second call might answer `404` instead of `204`.
 
 ## Try it (3 minutes)
 
 1. From the Đơn Hàng project's root folder, with the example system running (`scripts/up.sh`), sign in: `curl -sS -X POST http://localhost:8080/api/v1/auth/login -H 'Content-Type: application/json' -d '{"email":"anh.tran@example.com","password":"donhang-dev-password"}'` — copy the `token` field's value. Then create an order: `curl -sS -X POST http://localhost:8080/api/v1/orders -H 'Content-Type: application/json' -H "Authorization: Bearer <token>" -d '{"items":[{"productId":2,"quantity":1,"unitPriceVnd":450000}]}'` (replace `<token>`) — copy the `id` field's value.
-2. Cancel it: `curl -i -X PATCH http://localhost:8080/api/v1/orders/<id>/cancel -H "Authorization: Bearer <token>"` (replace `<id>` and `<token>` with the values from step 1; the `Authorization` header is how the server recognises the caller who signed in at step 1).
+2. Cancel it: `curl -i -X PATCH http://localhost:8080/api/v1/orders/<id>/cancel -H "Authorization: Bearer <token>"` (replace `<id>` and `<token>` with the values from step 1; the `Authorization` header is how the server recognises the caller who signed in at step 1 — `Bearer` is just the fixed word the header expects before the value).
 3. Run the exact same command from step 2 again, unchanged.
 
 Expected result: both calls answer `200` with a body showing `"status":"cancelled"` — the second call leaves the order in exactly the same state the first one put it in. That's `PATCH` behaving idempotently on this particular endpoint, not because `PATCH` guarantees it, but because "become cancelled" lands on the same result whether it's applied once or twice.
