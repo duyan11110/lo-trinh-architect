@@ -34,7 +34,7 @@ You call `GET /api/v1/orders` three times. With no `Authorization` header at all
 - `UseAuthentication` — the middleware that reads the `Authorization: Bearer` header, checks the token, and records who the caller is — or that no valid caller was found. It turns nothing away on its own.
 - `[Authorize]` — an attribute on an endpoint saying "only a caller the API has identified may run this".
 - `UseAuthorization` — the middleware that, for an `[Authorize]` endpoint, short-circuits with `401` when `UseAuthentication` identified no one.
-- `401 Unauthorized` — the status meaning "the API does not know who is asking": no token, or a token it could not accept.
+- `401 Unauthorized` — the status meaning "the API does not know who is asking": no token, or a token it could not accept. It comes with a `WWW-Authenticate` header naming the kind of credential the API wants — `Bearer`, a token — plus `error="invalid_token"` when a token was sent but rejected.
 
 ## How it works
 
@@ -48,7 +48,7 @@ flowchart LR
   K -->|no| U[401, endpoint never runs]
 ```
 
-In the situation above, every request passes through `UseAuthentication` first. It looks for an `Authorization: Bearer` header. If there is one, it checks the token the way the previous lesson described: the signature has to match what the signing key produces, the issuer and audience have to be `donhang-api` and `donhang-app`, and `exp` must not have passed — the check allows a few minutes of leeway for clock differences, so a token just past `exp` can still pass. If all of that holds, the request now carries a caller: the customer named in `sub`. If the header is missing or the token fails any check, the request simply carries no caller. Nothing is rejected yet.
+In the situation above, every request passes through `UseAuthentication` first. Clients send their JWT in an `Authorization: Bearer <token>` header, so that is where it looks. If a token is there, it checks the signature against the signing key, the issuer and audience against `donhang-api` and `donhang-app`, and `exp` — with a few minutes of leeway for clock differences, so a token just past `exp` can still pass. If all of that holds, the request now carries a caller: the customer named in `sub`. If the header is missing or the token fails any check, the request simply carries no caller. Nothing is rejected yet.
 
 The rejecting happens one step later, in `UseAuthorization`, and only for an endpoint marked `[Authorize]`. There, a request with no identified caller is short-circuited: the answer is `401`, and the endpoint's code never runs. `GET /api/v1/orders` is marked, so the made-up token gets `401`. `GET /api/v1/orders/1` is not marked, so the same token passes straight through to the endpoint, which never asks who the caller is.
 
@@ -56,7 +56,7 @@ An expired token fails the same way as a forged one. Its signature can be perfec
 
 ## In the Đơn Hàng system
 
-`Program.cs` tells `UseAuthentication` what a valid token looks like:
+`Program.cs` registers what `UseAuthentication` will check. `AddAuthentication(JwtBearerDefaults.AuthenticationScheme)` makes Bearer tokens the way callers are identified, and `AddJwtBearer` says what a valid one looks like; `app.UseAuthentication()` and `app.UseAuthorization()` themselves are added further down, in that order:
 
 ```csharp file=DonHang.Api/Program.cs tag=stage-1 lines=23-42
 var signingKey = builder.Configuration["Jwt:SigningKey"]
@@ -81,7 +81,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 ```
 
-`ValidateIssuer`, `ValidateAudience` and `ValidateLifetime` name the issuer, audience and `exp` checks. The signature is checked against `IssuerSigningKey`, built from the same `Jwt:SigningKey` that `JwtTokenService` signs with, so only tokens signed with that key can pass.
+`MapInboundClaims = false` only keeps claim names such as `sub` as they were issued. `ValidateIssuer`, `ValidateAudience` and `ValidateLifetime` name the issuer, audience and `exp` checks, against the `Jwt:Issuer` and `Jwt:Audience` values `donhang-api` and `donhang-app`. The signature is checked against `IssuerSigningKey`, built from the same `Jwt:SigningKey` that `JwtTokenService` signs with, so only tokens signed with that key can pass.
 
 Which endpoints actually require a caller is decided in the controllers:
 
@@ -96,7 +96,7 @@ Which endpoints actually require a caller is decided in the controllers:
     }
 ```
 
-Because of `[Authorize]`, by the time `List` runs there is always a caller, so reading `sub` from `User` is safe. `Get`, a few lines above it in the same file, has no `[Authorize]` — which is why the situation's made-up token reached it and got an order back.
+`List` answers `GET /api/v1/orders`. Because of `[Authorize]`, by the time it runs there is always a caller, and `User` is that caller, so reading `sub` from it is safe. `Get`, which answers `GET /api/v1/orders/1` and sits a few lines above it in the same file, has no `[Authorize]` — which is why the situation's made-up token reached it and got an order back.
 
 ## Beginners often think…
 
@@ -105,7 +105,7 @@ Because of `[Authorize]`, by the time `List` runs there is always a caller, so r
 
 ## Try it (3 minutes)
 
-1. From the Đơn Hàng project's root folder, with the example system running (`scripts/up.sh`), call `curl -s -i http://localhost:8080/api/v1/orders` with no token.
+1. From the Đơn Hàng project's root folder, with the example system running (`scripts/up.sh`), call `curl -s -i http://localhost:8080/api/v1/orders` with no token (`-i` prints the response headers too).
 2. Call it again with a made-up token: add `-H "Authorization: Bearer abc.def.ghi"`.
 3. Send the same made-up token to `http://localhost:8080/api/v1/orders/1`.
 
