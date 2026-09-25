@@ -51,7 +51,7 @@ With a session, the server writes a record — "this id belongs to customer 1" �
 
 With a token, the server writes nothing. It hands the client a value that already says who the client is, signed with a key only the server holds — its signing key — so that the server can later tell whether it made that value itself. On every later request the server checks the signature and the expiry, and reads who the caller is straight from the value. The value is the proof.
 
-Each choice has a cost. A session store grows with every logged-in client. And once more than one copy of the API runs side by side to share the requests, every copy that might receive a client's request has to reach that client's record. A token needs no store, but because the server keeps nothing, it also has nothing to delete: ending one token before it expires needs something extra on the server — such as a list of ended tokens to check each request against — which is exactly the store tokens were avoiding.
+Each choice has a cost. A session store grows with every logged-in client. And once more than one copy of the API runs side by side to share the requests, every copy that might receive a client's request has to reach that client's record. A token needs no store, but because the server keeps nothing, it also has nothing to delete: ending one token before it expires needs something extra on the server — such as a list of ended tokens to check each request against — which is the kind of store tokens were meant to avoid.
 
 ## In the Đơn Hàng system
 
@@ -81,7 +81,7 @@ The token also carries its own end: `tokenService.IssueToken` sets it to expire 
 ## Beginners often think…
 
 - **"A cookie always means session-based auth; a token is always sent some other way."** → Actually a cookie is only a way to carry a value back to the server; it can carry a session id or a whole token, and a session id could travel in a header instead. What makes a login session-based is whether the server looks a record up, not how the value travels. You notice this when you meet an app that keeps a token in a cookie and still stores nothing on the server.
-- **"Token-based auth is strictly better than session-based auth, so no real system still uses sessions."** → Actually each gives something up: a session can be ended at once by deleting its record, while a token keeps working until it expires unless the server adds something to check it against. When ending a login immediately matters more than avoiding a store, sessions are the simpler fit. You notice this the first time someone asks for "log this account out everywhere, right now" in an app like this one, where nothing on the server can do it.
+- **"Token-based auth is strictly better than session-based auth, so no real system still uses sessions."** → Actually each gives something up: a session can be ended at once by deleting its record, while a token keeps working until it expires unless the server adds something to check it against. When ending a login immediately matters more than avoiding a store, sessions are the simpler fit. You notice this the first time someone asks for "log this account out everywhere, right now" in an app like this one, where no code on the server can do it.
 
 ## Try it (3 minutes)
 

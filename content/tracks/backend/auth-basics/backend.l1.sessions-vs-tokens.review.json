@@ -1,115 +1,114 @@
 {
   "id": "backend.l1.sessions-vs-tokens",
   "technical": {
-    "reviewed_at": "2026-09-25T10:00:00+07:00",
-    "reviewer": "claude-opus-5-5",
+    "reviewed_at": "2026-09-25T16:30:00+07:00",
+    "reviewer": "claude-opus-5-5 (technical, round 2)",
     "claim_verdicts": [
       {
         "n": 1,
         "verdict": "verified",
-        "evidence": "git show stage-1:DonHang.Api/Controllers/AuthController.cs lines 13-24: FirstOrDefaultAsync(c => c.Email == request.Email); PasswordHasher.Verify(...); tokenService.IssueToken(customer.Id, customer.Email); return Ok(new LoginResponse(token)). No db.Add/SaveChanges in the method; git grep SaveChanges over *.cs at stage-1 hits only OrderService/EfOrderRepository/FakeOrderRepository. Live: row counts of customers (5) and orders (21) and the public table list identical before and after a login.",
-        "source": "examples/don-hang @ stage-1: DonHang.Api/Controllers/AuthController.cs:13-24; live psql before/after login"
+        "evidence": "git show stage-1:DonHang.Api/Controllers/AuthController.cs lines 13-24 match the lesson block character-for-character: FirstOrDefaultAsync(c => c.Email == request.Email); PasswordHasher.Verify(...); tokenService.IssueToken(customer.Id, customer.Email); return Ok(new LoginResponse(token)). No Add/SaveChanges in the method.",
+        "source": "examples/don-hang @ stage-1 (HEAD = stage-1^{commit} 4fca60a): DonHang.Api/Controllers/AuthController.cs:13-24"
       },
       {
         "n": 2,
         "verdict": "verified",
-        "evidence": "Re-run live 2026-09-25: login as anh.tran@example.com returned a 213-char token; curl GET /api/v1/orders with Bearer -> 200. docker compose restart api (from examples/don-hang) -> 'Container donhang-api Started'; same token: attempt 1 502, attempt 2 502, attempt 3 200 (~4 s after restart). Signing key comes from JWT_SIGNING_KEY in .env (scripts/dev-secrets.sh), unchanged by restart.",
+        "evidence": "Live 2026-09-25, Try it steps verbatim: login -> {\"token\":\"eyJhbGciOiJIUzI1NiIs...\"} (213 chars); GET /api/v1/orders with Bearer -> 200; docker compose restart api -> 'Container donhang-api Started'; same token at t+1s 502, t+2s 502, t+3s 502, t+4s 200. Without token -> 401. Key comes from JWT_SIGNING_KEY in .env (dev-secrets.sh), unchanged by restart.",
         "source": "live run in examples/don-hang (stage-1 lab); docker-compose.yml api.environment Jwt__SigningKey"
       },
       {
         "n": 3,
         "verdict": "verified",
-        "evidence": "Live: psql information_schema.tables (public) -> __EFMigrationsHistory, customers, notifications, order_items, orders, payments, products. db/schema.sql @ stage-1 CREATE TABLE: products, customers, orders, order_items, payments, notifications. Customer entity columns: id, full_name, email, city, password_hash (no login column).",
-        "source": "live psql on donhang-db; examples/don-hang @ stage-1: db/schema.sql, DonHang.Infrastructure/DonHangDbContext.cs"
+        "evidence": "Live psql information_schema.tables (public): __EFMigrationsHistory, customers, notifications, order_items, orders, payments, products. customers columns: id, full_name, email, city, password_hash (no login column).",
+        "source": "live psql on donhang-db (stage-1 lab)"
       },
       {
         "n": 4,
         "verdict": "verified",
-        "evidence": "Program.cs @ stage-1: AddJwtBearer with TokenValidationParameters { ValidateIssuer = true, ValidateAudience = true, ValidateIssuerSigningKey = true, IssuerSigningKey = new SymmetricSecurityKey(...signingKey), ValidateLifetime = true }; no Events/OnTokenValidated hook and no DbContext use in validation. Token accepted after restart with DB untouched (claim 2).",
-        "source": "examples/don-hang @ stage-1: DonHang.Api/Program.cs:22-43"
+        "evidence": "Program.cs @ stage-1: AddJwtBearer, TokenValidationParameters { ValidateIssuer = true, ValidIssuer = Jwt:Issuer, ValidateAudience = true, ValidAudience = Jwt:Audience, ValidateIssuerSigningKey = true, IssuerSigningKey = SymmetricSecurityKey(signingKey), ValidateLifetime = true }; no Events hook, no DbContext in validation. Issuer/Audience come from appsettings.json, so every copy of this API has them.",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/Program.cs:22-43; DonHang.Api/appsettings.json"
       },
       {
         "n": 5,
         "verdict": "verified",
-        "evidence": "JwtTokenService.cs @ stage-1 line 28: `expires: DateTime.UtcNow.AddHours(8),`",
-        "source": "examples/don-hang @ stage-1: DonHang.Api/JwtTokenService.cs:28"
+        "evidence": "JwtTokenService.cs @ stage-1 line 28: `expires: DateTime.UtcNow.AddHours(8),`. AuthController ctor injects `JwtTokenService tokenService`, so `tokenService.IssueToken` in the lesson names the right call.",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/JwtTokenService.cs:28; AuthController.cs:11"
       },
       {
         "n": 6,
         "verdict": "verified",
-        "evidence": "git grep -niE 'session|logout|revoke|denylist|blacklist|AddSession' stage-1 -- '*.cs' (excluding Migrations) -> no hits. AuthController has only [HttpPost(\"login\")]. Only way found to invalidate tokens is changing JWT_SIGNING_KEY (config, not code) — see issue on §4/§6 and quiz q4.",
+        "evidence": "git grep -niE 'logout|revok|denylist|blacklist|AddSession|SignOut' stage-1 -- '*.cs' ':!*Migrations*' -> no hits. AuthController has only [HttpPost(\"login\")].",
         "source": "examples/don-hang @ stage-1: git grep over *.cs"
       },
       {
         "n": 7,
         "verdict": "verified",
-        "evidence": "RFC 6265 §4.1.1: \"The semantics of the cookie-value are not defined by this document. ... servers that wish to store arbitrary data in a cookie-value SHOULD encode that data\". ASP.NET Core cookie auth: \"To create a cookie holding user information, construct a ClaimsPrincipal. The user information is serialized and stored in the cookie.\" — a self-contained value in a cookie with no server record.",
-        "source": "refs/rfc/rfc6265.txt:491-495; refs/aspnetcore-docs/aspnetcore/security/authentication/cookie.md:70"
+        "evidence": "RFC 6265 §4.1.1: \"The semantics of the cookie-value are not defined by this document.\" ASP.NET Core cookie auth: \"To create a cookie holding user information, construct a ClaimsPrincipal. The user information is serialized and stored in the cookie.\" (self-contained value in a cookie). RFC 9110 §11: credentials travel in header fields.",
+        "source": "refs/rfc/rfc6265.txt:491; refs/aspnetcore-docs/aspnetcore/security/authentication/cookie.md:70; refs/rfc/rfc9110.txt:4950"
       },
       {
         "n": 8,
-        "verdict": "rephrased",
-        "evidence": "app-state.md: \"The in-memory cache provider stores session data in the memory of the server where the app resides. In a server farm scenario: Use sticky sessions to tie each session to a specific app instance ... A better approach is to use a Redis, SQL Server, or Azure Postgres distributed cache\". distributed.md: distributed cached data \"Survives server restarts\". So restart loss is supported by implication; 'a shared store is needed' is too strong — sticky sessions are a documented alternative. Also mis-kinded: this is behavior, not opinion.",
-        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/app-state.md:49,75-77; refs/aspnetcore-docs/aspnetcore/performance/caching/distributed.md:24-28",
-        "suggested_text": "Sessions kept in one API process's memory are lost when that process restarts, so clients must log in again. When more than one copy runs, either every copy must reach a shared session store, or each client must always be sent to the copy holding its session."
+        "verdict": "verified",
+        "evidence": "app-state.md: \"The in-memory cache provider stores session data in the memory of the server where the app resides. In a server farm scenario: Use sticky sessions to tie each session to a specific app instance ... A better approach is to use a Redis, SQL Server, or Azure Postgres distributed cache\". distributed.md: a distributed cache \"Survives server restarts and app deployments.\" Round-1 overstatement fixed (both options now in claim and §4).",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/app-state.md:75-77; performance/caching/distributed.md:28"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "cookie.md (same self-contained model): \"Once a cookie is created, the cookie is the single source of identity. If a user account is disabled ... The user remains signed into the app as long as the authentication cookie is valid.\" Remedy is a per-request check against stored data: \"Validating the cookie on every request mitigates the risk of revoked users\", via a LastChanged value in the user database. Stage-1 JwtBearer validation has no such check (claim 4).",
+        "source": "refs/aspnetcore-docs/aspnetcore/security/authentication/cookie.md:94-101; examples/don-hang @ stage-1 Program.cs:22-43"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "app-state.md: \"Session data is deleted either when the ISession.Clear implementation is called or when the session expires.\" and \"If a cookie is received for an expired session, a new session is created that uses the same session cookie.\" (the old data is gone for the next request). Also follows from the lesson's definition of session (the record is the proof).",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/app-state.md:62,67"
+      },
+      {
+        "n": 11,
+        "verdict": "not-needed",
+        "evidence": "Conditional judgment, condition stated in the sentence (\"When ending a login immediately matters more than avoiding a store\"); follows from claims 9 and 10. identity-api-authorization.md frames the same trade-off: \"a balance between immediate session invalidation and database performance\". Not opinion-as-fact.",
+        "source": "refs/aspnetcore-docs/aspnetcore/security/authentication/identity-api-authorization.md:238"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "RFC 6750 §2.1 (WebFetch summary): clients sending an access token in the Authorization header \"use the Bearer authentication scheme\"; credentials = \"Bearer\" 1*SP b64token. §1.2: a bearer token is one \"any party in possession of the token (a 'bearer') can use\". RFC 9110 §11.1: an auth-scheme is a token \"to identify the authentication scheme\". Note: RFC 6750 is not itself a docs root; RFC 9110 (local) + 6750 on the same rfc-editor host agree.",
+        "source": "https://www.rfc-editor.org/rfc/rfc6750 §1.2, §2.1; refs/rfc/rfc9110.txt:4859-4868"
       }
     ],
     "issues": [
       {
         "severity": "major",
-        "section": 4,
+        "section": 7,
         "kind": "accuracy",
-        "text": "Overstated: a shared session store is not the only option with several copies; ASP.NET Core docs list sticky sessions (each session tied to one instance) as an alternative. Same overstatement is claim 8 (verdict rephrased).",
-        "quote": "A session store grows with every logged-in client and has to be reachable from every copy of the API that answers requests.",
-        "fix": "Replace with: \"A session store grows with every logged-in client, and every copy of the API that might receive a client's request has to reach that client's record.\" Update claim 8 text to the suggested_text in its verdict and set its kind to behavior, needs_verification true."
+        "text": "Unlisted claim: a specific status code and its cause after restart (502 = API still starting). True in the live run (502 at t+1..3s, 200 at t+4s; Caddy reverse_proxy to api:8080 while Kestrel is not listening), but it is not in the claims ledger.",
+        "quote": "If it prints `502`, the API is still starting — wait a few more seconds and run it again.",
+        "fix": "Keep the sentence. Add claim 13 to .meta.json: kind behavior, section 7, text 'Right after docker compose restart api, calls through Caddy (localhost:8080) return 502 until DonHang.Api is listening again; observed 502 for ~3 s then 200.', source_hint 'live: docker compose restart api + curl loop; Caddyfile handle /api/v1/* reverse_proxy api:8080', needs_verification true."
       },
       {
-        "severity": "major",
-        "section": 4,
-        "kind": "accuracy",
-        "text": "Unlisted claim: general statement that a token stays valid until it expires. Not true for token-based login in general (a server can add a check that rejects a token early, and changing the key it checks against rejects every token); only true of this app's code. Not in the claims ledger; §6 repeats it (\"a token keeps working until it expires\").",
-        "quote": "because the server keeps nothing, it also has nothing to delete: a token stays valid until it expires, even if you would like to end that login sooner.",
-        "fix": "§4: \"...it also has nothing to delete: ending one token before it expires needs something extra on the server, which is exactly the store tokens were avoiding.\" §6: \"...while a token keeps working until it expires unless the server adds something to check it against.\" Add a claim (kind behavior, section 4/6) for the softened wording; do not detail revocation (depth_notes)."
+        "severity": "minor",
+        "section": "backend.l1.sessions-vs-tokens.q4",
+        "kind": "quiz",
+        "text": "Key a is again absolute. Replacing JWT_SIGNING_KEY in .env and recreating the api container makes the server reject this token (with every other token). What is true is that nothing can stop just this one token. Other options are clearly wrong, so the key stands, but it is overstated.",
+        "quote": "Support has no way to stop it today; it will be accepted until its eight-hour lifetime runs out, roughly seven hours away.",
+        "fix": "en: \"Nothing in the app lets them stop just this one token; it will be accepted until its eight-hour lifetime runs out, roughly seven hours away.\" vi: \"Không có gì trong app cho phép chặn riêng token này; nó sẽ còn được chấp nhận cho tới khi hết tám giờ sống, còn khoảng bảy giờ nữa.\""
       },
       {
-        "severity": "major",
+        "severity": "minor",
         "section": 6,
         "kind": "accuracy",
-        "text": "Unlisted claim and conditional recommendation not in ledger: sessions can be ended at once by deleting the record, and sessions are 'the simpler fit' under a condition. Both are challengeable (behavior + opinion) and must be ledgered.",
-        "quote": "a session can be ended at once by deleting its record, while a token keeps working until it expires. When ending a login immediately matters more than avoiding a store, sessions are the simpler fit.",
-        "fix": "Add two claims to .meta.json: (a) kind behavior, section 6, 'deleting a session record makes the next request with that id find nothing'; (b) kind opinion, section 6, the 'simpler fit' sentence with its condition. Keep text; apply the §6 softening from the §4 issue."
-      },
-      {
-        "severity": "major",
-        "section": "backend.l1.sessions-vs-tokens.q4",
-        "kind": "quiz",
-        "text": "Marked answer a is literally false: changing JWT_SIGNING_KEY in .env and recreating the api container would make the server reject this token (and all others). The lesson only establishes that no code in this app ends one token early.",
-        "quote": "Nothing on the server can end it early; it keeps working until it expires, about seven hours from now.",
-        "fix": "Option a en: \"No code in this app can end that one token early; it keeps working until it expires, about seven hours from now.\" vi: \"Không có code nào trong app này kết thúc riêng token đó sớm được; nó vẫn dùng được cho tới khi hết hạn, khoảng bảy giờ nữa.\" Adjust explanation.correct to say 'no code in this app'."
+        "text": "Overstated, same point as claim 6: rotating the signing key on the server does log this account out everywhere (along with everyone else). Claim 6 supports only 'no code'.",
+        "quote": "in an app like this one, where nothing on the server can do it.",
+        "fix": "Replace with: \"in an app like this one, where no code on the server can do it.\""
       },
       {
         "severity": "minor",
-        "section": "backend.l1.sessions-vs-tokens.q4",
-        "kind": "quiz",
-        "text": "Explanation d says token checks look only at signature and expiry; Program.cs also validates issuer and audience. The option stays wrong (no password check), but the explanation is inaccurate.",
-        "quote": "token checks only look at the signature and expiry",
-        "fix": "en: \"...but checking a token never looks at the password or any stored record.\" vi: \"...nhưng việc kiểm tra token không hề xem mật khẩu hay bản ghi đã lưu nào.\""
-      },
-      {
-        "severity": "minor",
-        "section": 7,
+        "section": 4,
         "kind": "accuracy",
-        "text": "Live run: the first two calls after `docker compose restart api` returned 502 (Caddy, api still starting) before 200 at ~4 s. A reader who retries too soon sees 502 and may think the token was rejected.",
-        "quote": "Wait a few seconds, then repeat step 2 with the same token.",
-        "fix": "Append: \"If it prints `502`, the API is still starting — wait a few more seconds and run it again.\""
-      },
-      {
-        "severity": "minor",
-        "section": 7,
-        "kind": "accuracy",
-        "text": "Claim 8 is ledgered as kind opinion with needs_verification false, but 'a restart loses in-memory sessions' is a behavior statement; behavior claims cannot skip verification.",
-        "quote": "Most likely `401`. A session record kept in the API's memory disappears when the process restarts",
-        "fix": "In .meta.json set claim 8 kind to behavior, needs_verification true, source_hint refs app-state.md (in-memory provider) and distributed.md ('Survives server restarts'). Lesson text can stay."
+        "text": "'exactly the store' is too strong: a list of ended tokens only holds ended tokens, not a record per logged-in client like a session store. Claim 9 says only 'extra server-side state ... which the token model otherwise avoids'.",
+        "quote": "which is exactly the store tokens were avoiding.",
+        "fix": "Replace with: \"which is the kind of store tokens were meant to avoid.\""
       }
     ],
     "scope": {
