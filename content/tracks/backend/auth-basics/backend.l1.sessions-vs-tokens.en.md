@@ -27,7 +27,7 @@ reviewed_at: null
 
 ## The situation
 
-You log in as `anh.tran@example.com` and `POST /api/v1/auth/login` answers with a single field, `{"token":"..."}`. Nothing else changes: no new row appears in any table, `customers` has no "logged in" column, and there is no table of logins at all. Yet every later request that sends that value in an `Authorization: Bearer ...` header is recognized as that customer — even after the API process restarts. In the cookies lesson, the lab recognized you by `sid=dev-session-1`, an id pointing at something the server kept. Who remembers that you're logged in here, if the server keeps nothing?
+You log in as `anh.tran@example.com` and `POST /api/v1/auth/login` answers with a single field, `{"token":"..."}`. Nothing else changes: no new row appears in any table, `customers` has no "logged in" column, and there is no table of logins at all. Yet every later request that sends that value in an `Authorization: Bearer ...` header — `Bearer` just labels what follows as a token — is recognized as that customer — even after the API process restarts. In the cookies lesson, the lab recognized you by `sid=dev-session-1`, an id pointing at something the server kept. Who remembers that you're logged in here, if the server keeps nothing?
 
 ## Core concepts
 
@@ -49,9 +49,9 @@ Both models start from the same moment: a password check has just succeeded. Wha
 
 With a session, the server writes a record — "this id belongs to customer 1" — and gives the client only the id, usually in a cookie. On every later request the server takes the id and looks the record up. The id itself means nothing; the record is the proof. That is the `sid=dev-session-1` shape from the cookies lesson.
 
-With a token, the server writes nothing. It hands the client a value that already says who the client is, signed so that the server can tell whether it made that value itself. On every later request the server checks the signature and the expiry, and reads who the caller is straight from the value. The value is the proof.
+With a token, the server writes nothing. It hands the client a value that already says who the client is, signed with a key only the server holds — its signing key — so that the server can later tell whether it made that value itself. On every later request the server checks the signature and the expiry, and reads who the caller is straight from the value. The value is the proof.
 
-Each choice has a cost. A session store grows with every logged-in client, and every copy of the API that might receive a client's request has to reach that client's record. A token needs no store, but because the server keeps nothing, it also has nothing to delete: ending one token before it expires needs something extra on the server, which is exactly the store tokens were avoiding.
+Each choice has a cost. A session store grows with every logged-in client. And once more than one copy of the API runs side by side to share the requests, every copy that might receive a client's request has to reach that client's record. A token needs no store, but because the server keeps nothing, it also has nothing to delete: ending one token before it expires needs something extra on the server — such as a list of ended tokens to check each request against — which is exactly the store tokens were avoiding.
 
 ## In the Đơn Hàng system
 
@@ -72,7 +72,11 @@ Each choice has a cost. A session store grows with every logged-in client, and e
     }
 ```
 
-Read it for what is missing. After `PasswordHasher.Verify` succeeds, nothing is added to `db` and nothing is saved: the method issues a token and returns it. The API keeps no record of who is logged in, so any copy of the API that can check the token's signature can recognize the caller — and a restarted API recognizes the same token it issued before the restart. The token also carries its own end: `JwtTokenService` sets it to expire eight hours after it was issued, and this app has no code that can end one earlier. What sits inside the token, and how it is signed, is the next lesson.
+Read it for what is missing. After `PasswordHasher.Verify` succeeds, nothing is added to `db` and nothing is saved: the method issues a token and returns it.
+
+Because the API keeps no record of who is logged in, any copy of the API holding the same signing key can recognize the caller — and a restarted API recognizes the same token it issued before the restart.
+
+The token also carries its own end: `tokenService.IssueToken` sets it to expire eight hours after it was issued, and this app has no code that can end one earlier. What sits inside the token, and how it is signed, is the next lesson.
 
 ## Beginners often think…
 
@@ -81,7 +85,7 @@ Read it for what is missing. After `PasswordHasher.Verify` succeeds, nothing is 
 
 ## Try it (3 minutes)
 
-1. From the Đơn Hàng project's root folder, with the example system running (`scripts/up.sh`), run step 1 of [[backend.l1.creating-a-resource]]'s Try it to log in and copy the token.
+1. From the Đơn Hàng project's root folder, with the example system running (`scripts/up.sh`), log in: `curl -s -X POST http://localhost:8080/api/v1/auth/login -H "Content-Type: application/json" -d '{"email": "anh.tran@example.com", "password": "donhang-dev-password"}'`. Copy the value of the `token` field from the response.
 2. Call `curl -sS -o /dev/null -w "%{http_code}\n" http://localhost:8080/api/v1/orders -H "Authorization: Bearer <token>"`.
 3. Restart only the API: `docker compose restart api`. Wait a few seconds, then repeat step 2 with the same token. If it prints `502`, the API is still starting — wait a few more seconds and run it again.
 
