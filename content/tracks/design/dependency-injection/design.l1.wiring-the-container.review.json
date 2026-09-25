@@ -1,0 +1,248 @@
+{
+  "id": "design.l1.wiring-the-container",
+  "technical": {
+    "reviewed_at": "2026-09-26T10:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "git show stage-1:DonHang.Infrastructure/ServiceCollectionExtensions.cs lines 14-17: `services.AddDbContext<DonHangDbContext>(options => options.UseNpgsql(connectionString));` `services.AddScoped<IOrderRepository, EfOrderRepository>();` `services.AddScoped<INotifier, LoggingNotifier>();` `return services;`. Lesson block lines 10-19 matches character-for-character.",
+        "source": "examples/don-hang @ stage-1: DonHang.Infrastructure/ServiceCollectionExtensions.cs:10-19"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Program.cs:16-19 `GetConnectionString(\"Default\") ?? throw new InvalidOperationException(\"ConnectionStrings:Default is not set\");` `AddDonHangInfrastructure(connectionString);` `AddScoped<OrderService>();`. Whole file (74 lines) contains no occurrence of EfOrderRepository or LoggingNotifier. Lesson block lines 16-19 matches verbatim.",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/Program.cs:16-19 and whole file"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Scoped: \"Register scoped services by calling AddScoped.\" Registration table: `Add{LIFETIME}<{SERVICE}, {IMPLEMENTATION}>()` and `Add{LIFETIME}<{IMPLEMENTATION}>()`. \"Registering a service with only an implementation type is equivalent to registering that service with the same implementation and service type.\"",
+        "source": "refs/dotnet-docs/docs/core/extensions/dependency-injection/service-lifetimes.md:19; service-registration.md:44-56"
+      },
+      {
+        "n": 4,
+        "verdict": "rephrased",
+        "evidence": "\"Beginning with C# 14, there are two syntaxes you use to define extension methods. C# 14 adds extension blocks... Before C# 14, you add the this modifier to the first parameter of a static method\" \"Both forms of extensions must be defined inside a non-nested, nongeneric static class.\" Pinned lang is C# 14, so the §3 definition describes only one of two forms; also omits the static-class requirement.",
+        "source": "refs/dotnet-docs/docs/csharp/programming-guide/classes-and-structs/extension-methods.md:15,45",
+        "suggested_text": "extension method — a static method, in a static class, that can be called as if it belonged to another type. The form Đơn Hàng uses marks its first parameter with `this`, so `AddDonHangInfrastructure(this IServiceCollection services, ...)` can be called as `builder.Services.AddDonHangInfrastructure(...)`."
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "EF Core provider table: \"PostgreSQL* | `.UseNpgsql(connectionString)` | Npgsql.EntityFrameworkCore.PostgreSQL\". DonHang.Infrastructure.csproj references Npgsql.EntityFrameworkCore.PostgreSQL (10.0.3 per versions.yaml).",
+        "source": "refs/efcore-docs/entity-framework/core/dbcontext-configuration/index.md:248; examples/don-hang @ stage-1: DonHang.Infrastructure/DonHang.Infrastructure.csproj"
+      },
+      {
+        "n": 6,
+        "verdict": "rephrased",
+        "evidence": "Claim as written (constructor injection throws, never injects null) holds: scratch app (net10.0, WebApplication.CreateBuilder + AddControllers, SDK 10.0.300) printed `InvalidOperationException: Unable to resolve service for type 'Svc' while attempting to activate 'TController'.` But the same run printed `GetService<Svc> null? True`: IServiceProvider.GetService returns null for an unregistered type, so lesson §4 \"the container never answers with `null`\" and §9 \"never return `null`\" are too broad.",
+        "source": "scratch app (net10.0, WebApplication.CreateBuilder + AddControllers, SDK 10.0.300); refs/aspnetcore-docs/aspnetcore/fundamentals/app-state.md:270 (same message format)",
+        "suggested_text": "A registration can be missing, and the container never fills a constructor parameter with `null`. When it cannot find a registration for a type a constructor asks for, it throws an exception naming that type."
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "\"in the development environment, ValidateOnBuild and ValidateScopes are enabled.\" (.NET 9 change, still in force). scratch app (net10.0, WebApplication.CreateBuilder + AddControllers, SDK 10.0.300) with ASPNETCORE_ENVIRONMENT=Development and INotifier removed: `BUILD FAIL: AggregateException: Some services are not able to be constructed (... Unable to resolve service for type 'INotifier' while attempting to activate 'Svc'.)`; Production: `BUILD OK`. docker-compose.yml:93 `ASPNETCORE_ENVIRONMENT: \"Development\"`.",
+        "source": "refs/aspnetcore-docs/aspnetcore/breaking-changes/9/hostbuilder-validation.md:8,20; examples/don-hang @ stage-1: docker-compose.yml:93"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "\"By default, ASP.NET Core doesn't register controllers as services in the DI container. The runtime uses the DefaultControllerActivator to create controller instances and resolves services from the DI container for constructor parameters\". Scratch app, Development, Svc unregistered: `BUILD OK`, then GET → `InvalidOperationException ... activate 'TController'` → 500. ExceptionHandlingMiddleware.cs catch (Exception) writes 500 (InvalidOperationException is not KeyNotFound/Argument).",
+        "source": "refs/aspnetcore-docs/aspnetcore/mvc/controllers/dependency-injection.md:76; examples/don-hang @ stage-1: DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs:26-30"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "OrdersController.cs:12 `OrdersController(OrderService orderService, IOrderRepository repository)`; OrderService.cs `OrderService(IOrderRepository repository, INotifier notifier)`; ServiceCollectionExtensions.cs:15 is the only IOrderRepository registration (git grep at stage-1). Scratch app: controller and Svc both resolved IRepo from one AddScoped line (GET → 200).",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/Controllers/OrdersController.cs:12, DonHang.Domain/OrderService.cs:6, DonHang.Infrastructure/ServiceCollectionExtensions.cs:15"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Follows from the code: the only INotifier registration is ServiceCollectionExtensions.cs:16 and Program.cs names no notifier. Holds on the condition that the new class's constructor needs only types already registered (see minor issue on §7).",
+        "source": "examples/don-hang @ stage-1: DonHang.Infrastructure/ServiceCollectionExtensions.cs:16; DonHang.Api/Program.cs"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "Unlisted claim, and false for this repo: DonHang.Api also uses EF Core directly. Program.cs:7 `using Microsoft.EntityFrameworkCore;` and :61 `context.Database.Migrate();`; ProductsController uses `ToListAsync`, AuthController `FirstOrDefaultAsync` (both `using Microsoft.EntityFrameworkCore;`). Infrastructure is the project that holds the EF Core package reference, not the only one that knows about EF Core.",
+        "quote": "the one project that knows about EF Core",
+        "fix": "Replace the clause with: \"which class answers `IOrderRepository` is decided inside `DonHang.Infrastructure`, next to `EfOrderRepository` and `LoggingNotifier` themselves.\" Do not add a claim about EF Core being confined to one project."
+      },
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Overbroad: IServiceProvider.GetService returns null for an unregistered type (scratch app: `GetService<Svc> null? True`). Only constructor injection / GetRequiredService throws. Same overstatement in §9 line 5 and quiz q2/q4 explanations (\"never hands out `null` for a missing registration\").",
+        "quote": "A registration can be missing, and the container never answers with `null`.",
+        "fix": "Use claim 6 suggested_text in §4. §9 line 5: \"A missing registration makes the container throw when it builds a constructor, at startup or on the first request that needs it; it never passes `null` in.\" q2 correct-explanation: \"The container never passes `null` into a constructor for a missing registration.\""
+      },
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Unlisted claim: specific default lifetime of AddDbContext is stated but not in the ledger. It is true (EF Core docs: \"registers DbContext types with a scoped lifetime by default\"), so only the ledger is missing.",
+        "quote": "`AddDbContext<DonHangDbContext>(...)` registers the context along with its options, scoped by default.",
+        "fix": "Add a claim (kind behavior, version_key efcore, section 4): \"AddDbContext registers the DbContext type with a scoped lifetime by default\", source refs/efcore-docs/entity-framework/core/dbcontext-configuration/index.md:419. No text change needed."
+      },
+      {
+        "severity": "minor",
+        "section": 3,
+        "kind": "version",
+        "text": "Pinned C# 14 has two extension syntaxes (extension blocks and the `this`-parameter form); the definition presents the `this` form as the definition and omits that it must sit in a static class.",
+        "quote": "extension method — a static method whose first parameter is marked `this`",
+        "fix": "Use claim 4 suggested_text (says \"the form Đơn Hàng uses\" and \"in a static class\"). Do not introduce extension blocks."
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "opinion-as-fact",
+        "text": "Expected answer is unconditional, but a class that \"sends real SMS messages\" typically needs its own dependencies (settings, an HTTP client); if any is not already registered, the wiring gains lines too (still possibly inside AddDonHangInfrastructure, but Program.cs may need to pass configuration).",
+        "quote": "1 — only `ServiceCollectionExtensions.cs`, where `AddScoped<INotifier, LoggingNotifier>()` becomes `AddScoped<INotifier, SmsGatewayNotifier>()` (plus the new class file).",
+        "fix": "Add to the scenario: \"Its constructor only asks for an `ILogger<SmsGatewayNotifier>`, like `LoggingNotifier`.\" Then the expected answer holds as written."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "fix-required"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-26T11:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation)",
+    "issues": [
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "term",
+        "text": "'connection string' is not in known_vocab and is never explained. Program.cs reads it via `builder.Configuration.GetConnectionString(\"Default\")`, and 'configuration' is also unexplained. I can see some string is passed along but not what it contains or where it comes from.",
+        "quote": "Program.cs reads the connection string, hands it to the Infrastructure method, and registers `OrderService`",
+        "fix": "Gloss it in one plain clause at first use (not as a new term): \"the connection string — the text that says which database to reach and how to log in, read from the app's settings under the name Default\". Otherwise move this lesson after the one that introduces connection string."
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "term",
+        "text": "'provider' and the context's 'options' are unknown to me, and I was never told Đơn Hàng's database is PostgreSQL. I cannot say what `UseNpgsql` changes or why AddDbContext needs a function when the other two lines do not.",
+        "quote": "`AddDbContext` receives a small function that sets the context's options: `UseNpgsql` picks the PostgreSQL provider and gives it the connection string.",
+        "fix": "Replace with: \"`AddDbContext` receives a small function that tells `DonHangDbContext` which database to talk to: `UseNpgsql` says it is a PostgreSQL database (the one Đơn Hàng uses) at the given connection string.\" Drop 'provider' and 'options'."
+      },
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "term",
+        "text": "'Development' is not known. I cannot tell whether it is my machine, a build setting or an environment variable value, yet it decides whether a missing registration fails at startup or on a request (q2, q4 and the misconceptions depend on it).",
+        "quote": "In Đơn Hàng's Development setup, the container checks the registered classes when the app is built",
+        "fix": "Add one clause saying what Development is in known words, e.g. which environment variable value selects it and that Đơn Hàng runs with it when you start it locally."
+      },
+      {
+        "severity": "major",
+        "section": 6,
+        "kind": "term",
+        "text": "'resolve' is used as if known (misconception 2, quiz q2 option c, q4 context and explanations) but the lesson never says what resolving a type means.",
+        "quote": "You notice this when the error names the exact type the container could not resolve.",
+        "fix": "Replace 'could not resolve' with 'could not build' here and in q2/q4, or add once in section 4: \"(finding a registration for a type and building it is called resolving it)\"."
+      },
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "gap",
+        "text": "I cannot reconstruct what 'checks the registered classes' does, nor why an unregistered controller escapes it. That ASP.NET Core, not the container, creates controllers comes only in section 5. 'When the app is built' also reads like compiling, which contradicts 'the classes would still compile'.",
+        "quote": "the container checks the registered classes when the app is built, so a missing dependency of `OrderService` stops the app at startup. Controllers are not registered, so a type only a controller asks for fails later",
+        "fix": "Add one sentence: \"At startup it goes through every registered class and confirms each constructor parameter has a registration; controllers are created by ASP.NET Core per request, so they are not in that list.\" Replace 'when the app is built' with 'when the app starts'."
+      },
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "diagram",
+        "text": "Section 4's prose never mentions node AddDonHangInfrastructure, the Program.cs 'calls' arrow, or INotifier = LoggingNotifier; I only learn them in section 5. The prose also starts with IOrderRepository while the diagram starts at Program.cs, so I cannot narrate the diagram after section 4.",
+        "quote": "Registrations are method calls on `builder.Services`, the list of registrations the container will be built from.",
+        "fix": "Open section 4 with one sentence following the diagram: \"Program.cs registers `OrderService` itself and calls `AddDonHangInfrastructure`, which registers `DonHangDbContext`, `IOrderRepository` → `EfOrderRepository` and `INotifier` → `LoggingNotifier`.\""
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "text": "'The container lesson' is not among my prerequisites, and section 2 says 'the last three lessons' while I was given two. I am not sure which sentence is meant.",
+        "quote": "reads exactly like the sentence from the container lesson",
+        "fix": "Say \"reads exactly like the sentence quoted in The situation\" instead of pointing to another lesson."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "code",
+        "text": "The signature uses `IServiceCollection`, a type I have not seen. I only guess it is the type of `builder.Services` from the extension-method definition.",
+        "quote": "public static IServiceCollection AddDonHangInfrastructure(this IServiceCollection services, string connectionString)",
+        "fix": "In section 4 after `builder.Services`, add \"(its type is `IServiceCollection`)\"."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "style",
+        "text": "'chain another call' is not shown anywhere; Program.cs does not chain. The sentence makes me look for something that is not there.",
+        "quote": "Returning `services` lets the caller chain another call after it.",
+        "fix": "Drop the sentence, or add \"(Program.cs does not use this)\"."
+      },
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "example",
+        "text": "'signed-in' is unexplained here; I wonder whether signing in matters to the failure. It distracts from the point.",
+        "quote": "a signed-in customer's `POST /api/v1/orders` answers `500`",
+        "fix": "Drop 'signed-in', or add \"(placing an order requires signing in)\". Same in q4 context."
+      },
+      {
+        "severity": "minor",
+        "section": 3,
+        "kind": "quiz",
+        "text": "q1 correct option is near-verbatim of Core concepts: \"the second is the class the container builds\". I can match it without understanding.",
+        "quote": "Which class the container builds when the first type is asked for",
+        "fix": "Reword option a to \"The class you get back when code asks for `IOrderRepository`\"."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "quiz",
+        "text": "q2 option c is the longest and paraphrases \"it throws an exception naming that type\" almost word for word; it also uses 'resolve'.",
+        "quote": "False, because the container throws an exception naming the type it cannot resolve.",
+        "fix": "Shorten to \"False, because the container throws instead.\" and lengthen d slightly so lengths match."
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "quiz",
+        "text": "q5 is the Try it exercise with SmsGatewayNotifier renamed to EmailApiNotifier; I answer by pattern-matching, not by applying the idea.",
+        "quote": "A new class `EmailApiNotifier` in `DonHang.Infrastructure` should replace `LoggingNotifier` for every notification.",
+        "fix": "Change q5 to a different swap, e.g. a new class replacing `EfOrderRepository` for `IOrderRepository`, and ask which line changes."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "connection string",
+        "configuration (builder.Configuration)",
+        "PostgreSQL provider",
+        "context options",
+        "Development (environment)",
+        "resolve"
+      ],
+      "skipped_steps": [
+        "What the startup check actually verifies, and why controllers are outside it (section 4, explained only partly in section 5)",
+        "Diagram node AddDonHangInfrastructure and INotifier arrow not narrated in section 4",
+        "Which 'container lesson' sentence is meant",
+        "IServiceCollection = type of builder.Services (inferred, not stated)"
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "fix-required"
+  }
+}
