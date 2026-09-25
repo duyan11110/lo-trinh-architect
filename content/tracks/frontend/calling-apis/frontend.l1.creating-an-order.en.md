@@ -93,7 +93,7 @@ The order screen calls it from `_placeOrder`, in `DonHang.App/lib/screens/create
 
 In stage 1 this screen always orders the same thing: one of product 1, the keyboard, at its listed price. `_placeOrder` sets `_loading` first. The button, built further down in the same file and not shown here, has `onPressed: _loading ? null : _placeOrder`, so it is disabled and shows a spinner until the request ends. On success, the screen shows "Order <id> placed, status <status>"; a new order's status is `new`. On failure it shows "Failed: " followed by the exception, for example "Failed: Exception: failed to create order (500)".
 
-`finally` enables the button again, so a later tap places a second, separate order on purpose; `mounted` is the same check as on the login screen, so `setState` runs only while the screen is still in the widget tree. The "Failed: …" text is still one message for every failure, just with the status code attached: a developer can tell a `401` from a `500`, but the user gets no advice on what to do.
+`finally` enables the button again, so a later tap places a second, separate order on purpose; `if (mounted)` is the same check as on the login screen: this last `setState` runs only if the screen is still in the widget tree. The "Failed: …" text is still one message for every failure, just with the status code attached: a developer can tell a `401` from a `500`, but the user gets no advice on what to do.
 
 ## Beginners often think…
 

@@ -1,7 +1,7 @@
 {
   "id": "frontend.l1.creating-an-order",
   "technical": {
-    "reviewed_at": "2026-09-26T04:58:00+07:00",
+    "reviewed_at": "2026-09-26T05:15:00+07:00",
     "reviewer": "claude-opus-5-5",
     "claim_verdicts": [
       {
@@ -56,40 +56,48 @@
         "n": 9,
         "verdict": "not-needed",
         "evidence": "Kind opinion, taken from outline misconception 2; phrased as a consequence for the user, not as a documented rule. The 401/400/500 mapping it relies on is verified under claim 4."
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "ASP.NET Core docs: \"Calling `UseAuthentication` registers the middleware that uses the previously registered authentication schemes.\" and \"An authentication challenge is invoked by Authorization when an unauthenticated user requests an endpoint that requires authentication.\" Example: \"A JWT bearer scheme returning a 401 result with a `www-authenticate: bearer` header.\" Program.cs @stage-1: default scheme JwtBearer, `app.UseAuthentication(); app.UseAuthorization();` (70-71). Lab: no token -> 401.",
+        "source": "refs/aspnetcore-docs/aspnetcore/security/authentication/index.md:44,113-120; DonHang.Api/Program.cs:25,70-71"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "RFC 9110 §9.2.2: \"Of the request methods defined by this specification, PUT, DELETE, and safe request methods are idempotent.\" (POST is not listed). Lab 2026-09-26: two identical POST /api/v1/orders with the same token -> 201 id 31 and 201 id 32, both customerId 1.",
+        "source": "refs/rfc/rfc9110.txt:3862-3867; lab run 2026-09-26"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "@stage-1: api_client.dart:12 `static const String baseUrl = 'http://localhost:8080/api/v1';`; create_order_screen.dart:43-44 `onPressed: _loading ? null : _placeOrder`; login_screen.dart:30-33 after `login` succeeds, `Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => CreateOrderScreen(...)))`, whose AppBar title is 'Place an order'; docker-compose.yml service `db`: `image: postgres:17.6-alpine`, `container_name: donhang-db`.",
+        "source": "examples/don-hang @ stage-1: DonHang.App/lib/api_client.dart:12; screens/create_order_screen.dart:36-45; screens/login_screen.dart:28-33; docker-compose.yml:56-59"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Factual part checked in code: create_order_screen.dart:28-29 `catch (e) { setState(() => _result = 'Failed: $e'); }` and api_client.dart:54-55 `throw Exception('failed to create order (${response.statusCode})')` - one text for every non-201 status, differing only by the code. The \"no advice\" judgement follows from that; opinion part rests on claim 9.",
+        "source": "examples/don-hang @ stage-1: DonHang.App/lib/screens/create_order_screen.dart:28-29; DonHang.App/lib/api_client.dart:54-55"
       }
     ],
     "issues": [
       {
         "severity": "major",
-        "section": 7,
-        "kind": "accuracy",
-        "quote": "The endpoint is marked `[Authorize]`, so the authentication middleware had already checked the `Authorization` header and recorded the caller before `Create` ran.",
-        "text": "Unlisted claim, and the causality is backwards. The authentication middleware (`app.UseAuthentication()`, default scheme JwtBearer) runs on every request whether or not the endpoint has `[Authorize]`. What `[Authorize]` adds is that authorization refuses a request with no authenticated user (challenge -> 401) before `Create` runs. ASP.NET Core docs: \"Calling UseAuthentication registers the middleware that uses the previously registered authentication schemes.\"",
-        "fix": "Replace with: \"The authentication middleware checks the `Authorization` header on every request and records the caller. Because `Create` is marked `[Authorize]`, a request without a valid token is answered `401` before `Create` runs.\" Keep the rest. Add a claim (kind behavior, version_key aspnetcore, source security/authentication/index.md)."
-      },
-      {
-        "severity": "major",
-        "section": 4,
-        "kind": "accuracy",
-        "quote": "A `POST` is not idempotent: sending the same request twice creates two orders.",
-        "text": "Unlisted claim. The statement is correct (RFC 9110 §9.2.2: \"Of the request methods defined by this specification, PUT, DELETE, and safe request methods are idempotent.\"; lab: two identical POSTs created orders 29 and 30), but it is a specific HTTP-semantics claim that quiz q5 depends on, and it is missing from `claims`.",
-        "fix": "No text change needed. Add to meta.json claims: \"POST is not idempotent (RFC 9110 §9.2.2); two identical POST /api/v1/orders create two orders\", kind behavior, version_key http, section 4."
-      },
-      {
-        "severity": "minor",
         "section": 5,
         "kind": "accuracy",
-        "quote": "The Problem Details body the API sent, with its title and detail, is never read.",
-        "text": "Follows \"Any other status becomes an exception\", so it reads as if every failure carries Problem Details. A 401 from this API has no body at all (lab: `401`, `Content-Length: 0`, `Www-Authenticate: Bearer`); only the 400 and 500 paths write Problem Details.",
-        "fix": "Change to: \"When the API sent a Problem Details body (as it does for `400` and `500`), its title and detail are never read.\""
+        "quote": "`mounted` is the same check as on the login screen, so `setState` runs only while the screen is still in the widget tree.",
+        "text": "Unlisted claim (Flutter State behaviour, not in claims 12-13), and too broad for this code. Only the `finally` call is guarded (`if (mounted) setState(() => _loading = false);`); the two `setState` calls in `try` and `catch` (create_order_screen.dart:27,29) have no `mounted` check, so \"`setState` runs only while the screen is still in the widget tree\" is not true of this screen as a whole.",
+        "fix": "Replace with: \"`if (mounted)` is the same check as on the login screen: this last `setState` runs only if the screen is still in the widget tree.\" Add a claim (kind behavior, version_key flutter, section 5): State.mounted is true while the State object is in the tree; only the finally setState in _placeOrder is guarded (create_order_screen.dart:27-31)."
       },
       {
         "severity": "minor",
-        "section": 4,
+        "section": 7,
         "kind": "accuracy",
-        "quote": "Placing an order is a `POST` that creates a resource, so success is `201`, not `200`.",
-        "text": "Stated as an HTTP rule, but RFC 9110 §9.3.3 only says the origin server \"SHOULD send a 201 (Created) response\" when a POST created a resource. What is certain is this API's behaviour (CreatedAtAction -> 201, verified under claim 2).",
-        "fix": "Change to: \"Placing an order is a `POST` that creates a resource, and this API answers it with `201 Created`, not `200`.\""
+        "quote": "Open the browser's developer tools (F12 in most browsers) on the Network tab, which lists each request the page sends, with its headers, body and response.",
+        "text": "Unlisted specific claim (a key binding and what the Network tab shows). Hedged with \"most\" and consistent with the round-1 Chrome/CDP run (claim 8 saw headers, postData and response body), so low risk, but it is not in the ledger; claim 8 covers only what the orders request shows.",
+        "fix": "No text change needed. Extend claim 8 (or add one): \"Browser developer tools open with F12 in Chrome/Edge/Firefox; the Network tab lists each request with its headers, body and response\" (kind behavior, section 7)."
       }
     ],
     "scope": {
