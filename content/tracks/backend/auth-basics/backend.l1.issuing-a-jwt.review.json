@@ -1,0 +1,135 @@
+{
+  "id": "backend.l1.issuing-a-jwt",
+  "technical": {
+    "reviewed_at": "2026-09-25T08:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "git show stage-1:DonHang.Api/JwtTokenService.cs lines 11-33: SymmetricSecurityKey(Encoding.UTF8.GetBytes(configuration[\"Jwt:SigningKey\"]!)), SigningCredentials(key, SecurityAlgorithms.HmacSha256), Claim(JwtRegisteredClaimNames.Sub, customerId.ToString()), Claim(JwtRegisteredClaimNames.Email, email), issuer/audience from configuration, expires: DateTime.UtcNow.AddHours(8), return new JwtSecurityTokenHandler().WriteToken(token). Live token: exp 1790328320 = 09:25:20Z, issued at 01:25Z (8 h).",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/JwtTokenService.cs:11-33; live login 2026-09-25"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Ran login for anh.tran@example.com against http://localhost:8080 (donhang-api:stage-1). `cut -d. -f1 | base64 -d` printed {\"alg\":\"HS256\",\"typ\":\"JWT\"} rc=0; `-f2` printed {\"sub\":\"1\",\"email\":\"anh.tran@example.com\",\"exp\":1790328320,\"iss\":\"donhang-api\",\"aud\":\"donhang-app\"} rc=0 (GNU coreutils base64 8.32). Token has exactly two dots.",
+        "source": "live run, examples/don-hang stage-1, 2026-09-25"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Re-encoded payload with \"sub\":\"2\" (Base64url, no padding), kept original header and signature. GET /api/v1/orders: original token -> 200; tampered -> 401 with `Www-Authenticate: Bearer error=\"invalid_token\", error_description=\"The signature key was not found\"`.",
+        "source": "live run, examples/don-hang stage-1, 2026-09-25"
+      },
+      {
+        "n": 4,
+        "verdict": "rephrased",
+        "evidence": "RFC 7515 5.1 step 5: \"Compute the JWS Signature ... over the JWS Signing Input ASCII(BASE64URL(UTF8(JWS Protected Header)) || '.' || BASE64URL(JWS Payload))\". Ledger text is right for a signed JWT. But the lesson (sec. 3, sec. 9 line 1) states it for every JWT; RFC 7519 sec. 3: \"A JWT is represented as a sequence of URL-safe parts separated by period ('.') characters\" — count depends on JWS vs JWE, not always three.",
+        "source": "https://www.rfc-editor.org/rfc/rfc7515 sec. 5.1; https://www.rfc-editor.org/rfc/rfc7519 sec. 3",
+        "suggested_text": "Sec. 3: \"JWT (JSON Web Token) — a token that says who the caller is and can be checked without the server storing anything; a signed JWT like the ones Đơn Hàng issues has three dot-separated parts — header, payload, signature.\" Sec. 9 line 1: \"A signed JWT is three Base64url parts separated by dots: …\""
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "RFC 7515 sec. 2 Base64url Encoding: \"Base64 encoding using the URL- and filename-safe character set defined in Section 5 of RFC 4648, with all trailing '=' characters omitted\" — an encoding, no key. Live: header and payload decoded with plain `base64 -d`, no key (claim 2).",
+        "source": "https://www.rfc-editor.org/rfc/rfc7515 sec. 2; live run"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "RFC 7518 sec. 3.1: \"HS256\" = \"HMAC using SHA-256\". Sec. 3.2: \"HMACs enable one to use a secret plus a cryptographic hash function to generate a MAC. This can be used to demonstrate that whoever generated the MAC was in possession of the MAC key.\" MAC is generated \"using the JWS Signing Input as the 'text' value, and using the shared key.\"",
+        "source": "https://www.rfc-editor.org/rfc/rfc7518 sec. 3.1, 3.2"
+      },
+      {
+        "n": 7,
+        "verdict": "rephrased",
+        "evidence": "RFC 7519 sec. 2 NumericDate: \"A JSON numeric value representing the number of seconds from 1970-01-01T00:00:00Z UTC until the specified UTC date/time.\" Ledger is right; lesson sec. 4 says only \"the moment the token expires as a count of seconds\" (quiz q5 explanation same) — drops the reference point, so the number is meaningless as written.",
+        "source": "https://www.rfc-editor.org/rfc/rfc7519 sec. 2, 4.1.4",
+        "suggested_text": "Sec. 4: \"`exp` the moment the token expires, written as the number of seconds since 1 January 1970 (UTC)\". Quiz q5 explanation: \"written as seconds since 1 January 1970 (UTC)\"."
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "git show stage-1:DonHang.Api/appsettings.json: \"Jwt\": { \"Issuer\": \"donhang-api\", \"Audience\": \"donhang-app\" }. Live payload shows \"iss\":\"donhang-api\",\"aud\":\"donhang-app\".",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/appsettings.json"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "RFC 7518 sec. 3.2: \"This computed HMAC value is then compared to the result of base64url decoding the received encoded JWS Signature value.\" ASP.NET Core doc: signature validated so \"it hasn't been tampered with\". Live: tampered token -> 401 invalid_token. Note: ledger's parenthetical is off — ValidateIssuerSigningKey governs validating the key, not whether the signature is checked; lesson text does not repeat it.",
+        "source": "rfc7518 sec. 3.2; refs/aspnetcore-docs/aspnetcore/security/authentication/configure-jwt-bearer-authentication.md:124,135; stage-1 Program.cs"
+      },
+      {
+        "n": 10,
+        "verdict": "rephrased",
+        "evidence": "RFC 7519 sec. 12: \"A JWT may contain privacy-sensitive information. When this is the case, measures MUST be taken to prevent disclosure of this information to unintended parties.\" RFC does not say nothing private belongs in a payload; and this very API puts `email` in it, so the lesson's absolute contradicts its own example.",
+        "source": "https://www.rfc-editor.org/rfc/rfc7519 sec. 12",
+        "suggested_text": "\"…which is also why a payload should hold nothing that must stay hidden from whoever gets hold of the token.\""
+      }
+    ],
+    "issues": [
+      {
+        "severity": "major",
+        "section": 7,
+        "kind": "accuracy",
+        "text": "Unlisted claim, and incomplete: the padding advice. Base64url also swaps '+' '/' for '-' '_', which GNU `base64 -d` rejects no matter how many '=' are added. Ran: `echo eyJ4IjoiPz8_In0== | base64 -d` -> `{\"x\":\"??base64: invalid input`. For this account -f1/-f2 decode cleanly (rc=0), but another email or exp can produce '-'/'_' and the learner loops adding '='.",
+        "quote": "If `base64` complains about invalid input, add `=` to the end of the copied part until it stops.",
+        "fix": "Replace with: \"If `base64` complains about invalid input, the part may be missing its `=` padding or contain `-`/`_`, which plain Base64 does not use. Add `=` to the end until the length is a multiple of 4, and pipe through `tr '_-' '/+'` before `base64 -d`.\" Add the behaviour to the claims ledger."
+      },
+      {
+        "severity": "major",
+        "section": 3,
+        "kind": "accuracy",
+        "text": "Unlisted claim about why Base64url is used. RFC 7515 defines it as the \"URL- and filename-safe\" alphabet; RFC 7519 abstract: \"a compact, URL-safe means\", intended for \"HTTP Authorization headers and URI query parameters\". Header-safety alone is not the reason (ordinary Base64 is also header-safe).",
+        "quote": "it makes JSON safe to put in a header, and anyone can reverse it",
+        "fix": "Sec. 3: \"…the text encoding each of the first two parts uses: it makes JSON safe to put in a URL or a header, and anyone can reverse it.\" Sec. 4: \"text that can travel in a URL or a header without breaking it\". Add a claim citing RFC 7515 sec. 2 and RFC 7519 sec. 1."
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "Unlisted claims in the prose after the code: key comes from `Jwt__SigningKey` env var, and IssueToken's string is \"the same string `AuthController.Login` returns\". Both true at stage-1 (docker-compose.yml api.environment `Jwt__SigningKey: \"${JWT_SIGNING_KEY}\"`; AuthController.Login `return Ok(new LoginResponse(token));`, response `{\"token\":\"…\"}`), but not in the ledger.",
+        "quote": "the same string `AuthController.Login` returns, and nothing about it is saved",
+        "fix": "Add two claims to .meta.json with source_hint examples/don-hang @ stage-1 docker-compose.yml (api.environment) and DonHang.Api/Controllers/AuthController.cs. Optionally say \"returns as the `token` field\" to match the JSON the learner sees in Try it step 1."
+      },
+      {
+        "severity": "minor",
+        "section": 3,
+        "kind": "accuracy",
+        "text": "JWT defined as always three parts. RFC 7519 sec. 3 only says a sequence of base64url parts separated by periods; three is the signed (JWS) form. See claim 4.",
+        "quote": "a token made of three dot-separated parts — header, payload, signature",
+        "fix": "Apply claim 4 suggested_text in sec. 3 and summary line 1 (restrict to \"a signed JWT like the ones Đơn Hàng issues\")."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "`exp` described as \"a count of seconds\" without the epoch; RFC 7519 NumericDate is seconds since 1970-01-01T00:00:00Z UTC. Same wording in quiz q5 explanation (en and vi).",
+        "quote": "`exp` the moment the token expires as a count of seconds",
+        "fix": "Apply claim 7 suggested_text to sec. 4 and to quiz q5 explanation.correct (vi: \"số giây tính từ 1/1/1970 (UTC)\")."
+      },
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "opinion-as-fact",
+        "text": "Absolute rule without condition, stronger than RFC 7519 sec. 12 and contradicted by the lesson's own payload, which carries the customer's email. Repeated in quiz q4 explanation.correct.",
+        "quote": "which is also why nothing private belongs in a payload",
+        "fix": "Use claim 10 suggested_text in sec. 6; in quiz q4 explanation.correct replace \"which is why nothing private belongs in a payload\" with \"which is why a payload should hold nothing that must stay hidden from whoever gets the token\" (and matching vi)."
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "accuracy",
+        "text": "Suggested answer gives only half the observed reason. Ran `cut -d. -f3 | base64 -d`: prints one byte then `base64: invalid input` because the signature part contains '_' (Base64url alphabet). The learner sees an error, not unreadable text, and the earlier '=' advice will not clear it.",
+        "quote": "raw bytes produced by HMAC-SHA256, not encoded JSON, so there is no text to recover",
+        "fix": "Change to: \"The third part is the signature: Base64url-encoded raw bytes produced by HMAC-SHA256, not encoded JSON — so `base64 -d` either rejects it or prints unreadable bytes; there is no text to recover.\" Add to claims ledger (live run)."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "fix-required"
+  }
+}
