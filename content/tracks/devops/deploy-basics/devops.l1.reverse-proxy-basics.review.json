@@ -1,0 +1,129 @@
+{
+  "id": "devops.l1.reverse-proxy-basics",
+  "technical": {
+    "reviewed_at": "2026-09-26T06:05:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "RFC 9110 §3.7: \"A \\\"gateway\\\" (a.k.a. \\\"reverse proxy\\\") is an intermediary that acts as an origin server for the outbound connection but translates received requests and forwards them inbound to another server or servers.\" Execution: curl -si localhost:8080/api/v1/products/1 -> 200, Server: Kestrel, Via: 1.1 Caddy (answer relayed by Caddy); host cannot resolve `api` (curl -v: \"Could not resolve host: api\").",
+        "source": "refs/rfc/rfc9110.txt:911-913; execution on running lab (stage-1)"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Caddyfile@stage-1:22-24 `handle /api/v1/* { reverse_proxy api:8080 }`; Caddyfile@stage-0:14-55 answered /api/v1/orders, /orders/1, /orders/999 with `respond` inside `handle @postOrder/@getOrder/@replaceOrder/@deleteOrder/@missingOrder`, all removed at stage-1. Caddy matchers doc: \"`/foo/*` will not match `/foo` or `/foobar`\" (prefix match on `/prefix/*`); handle doc: handle does not strip the prefix (handle_path does).",
+        "source": "examples/don-hang@stage-0,stage-1: Caddyfile; https://caddyserver.com/docs/caddyfile/matchers; https://caddyserver.com/docs/caddyfile/directives/handle"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Caddy reverse_proxy doc page does not mention Via (only X-Forwarded-For/-Proto/-Host); settled by execution against caddy:2.10.0: /api/v1/products/1 -> `Server: Kestrel`, `Via: 1.1 Caddy`; /conflict -> 409, `Server: Caddy`, no Via; lab box direct curl api:8080 -> `Server: Kestrel`, no Via. RFC 9110 §7.6.3: a gateway \"MAY send a Via header field in forwarded response messages.\"",
+        "source": "execution on running lab (Try-it steps 1-3); refs/rfc/rfc9110.txt:2686-2690"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Caddyfile@stage-1:12 `root * /srv/www`, 46-58 redir 302 / respond 409 / respond 503 / fallback `handle { file_server }`. handle doc: \"only the first matching handle block will be evaluated\"; \"A handle with no matcher acts like a fallback route.\" Execution: /redirect -> 302, Location: /index.html, Server: Caddy; /conflict -> 409, Server: Caddy.",
+        "source": "examples/don-hang@stage-1: Caddyfile; https://caddyserver.com/docs/caddyfile/directives/handle; curl on running lab"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "docker-compose.yml@stage-1: service api has hostname api, network donhang (172.28.0.13), no `ports:`; lab on donhang (172.28.0.12). Host: `curl -sv http://api:8080/` -> \"Could not resolve host: api\"; nslookup api -> Non-existent domain; curl 172.28.0.13:8080 timed out (Docker Desktop). Lab box: ssh ... 'curl -si http://api:8080/api/v1/products/1' -> 200 Server: Kestrel.",
+        "source": "examples/don-hang@stage-1: docker-compose.yml; execution on host and lab box"
+      },
+      {
+        "n": 6,
+        "verdict": "rephrased",
+        "evidence": "Ledger claim holds: POST /api/v1/auth/login body `{bad` -> 400 application/problem+json, Server: Kestrel, Via: 1.1 Caddy. But lesson §6 says \"a malformed request\": a malformed HTTP request (`Host localhost` without colon, sent raw to :8080 from the lab box) got `400 Bad Request` text/plain with no Server: Kestrel and no Via — Caddy's own HTTP server rejected it, it never reached the API.",
+        "source": "execution on running lab (curl and raw request via nc)",
+        "suggested_text": "You notice this when a request with a broken JSON body, such as a login with `{bad`, still reaches the API and gets a `400` from it, with `Server: Kestrel`: Caddy passed it on without judging it."
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Execution from examples/don-hang: `ssh -o StrictHostKeyChecking=accept-new -p 2222 -i secrets/lab_key dev@localhost 'curl -si http://api:8080/api/v1/products/1'` printed \"Warning: Permanently added '[localhost]:2222' (ED25519) to the list of known hosts.\" (host key was unknown, so default ssh asks) then the 200 Kestrel answer, i.e. the command ran on the lab box.",
+        "source": "execution on host against running lab"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "RFC 9110 §3.7: a \"proxy\" \"is chosen by the client, usually via local configuration rules\", whereas a gateway (reverse proxy) \"acts as an origin server for the outbound connection\" — so the client needs no setup. docker-compose.yml@stage-1: api publishes no port; only path in from host to the API is Caddy's :8080/:8443.",
+        "source": "refs/rfc/rfc9110.txt:898-913; examples/don-hang@stage-1: docker-compose.yml"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "major",
+        "section": 2,
+        "kind": "accuracy",
+        "quote": "In stage 0, `curl http://localhost:8080/api/v1/orders/1` got its answer from a `respond` line typed into `Caddyfile`. Today the same address returns real products from the database",
+        "text": "Unlisted claim, and wrong: at stage-1 GET /api/v1/orders/1 is OrdersController.Get and returns an order (execution: {\"id\":1,\"customerId\":1,\"status\":\"paid\",\"placedAt\":...,\"items\":[...]}), not products.",
+        "fix": "Replace with \"Today the same address returns a real order from the database, computed by the API and served by Kestrel.\" and add a ledger claim: GET /api/v1/orders/1 at stage-1 returns order 1 from the database via Caddy (source: OrdersController.cs, curl on the lab)."
+      },
+      {
+        "severity": "major",
+        "section": 7,
+        "kind": "accuracy",
+        "quote": "Your laptop is outside that network, and the lab publishes only Caddy's ports to it, so from there Caddy is the only way in.",
+        "text": "Unlisted claim, and wrong: docker-compose.yml@stage-1 also publishes 2222 (the lab box's SSH, used in step 3 itself), 5432 (db) and 8081 (app-web). What is true is that the API publishes no port.",
+        "fix": "Replace with \"Your laptop is outside that network, and the lab publishes no port for the API, so from there Caddy is the only way to reach it.\" Covered by existing claim 5; no new claim needed."
+      },
+      {
+        "severity": "major",
+        "section": 6,
+        "kind": "accuracy",
+        "quote": "You notice this when a malformed request still reaches the API and gets a `400` from it, because Caddy passed it on without judging it.",
+        "text": "Wider than claim 6. A request malformed at the HTTP level (tested: header line `Host localhost` with no colon) is rejected by Caddy with 400 text/plain, no Server: Kestrel, no Via; only a well-formed HTTP request with a bad JSON body reaches the API. Same wording in quiz q2 explanation.correct (en and vi).",
+        "fix": "Use claim 6 suggested_text in §6. In q2 explanation.correct: en \"A request with a broken JSON body still passes through Caddy and gets its `400` from the API.\"; vi \"Một request có body JSON hỏng vẫn đi qua Caddy và nhận `400` từ API.\""
+      },
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "accuracy",
+        "quote": "It can add or change headers on the way through.",
+        "text": "Unlisted claim: a capability statement about reverse proxies (and, in context, Caddy) with no ledger entry. It is supportable: Caddy reverse_proxy doc, header_up \"sets, adds ..., deletes ..., or performs a replacement ... in a request header going upstream\"; header_down does the same for response headers coming downstream.",
+        "fix": "Add a ledger claim (kind behavior, source_hint Caddy docs reverse_proxy header_up/header_down, section 4): \"Caddy's reverse_proxy can set, add or remove request headers going to the upstream and response headers coming back.\" Keep the sentence as is."
+      },
+      {
+        "severity": "minor",
+        "section": 2,
+        "kind": "accuracy",
+        "quote": "computed by Kestrel inside the API",
+        "text": "Kestrel is the web server that receives the request and sends the answer; the order is computed by the API's controller/service code. Same looseness in quiz q1 option a / explanation a (\"Kestrel computes the answer\") — key unaffected.",
+        "fix": "Say \"computed by the API and sent back by Kestrel\"; in q1 option a use \"Kestrel, because it sends the answer\" and explanation a \"Kestrel sends the answer, but `curl` never connects to it...\" (vi to match)."
+      },
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "accuracy",
+        "quote": "Actually in the lab it cannot be reached from your laptop at all",
+        "text": "\"at all\" holds on Docker Desktop (tested: 172.28.0.13:8080 timed out) but Docker docs say for Docker Engine: \"Unpublished container ports continue to be directly accessible from the Docker host via the container's IP address.\" Quiz q5 explanation.correct (\"even by address there is no published port to reach\") has the same gap.",
+        "fix": "Drop \"at all\": \"Actually your laptop has no way to name it or a port to reach it: the lab gives the API no port of its own, and `api` is a name only the lab's network knows.\" In q5 explanation.correct drop \"and even by address there is no published port to reach\" in favour of \"and the lab publishes no port for the API\"."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "scope",
+        "quote": "Caddy still answers `/redirect`, `/conflict` and `/slow` itself and serves files for other paths, all on one port.",
+        "text": "Outline item 2 names \"`/admin`, `/conflict` and `/slow` still use `respond`\"; the lesson's second excerpt (lines 45-58) and summary line 4 skip lines 25-44, so `/admin` (respond 401/403/200) is neither shown nor mentioned, and \"serves files for other paths\" misdescribes it.",
+        "fix": "In §5 after the second excerpt add: \"Above these, the same `route` also answers `/admin` itself with `respond`.\" Summary line 4: \"Caddy still answers `/admin`, `/redirect`, `/conflict` and `/slow` itself and serves files for the rest, all on one port.\""
+      },
+      {
+        "severity": "minor",
+        "section": "frontmatter",
+        "kind": "version",
+        "quote": "versions_used: [aspnetcore]",
+        "text": "Claims 1-4 and the Try-it depend on Caddy behaviour (reverse_proxy, handle ordering, the `Via: 1.1 Caddy` header, which the reverse_proxy doc page does not describe and was observed on caddy:2.10.0), but `caddy` is not in versions_used, so a Caddy bump would not trigger re-review.",
+        "fix": "Set `versions_used: [aspnetcore, caddy]`."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "fix-required"
+  }
+}

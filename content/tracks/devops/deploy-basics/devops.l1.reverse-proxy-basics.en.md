@@ -13,7 +13,7 @@ prereqs: [devops.l1.what-is-deploy, backend.l1.what-kestrel-does]
 related: []
 vocab: [reverse-proxy]
 example_tag: stage-1
-versions_used: [aspnetcore]
+versions_used: [aspnetcore, caddy]
 content_version: 1
 status: draft
 ---
@@ -25,7 +25,7 @@ status: draft
 
 ## The situation
 
-In stage 0, `curl http://localhost:8080/api/v1/orders/1` got its answer from a `respond` line typed into `Caddyfile`. Today the same address returns real products from the database, computed by Kestrel inside the API. Yet the address has not changed: you still talk to port `8080`, the port Caddy listens on, and the lab gives the API no port of its own on your laptop. So your request reaches Kestrel, but you never connected to Kestrel. What sits between the two, and why would anyone put it there?
+In stage 0, `curl http://localhost:8080/api/v1/orders/1` got its answer from a `respond` line typed into `Caddyfile`. Today the same address returns a real order from the database, worked out by the API's code and sent back by Kestrel. Yet the address has not changed: you still talk to port `8080`, the port Caddy listens on, and the lab gives the API no port of its own on your laptop. So your request reaches Kestrel, but you never connected to Kestrel. What sits between the two, and why would anyone put it there?
 
 ## Core concepts
 
@@ -70,7 +70,7 @@ The part of `Caddyfile` that serves port `8080`, in stage 1:
 		}
 ```
 
-`handle /api/v1/*` catches every request whose path starts with `/api/v1/`, and `reverse_proxy api:8080` forwards it to port `8080` on `api`, the name the lab gives the API on its own network. That one line replaced all the `respond` blocks that faked `/api/v1/*` in stage 0. Caddy adds a `Via: 1.1 Caddy` header to the answers it passes back, and Kestrel's `Server: Kestrel` header comes through unchanged.
+`handle /api/v1/*` catches every request whose path starts with `/api/v1/`, and `reverse_proxy api:8080` forwards it to port `8080` on `api`, the name the lab gives the API on its own network. That one line replaced all the `respond` blocks that faked `/api/v1/*` in stage 0. `/admin`, just below it in the same file, still answers with `respond` lines of its own. Caddy adds a `Via: 1.1 Caddy` header to the answers it passes back, and Kestrel's `Server: Kestrel` header comes through unchanged.
 
 The same `route` still answers other paths itself, the way every path was answered in stage 0:
 
@@ -95,8 +95,8 @@ The same `route` still answers other paths itself, the way every path was answer
 
 ## Beginners often think…
 
-- **"A reverse proxy is just a firewall that blocks bad requests, not something that forwards good ones."** → Actually forwarding is the whole job: every request to `/api/v1/*` in the lab goes through Caddy to Kestrel and back. Keeping the API out of direct reach is a side effect of it being the only door, not a check on each request. You notice this when a malformed request still reaches the API and gets a `400` from it, because Caddy passed it on without judging it.
-- **"Kestrel could just as easily be reached directly, so the reverse proxy is only there for convenience."** → Actually in the lab it cannot be reached from your laptop at all: the lab gives the API no port of its own, and `api` is a name only the lab's network knows. Everything you send to the API has to go through Caddy. You notice this when you try `curl http://api:8080` from your laptop and the name does not even resolve.
+- **"A reverse proxy is just a firewall that blocks bad requests, not something that forwards good ones."** → Actually forwarding is the whole job: every request to `/api/v1/*` in the lab goes through Caddy to Kestrel and back. Keeping the API out of direct reach is a side effect of it being the only door, not a check on each request. You notice this when a request with a broken JSON body, such as a login with `{bad`, still reaches the API and gets a `400` from it, with `Server: Kestrel`: Caddy passed it on without judging it.
+- **"Kestrel could just as easily be reached directly, so the reverse proxy is only there for convenience."** → Actually in the lab you cannot reach it from your laptop: the lab gives the API no port of its own, and `api` is a name only the lab's network knows. Everything you send to the API has to go through Caddy. You notice this when you try `curl http://api:8080` from your laptop and the name does not even resolve.
 
 ## Try it (3 minutes)
 
@@ -112,7 +112,7 @@ Step 3 reached Kestrel without Caddy. Why could it, when your laptop cannot, and
 
 <details><summary>Suggested answer</summary>
 
-The lab box is on the lab's own network, where `api` is a known name and port `8080` on it is open to other members of that network. Your laptop is outside that network, and the lab publishes only Caddy's ports to it, so from there Caddy is the only way in. The missing `Via` header shows the answer came straight from Kestrel: `Via: 1.1 Caddy` is added by Caddy on the way through, and Kestrel never writes it.
+The lab box is on the lab's own network, where `api` is a known name and port `8080` on it is open to other members of that network. Your laptop is outside that network, and the lab publishes no port for the API to it, so from there Caddy is the only way in to the API. The missing `Via` header shows the answer came straight from Kestrel: `Via: 1.1 Caddy` is added by Caddy on the way through, and Kestrel never writes it.
 
 </details>
 
@@ -127,5 +127,5 @@ The lab box is on the lab's own network, where `api` is a known name and port `8
 1. A **reverse proxy** accepts requests from outside and forwards them to the application behind it, the upstream.
 2. The client only ever connects to the proxy; it never learns the upstream's address.
 3. In stage 1, one `reverse_proxy api:8080` line sends `/api/v1/*` to Kestrel, replacing stage 0's fixed answers.
-4. Caddy still answers `/redirect`, `/conflict` and `/slow` itself and serves files for other paths, all on one port.
+4. Caddy still answers `/admin`, `/redirect`, `/conflict` and `/slow` itself, on the same port as the API.
 5. The API has no port of its own outside the lab, so Caddy is the only way in from your laptop.
