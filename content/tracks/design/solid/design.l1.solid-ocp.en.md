@@ -15,9 +15,9 @@ vocab: [ocp]
 example_tag: stage-1
 versions_used: [dotnet]
 content_version: 1
-status: draft
-approved_by: null
-reviewed_at: null
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-25T18:00:00+07:00"
 ---
 
 ## Before you start
@@ -48,7 +48,7 @@ OCP is about where a new case goes. In `ShippingFeeIfElseChain`, a kind of shipp
 
 In `ShippingFee`, each kind is a class that derives from the same abstract class and overrides one method, `ForOrder`. A new kind is a new class beside the others, so adding it is an extension. `StandardShipping`, `ExpressShipping` and `PickUpInStore` are not opened, and the tests that check them do not change.
 
-Code that only calls `ForOrder` through a `ShippingFee` variable does not change either: it never asks which kind it has. Some code still has to create the new kind. In the samples, the only code that creates the kinds is two tests in `SamplesTests.cs`, which write `new StandardShipping()` and the others; code that offered same-day would add one more `new` like that. That is a small edit where the kind is chosen, not inside a fee rule — OCP protects the rules that already work and the tests that check them. That is the goal of OCP: the change you are asked for arrives as new code, and the code you trusted yesterday stays as it was.
+Code that only calls `ForOrder` through a `ShippingFee` variable does not change either: it never asks which kind it has. Some code still has to create the new kind. In the samples, the only code that creates the kinds is two tests in `SamplesTests.cs`, which write `new StandardShipping()` and the others; code that offered same-day would add one more `new` like that. That is a small edit where the kind is chosen, not inside a fee rule — OCP protects the rules that already work and the tests that check them. So the goal of OCP is: the change you are asked for arrives as new code, and the code you trusted yesterday stays as it was.
 
 ## In the Đơn Hàng system
 
