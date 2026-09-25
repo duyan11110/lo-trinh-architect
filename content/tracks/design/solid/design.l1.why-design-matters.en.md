@@ -27,32 +27,33 @@ reviewed_at: null
 
 ## The situation
 
-The shop wants loyal customers to get 5% off instead of 10%. You open `PlaceOrderLong.Place`, find the line that takes 10% off, and change `10` to `5`. It is a tiny edit to the discount, and nothing else looks touched. A week later, a loyal customer who ordered two items at 1,100,000 VND each asks why their shipping fee disappeared. Nobody changed the shipping fee. How did a change to the discount end up changing it?
+The shop wants loyal customers to get 5% off instead of 10%. You open `PlaceOrderLong.Place`, find the line that takes 10% off, and change `10` to `5`. It is a tiny edit to the discount, and nothing else looks touched. A week later, a loyal customer who ordered two items at 1,100,000 VND each asks why their shipping fee disappeared. Nobody changed the shipping fee, and nobody decided it should change. How did a change to the discount end up changing it?
 
 ## Core concepts
 
 - reason to change — a rule the business might ask you to change on its own, such as how orders are checked, how prices are calculated, how an order is saved, or how the customer is told.
 - change cost — how much you have to read, change and re-check to make one such change safely; the more unrelated work shares a place with it, the higher it is.
-- design — the choices about where each piece of work lives and what it can reach, which together decide how expensive later changes are.
+- design — the choices about where each piece of work lives and what it can reach, which together shape how expensive later changes are.
 
 ## How it works
 
 ```mermaid
 flowchart LR
   P[PlaceOrderLong.Place] --> V[check the input]
-  P --> C[calculate the price]
+  P --> C[calculate the price: sum, discount, then shipping fee]
   P --> S[save the order]
   P --> N[notify the customer]
   C --> T[totalVnd]
-  T --> F[shipping fee decided from it]
   T --> S
 ```
 
 `PlaceOrderLong.Place` does four jobs in one method body: it checks the input, calculates the price, saves the order and notifies the customer. Each of those is a separate reason to change — the checking rules, the pricing rules, how saving works and how notifications go out can each change on their own. None of the four has a name: they are just stretches of lines inside `Place`.
 
-Because they share one body, they also share its variables. The price calculation builds up `totalVnd` in several steps, and the lines after the discount that read `totalVnd` see the discounted value — the shipping fee, which is only added when the total is below 2,000,000 VND, and the saving line. In the situation, the order came to 2,200,000 VND. With 10% off, it dropped to 1,980,000, below the threshold, so the fee was added. With 5% off, it dropped only to 2,090,000, so the fee vanished. The discount edit changed the fee because both rules sit in the same method and read the same variable, not because anyone touched the fee.
+Because they share one body, they also share its variables. The pricing job is itself three rules — sum the lines, take the discount, add the shipping fee — and all three build up the one variable `totalVnd`. The fee rule reads whatever the discount rule left there: it adds 30,000 VND only when the total is below 2,000,000 VND. In the situation, the order came to 2,200,000 VND. With 10% off, it dropped to 1,980,000, below the threshold, so the fee was added; with 5% off, it dropped only to 2,090,000, so the fee vanished. And the saving job reads `totalVnd` too, so every pricing change reaches what gets saved.
 
-That is what design is about. The code ran exactly as written before the edit and after it; what changed is how much you had to know to edit it safely. Where each piece of work lives is a large part of that cost for the changes that come later.
+Should the fee follow the discounted total or the original one? That is a business decision, and the code never states it. The edit changed the answer without anyone deciding — not because the code is wrong, but because nothing separates the rules that read `totalVnd`.
+
+That is what design is about. The code ran exactly as written before the edit and after it; the problem is how much you had to know to edit it safely. If each rule took the value it needs as a named input, a discount edit could not reach the fee by accident — the next lessons show ways to get there.
 
 ## In the Đơn Hàng system
 
@@ -92,7 +93,7 @@ The second half applies the discount, adds the shipping fee, then "saves" and "n
         return $"order placed, total {totalVnd}";
 ```
 
-The discount line changes `totalVnd` in place, and the very next statement decides the shipping fee from that same `totalVnd`. Nothing in the code says the fee is meant to depend on the discounted total rather than the original one — it just does, because of where the lines sit. The saving line prints `totalVnd` too, so a pricing change reaches it as well; the email line uses only `customerId`, yet it still sits in the same body you have to read. The file's own comment names the problem: "Four reasons to change one place, and no name for any of the four."
+The discount line changes `totalVnd` in place, and the very next statement decides the shipping fee from that same `totalVnd`. Nothing in the code says the fee is meant to depend on the discounted total rather than the original one — it just does, because of where the lines sit. The saving line prints `totalVnd` too, so a pricing change reaches it as well; the email line uses only `customerId`, yet it still sits in the same body you have to read. The file's own comment, just above the method, names the problem: "Four reasons to change one place, and no name for any of the four."
 
 ## Beginners often think…
 
@@ -125,7 +126,7 @@ The fee line, `totalVnd += totalVnd >= 2_000_000 ? 0 : 30_000;`, decided it both
 ## Five-line summary
 
 1. `PlaceOrderLong.Place` checks, prices, saves and notifies in one method: four reasons to change, none of them named.
-2. Sharing one body means sharing variables, so a change to one job can reach the others.
+2. Sharing one body means sharing variables, so a change to one rule can reach others that read the same variable.
 3. Changing the discount changed the shipping fee, because the fee is decided from the already-discounted total.
 4. Working code can still be expensive to change; tests describe today's behaviour, design decides tomorrow's change cost.
 5. Design is the set of choices about where each piece of work lives, and it is a large part of what later changes cost.
