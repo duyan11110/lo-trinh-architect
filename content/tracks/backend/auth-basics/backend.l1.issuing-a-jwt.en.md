@@ -46,7 +46,7 @@ flowchart LR
   SIG --> T[token: header.payload.signature]
 ```
 
-A token starts as two small pieces of JSON. The header says what the token is — `"typ":"JWT"` — and how it is signed: `"alg":"HS256"`. HS256 is short for HMAC-SHA256, a calculation that takes some text and a key and produces a fixed-size result: the same text and key always give the same result, and without the key nobody can produce it. The payload holds the claims: `sub` is the customer's id, `email` their address, `exp` the moment the token expires, written as the number of seconds since 1 January 1970 (UTC), and `iss` and `aud` name who issued it and who it is meant for.
+A token starts as two small pieces of JSON. The header says what the token is — `"typ":"JWT"` — and how it is signed: `"alg":"HS256"`. HS256 is short for HMAC-SHA256, a calculation that takes some text and a key and produces a fixed-size result: the same text and key always give the same result, and without the key it is not practically possible to produce it. The payload holds the claims: `sub` is the customer's id, `email` their address, `exp` the moment the token expires, written as the number of seconds since 1 January 1970 (UTC), and `iss` and `aud` name who issued it and who it is meant for.
 
 Each piece is then encoded with Base64url. That turns JSON into text that can travel in a URL or a header without breaking it, and it is fully reversible — which is why the situation's decoding worked. Encoding hides nothing; encrypting would mean scrambling the text so that only someone holding a key could turn it back, and these tokens do not do that.
 
@@ -56,7 +56,7 @@ So the payload is readable by anyone, and the signature is what nobody but the A
 
 ## In the Đơn Hàng system
 
-`JwtTokenService.IssueToken` builds and signs every token the API hands out:
+`JwtTokenService.IssueToken` builds and signs every token the API hands out — `AuthController.Login` calls it only after `PasswordHasher.Verify` has accepted the password:
 
 ```csharp file=DonHang.Api/JwtTokenService.cs tag=stage-1 lines=11-33
 public sealed class JwtTokenService(IConfiguration configuration)
@@ -110,7 +110,7 @@ The third part is the signature: Base64url-encoded raw bytes produced by HMAC-SH
 ## Connections
 
 - [[backend.l1.sessions-vs-tokens]] — the token model this lesson opens up: why nothing is stored, now with what the token actually holds.
-- [[backend.l1.hashing-passwords]] — the check that runs right before `IssueToken`, and another one-way computation used for proof rather than for hiding.
+- [[backend.l1.hashing-passwords]] — the check that runs right before `IssueToken`, and another computation used for proof rather than for hiding.
 - [[backend.l1.validating-a-jwt]] — the next lesson, which checks the signature and expiry this lesson produces on every request.
 
 ## Five-line summary
