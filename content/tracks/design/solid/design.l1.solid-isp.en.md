@@ -15,9 +15,9 @@ vocab: [isp]
 example_tag: stage-1
 versions_used: [dotnet]
 content_version: 1
-status: draft
-approved_by: null
-reviewed_at: null
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-25T20:00:00+07:00"
 ---
 
 ## Before you start
@@ -44,7 +44,7 @@ flowchart LR
   M[SmsNotifier] -->|derives from| B
 ```
 
-In the diagram, the arrow into `IFullNotifier` is the fat design. The other three are the small one: `NotifierBase` implements `INotifier`, and `EmailNotifier` and `SmsNotifier` derive from `NotifierBase`. Both live in the samples today. A fat interface hurts on two sides.
+In the diagram, the arrow into `IFullNotifier` is the fat design. The other three are the small one: `NotifierBase` implements `INotifier`, and `EmailNotifier` and `SmsNotifier` derive from `NotifierBase`. Both designs live in the samples today. A fat interface hurts on two sides.
 
 On the implementing side, C# requires `SmsOnlyNotifier` to provide every method `IFullNotifier` declares — all three. `SmsOnlyNotifier` has real behaviour for `Send` only, so the other two get filler: here, a `throw`. And if someone changes the parameters of `Retry`, every class that implements `IFullNotifier` must change, `SmsOnlyNotifier` included, even though it never retries anything.
 
@@ -95,7 +95,7 @@ One method. A class that implements `INotifier` promises to send a message about
 ## Beginners often think…
 
 - **"A big interface is fine as long as each of its methods is used by some class somewhere."** → Actually ISP asks about each piece of code that depends on the interface, not about the system as a whole. `History` might matter to a channel that keeps messages, but `SmsOnlyNotifier` still has to carry it, and a caller that only sends still asks for all three. You notice this when a class that does exactly what you need cannot be passed in without filler for methods you never call.
-- **"ISP is only about how many methods an interface has, not about who is forced to depend on it."** → Actually a small count is a symptom, not the goal. An interface with three methods is fine when every caller and every implementer needs all three; `IFullNotifier` is a problem because `SmsOnlyNotifier` needs one of its three. You notice this when you find yourself writing filler bodies just to make a class compile.
+- **"ISP is only about how many methods an interface has, not about who is forced to depend on it."** → Actually a small count is often the result, not the goal. An interface with three methods is fine when every caller and every implementer needs all three; `IFullNotifier` is a problem because `SmsOnlyNotifier` needs one of its three. You notice this when you find yourself writing filler bodies just to make a class compile.
 
 ## Try it (3 minutes)
 
