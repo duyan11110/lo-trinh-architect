@@ -15,7 +15,9 @@ vocab: [di-container]
 example_tag: stage-1
 versions_used: [dotnet, aspnetcore]
 content_version: 1
-status: draft
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-26T06:40:00+07:00"
 ---
 
 ## Before you start
@@ -43,7 +45,7 @@ flowchart TD
   S --> N[INotifier = LoggingNotifier]
   R --> D[DonHangDbContext]
   R2 --> D2[DonHangDbContext]
-  N --> L[ILogger]
+  N --> L["ILogger#lt;LoggingNotifier#gt;"]
 ```
 
 Each arrow means "asks for in its constructor". A **DI container** works in two phases. At startup, the app fills it with registrations. Each one maps a type that code asks for to the class that should answer it: `IOrderRepository` to `EfOrderRepository`, `INotifier` to `LoggingNotifier`, and `OrderService` to itself, because code asks for that class directly. `DonHangDbContext` and the logger are registered too, some by Đơn Hàng's startup code and some by ASP.NET Core. After startup, the registrations cannot change.
@@ -60,7 +62,7 @@ The container reads constructors like this one from `DonHang.Domain`:
 public sealed class OrderService(IOrderRepository repository, INotifier notifier)
 ```
 
-`OrderService` names two abstractions. The container cannot create an interface, so for each one it needs a registration that points to a class. It finds `EfOrderRepository` and `LoggingNotifier`, and moves on to their constructors. `EfOrderRepository(DonHangDbContext db)` asks for a concrete class. `DonHangDbContext` in turn asks for its options — settings such as which database to connect to — and those are registered along with it, so the container passes them in like any other parameter. `LoggingNotifier`, in `DonHang.Infrastructure`, asks for a logger:
+`OrderService` names two abstractions. The container cannot create an interface, so for each one it needs a registration that points to a class. It finds `EfOrderRepository` and `LoggingNotifier`, and moves on to their constructors. `EfOrderRepository(DonHangDbContext db)` asks for a concrete class: `DonHangDbContext`, the EF Core class through which Đơn Hàng reads and writes its database. It in turn asks for its options — settings such as which database to connect to — and those are registered along with it, so the container passes them in like any other parameter. `LoggingNotifier`, in `DonHang.Infrastructure`, asks for a logger:
 
 ```csharp file=DonHang.Infrastructure/LoggingNotifier.cs tag=stage-1 lines=9-13
 public sealed class LoggingNotifier(ILogger<LoggingNotifier> logger) : INotifier
@@ -81,7 +83,7 @@ Now imagine the API without a container. The code handling each request would fi
 
 ## Try it (3 minutes)
 
-Using the constructors in this lesson, write down the dependency graph behind one `OrdersController`: everything the container is asked for when ASP.NET Core creates it. Start from the controller and keep going until every branch ends at a class the container can build without asking for anything else you know about.
+Using the constructors in this lesson, write down the dependency graph behind one `OrdersController`: everything the container is asked for when ASP.NET Core creates it. Start from the controller and keep going until every branch ends at something this lesson does not take further.
 
 Expected result: `OrdersController` → `OrderService` and `IOrderRepository`; `OrderService` → `IOrderRepository` and `INotifier`; each `IOrderRepository` → `EfOrderRepository` → `DonHangDbContext` → its options; `INotifier` → `LoggingNotifier` → `ILogger<LoggingNotifier>`.
 
