@@ -15,7 +15,9 @@ vocab: [build-layout-paint]
 example_tag: stage-1
 versions_used: [flutter]
 content_version: 1
-status: draft
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-27T01:30:00+07:00"
 ---
 
 ## Before you start
@@ -38,15 +40,15 @@ The spinner in the Đơn Hàng app sits in the middle of the area below the titl
 ```mermaid
 flowchart LR
   B[build: widgets describe what exists] --> L[layout]
-  L --> P[paint: pixels drawn]
   L --> PA[parent passes constraints down]
   PA --> CH[child reports its size up]
   CH --> PO[parent sets the child's position]
+  PO --> P[paint: pixels drawn]
 ```
 
 Flutter goes from widgets to pixels in three phases, much like the browser's steps in the render lesson. Build comes first for each part of the screen: the `build` methods run and return widgets, a description of what should exist. At this point a widget has no size or position yet. A parent's `build` can create a child widget, but neither of them knows how big it will be.
 
-Layout comes next, and in it each parent works with its children, as the lower row of the diagram shows. The parent passes its child constraints: "you may be anywhere from 0 to 400 pixels wide". The child picks a size within those limits, asking its own children the same way, and reports its size back up. Then the parent decides where to place the child. A widget does not choose its size on its own: it chooses inside the limits its parent gives it, and its parent chooses where it goes.
+Layout comes next, and in it each parent works with its children, as the diagram shows. The parent passes its child constraints: "you may be anywhere from 0 to 400 pixels wide". The child picks a size within those limits, asking its own children the same way, and reports its size back up. Then the parent decides where to place the child. A widget does not choose its size on its own: it chooses inside the limits its parent gives it, and its parent chooses where it goes.
 
 Paint comes last. Only once every size and position is known can Flutter draw the pixels: the text, the spinner, the colours. That is the order for every piece of the screen: paint needs layout's answers, and layout needs the widgets that build described.
 
@@ -81,7 +83,7 @@ The list gives each `ListTile` its width, and the `ListTile` places the `trailin
 
 ## Beginners often think…
 
-- **"Layout and paint are the same step, since layout only matters visually anyway."** → Actually layout decides sizes and positions, and paint draws pixels using them; paint cannot start until layout has given its answers. Resizing the window changes where things go without changing what the widgets describe. You notice the difference when you resize the window and the spinner moves: layout decided the new position before paint drew anything there.
+- **"Layout and paint are the same step, since layout only matters visually anyway."** → Actually layout decides sizes and positions, and paint draws pixels using them; paint cannot start until layout has given its answers. You notice the difference when you resize the window and the spinner moves: layout decided the new position before paint drew anything there.
 - **"A widget decides its own size and position independently, without anything from its parent."** → Actually a widget chooses its size within the constraints its parent passes down, and the parent decides where it goes. The spinner is small because it chose to be, but it is in the middle because the `Center` put it there. You notice this when the same widget ends up in different places, or at different sizes, depending on what it is placed inside.
 
 ## Try it (3 minutes)
