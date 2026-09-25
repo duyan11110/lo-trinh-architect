@@ -15,9 +15,9 @@ vocab: [dip]
 example_tag: stage-1
 versions_used: [dotnet]
 content_version: 1
-status: draft
-approved_by: null
-reviewed_at: null
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-25T21:00:00+07:00"
 ---
 
 ## Before you start
@@ -47,7 +47,7 @@ flowchart LR
 
 In the top arrow, the high-level code points straight at a low-level class. `OrderPlacedTightlyCoupled` knows exactly how a customer is told: by an `EmailNotifier` it creates itself. Every change to that detail — another channel, a stand-in for a test — is an edit to this class.
 
-In the other arrows, `OrderNotifications` depends only on `INotifier`: "send a message about this order". It does not know whether email, SMS or something newer answers that. The concrete classes depend on `INotifier` too: implementing it means providing every method it declares, so if `Send` changed, `NotifierBase`, which implements it for `EmailNotifier` and `SmsNotifier`, would have to change too. Before, the arrow ran from the high-level code to the concrete class; now the concrete classes have arrows to the abstraction the high-level code uses. That turn in direction is the "inversion": both sides depend on the abstraction, and the high-level code no longer depends on any concrete notifier.
+In the other arrows, `OrderNotifications` depends only on `INotifier`: "send a message about this order". It does not know whether email, SMS or something newer answers that. The concrete classes depend on `INotifier` too: implementing it means providing every method it declares. So if `Send` changed, `NotifierBase` — which implements it for `EmailNotifier` and `SmsNotifier` — would have to change too. Before, the arrow ran from the high-level code to the concrete class; now the concrete classes have arrows to the abstraction the high-level code uses. That turn in direction is the "inversion": both sides depend on the abstraction, and the high-level code no longer depends on any concrete notifier.
 
 `OrderNotifications` receives its `INotifier` as a constructor parameter, and something outside it decides which concrete class to pass. Then it can be given `EmailNotifier`, `SmsNotifier`, or a class written next year, and its own source does not change. Merely using an interface is not enough: code that stored `new EmailNotifier()` in an `INotifier` field of its own would still be tied to `EmailNotifier`.
 
