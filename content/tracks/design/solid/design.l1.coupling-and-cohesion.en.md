@@ -26,7 +26,7 @@ reviewed_at: null
 
 ## The situation
 
-A teammate has already split `PlaceOrderLong` into `PlaceOrderSplit`: a short `Place` that calls four private methods, one per job. The code review says "much better — this fixes the design." Then the shop asks for the order total to appear in the customer's email. You open `PlaceOrderSplit` expecting to touch one small method, and find you must also change `Place`. A week later the loyalty discount drops from 10% to 5%, the edit happens in a different file, and the shipping fee in `PlaceOrderSplit` changes anyway for some loyal customers. If the split fixed the design, why do changes still land here — and still arrive from outside?
+A teammate has already split `PlaceOrderLong` into `PlaceOrderSplit`: a short `Place` that calls four private methods, one per job. The code review says "much better — this fixes the design." Then the shop asks for the order total to appear in the customer's email. You open `PlaceOrderSplit` expecting to touch one small method, and find you must also change `Place`. A week later the loyalty discount drops from 10% to 5%, the edit happens in a different file, and the shipping fee in `PlaceOrderSplit` changes anyway for some loyal customers. If the split fixed the design, why do changes still land here — and now arrive from outside too?
 
 ## Core concepts
 
@@ -53,7 +53,7 @@ Cohesion looks inside one unit and asks: do these lines belong together? `TotalW
 
 Coupling looks between units and asks: if this one changes, must that one change too? In the diagram, each arrow is a place where one unit relies on another. `Place` calls all four private methods, so it depends on each one's name and parameters, and on the results of `FirstProblemWith` and `TotalWithShippingVnd`. `TotalWithShippingVnd` relies on `NamingAfter.TotalVnd`, a method in another class, and on what that result means — the lines added up with the discount already taken off. `Save` and `Notify` both rely on `Console`, which is where their output goes.
 
-The two measurements can disagree. Each method in `PlaceOrderSplit` does one focused job: high cohesion at the method level. The class as a whole still holds all four jobs, which is low cohesion at the class level, and its `Place` still has an arrow to each of them, which is coupling. Splitting raised the cohesion of each method; it did not reduce how much `Place` depends on — it only made those dependencies visible as calls instead of a shared variable. High cohesion and low coupling usually both make a change cheaper, but you have to check each one separately.
+The two measurements can disagree. Each method in `PlaceOrderSplit` does one focused job: high cohesion at the method level. The class as a whole still holds all four jobs, which is low cohesion at the class level, and its `Place` still has an arrow to each of them, which is coupling. Splitting raised the cohesion of each method; it did not reduce what `Place` depends on — `Place` now calls each job by name, and pricing now depends on another class, `NamingAfter`. High cohesion and low coupling usually both make a change cheaper, but you have to check each one separately.
 
 ## In the Đơn Hàng system
 
