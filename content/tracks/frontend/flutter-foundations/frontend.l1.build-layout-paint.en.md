@@ -43,7 +43,7 @@ flowchart LR
   C -->|size goes up| L
 ```
 
-Flutter goes from widgets to pixels in three phases, much like the browser's steps in the render lesson. **Build** comes first: the `build` methods run and return the widget tree, a description of what should exist. At this point nothing has a size or a position. A parent's `build` can create a child widget, but neither of them yet knows how big it will be.
+Flutter goes from widgets to pixels in three phases, much like the browser's steps in the render lesson. Build comes first: the `build` methods run and return the widget tree, a description of what should exist. At this point nothing has a size or a position. A parent's `build` can create a child widget, but neither of them yet knows how big it will be.
 
 Layout comes next. It works down the tree and back up. Each parent passes its child constraints: "you may be anywhere from 0 to 400 pixels wide". The child picks a size within those limits, asking its own children the same way, and reports its size back up. Then the parent decides where to place the child. A widget does not choose its size on its own: it chooses inside the limits its parent gives it, and its parent chooses where it goes.
 
