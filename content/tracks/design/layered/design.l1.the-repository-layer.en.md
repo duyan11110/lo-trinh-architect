@@ -15,9 +15,9 @@ vocab: [repository]
 example_tag: stage-1
 versions_used: [dotnet, efcore]
 content_version: 1
-status: draft
-approved_by: null
-reviewed_at: null
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-26T02:30:00+07:00"
 ---
 
 ## Before you start
