@@ -28,7 +28,7 @@ status: draft
 
 ## Core concepts
 
-- **StatelessWidget** — a widget that describes the UI from its inputs, plus anything it looks up through its context; the same inputs always build the same tree.
+- **StatelessWidget** — a widget that describes the UI from its inputs, plus anything it looks up through its context; the same inputs in the same context always build the same tree.
 - **StatefulWidget** — a widget holding a separate `State` that can change over time, without new values passed in from outside.
 - `State` object — the companion object of a StatefulWidget; it keeps its fields between builds and has the `build` method.
 
@@ -42,7 +42,7 @@ flowchart LR
   ST --> B[State.build]
 ```
 
-A **StatelessWidget** is the simple case. Everything it shows comes from the values its parent passed into its constructor. Its `build` method reads those values and returns a tree; give it the same values and it returns the same tree. It can still show different things over time, when its parent builds it again with different inputs, or when something it looks up through its context, such as the colours, changes.
+A **StatelessWidget** is the simple case. Everything it shows comes from the values its parent passed into its constructor, and from what it looks up through its context. Its `build` method reads those and returns a tree; give it the same values in the same context and it returns the same tree. It can still show different things over time, when its parent builds it again with different inputs, or when something it looks up through its context, such as the colours, changes.
 
 A **StatefulWidget** is for a piece of UI that has to remember something by itself, between builds, without anyone passing it a new value. A StatefulWidget still receives inputs from its parent, as the diagram shows, but the widget object alone cannot remember anything: widgets are small descriptions that the parent's `build` creates again each time it runs. So a StatefulWidget comes with a separate `State` object. Flutter creates the `State` once, keeps it while the widget stays in the tree, and calls its `build` method whenever the screen needs describing. Anything the `State` stores in its fields is still there on the next build.
 
@@ -96,7 +96,7 @@ The widget class keeps only its input, the `apiClient`, and `createState` tells 
 
 ## Beginners often think…
 
-- **"StatefulWidget is just a StatelessWidget with more code; use it whenever unsure."** → Actually a StatefulWidget adds a second object that Flutter keeps alive, whose fields you must set and update yourself, for as long as the widget is on screen. If nothing needs remembering, that is extra weight and extra places for mistakes. You notice this when a stateful widget's fields hold values that no code ever changes, which is a sign it should have been stateless.
+- **"StatefulWidget is just a StatelessWidget with more code; use it whenever unsure."** → Actually a StatefulWidget adds a second object that Flutter keeps alive, whose fields you must set and update yourself, for as long as the widget is on screen. If nothing needs remembering, that is extra weight and extra places for mistakes. You notice this when nothing in a widget's `State` is ever loaded, typed, picked or replaced after the first build, which is a sign it could have been stateless.
 - **"A StatelessWidget can never change what it shows on screen."** → Actually a stateless widget shows whatever its inputs say, and its parent can build it again with new inputs. In `ProductListScreen`'s list, each product's name is shown by a `Text`, which is stateless, yet the rows show different names, and a row would show a new price if the list were built again with new data. You notice this when a stateless widget's display changes even though it has no fields of its own.
 
 ## Try it (3 minutes)
@@ -124,7 +124,7 @@ Whether sign-in is in progress changes because of something the screen itself do
 
 ## Five-line summary
 
-1. A StatelessWidget builds from its inputs and its context; the same inputs always give the same tree.
+1. A StatelessWidget builds from its inputs and its context; the same inputs in the same context give the same tree.
 2. A StatefulWidget has a separate `State` object that Flutter keeps between builds, holding what the widget remembers.
 3. `DonHangApp` has nothing to remember, so it is stateless.
 4. `ProductListScreen` keeps the `_products` load in its `State`, so the load survives rebuilds and can be replaced on refresh.
