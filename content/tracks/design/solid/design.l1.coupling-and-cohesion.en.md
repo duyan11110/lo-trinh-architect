@@ -26,7 +26,7 @@ reviewed_at: null
 
 ## The situation
 
-A teammate has already split `PlaceOrderLong` into `PlaceOrderSplit`: a short `Place` that calls four private methods, one per job. The code review says "much better — this fixes the design." Then the shop asks for the order total to appear in the customer's email. You open `PlaceOrderSplit` expecting to touch one small method, and find you must also change `Place`. A week later the loyalty discount drops from 10% to 5%, the edit happens in a different file, and the shipping fee in `PlaceOrderSplit` changes anyway. If the split fixed the design, why do changes still land here — and still arrive from outside?
+A teammate has already split `PlaceOrderLong` into `PlaceOrderSplit`: a short `Place` that calls four private methods, one per job. The code review says "much better — this fixes the design." Then the shop asks for the order total to appear in the customer's email. You open `PlaceOrderSplit` expecting to touch one small method, and find you must also change `Place`. A week later the loyalty discount drops from 10% to 5%, the edit happens in a different file, and the shipping fee in `PlaceOrderSplit` changes anyway for some loyal customers. If the split fixed the design, why do changes still land here — and still arrive from outside?
 
 ## Core concepts
 
@@ -51,9 +51,9 @@ flowchart LR
 
 Cohesion looks inside one unit and asks: do these lines belong together? `TotalWithShippingVnd` has high cohesion — every line in it serves one job, working out a total. `PlaceOrderLong.Place` had low cohesion: checking, pricing, saving and notifying all lived in one body.
 
-Coupling looks between units and asks: if this one changes, must that one change too? In the diagram, each arrow is a place where one unit relies on another. `Place` calls all four private methods, so it depends on each one's name, parameters and result. `TotalWithShippingVnd` relies on `NamingAfter.TotalVnd`, a method in another class, and on what that result means — the lines added up with the discount already taken off.
+Coupling looks between units and asks: if this one changes, must that one change too? In the diagram, each arrow is a place where one unit relies on another. `Place` calls all four private methods, so it depends on each one's name and parameters, and on the result of the two that return one. `TotalWithShippingVnd` relies on `NamingAfter.TotalVnd`, a method in another class, and on what that result means — the lines added up with the discount already taken off.
 
-The two measurements can disagree. Every method in `PlaceOrderSplit` may do one focused job, yet the class as a whole still holds all four jobs, and its `Place` still has an arrow to each of them. Splitting raised the cohesion of each method; it did not reduce how much `Place` depends on — it only made those dependencies visible as calls instead of a shared variable. High cohesion and low coupling both lower the cost of a change, but you have to check each one separately.
+The two measurements can disagree. Every method in `PlaceOrderSplit` may do one focused job, yet the class as a whole still holds all four jobs, and its `Place` still has an arrow to each of them. Splitting raised the cohesion of each method; it did not reduce how much `Place` depends on — it only made those dependencies visible as calls instead of a shared variable. High cohesion and low coupling usually both make a change cheaper, but you have to check each one separately.
 
 ## In the Đơn Hàng system
 
@@ -73,7 +73,7 @@ The two measurements can disagree. Every method in `PlaceOrderSplit` may do one 
     }
 ```
 
-Each job has a name, and the only thing that passes between them is what each call takes and returns. That is a real improvement over `PlaceOrderLong`, where every rule could read and change `totalVnd`. But `Place` names all four methods and decides what each receives. `Notify` receives only `customerId`, so putting the total in the email means changing `Notify` and the line in `Place` that calls it — two methods for one change.
+Each job has a name, and the only thing that passes between them is what each call takes and returns. That is a real improvement over `PlaceOrderLong`, where the discount and fee rules both changed the one variable `totalVnd`, and the saving line read it. But `Place` names all four methods and decides what each receives. `Notify` receives only `customerId`, so putting the total in the email means changing `Notify` and the line in `Place` that calls it — two methods for one change.
 
 The last three methods:
 
@@ -107,11 +107,11 @@ Read the two code blocks above. For each change, list every method you would hav
 
 Expected result: change 1 edits `Notify` (new parameter, new text) and `Place` (pass `totalVnd` to it), both in `PlaceOrderSplit.cs`. Change 2 edits only the constant `LoyaltyDiscountPercent` in `NamingAfter.cs` — yet for a loyal customer ordering two items at 1,100,000 VND, `PlaceOrderSplit.Place` goes from `order placed, total 2010000` to `order placed, total 2090000`, because the fee stops applying.
 
-Which change shows a cohesion problem, and which shows coupling between classes?
+Which change shows coupling between methods of one class, and which shows coupling between classes?
 
 <details><summary>Suggested answer</summary>
 
-Change 1 stays inside one class but still touches two methods, because `Place` decides what `Notify` receives, and the class holds all four jobs: that is the class's low cohesion, plus `Place`'s dependency on `Notify`. Change 2 is edited in one file and changes the result of another: `PlaceOrderSplit` depends on what `NamingAfter.TotalVnd` returns, so the two classes are coupled even though neither mentions the other's rules.
+Change 1 stays inside one class but still touches two methods, because `Place` decides what `Notify` receives: `Place` is coupled to `Notify`'s parameters. Change 2 is edited in one file and changes the result of another: `PlaceOrderSplit` depends on what `NamingAfter.TotalVnd` returns, so the two classes are coupled even though neither mentions the other's rules.
 
 </details>
 
@@ -124,7 +124,7 @@ Change 1 stays inside one class but still touches two methods, because `Place` d
 ## Five-line summary
 
 1. Cohesion measures how closely the things inside one unit belong to the same job.
-2. Coupling measures how much one unit depends on another, so that a change to one forces a change in the other.
+2. Coupling measures how much one unit depends on another, so that a change to one is likely to force a change in the other.
 3. They are different measurements: every method can be focused while the class around them still depends on many things.
 4. `PlaceOrderSplit` gave each job its own method, raising cohesion, but `Place` still depends on all four.
 5. Its fee still reads the discounted total from `NamingAfter.TotalVnd`, so a discount edit in another file reaches it.
