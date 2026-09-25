@@ -48,7 +48,7 @@ Reading the diagram from the left: Program.cs calls `AddDonHangInfrastructure`, 
 
 One registration per type is enough, no matter how many classes ask for it. `OrdersController` and `OrderService` both ask for `IOrderRepository`, and one registration serves both. The class that asks never says which implementation it wants; that knowledge lives only in the wiring.
 
-A registration can be missing, and the container never fills a constructor parameter with `null`. When it cannot find a registration for a type a constructor asks for, it throws an exception naming that type. Đơn Hàng's Docker setup runs the API in the Development environment, a mode meant for local work, and there the container checks at startup that every registered class can be built from the other registrations. So a missing dependency of `OrderService` stops the app before it serves anything. Controllers are not registered, so that check never looks at them: a type only a controller asks for fails later, on the first request that needs it.
+A registration can be missing, and the container never fills a required constructor parameter with `null`. When it cannot find a registration for a type a constructor asks for, it throws an exception naming that type. Đơn Hàng's Docker setup runs the API in the Development environment, a mode meant for local work, and there the container checks at startup that every registered class can be built from the other registrations. So a missing dependency of `OrderService` stops the app before it serves anything. Controllers are not registered, so that check never looks at them: a type only a controller asks for fails later, on the first request that needs it.
 
 ## In the Đơn Hàng system
 

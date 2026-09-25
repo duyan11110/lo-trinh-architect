@@ -1,7 +1,7 @@
 {
   "id": "design.l1.wiring-the-container",
   "technical": {
-    "reviewed_at": "2026-09-26T10:30:00+07:00",
+    "reviewed_at": "2026-09-26T13:30:00+07:00",
     "reviewer": "claude-opus-5-5",
     "claim_verdicts": [
       {
@@ -24,10 +24,9 @@
       },
       {
         "n": 4,
-        "verdict": "rephrased",
-        "evidence": "\"Beginning with C# 14, there are two syntaxes you use to define extension methods. C# 14 adds extension blocks... Before C# 14, you add the this modifier to the first parameter of a static method\" \"Both forms of extensions must be defined inside a non-nested, nongeneric static class.\" Pinned lang is C# 14, so the §3 definition describes only one of two forms; also omits the static-class requirement.",
-        "source": "refs/dotnet-docs/docs/csharp/programming-guide/classes-and-structs/extension-methods.md:15,45",
-        "suggested_text": "extension method — a static method, in a static class, that can be called as if it belonged to another type. The form Đơn Hàng uses marks its first parameter with `this`, so `AddDonHangInfrastructure(this IServiceCollection services, ...)` can be called as `builder.Services.AddDonHangInfrastructure(...)`."
+        "verdict": "verified",
+        "evidence": "\"Before C# 14, you add the this modifier to the first parameter of a static method to indicate that the method appears as a member of an instance of the parameter type.\" \"Both forms of extensions must be defined inside a non-nested, nongeneric static class.\" Reworded claim and §3 now say \"in the form Đơn Hàng uses\" and \"in a static class\"; matches ServiceCollectionExtensions.cs:10-12.",
+        "source": "refs/dotnet-docs/docs/csharp/programming-guide/classes-and-structs/extension-methods.md:15,45"
       },
       {
         "n": 5,
@@ -38,15 +37,15 @@
       {
         "n": 6,
         "verdict": "rephrased",
-        "evidence": "Claim as written (constructor injection throws, never injects null) holds: scratch app (net10.0, WebApplication.CreateBuilder + AddControllers, SDK 10.0.300) printed `InvalidOperationException: Unable to resolve service for type 'Svc' while attempting to activate 'TController'.` But the same run printed `GetService<Svc> null? True`: IServiceProvider.GetService returns null for an unregistered type, so lesson §4 \"the container never answers with `null`\" and §9 \"never return `null`\" are too broad.",
-        "source": "scratch app (net10.0, WebApplication.CreateBuilder + AddControllers, SDK 10.0.300); refs/aspnetcore-docs/aspnetcore/fundamentals/app-state.md:270 (same message format)",
-        "suggested_text": "A registration can be missing, and the container never fills a constructor parameter with `null`. When it cannot find a registration for a type a constructor asks for, it throws an exception naming that type."
+        "evidence": "Narrowed to constructor parameters as asked in r1; the throw half holds (r1 scratch app: `Unable to resolve service for type 'Svc' while attempting to activate 'TController'.`). Residual edge: \"Constructors can accept arguments that aren't provided by dependency injection, but the arguments must assign default values.\" A parameter declared `= null` with no registration receives its default, i.e. null. No Đơn Hàng constructor declares a default, so the lesson's examples are unaffected.",
+        "source": "refs/dotnet-docs/docs/core/extensions/dependency-injection/overview.md:83; r1 scratch app (net10.0, SDK 10.0.300)",
+        "suggested_text": "When a constructor asks for a type that has no registration, and the parameter has no default value (none of Đơn Hàng's do), the container throws InvalidOperationException naming that type instead of passing null."
       },
       {
         "n": 7,
         "verdict": "verified",
-        "evidence": "\"in the development environment, ValidateOnBuild and ValidateScopes are enabled.\" (.NET 9 change, still in force). scratch app (net10.0, WebApplication.CreateBuilder + AddControllers, SDK 10.0.300) with ASPNETCORE_ENVIRONMENT=Development and INotifier removed: `BUILD FAIL: AggregateException: Some services are not able to be constructed (... Unable to resolve service for type 'INotifier' while attempting to activate 'Svc'.)`; Production: `BUILD OK`. docker-compose.yml:93 `ASPNETCORE_ENVIRONMENT: \"Development\"`.",
-        "source": "refs/aspnetcore-docs/aspnetcore/breaking-changes/9/hostbuilder-validation.md:8,20; examples/don-hang @ stage-1: docker-compose.yml:93"
+        "evidence": "\"Now, in the development environment, ValidateOnBuild and ValidateScopes are enabled.\" \"Apps usually run in the Development environment during local development and testing on a developer's machine\" (supports \"a mode meant for local work\"). docker-compose.yml:93 `ASPNETCORE_ENVIRONMENT: \"Development\"`. r1 scratch app, Development, INotifier removed: `AggregateException: Some services are not able to be constructed (... Unable to resolve service for type 'INotifier' while attempting to activate 'Svc'.)`.",
+        "source": "refs/aspnetcore-docs/aspnetcore/breaking-changes/9/hostbuilder-validation.md:8; refs/aspnetcore-docs/aspnetcore/fundamentals/environments.md:16; examples/don-hang @ stage-1: docker-compose.yml:93"
       },
       {
         "n": 8,
@@ -65,55 +64,37 @@
         "verdict": "verified",
         "evidence": "Follows from the code: the only INotifier registration is ServiceCollectionExtensions.cs:16 and Program.cs names no notifier. Holds on the condition that the new class's constructor needs only types already registered (see minor issue on §7).",
         "source": "examples/don-hang @ stage-1: DonHang.Infrastructure/ServiceCollectionExtensions.cs:16; DonHang.Api/Program.cs"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "\"The AddDbContext extension method registers DbContext types with a scoped lifetime by default.\" For \"along with its settings\": \"The ApplicationDbContext class must expose a public constructor with a DbContextOptions<ApplicationDbContext> parameter. This is how context configuration from AddDbContext is passed to the DbContext.\"",
+        "source": "refs/efcore-docs/entity-framework/core/dbcontext-configuration/index.md:419,61"
       }
     ],
     "issues": [
       {
-        "severity": "major",
-        "section": 5,
-        "kind": "accuracy",
-        "text": "Unlisted claim, and false for this repo: DonHang.Api also uses EF Core directly. Program.cs:7 `using Microsoft.EntityFrameworkCore;` and :61 `context.Database.Migrate();`; ProductsController uses `ToListAsync`, AuthController `FirstOrDefaultAsync` (both `using Microsoft.EntityFrameworkCore;`). Infrastructure is the project that holds the EF Core package reference, not the only one that knows about EF Core.",
-        "quote": "the one project that knows about EF Core",
-        "fix": "Replace the clause with: \"which class answers `IOrderRepository` is decided inside `DonHang.Infrastructure`, next to `EfOrderRepository` and `LoggingNotifier` themselves.\" Do not add a claim about EF Core being confined to one project."
-      },
-      {
-        "severity": "major",
+        "severity": "minor",
         "section": 4,
         "kind": "accuracy",
-        "text": "Overbroad: IServiceProvider.GetService returns null for an unregistered type (scratch app: `GetService<Svc> null? True`). Only constructor injection / GetRequiredService throws. Same overstatement in §9 line 5 and quiz q2/q4 explanations (\"never hands out `null` for a missing registration\").",
-        "quote": "A registration can be missing, and the container never answers with `null`.",
-        "fix": "Use claim 6 suggested_text in §4. §9 line 5: \"A missing registration makes the container throw when it builds a constructor, at startup or on the first request that needs it; it never passes `null` in.\" q2 correct-explanation: \"The container never passes `null` into a constructor for a missing registration.\""
-      },
-      {
-        "severity": "major",
-        "section": 4,
-        "kind": "accuracy",
-        "text": "Unlisted claim: specific default lifetime of AddDbContext is stated but not in the ledger. It is true (EF Core docs: \"registers DbContext types with a scoped lifetime by default\"), so only the ledger is missing.",
-        "quote": "`AddDbContext<DonHangDbContext>(...)` registers the context along with its options, scoped by default.",
-        "fix": "Add a claim (kind behavior, version_key efcore, section 4): \"AddDbContext registers the DbContext type with a scoped lifetime by default\", source refs/efcore-docs/entity-framework/core/dbcontext-configuration/index.md:419. No text change needed."
+        "text": "Residual overstatement (claim 6): a constructor parameter with a default value (e.g. `INotifier? n = null`) and no registration receives its default, so the container does pass null there. Docs: \"Constructors can accept arguments that aren't provided by dependency injection, but the arguments must assign default values.\" Does not affect any Đơn Hàng class; same wording in §9 line 5 and q2 explanations.",
+        "quote": "the container never fills a constructor parameter with `null`",
+        "fix": "Optional at level 1. Either keep as is, or add the condition once in §4: \"…never fills a constructor parameter with `null` (unless that parameter declares a default value, which none of Đơn Hàng's do)\"."
       },
       {
         "severity": "minor",
         "section": 3,
-        "kind": "version",
-        "text": "Pinned C# 14 has two extension syntaxes (extension blocks and the `this`-parameter form); the definition presents the `this` form as the definition and omits that it must sit in a static class.",
-        "quote": "extension method — a static method whose first parameter is marked `this`",
-        "fix": "Use claim 4 suggested_text (says \"the form Đơn Hàng uses\" and \"in a static class\"). Do not introduce extension blocks."
-      },
-      {
-        "severity": "minor",
-        "section": 7,
-        "kind": "opinion-as-fact",
-        "text": "Expected answer is unconditional, but a class that \"sends real SMS messages\" typically needs its own dependencies (settings, an HTTP client); if any is not already registered, the wiring gains lines too (still possibly inside AddDonHangInfrastructure, but Program.cs may need to pass configuration).",
-        "quote": "1 — only `ServiceCollectionExtensions.cs`, where `AddScoped<INotifier, LoggingNotifier>()` becomes `AddScoped<INotifier, SmsGatewayNotifier>()` (plus the new class file).",
-        "fix": "Add to the scenario: \"Its constructor only asks for an `ILogger<SmsGatewayNotifier>`, like `LoggingNotifier`.\" Then the expected answer holds as written."
+        "kind": "quiz",
+        "text": "q1 key (option a, reworded this round) says the class is built \"whenever\" code asks; with the scoped lifetime the lesson teaches, OrdersController and OrderService in one request get the same instance, so it is not built on every ask. Key remains the only defensible option, so not ambiguous.",
+        "quote": "The class built whenever code asks for the first type",
+        "fix": "Change q1 option a (en) to \"The class code gets back when it asks for the first type\" and vi to \"Class mà code nhận được khi xin kiểu thứ nhất\"."
       }
     ],
     "scope": {
       "outline_covered": true,
       "beyond_scope": []
     },
-    "verdict": "fix-required"
+    "verdict": "pass"
   },
   "junior": {
     "reviewed_at": "2026-09-26T11:00:00+07:00",
