@@ -1,7 +1,7 @@
 {
   "id": "frontend.l1.the-event-loop",
   "technical": {
-    "reviewed_at": "2026-09-25T16:45:00+07:00",
+    "reviewed_at": "2026-09-26T21:30:00+07:00",
     "reviewer": "claude-opus-5-5",
     "claim_verdicts": [
       {
@@ -24,10 +24,9 @@
       },
       {
         "n": 4,
-        "verdict": "rephrased",
+        "verdict": "verified",
         "source": "Chrome 153 headless via CDP, reviewer scratch run on git show stage-0:www/*.html served from 127.0.0.1:8099; no HTML/MDN docs root in versions.yaml, none under refs/",
-        "evidence": "Second half verified by T2 (handlers strictly one after another). First half: T3/T4 show network waiting and receipt (responseEnd 3835 during a busy loop) happen outside the page's JS thread, but nothing permitted shows the browser uses 'many threads' or which thread/process does networking. No browser-architecture doc root in versions.yaml.",
-        "suggested_text": "Actually the browser does some of its own work, such as waiting for the network, outside the page's thread, but a page's JavaScript runs on one thread, one task at a time."
+        "evidence": "Claim reworded to the r1 suggested text; §6 rebuttal 1 now matches it verbatim. T3/T4: network waiting and receipt (Resource Timing responseEnd 3835 during a busy loop 1130-7130) happen outside the page's JS thread; T2: handlers strictly one after another (`h1 end 3835` -> `h2 start 3839`)."
       },
       {
         "n": 5,
@@ -52,55 +51,43 @@
         "verdict": "verified",
         "source": "Chrome 153 headless via CDP, reviewer scratch run on git show stage-0:www/*.html served from 127.0.0.1:8099; no HTML/MDN docs root in versions.yaml, none under refs/",
         "evidence": "Consequence, not a ranking: T2 shows one 3 s task delaying the next click handler by ~3 s (`h1 end 3835` -> `h2 start 3839`, clicked at ~1336) and the rendering step with it; T3 shows short handlers (clicks every ~500 ms) each handled at once while a fetch was pending."
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "source": "examples/don-hang @ stage-1: scripts/up.sh:12; refs/flutter-website sites/docs/src/content/perf/isolates.md 'Web platforms and compute'; pub.dev/packages/http (1.6.0)",
+        "evidence": "up.sh:12 `(cd DonHang.App && flutter build web >/dev/null)`. isolates.md: \"Dart web platforms, including Flutter web, don't support isolates.\" ... \"The compute() method runs the computation on the main thread on the web\". pub.dev http (r1 fetch): \"By default, package:http uses BrowserClient on the web\". So the app's Dart runs on the page's main thread and its requests go through the browser."
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "source": "Chrome 153 headless via CDP, reviewer scratch run on git show stage-0:www/*.html served from 127.0.0.1:8099; no HTML/MDN docs root in versions.yaml, none under refs/; statement sent via Runtime.evaluate replMode (the Console's evaluation path); typing into the Console UI not driven",
+        "evidence": "T1a: Console-path evaluation (Runtime.evaluate replMode) ran the 5 s loop on the page thread: loop 1454-6480 ms; link clicked at 2268; page log `click on A` at loop end +5 ms; server `GET /login.html` at 6498. The click was queued, handled after the loop, and the link opened ~18 ms late."
       }
     ],
     "issues": [
       {
-        "severity": "major",
-        "section": 5,
-        "kind": "accuracy",
-        "quote": "That works only because the request is handed to the browser and the page's thread is free until the reply arrives. If the app instead did heavy work on every product in one go, the whole page would freeze",
-        "text": "Unlisted claim: three behaviour statements about DonHang.App as a Flutter web build (it runs in the browser; package:http hands the request to the browser; heavy Dart work freezes the page) are not in `claims`. All three hold: stage-1 scripts/up.sh runs `flutter build web`; pub.dev http: \"uses BrowserClient on the web\"; refs flutter perf/isolates.md: \"Dart web platforms, including Flutter web, don't support isolates\", compute \"runs the computation on the main thread on the web\".",
-        "fix": "Add a claim (kind behavior, section 5): \"DonHang.App is a Flutter web build; its package:http requests go through the browser (BrowserClient), and its Dart code runs on the page's main thread, so heavy work there freezes the page.\" source_hint: stage-1 scripts/up.sh:12; pub.dev/packages/http; flutter docs perf/isolates.md 'Web platforms and compute'. No text change needed."
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "quote": "Picks the next waiting task and runs it before any other",
+        "text": "q1 option a (key) lost the run-to-completion part: 'runs it before any other' reads as priority over other tasks, not 'lets it finish before starting another'. Still the only defensible option, so the key stands; the wording is weaker than §3/§4 and explanation.correct ('each to completion').",
+        "fix": "Option a en: \"Picks the next waiting task and lets it finish before starting another\"; vi: \"Chọn task đang chờ tiếp theo và để nó chạy xong rồi mới bắt đầu task khác\"."
       },
       {
         "severity": "minor",
-        "section": 6,
-        "kind": "accuracy",
-        "quote": "Actually the browser uses many threads for its own work, such as the network",
-        "text": "Claim 4 rephrased: 'many threads' and the network as a thread are not supportable from any permitted source; the runs show only that network waiting and receipt happen outside the page's JS thread. q2 option b and explanation.correct reuse 'many threads'; their keys stay correct.",
-        "fix": "Replace with: \"Actually the browser does some of its own work, such as waiting for the network, outside the page's thread, but a page's JavaScript runs on one thread, one task at a time.\" Optionally align q2 explanation.correct: \"The browser does some work outside the page's thread, but ...\"."
-      },
-      {
-        "severity": "minor",
-        "section": 5,
-        "kind": "accuracy",
-        "quote": "There is nothing on them that could freeze.",
-        "text": "Contradicted by §7, which freezes www/index.html for five seconds from the Console. The pages hold no script of their own, but their thread can still be blocked.",
-        "fix": "\"Nothing in the pages themselves runs long enough to freeze them; the Try it below adds a long task from the Console to see what happens when something does.\""
-      },
-      {
-        "severity": "minor",
-        "section": 7,
-        "kind": "accuracy",
-        "quote": "Depending on the browser, that means the link opens late, or the click is handled as if it had just happened.",
-        "text": "The second alternative is not a distinct outcome and has no evidence. In Chrome 153 the queued click opened /login.html ~18 ms after the loop returned. The Expected result also stops at 'the page responds again' without saying the link then opens, so the navigation may surprise the learner.",
-        "fix": "Suggested answer: \"...The browser queued it and handled it as soon as the loop ended, so the link opened late but was not lost.\" Expected result: append \", and the link you clicked opens\" to \"Once the loop ends, the page responds again\"."
-      },
-      {
-        "severity": "minor",
-        "section": 9,
-        "kind": "accuracy",
-        "quote": "The browser redraws the page between tasks, so a long task freezes clicks and drawing alike.",
-        "text": "Reads as 'after every task'. §4 and the diagram say it with the condition ('gets its chance', 'may redraw'); the summary drops it.",
-        "fix": "\"The browser can redraw the page only between tasks, so a long task freezes clicks and drawing alike.\""
+        "section": "quiz",
+        "kind": "quiz",
+        "quote": "The browser has many threads for its own work, but a page's handlers run on one thread",
+        "text": "q2 explanation.correct (en and vi 'Trình duyệt có nhiều thread cho việc riêng của nó') still asserts 'many threads', the wording r1 rephrased out of claim 4 and §6 as unsupportable. Key c remains correct.",
+        "fix": "en: \"The browser does some work outside the page's thread, but a page's handlers run on one thread; a second click waits until the first handler returns.\" vi: \"Trình duyệt làm một số việc bên ngoài thread của trang, nhưng handler của trang chạy trên một thread; cú bấm thứ hai chờ tới khi handler đầu trả về.\""
       }
     ],
     "scope": {
       "outline_covered": true,
       "beyond_scope": []
     },
-    "verdict": "fix-required"
+    "verdict": "pass"
   },
   "junior": {
     "reviewed_at": "2026-09-25T17:30:00+07:00",
@@ -172,7 +159,11 @@
       }
     ],
     "readability": {
-      "unknown_terms": ["handler (click handler, event handler)", "I/O", "synchronous"],
+      "unknown_terms": [
+        "handler (click handler, event handler)",
+        "I/O",
+        "synchronous"
+      ],
       "skipped_steps": [
         "§5 says lab link clicks 'go straight to the browser' and nothing can freeze, yet §7 expects the link click to wait for the Console loop; no step explains why.",
         "§7 never says that code typed in the Console runs on the page's thread."
