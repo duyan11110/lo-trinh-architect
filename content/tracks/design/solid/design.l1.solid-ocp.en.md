@@ -48,7 +48,7 @@ OCP is about where a new case goes. In `Smells.ShippingVnd`, the kind of shippin
 
 In `ShippingFee`, each kind is a class that derives from the same abstract class and overrides one method, `ForOrder`. A new kind is a new class beside the others, so adding it is an extension. `StandardShipping`, `ExpressShipping` and `PickUpInStore` are not opened, and the tests that check them do not change.
 
-Code that only calls `ForOrder` through a `ShippingFee` variable does not change either: it never asks which kind it has. One place still has to create the new kind, but that is one line of new code, not an edit inside the rules that already work. That is the goal of OCP: the change you are asked for arrives as new code, and the code you trusted yesterday stays as it was.
+Code that only calls `ForOrder` through a `ShippingFee` variable does not change either: it never asks which kind it has. Some code still has to create the new kind, but that code sits outside the fee rules; the rules that already work are not edited. That is the goal of OCP: the change you are asked for arrives as new code, and the code you trusted yesterday stays as it was.
 
 ## In the Đơn Hàng system
 
@@ -80,7 +80,7 @@ The flag version, from the code smells lesson:
     }
 ```
 
-The kind of shipping is spread across the method: `pickUp` is checked at the top, and `express` is checked again in five separate `return` lines. Same-day would need another flag, and each of those five lines would need to decide what same-day costs there — five edits inside a method that works today.
+The kind of shipping is spread across the method: `pickUp` is checked at the top, and `express` is checked again in five separate `return` lines. Same-day would need another flag, and it has to go somewhere inside this method, among or ahead of branches that work today. Either way you edit the method, and every `return` next to the edit must be checked again.
 
 The class version:
 
@@ -126,7 +126,7 @@ In which version does adding same-day put working code at risk, and why?
 
 <details><summary>Suggested answer</summary>
 
-In `Smells.ShippingVnd`: same-day has to be decided in each of the five `express` lines, so you edit working branches and must check all of them again. In `ShippingFee`, the new kind is a new class; the three old classes and their tests are not touched, so nothing that worked yesterday is opened.
+In `Smells.ShippingVnd`: same-day has to be added inside the method, next to the five `express` lines, so you edit working code and must check those branches again. In `ShippingFee`, the new kind is a new class; the three old classes and their tests are not touched, so nothing that worked yesterday is opened.
 
 </details>
 
@@ -140,6 +140,6 @@ In `Smells.ShippingVnd`: same-day has to be decided in each of the five `express
 
 1. The Open/Closed Principle says code should be open for extension but closed for modification.
 2. Adding a new case should mean adding new code, not editing code that already works and is tested.
-3. `Smells.ShippingVnd` spreads the kind of shipping across five `express` lines, so a new kind edits all of them.
+3. `Smells.ShippingVnd` spreads the kind of shipping across five `express` lines, so a new kind means editing that method and re-checking them.
 4. `ShippingFee` gives each kind its own class, so same-day is a new class and the old ones stay untouched.
 5. OCP does not freeze code: changing how an existing kind behaves still edits that kind's class.
