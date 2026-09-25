@@ -46,9 +46,9 @@ flowchart LR
   C -->|no| E[login rejected]
 ```
 
-In the situation above, `PasswordHasher.Verify` is what `POST /api/v1/auth/login` calls once the customer's row is found. It never compares the typed password directly against the stored value; instead, it splits the stored string into its iteration count, salt, and hash, exactly as the diagram's `A` shows. It then runs `Rfc2898DeriveBytes.Pbkdf2` — the one-way transformation itself — again on the password just typed, using that same salt and iteration count (`B`). The recomputed hash and the stored hash are then compared (`C`): a match means the password was right and the login succeeds (`D`); anything else and the login is rejected (`E`), without either raw password ever sitting side by side.
+In the situation above, `PasswordHasher.Verify` is what `POST /api/v1/auth/login` calls once the customer's row is found. It never compares the typed password directly against the stored value; instead, it splits the stored string into its iteration count, salt, and hash, exactly as the diagram's `A` shows. It then runs `Rfc2898DeriveBytes.Pbkdf2` — the one-way transformation itself — again on the password just typed, using that same salt and iteration count (`B`). The recomputed hash and the stored hash are then compared (`C`): a match means the password was right and the login succeeds (`D`); anything else and the login is rejected (`E`) — the typed password is never compared against a stored password, because no stored password exists.
 
-The comparison itself uses `CryptographicOperations.FixedTimeEquals`, not `==` — a comparison whose duration depends on the length of the two byte sequences, not on their contents, so how long the check takes says nothing about the stored hash.
+The comparison itself uses `CryptographicOperations.FixedTimeEquals`, not `==` — a comparison whose duration depends on the length of the two byte sequences, not on their contents — so how long the comparison takes doesn't tell anyone how much of the stored hash the typed password got right.
 
 Storing this way costs something too: nothing computes the password back from a hash. The only route back is guessing a password and hashing it again to see if it matches, which this app's 100,000 iterations — the number at the front of the stored string — make slow, one guess at a time. If a customer forgets their password, the API can only issue a new one — it can never recover and show the old one, because nothing here ever kept it.
 
@@ -84,7 +84,7 @@ public static class PasswordHasher
 }
 ```
 
-`Hash` generates a fresh random salt with `RandomNumberGenerator.GetBytes` every time it runs, so calling it twice with the identical password produces two different stored strings — the salt, not the password, is what makes them differ. The algorithm name and the two `Convert` calls only decide which transformation runs and how its bytes are written as text — the salt is what this lesson turns on. `Verify` is the only one of the two this app's own code ever calls, from `AuthController.Login`; there's no registration endpoint yet that would call `Hash` for a new customer.
+`Hash` generates a fresh random salt with `RandomNumberGenerator.GetBytes` every time it runs, so calling it twice with the identical password produces two different stored strings — the salt, not the password, is what makes them differ. The algorithm name picks which hash `Pbkdf2` repeats inside, and the `Convert` calls on both sides only turn bytes into text and back — the salt is what this lesson turns on. `Verify` is the only one of the two this app's own code ever calls, from `AuthController.Login`; there's no registration endpoint yet that would call `Hash` for a new customer.
 
 `customers.password_hash` exists because of a real migration, not a hand-edited column — the first schema change after the baseline `InitialCreate` migration:
 
@@ -112,7 +112,7 @@ This `UPDATE` sets the exact same stored string for all five seeded customers at
 
 ## Beginners often think…
 
-- **"Encrypting a password, so it can be decrypted later, is just as safe as hashing it."** → Actually encryption is reversible by design — whoever holds the secret value used to encrypt it can recover the original password, so a leaked database plus that leaked secret means every password is exposed. A hash has nothing that reverses it; even the API itself can't compute the password back from what it once hashed. You notice this when asked "can we look up what a customer's password was" — with hashing, the honest answer is no, only a reset is possible.
+- **"Encrypting a password, so it can be decrypted later, is just as safe as hashing it."** → Actually encryption is reversible by design — whoever holds the secret that undoes it can recover the original password, so a leaked database plus that leaked secret means every password is exposed. A hash has nothing that reverses it; even the API itself can't compute the password back from what it once hashed. You notice this when asked "can we look up what a customer's password was" — with hashing, the honest answer is no, only a reset is possible.
 - **"Storing the password as typed is fine as long as nobody knows which column it sits in."** → Actually a hard-to-guess column name doesn't change what's inside it: anyone who reads that column — a leak, a curious admin, a backup file — reads every password directly. A hash doesn't hand the original password to whoever reads it; recovering it means guessing, one slow hash at a time.
 
 ## Try it (3 minutes)
