@@ -1,7 +1,7 @@
 {
   "id": "design.l1.why-layers",
   "technical": {
-    "reviewed_at": "2026-09-25T22:10:00+07:00",
+    "reviewed_at": "2026-09-25T23:40:00+07:00",
     "reviewer": "claude-opus-5-5",
     "claim_verdicts": [
       {
@@ -36,10 +36,9 @@
       },
       {
         "n": 6,
-        "verdict": "rephrased",
-        "evidence": "OrdersController has [Route(\"api/v1/orders\")] (verified). But the lesson says Infrastructure is \"where the EF Core queries live\" (all of them). ProductsController in DonHang.Api injects DonHangDbContext and runs `db.Products.Select(...).ToListAsync()` / `db.Products.FindAsync(id)` with `using Microsoft.EntityFrameworkCore;`. Only the order queries live in EfOrderRepository.",
-        "source": "examples/don-hang @ stage-1: DonHang.Api/Controllers/OrdersController.cs:11, ProductsController.cs:1-26; DonHang.Infrastructure/EfOrderRepository.cs",
-        "suggested_text": "3 is a data concern, `DonHang.Infrastructure` — the order queries live in `EfOrderRepository` there."
+        "verdict": "verified",
+        "evidence": "OrdersController.cs:11 `[Route(\"api/v1/orders\")]` (only place the orders route is declared). EfOrderRepository.cs: `FindAsync` = `db.Orders.Include(o => o.Items).FirstOrDefaultAsync(...)`, `ListByCustomerAsync` = `db.Orders.Where(...).Include(o => o.Customer)...ToListAsync()`, class in namespace DonHang.Infrastructure. Round-1 overbreadth ('the EF Core queries') is gone: lesson now says 'the order queries live in EfOrderRepository'.",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/Controllers/OrdersController.cs:11; DonHang.Infrastructure/EfOrderRepository.cs:9-14"
       },
       {
         "n": 7,
@@ -64,40 +63,43 @@
         "verdict": "verified",
         "evidence": "`public sealed class OrderService(IOrderRepository repository, INotifier notifier)`; both interfaces are in namespace DonHang.Domain; `EfOrderRepository(DonHangDbContext db) : IOrderRepository` and `LoggingNotifier(...) : INotifier` are in DonHang.Infrastructure.",
         "source": "examples/don-hang @ stage-1: DonHang.Domain/OrderService.cs:6; IOrderRepository.cs; INotifier.cs; DonHang.Infrastructure/EfOrderRepository.cs:7; LoggingNotifier.cs:9"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Domain csproj uses Sdk=\"Microsoft.NET.Sdk\", no references (claim 2). ASP.NET Core docs: \"Projects that target the `Microsoft.NET.Sdk.Web` SDK implicitly reference the `Microsoft.AspNetCore.App` framework.\" SDK errors: NETSDK1086 FrameworkReference \"is implicitly referenced by the .NET SDK\" (Microsoft.NETCore.App). EF Core / Npgsql.EntityFrameworkCore.PostgreSQL are NuGet packages, absent here; missing reference -> CS0246 (claim 4).",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/metapackage-app.md:18; refs/dotnet-docs/docs/core/tools/sdk-errors/index.md:256"
+      },
+      {
+        "n": 12,
+        "verdict": "rephrased",
+        "evidence": "True as written: ProductsController(DonHangDbContext db) runs `db.Products...ToListAsync()`/`FindAsync`; OrdersController.Get/List call `repository.FindAsync`/`ListByCustomerAsync` (IOrderRepository -> EfOrderRepository via AddScoped in ServiceCollectionExtensions.cs:15); DonHang.Api.csproj references DonHang.Infrastructure. But the lesson lists these as the shortcuts, and AuthController(DonHangDbContext db) also queries `db.Customers.FirstOrDefaultAsync(...)` directly.",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/Controllers/ProductsController.cs:10-27, AuthController.cs:11-16, OrdersController.cs:30-56; DonHang.Api/DonHang.Api.csproj; DonHang.Infrastructure/ServiceCollectionExtensions.cs:15",
+        "suggested_text": "The split is not perfectly clean: the products and login endpoints in `DonHang.Api` query `DonHangDbContext` directly, and the read endpoints for orders call the data layer without going through `OrderService` — shortcuts a later lesson in this module comes back to."
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Dtos.cs:9 `public sealed record OrderDto(int Id, int CustomerId, string Status, DateTimeOffset PlacedAt, List<OrderItemDto> Items);` — no name field; OrdersController.ToDto builds it. FindAsync includes only Items. So adding the name to the GET response needs the Include in EfOrderRepository plus OrderDto/ToDto in DonHang.Api. Change 2 needs no HTTP change: ExceptionHandlingMiddleware already maps ArgumentException to 400.",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/Dtos.cs:9; OrdersController.cs:58-63; EfOrderRepository.cs:9-10; Middleware/ExceptionHandlingMiddleware.cs:21-24"
       }
     ],
     "issues": [
       {
         "severity": "major",
-        "section": 4,
-        "kind": "code",
-        "text": "The diagram and prose say the HTTP layer calls the business layer, which calls the data layer, and that 'a new query would touch only the data layer'. That is not true of this code at stage-1: ProductsController (DonHang.Api) injects DonHangDbContext and runs EF Core queries itself; OrdersController.Get/List call IOrderRepository directly, not OrderService; DonHang.Api.csproj references DonHang.Infrastructure. A junior who opens the repo will see the HTTP layer reaching the data layer directly.",
-        "quote": "The HTTP layer calls into the business layer to get work done, and the business layer relies on the data layer to store what it decides.",
-        "fix": "Keep the diagram as the idea, but add one sentence in section 5: \"Not every request goes through `DonHang.Domain` yet: `ProductsController` reads `DonHangDbContext` directly, and `OrdersController.Get` asks the repository without `OrderService`. Later lessons in this module look at these shortcuts.\" Change 'a new index or a different query would touch only the data layer' to 'a new index or a different order query would touch only the data layer'."
-      },
-      {
-        "severity": "major",
-        "section": 7,
-        "kind": "accuracy",
-        "text": "Unlisted/overbroad claim: the Try-it answer says DonHang.Infrastructure is 'where the EF Core queries live' and section 5 says Infrastructure holds 'the code that talks to PostgreSQL'. ProductsController in DonHang.Api also talks to PostgreSQL through EF Core (`db.Products...ToListAsync()`). Claim 6 only covers EfOrderRepository.",
-        "quote": "3 is a data concern, `DonHang.Infrastructure`, where the EF Core queries live.",
-        "fix": "Section 7: \"3 is a data concern, `DonHang.Infrastructure` — the order queries live in `EfOrderRepository` there.\" Section 5: \"`DonHang.Infrastructure` holds the data side: `DonHangDbContext`, the migrations and the repository that loads and saves orders.\" Update claim 6 accordingly."
-      },
-      {
-        "severity": "major",
-        "section": 5,
-        "kind": "accuracy",
-        "text": "Unlisted claim, partly false: the missing references keep EF Core, Npgsql and ASP.NET Core out of DonHang.Domain, but not 'HTTP' in general. An SDK project targeting net10.0 implicitly references the Microsoft.NETCore.App framework (NETSDK1086: a FrameworkReference 'is implicitly referenced by the .NET SDK'), which includes System.Net.Http (HttpClient); the compiler would accept HTTP client code in DonHang.Domain. Same wording in quiz q5 explanation 'correct'.",
-        "quote": "the business layer does not know EF Core, PostgreSQL or HTTP exist",
-        "fix": "Replace with: \"the business layer cannot use EF Core, the PostgreSQL driver or ASP.NET Core — none of them is referenced.\" In q5 explanation (en/vi) replace 'EF Core, PostgreSQL or HTTP types' with 'EF Core, the PostgreSQL driver or ASP.NET Core types'. Add the statement to claims (kind behavior)."
+        "section": "quiz q6",
+        "kind": "quiz",
+        "text": "Fill blank is ambiguous given the lesson text: section 5 says `DonHang.Api` 'holds the HTTP side', `DonHang.Domain` 'holds the business side', `DonHang.Infrastructure` 'holds the data side', and the projects are 'one per kind of concern'. 'side' and 'concern' both fit the blank and are rejected by the answer set.",
+        "quote": "`DonHang.Api`, `DonHang.Domain` and `DonHang.Infrastructure` each hold one ____ of the API.",
+        "fix": "Reword so only 'layer' fits, e.g. en: \"In Đơn Hàng, each of `DonHang.Api`, `DonHang.Domain` and `DonHang.Infrastructure` is one ____ — the lesson's word for a group of classes that change for one kind of reason.\" (vi tương ứng). Keep answers layer/tầng/tang."
       },
       {
         "severity": "minor",
-        "section": 9,
+        "section": 5,
         "kind": "accuracy",
-        "text": "'references nothing' overstates the csproj: the project has no ProjectReference or PackageReference, but it still implicitly references the .NET shared framework. Same in q5 explanation 'has no reference at all'.",
-        "quote": "`DonHang.Domain` references nothing, so data-access code cannot creep into the business layer.",
-        "fix": "Summary line 5: \"`DonHang.Domain` has no project or package reference, so EF Core code cannot creep into the business layer.\" q5 explanation: 'has no project or package reference'."
+        "text": "The list of shortcuts omits the login endpoint: AuthController (DonHang.Api) injects DonHangDbContext and runs `db.Customers.FirstOrDefaultAsync(c => c.Email == request.Email)`. A reader who opens the repo will find a third bypass the lesson presents as absent.",
+        "quote": "the products endpoints in `DonHang.Api` query `DonHangDbContext` directly",
+        "fix": "Replace with 'the products and login endpoints in `DonHang.Api` query `DonHangDbContext` directly'; update claim 12 to add 'AuthController.Login queries DonHangDbContext.Customers directly (AuthController.cs:11-16)'."
       }
     ],
     "scope": {

@@ -51,7 +51,7 @@ The arrows show which layer uses which. The HTTP layer calls into the business l
 
 ## In the Đơn Hàng system
 
-At stage-1, the API is split into three projects, one per kind of concern. `DonHang.Api` holds the HTTP side: the endpoints, the DTOs and the middleware. `DonHang.Domain` holds the business side: the entities and `OrderService`, which decides whether an order can be placed. `DonHang.Infrastructure` holds the data side: `DonHangDbContext`, the migrations and the order queries in `EfOrderRepository`. The split is not perfectly clean: the products endpoints in `DonHang.Api` query `DonHangDbContext` directly, and the read endpoints for orders call the data layer without going through `OrderService` — shortcuts a later lesson in this module comes back to.
+At stage-1, the API is split into three projects, one per kind of concern. `DonHang.Api` holds the HTTP side: the endpoints, the DTOs and the middleware. `DonHang.Domain` holds the business side: the entities and `OrderService`, which decides whether an order can be placed. `DonHang.Infrastructure` holds the data side: `DonHangDbContext`, the migrations and the order queries in `EfOrderRepository`. The split is not perfectly clean: the products and login endpoints in `DonHang.Api` query `DonHangDbContext` directly, and the read endpoints for orders call the data layer without going through `OrderService` — shortcuts a later lesson in this module comes back to.
 
 The project files show which way the dependencies go. This is all of `DonHang.Domain.csproj`:
 
