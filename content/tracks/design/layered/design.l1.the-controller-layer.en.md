@@ -72,7 +72,7 @@ The payoff is that a rule lives in one place. If "at most 20 items" goes into `C
 
 `CreateOrderRequest` is the DTO for the request body. The method reads the caller's id from the token's `sub`, maps the request's items into `OrderItem` objects, and calls `orderService.PlaceOrderAsync` with the caller's id and that list — not with the request itself. Then it answers `201` through `CreatedAtAction`, with the order shaped by `ToDto`. There is no `if` about items and no `SaveChangesAsync` — the EF Core call that writes to the database — anywhere in the method. The empty-items check lives in `OrderService`; when it throws `ArgumentException`, the exception-handling middleware turns that into a `400`.
 
-`ToDto`, at the bottom of the same class, is HTTP work too — it decides what the response body looks like:
+`ToDto`, at the bottom of the same class, is HTTP work too — it decides what the response body looks like, with `OrderItemDto` as the shape of each item:
 
 ```csharp file=DonHang.Api/Controllers/OrdersController.cs tag=stage-1 lines=58-63
     private static OrderDto ToDto(Order order) => new(
@@ -118,7 +118,7 @@ Next to the empty-items check in `OrderService.PlaceOrderAsync`, in the business
 ## Five-line summary
 
 1. A controller only speaks HTTP: it reads the request, calls the layer below, and shapes the result into a DTO and a status code.
-2. It does not decide business rules or touch the database; it delegates both.
+2. It does not decide business rules or touch the database; it hands both to the business layer.
 3. `OrdersController.Create` reads the token and body, calls `OrderService.PlaceOrderAsync`, and answers `201` with an `OrderDto`.
 4. The empty-items check lives in `OrderService`, so every caller gets it, not only HTTP requests.
 5. A thin controller does not remove code; it moves the code to the layer that owns it.
