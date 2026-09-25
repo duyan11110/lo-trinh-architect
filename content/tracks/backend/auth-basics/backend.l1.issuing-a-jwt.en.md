@@ -84,12 +84,14 @@ public sealed class JwtTokenService(IConfiguration configuration)
 }
 ```
 
-`configuration["Jwt:SigningKey"]` is the signing key the previous lesson traced to the `Jwt__SigningKey` environment variable — the double underscore in the variable's name stands for the colon. `SymmetricSecurityKey(Encoding.UTF8.GetBytes(...))` turns that key's text into bytes; "symmetric" means the same key both signs a token and checks it. `SecurityAlgorithms.HmacSha256` is what becomes `"alg":"HS256"` in the header. The two `Claim` lines become `sub` and `email`, the issuer and audience come from the API's own settings (`donhang-api`, `donhang-app`), and `expires` becomes `exp`, eight hours ahead. `WriteToken` does the encoding and signing and returns the finished `header.payload.signature` string — the same string `AuthController.Login` returns as the `token` field, and nothing about it is saved.
+`configuration["Jwt:SigningKey"]` is the signing key the previous lesson traced to the `Jwt__SigningKey` environment variable — the double underscore in the variable's name stands for the colon. `SymmetricSecurityKey(Encoding.UTF8.GetBytes(...))` turns that key's text into bytes; "symmetric" means the same key both signs a token and checks it. `SecurityAlgorithms.HmacSha256` is what becomes `"alg":"HS256"` in the header. The two `Claim` lines become `sub` and `email`, the issuer and audience come from the API's `appsettings.json` (`donhang-api`, `donhang-app`), and `expires` becomes `exp`, eight hours ahead.
+
+`WriteToken` does the encoding and signing and returns the finished `header.payload.signature` string — the same string `AuthController.Login` returns as the `token` field, and nothing about it is saved.
 
 ## Beginners often think…
 
 - **"A JWT's payload is encrypted, so its claims can't be read without the API's signing key."** → Actually the payload is only Base64url-encoded, and decoding needs no key at all. The signing key is used to sign, not to hide. You notice this the first time you decode a token with `base64 -d` and see your own email in plain text — which is also why a payload should hold nothing that must stay hidden from whoever gets hold of the token.
-- **"Anyone who can read a JWT's payload could also produce a valid one, since both just need the same JSON."** → Actually the JSON is the easy part; the signature is computed from it with a key only the API holds. A token with an edited payload keeps the old signature, which no longer matches. You notice this when a token with `"sub"` changed comes back `401`.
+- **"Anyone who can read a JWT's payload could also produce a valid one, since both just need the same JSON."** → Actually the JSON is the easy part; the signature is computed from it with a key only the API holds. A token with an edited payload keeps the old signature, which no longer matches. You notice this when a request carrying a token with `"sub"` changed gets `401`.
 
 ## Try it (3 minutes)
 
