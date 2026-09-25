@@ -50,11 +50,11 @@ A screen that fetches data is not in one state but in several over time, and eac
 
 `FutureBuilder` makes these states easy to tell apart. It is given the `Future` and a builder function. It builds with a snapshot saying "waiting" while the `Future` has not completed, and builds again once it completes; it may also build at other times, for example when its parent builds again, so the builder decides what to show from the snapshot it is given each time. Each time it passes a snapshot: `connectionState` says whether it is still waiting, `hasError` and `error` say whether it failed, and `data` holds the result once there is one. The builder checks these in order and returns a different widget for each state.
 
-The order matters: while the `Future` is waiting or has failed there is no data yet, so checking for "empty" first would show "No products yet." when the truth is "still loading" or "failed". Keeping the states apart matters too. A screen that shows the same blank area for loading and for empty hides the difference between "wait a moment" and "there is nothing". Loading ends on its own; empty is the final answer. An error is different again: something went wrong somewhere between sending the request and turning the answer into products, and the user should hear about it rather than stare at a blank screen.
+The order matters: while the `Future` is waiting or has failed there is no data, so checking for "empty" first would show "No products yet." when the truth is "still loading" or "failed". Keeping the states apart matters too. A screen that shows the same blank area for loading and for empty hides the difference between "wait a moment" and "there is nothing". Loading ends on its own; empty is the final answer. An error is different again: something went wrong somewhere between sending the request and turning the answer into products, and the user should hear about it rather than stare at a blank screen.
 
 ## In the Đơn Hàng system
 
-The product screen gets its `Future` once, when its `State` is created:
+The product screen gets its first `Future` when its `State` is created:
 
 ```dart file=DonHang.App/lib/screens/product_list_screen.dart tag=stage-1 lines=17-24
 class _ProductListScreenState extends State<ProductListScreen> {
@@ -67,7 +67,7 @@ class _ProductListScreenState extends State<ProductListScreen> {
   }
 ```
 
-Starting the load in `initState` and keeping it in a field means every build of the screen hands the same `Future` to the `FutureBuilder`, instead of starting a new request each time the screen is described. The body then checks the states in order:
+Starting the load in `initState` and keeping it in a field means a rebuild hands the same `Future` to the `FutureBuilder` instead of starting a new request each time the screen is described; the `Future` is replaced only on purpose, when the user refreshes. The body then checks the states in order:
 
 ```dart file=DonHang.App/lib/screens/product_list_screen.dart tag=stage-1 lines=43-55
       body: FutureBuilder<List<Product>>(
@@ -120,5 +120,5 @@ The `await http.get(...)` line threw: the browser reported that the request fail
 1. A screen that fetches data must show loading, error and empty differently, as well as the content itself.
 2. `FutureBuilder` builds again while its `Future` waits and when it completes, passing a snapshot each time.
 3. The product screen checks the snapshot in order: waiting, then error, then empty, then the list.
-4. The `Future` is created once in `initState`, so rebuilding the screen does not start new requests.
+4. The first `Future` is created in `initState` and replaced only on purpose, so rebuilding the screen does not start new requests.
 5. Errors include failures after the response arrives, such as a bad status or a field `fromJson` cannot read.
