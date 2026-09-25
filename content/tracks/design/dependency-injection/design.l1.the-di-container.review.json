@@ -1,0 +1,214 @@
+{
+  "id": "design.l1.the-di-container",
+  "technical": {
+    "reviewed_at": "2026-09-25T19:06:31+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "git show stage-1: OrdersController.cs:12 `public sealed class OrdersController(OrderService orderService, IOrderRepository repository) : ControllerBase`; OrderService.cs:6 `(IOrderRepository repository, INotifier notifier)`; EfOrderRepository.cs:7 `(DonHangDbContext db) : IOrderRepository`; LoggingNotifier.cs:9 `(ILogger<LoggingNotifier> logger) : INotifier`.",
+        "source": "examples/don-hang @ stage-1 (4fca60a)"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "`git grep -n \"new OrderService\" stage-1` returns only DonHang.Tests/Services/OrderServiceTests.cs lines 16, 29, 40, 50, 60; no match under DonHang.Api.",
+        "source": "examples/don-hang @ stage-1 (4fca60a)"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "ServiceCollectionExtensions.cs:14-16 `services.AddDbContext<DonHangDbContext>(...)`, `services.AddScoped<IOrderRepository, EfOrderRepository>();`, `services.AddScoped<INotifier, LoggingNotifier>();`; Program.cs:18-19 `builder.Services.AddDonHangInfrastructure(connectionString);` `builder.Services.AddScoped<OrderService>();` — all before `builder.Build()` (line 52).",
+        "source": "examples/don-hang @ stage-1: DonHang.Infrastructure/ServiceCollectionExtensions.cs:14-16; DonHang.Api/Program.cs:18-19,52"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "\"It's common to use DI in a chained fashion. Each requested dependency in turn requests its own dependencies. The container resolves the dependencies in the graph and returns the fully resolved service.\" Execution (net10.0 scratch app, Svc(IOrderRepository) registered, IOrderRepository not): \"InvalidOperationException: Unable to resolve service for type 'IOrderRepository' while attempting to activate 'Svc'.\" — parameters are resolved before activation.",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/dependency-injection.md:201; scratch run with Microsoft.AspNetCore.App 10.0"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Execution: class OrderRepository : IOrderRepository present but not registered → `sp.GetService<IOrderRepository>() is not null` printed \"False\". Docs: \"To switch from MessageWriter to LoggingMessageWriter, simply update the call to AddSingleton to register this new IMessageWriter implementation\" — the implementation is chosen by the registration.",
+        "source": "refs/dotnet-docs/docs/core/extensions/dependency-injection/overview.md:68-72; scratch run net10.0"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "\"By default, ASP.NET Core doesn't register controllers as services in the DI container. The runtime uses the DefaultControllerActivator to create controller instances and resolves services from the DI container for constructor parameters, but the controller itself isn't resolved from the container.\" \"Calling AddControllersAsServices registers all controllers as services\". actions.md:17 \"Controllers are activated and disposed on a per request basis.\"",
+        "source": "refs/aspnetcore-docs/aspnetcore/mvc/controllers/dependency-injection.md (Controllers as services, moniker >= aspnetcore-8.0); mvc/controllers/actions.md:17"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "\"When using any of the available host or app-builder patterns, defaults are applied and services are registered by the framework\", list includes WebApplication.CreateBuilder; table row ILogger`1 | Singleton. Execution: WebApplication.CreateBuilder app with no logging registration → `GetService<ILogger<Svc>>() is not null` printed \"True\".",
+        "source": "refs/dotnet-docs/docs/core/extensions/dependency-injection/service-registration.md:15-34; scratch run net10.0"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "\"The DbContext itself and any dependencies in its constructor need to be registered as services ... achieved by having a constructor on the DbContext that takes an instance of DbContextOptions<TContext> ... and using the AddDbContext<TContext> method.\" / \"must expose a public constructor with a DbContextOptions<ApplicationDbContext> parameter. This is how context configuration from AddDbContext is passed to the DbContext.\" DonHangDbContext.cs:7 matches.",
+        "source": "refs/efcore-docs/entity-framework/core/cli/dbcontext-creation.md:25; dbcontext-configuration/index.md:61"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "OrderService.cs:12 `var order = new Order`; OrdersController.cs:58-63 `private static OrderDto ToDto(Order order) => new(...)`. Every Add* call at stage-1 (git grep): AddScoped<OrderService>, AddSingleton<JwtTokenService>, AddScoped<IOrderRepository, EfOrderRepository>, AddScoped<INotifier, LoggingNotifier>, AddDbContext<DonHangDbContext> — none for Order/OrderDto.",
+        "source": "examples/don-hang @ stage-1: OrderService.cs:12; OrdersController.cs:58-63; Program.cs:13-20; ServiceCollectionExtensions.cs:14-16"
+      },
+      {
+        "n": 10,
+        "verdict": "not-needed",
+        "evidence": "Argument that follows from claims 1 and 3 (the constructor chain the lesson lists); no external fact. The accompanying specifics in section 5 (\"at least six objects\", \"only the constructor and one registration change\") are handled as separate issues.",
+        "source": "derived from claims 1, 3"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Unlisted claim: the statement that registrations are fixed after startup is a behaviour claim not in the ledger (claim 3 only covers what is registered). It is true — scratch run on net10.0 calling builder.Services.AddScoped after builder.Build() printed \"InvalidOperationException: The service collection cannot be modified because it is read-only.\" — and q1's explanation repeats it.",
+        "quote": "After startup, the registrations do not change.",
+        "fix": "Add a claim to .meta.json: \"After WebApplicationBuilder.Build(), the service collection is read-only; adding a registration throws InvalidOperationException.\" kind behavior, version_key aspnetcore, section 4. No lesson text change needed."
+      },
+      {
+        "severity": "major",
+        "section": 6,
+        "kind": "accuracy",
+        "text": "Unlisted and inaccurate claim: \"long-lived\" is not a property of what the container builds. At stage-1 EfOrderRepository, LoggingNotifier, OrderService and DonHangDbContext are all scoped (one request), no longer-lived than an Order built in PlaceOrderAsync. It also pre-empts service-lifetimes, which the lesson itself defers.",
+        "quote": "the container builds the long-lived parts that do work",
+        "fix": "Replace with: \"Actually the container builds the parts that do work and are passed in as dependencies: controllers' dependencies, services, repositories.\" (matches q5's explanation)."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "Overgeneralised: which services the framework pre-registers depends on how the host is built (\"Initially, the IServiceCollection has services defined by the framework depending on how the host was configured\"). Claim 7 is scoped to WebApplication.CreateBuilder; the lesson says every app.",
+        "quote": "ASP.NET Core registers logging for every app it starts.",
+        "fix": "Replace with: \"`WebApplication.CreateBuilder`, which Đơn Hàng's Program.cs calls at startup, registers logging.\" If the method name is unwanted at this level: \"the way Đơn Hàng starts ASP.NET Core registers logging.\""
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "Overstated: if the new dependency's type is already registered, no registration changes; if its implementation has new dependencies of its own, more than one may be needed. \"one registration\" also does not say which registration, which leaves q4 option d (re-register OrderService) arguable from the text.",
+        "quote": "With a container, only the constructor and one registration change.",
+        "fix": "Replace with: \"With a container, the constructor changes, plus one registration for the new dependency's type if it is not registered yet; the registration of `OrderService` itself stays as it is.\""
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "Unlisted count. The count is correct for the chain given (DonHangDbContext, EfOrderRepository, logger, LoggingNotifier, OrderService, controller = 6; DbContextOptions makes it more, hence \"at least\"), but it is a number and belongs in the ledger.",
+        "quote": "That is at least six objects in the right order",
+        "fix": "Add the count to claim 10's text or a new claim (kind fact, source: the six constructors in claims 1 and 8). No lesson text change needed."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "diagram",
+        "text": "The diagram draws two IOrderRepository nodes (R, R2) but a single DonHangDbContext node D fed by both, which visually answers the sharing question the prose explicitly defers to the next lesson and is inconsistent with duplicating the repository node.",
+        "quote": "R --> D[DonHangDbContext]\n  R2 --> D",
+        "fix": "Give R2 its own context node, e.g. `R2 --> D2[DonHangDbContext]`, so the diagram is a tree like the Try-it answer and leaves sharing to service-lifetimes."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "fix-required"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-25T19:30:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior reader)",
+    "issues": [
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "diagram",
+        "text": "The diagram has two IOrderRepository nodes but both arrows end at one DonHangDbContext node. Reading it, I conclude the context is one shared object while the repositories are two. Then the prose says whether the two arrows 'end at one object or two is a question for the next lesson', and the Try-it answer mentions sharing 'one DonHangDbContext' as open. I cannot tell which the diagram means.",
+        "quote": "R --> D[DonHangDbContext]\n  R2 --> D",
+        "fix": "Give R2 its own node (`R2 --> D2[DonHangDbContext]`) so the diagram is a plain tree and does not answer the sharing question."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "diagram",
+        "text": "The prose never says what an arrow means. I guessed 'A --> B = A's constructor asks for B' from the Core concepts definition of dependency graph, but I had to guess.",
+        "quote": "the whole graph above falls out of those two questions",
+        "fix": "Add one sentence before 'A DI container works in two phases': 'Each arrow means \"its constructor asks for\".'"
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "gap",
+        "text": "Section 4 taught me that the container reads a constructor and resolves each parameter. Here the context is built differently, 'from the options its registration provides'. I do not know what these options are, whether they are a constructor parameter, or why this case differs. I stopped here.",
+        "quote": "the container builds the context from the options its registration provides.",
+        "fix": "Add one sentence after it saying what the options are in plain words (e.g. 'the connection settings given when the context was registered') and that they reach DonHangDbContext as its constructor parameter, like any other."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "text": "'a single helper call' is vague: which helper, written by whom? I cannot connect it to anything in Đơn Hàng.",
+        "quote": "some by a single helper call and some by ASP.NET Core itself",
+        "fix": "Replace 'by a single helper call' with 'by one call in Đơn Hàng's startup code (shown in a later lesson)'."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "text": "Mapping 'OrderService to itself' made me pause: why register a class as its own answer? I can work it out (OrderService is concrete, so the container still needs to know it may build it), but the text does not say so.",
+        "quote": "and `OrderService` to itself.",
+        "fix": "Add after it: '(`OrderService` is a concrete class, so its registration just tells the container it may build it).'"
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "example",
+        "text": "Try it says the container builds the controller, but section 4 just told me ASP.NET Core creates the controller itself and only asks the container for its parameters. The two sentences contradict each other in my head.",
+        "quote": "write down the dependency graph the container walks to build one `OrdersController`",
+        "fix": "Replace with 'write down the dependency graph that gets built for one `OrdersController`'."
+      },
+      {
+        "severity": "major",
+        "section": "quiz",
+        "kind": "quiz",
+        "text": "q4: I hesitated between a and d. The lesson says 'only the constructor and one registration change', which reads as changing an existing registration, and the one most obviously involved is OrderService's (option d). I reached a only by reasoning from 'reads the constructor', not from what the text says.",
+        "quote": "With a container, only the constructor and one registration change.",
+        "fix": "Replace the lesson sentence with: 'With a container, the constructor changes, plus one new registration for the new dependency's type if it has none; the registration of `OrderService` stays as it is.'"
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "text": "q4 and q5 name `PlaceOrderAsync` and `ToDto`, which the lesson never mentions (it says 'OrderService writes new Order' and 'the controller builds each OrderDto itself'). I could still answer, but I had to guess what they are.",
+        "quote": "The `OrderDto` returned by `ToDto`",
+        "fix": "In q5 use 'The `OrderDto` the controller builds' and 'The `Order` that `OrderService` creates'; in q4 replace '`PlaceOrderAsync`' with '`OrderService`'."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "text": "q2 asks for the order 'when it resolves INotifier for OrderService', yet OrderService is one of the items. Resolving INotifier ends at LoggingNotifier, so including OrderService made me doubt what the question scope is.",
+        "quote": "Put these objects in the order the container finishes building them when it resolves `INotifier` for `OrderService`.",
+        "fix": "Reword to 'when it resolves `OrderService` (follow only the `INotifier` branch)'."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [
+        "How DonHangDbContext is built 'from the options its registration provides' — options never explained (section 5).",
+        "What 'a single helper call' is (section 4).",
+        "Which registration changes when OrderService gains a dependency ('one registration change', section 5)."
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "fix-required"
+  }
+}

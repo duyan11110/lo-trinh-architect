@@ -42,11 +42,11 @@ flowchart TD
   S --> R2[IOrderRepository = EfOrderRepository]
   S --> N[INotifier = LoggingNotifier]
   R --> D[DonHangDbContext]
-  R2 --> D
+  R2 --> D2[DonHangDbContext]
   N --> L[ILogger]
 ```
 
-A **DI container** works in two phases. At startup, the app fills it with registrations. Each one maps a type that code asks for to the class that should answer it: `IOrderRepository` to `EfOrderRepository`, `INotifier` to `LoggingNotifier`, and `OrderService` to itself. Classes like `DonHangDbContext` and the logger are registered too, some by a single helper call and some by ASP.NET Core itself. After startup, the registrations do not change.
+Each arrow means "asks for in its constructor". A **DI container** works in two phases. At startup, the app fills it with registrations. Each one maps a type that code asks for to the class that should answer it: `IOrderRepository` to `EfOrderRepository`, `INotifier` to `LoggingNotifier`, and `OrderService` to itself, because code asks for that class directly. `DonHangDbContext` and the logger are registered too, some by Đơn Hàng's startup code and some by ASP.NET Core. After startup, the registrations cannot change.
 
 Later, when some code resolves a type, the container looks it up and reads the constructor of the class it maps to. For every parameter there, it resolves that type the same way, recursively, until it reaches classes whose constructors it can satisfy completely. Then it builds from the bottom up and passes each object into the one above it. The container does not guess and does not read names: `EfOrderRepository` is used for `IOrderRepository` only because a registration says so.
 
@@ -60,7 +60,7 @@ The container reads constructors like this one from `DonHang.Domain`:
 public sealed class OrderService(IOrderRepository repository, INotifier notifier)
 ```
 
-`OrderService` names two abstractions. The container cannot create an interface, so for each one it needs a registration that points to a class. It finds `EfOrderRepository` and `LoggingNotifier`, and moves on to their constructors. `EfOrderRepository(DonHangDbContext db)` asks for a concrete class; the container builds the context from the options its registration provides. `LoggingNotifier`, in `DonHang.Infrastructure`, asks for a logger:
+`OrderService` names two abstractions. The container cannot create an interface, so for each one it needs a registration that points to a class. It finds `EfOrderRepository` and `LoggingNotifier`, and moves on to their constructors. `EfOrderRepository(DonHangDbContext db)` asks for a concrete class. `DonHangDbContext` in turn asks for its options — settings such as which database to connect to — and those are registered along with it, so the container passes them in like any other parameter. `LoggingNotifier`, in `DonHang.Infrastructure`, asks for a logger:
 
 ```csharp file=DonHang.Infrastructure/LoggingNotifier.cs tag=stage-1 lines=9-13
 public sealed class LoggingNotifier(ILogger<LoggingNotifier> logger) : INotifier
@@ -70,18 +70,18 @@ public sealed class LoggingNotifier(ILogger<LoggingNotifier> logger) : INotifier
 }
 ```
 
-Nobody in Đơn Hàng wrote a registration for `ILogger<LoggingNotifier>`: ASP.NET Core registers logging for every app it starts. So the container resolves it like everything else, and `LoggingNotifier` receives a ready logger.
+Nobody in Đơn Hàng wrote a registration for `ILogger<LoggingNotifier>`: `WebApplication.CreateBuilder`, which the API calls at startup, registers logging. So the container resolves it like everything else, and `LoggingNotifier` receives a ready logger.
 
-Now imagine the API without a container. The code handling each request would first have to build a `DonHangDbContext` with its connection settings, then an `EfOrderRepository` around it, a logger, a `LoggingNotifier` around that, an `OrderService` from the two, and finally the controller. That is at least six objects in the right order, written out wherever a controller is needed. When `OrderService` later gains a third dependency, every one of those places has to change. With a container, only the constructor and one registration change.
+Now imagine the API without a container. The code handling each request would first have to build a `DonHangDbContext` with its connection settings, then an `EfOrderRepository` around it, a logger, a `LoggingNotifier` around that, an `OrderService` from the two, and finally the controller. That is at least six objects in the right order, written out wherever a controller is needed. When `OrderService` later gains a third dependency, every one of those places has to change. With a container, only the constructor changes, plus one new registration for the new type; the existing registrations stay as they are.
 
 ## Beginners often think…
 
 - **"The container guesses which implementation to use based on the interface's name."** → Actually the container only follows registrations. `IOrderRepository` becomes `EfOrderRepository` because Đơn Hàng registered exactly that pair; the similar names play no part. You notice this when you write a new class implementing an interface and nothing uses it until you change the registration.
-- **"Every object the app creates goes through the container, including simple data objects like a DTO."** → Actually the container builds the long-lived parts that do work: controllers' dependencies, services, repositories. Data is still created with `new` where it is needed: `OrderService` writes `new Order { ... }`, and the controller builds each `OrderDto` itself. You notice this when you look for a registration for `Order` or `OrderDto` and find none — none is needed, because they are values, not dependencies.
+- **"Every object the app creates goes through the container, including simple data objects like a DTO."** → Actually the container builds the parts that do work: controllers' dependencies, services, repositories. Data is still created with `new` where it is needed: `OrderService` writes `new Order { ... }` in `PlaceOrderAsync`, and the controller's `ToDto` method builds each `OrderDto`. You notice this when you look for a registration for `Order` or `OrderDto` and find none — none is needed, because they are values, not dependencies.
 
 ## Try it (3 minutes)
 
-Using the constructors in this lesson, write down the dependency graph the container walks to build one `OrdersController`. Start from the controller and keep going until every branch ends at a class the container can build without asking for anything else you know about.
+Using the constructors in this lesson, write down the dependency graph behind one `OrdersController`: everything the container is asked for when ASP.NET Core creates it. Start from the controller and keep going until every branch ends at a class the container can build without asking for anything else you know about.
 
 Expected result: `OrdersController` → `OrderService` and `IOrderRepository`; `OrderService` → `IOrderRepository` and `INotifier`; each `IOrderRepository` → `EfOrderRepository` → `DonHangDbContext`; `INotifier` → `LoggingNotifier` → `ILogger<LoggingNotifier>`.
 
