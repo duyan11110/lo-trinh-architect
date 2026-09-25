@@ -26,7 +26,7 @@ reviewed_at: null
 
 ## The situation
 
-The samples have two notifier interfaces: `INotifier` has one method, `Send`; `IFullNotifier` bundles three: `Send`, `History` and `Retry`. `SmsOnlyNotifier` implements `IFullNotifier`, but an SMS channel only ever sends: it keeps no history and never resends. So its `History` and `Retry` throw `NotSupportedException`. The class compiles, the interface looks complete, and yet two of its three methods cannot do what they promise. What went wrong?
+The samples have two notifier interfaces: `INotifier` has one method, `Send`; `IFullNotifier` bundles three: `Send`, `History` and `Retry`. `SmsOnlyNotifier` implements `IFullNotifier`, but it only ever sends: it keeps no history and never resends. So its `History` and `Retry` throw `NotSupportedException`. The class compiles, the interface looks complete, and yet two of its three methods cannot do what they promise. What went wrong?
 
 ## Core concepts
 
@@ -79,7 +79,7 @@ public sealed class SmsOnlyNotifier : IFullNotifier
 }
 ```
 
-`Send` does real work. `History` and `Retry` exist only because the interface demands them, and both throw `NotSupportedException`. Nothing stops a caller holding an `IFullNotifier` from calling them.
+The comment in the source says `SmsNotifier`, but the class it describes is `SmsOnlyNotifier`. `Send` does real work. `History` and `Retry` exist only because the interface demands them, and both throw `NotSupportedException`. Nothing stops a caller holding an `IFullNotifier` from calling them.
 
 The small interface next to it:
 
@@ -111,7 +111,7 @@ If `Retry` later needs a new parameter, which classes must change under each des
 
 <details><summary>Suggested answer</summary>
 
-With `IFullNotifier`, every implementing class must change, `SmsOnlyNotifier` included, even though it never retries. With `INotifier`, nothing changes: retries would live in their own interface, implemented only by classes that can really retry.
+With `IFullNotifier`, every implementing class must change, `SmsOnlyNotifier` included, even though it never retries. With `INotifier`, no class that only sends changes: retries would live in their own interface, implemented only by classes that can really retry.
 
 </details>
 
