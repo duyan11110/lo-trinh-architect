@@ -15,7 +15,9 @@ vocab: [flaky-test]
 example_tag: stage-1
 versions_used: [dotnet, xunit]
 content_version: 1
-status: draft
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-26T16:00:00+07:00"
 ---
 
 ## Before you start
@@ -46,7 +48,7 @@ A good unit test has three properties. It is fast, because it runs only the clas
 
 A test that breaks the third property is a **flaky test**. The usual causes are inputs the test does not control. The current time changes between runs, so a test that asserts "placed today" passes all day and fails for an order placed just before midnight UTC and checked just after. A random number changes on every run.
 
-Shared state is the third cause. xUnit, the testing library that runs `OrderServiceTests`, does not promise to run tests in the order they are written. If the tests shared one repository — something the test code would have to set up on purpose — the id a test gets would depend on how many orders the tests before it had added, because the fake gives each new order the next id. The order xUnit picks for the tests in one class stays the same between identical runs, but running one test on its own changes which tests ran before it, so the same test can pass alone and fail in the full run. xUnit creates a new instance of the test class for every test, so values stored in each instance's fields are not shared, and each test in `OrderServiceTests` creates its own fakes.
+Test order is the third cause, through shared state. xUnit, the testing library that runs `OrderServiceTests`, does not promise to run tests in the order they are written. If the tests shared one repository — something the test code would have to set up on purpose — the id a test gets would depend on how many orders the tests before it had added, because the fake gives each new order the next id. The order xUnit picks for the tests in one class stays the same between identical runs, but running one test on its own changes which tests ran before it, so the same test can pass alone and fail in the full run. xUnit creates a new instance of the test class for every test, so values stored in each instance's fields are not shared, and each test in `OrderServiceTests` creates its own fakes.
 
 A flaky test can do more harm than having no test at all. When it fails, nobody knows whether the code or the clock is at fault, so people rerun it until it passes and ignore it even when it catches a real bug.
 
@@ -103,7 +105,7 @@ If the business really needed a rule about `PlacedAt`, how could a test check it
 
 <details><summary>Suggested answer</summary>
 
-Check something the code decides rather than what the clock says, for example that `PlacedAt` is not later than a time the test reads just after calling `PlaceOrderAsync`. Or give `OrderService` the current time as a dependency, so a test can pass in a fixed time — the same idea as the fakes, applied to the clock.
+Check a rule that holds whenever the test runs, for example that `PlacedAt` is not later than a time the test reads just after calling `PlaceOrderAsync`. Or give `OrderService` the current time as a dependency, so a test can pass in a fixed time — the same idea as the fakes, applied to the clock.
 
 </details>
 
