@@ -1,0 +1,114 @@
+{
+  "id": "frontend.l1.logging-in-from-the-app",
+  "technical": {
+    "reviewed_at": "2026-09-26T04:26:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "AuthController.Login @ stage-1 only reads db.Customers (FirstOrDefaultAsync), then 'return Ok(new LoginResponse(token))' - no write, no SaveChanges. Program.cs: AddJwtBearer + UseAuthentication. ASP.NET Core docs: 'The JwtBearerHandler validates the token and extracts the user's identity from its claims.' Run: same token -> GET /api/v1/orders 200; no header -> 401. The api log line for login is only 'POST /api/v1/auth/login responded 200' (no identity).",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/Controllers/AuthController.cs, Program.cs; refs/aspnetcore-docs/aspnetcore/security/authentication/configure-jwt-bearer-authentication.md line 20"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Lab run via Caddy :8080: correct password -> 'HTTP/1.1 200 OK', 'Content-Type: application/json', body '{\"token\":\"eyJ...\"}' (single field). Wrong password -> 'HTTP/1.1 401 Unauthorized', application/problem+json {type,title,status,traceId}, no token. Unknown email nobody@example.com -> 'HTTP/1.1 401 Unauthorized'. Code: 'return Unauthorized();' / 'Ok(new LoginResponse(token))'; Dtos.cs 'record LoginResponse(string Token)'.",
+        "source": "curl against running lab (docker compose, stage-1); AuthController.cs, Dtos.cs @ stage-1"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Program.cs @ stage-1 TokenValidationParameters: ValidateIssuerSigningKey = true, ValidateLifetime = true (also ValidateIssuer/ValidateAudience - lesson's 'signature and expiry' is a correct subset, not exhaustive). OrdersController [Authorize] on POST. Run: POST /api/v1/orders without header -> 'HTTP/1.1 401 Unauthorized', Content-Length: 0.",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/Program.cs, Controllers/OrdersController.cs; curl against lab"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "api_client.dart @ stage-1 lines 33-45 match block 1 verbatim: headers {'Content-Type': 'application/json'}, jsonEncode({'email': email, 'password': password}), 'if (response.statusCode != 200) { throw Exception('login failed (${response.statusCode})'); }', then ['token'] as String, '_token = token; return token;'.",
+        "source": "examples/don-hang @ stage-1: DonHang.App/lib/api_client.dart"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "api_client.dart @ stage-1 lines 18-21: 'Map<String, String> get _headers => { 'Content-Type': 'application/json', if (_token != null) 'Authorization': 'Bearer $_token', };' line 51 createOrder 'headers: _headers'; line 24 fetchProducts 'http.get(Uri.parse('$baseUrl/products'))' with no headers.",
+        "source": "examples/don-hang @ stage-1: DonHang.App/lib/api_client.dart"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "login_screen.dart @ stage-1 lines 23-39 match block 2 verbatim; line 57 'if (_error != null) Text(_error!, style: const TextStyle(color: Colors.red))' placed before ElevatedButton; line 59 'onPressed: _loading ? null : _submit'; line 60 '_loading ? const CircularProgressIndicator() : const Text('Sign in')'. Headless Chrome on :8081: after wrong password the error node sits at y=184 and the button moves to y=204 (above it).",
+        "source": "examples/don-hang @ stage-1: DonHang.App/lib/screens/login_screen.dart; headless Chrome 153 against lab app-web :8081"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Dart SDK (Flutter 3.47.2) core/exceptions.dart class _Exception: 'if (message == null) return \"Exception\"; return \"Exception: $message\";'. Execution: headless Chrome, wrong password on the lab app -> semantics node text 'Exception: login failed (401)'.",
+        "source": "C:/Flutter/flutter/bin/cache/dart-sdk/lib/core/exceptions.dart; headless Chrome against http://localhost:8081"
+      },
+      {
+        "n": 8,
+        "verdict": "rephrased",
+        "evidence": "Flutter 3.47.2 framework.dart: 'Whether this [State] object is currently in a tree. ... The [State] object remains mounted until the framework calls [dispose]'. Flutter docs guidance: 'After an asynchronous gap, check mounted in a State ... before calling setState, using the context, or doing other work that requires the State to remain in the tree.' mounted means 'still in the tree', not 'still showing' (a State under a covering route is mounted but not visible).",
+        "source": "C:/Flutter/flutter/packages/flutter/lib/src/widgets/framework.dart (State.mounted); refs/flutter-website/.agents/skills/write-flutter/SKILL.md lines 71-74",
+        "suggested_text": "The `mounted` check before that makes sure the screen is still in the widget tree after the wait (the user may have left it with Back), since `context` belongs to it."
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "JwtTokenService @ stage-1: 'expires: DateTime.UtcNow.AddHours(8)', no revocation store; Program.cs ValidateLifetime = true. Run: token obtained by one curl call, reused from a separate curl with 'Authorization: Bearer <token>' -> GET /api/v1/orders 200; payload decoded shows exp, sub, email, iss, aud and no client binding.",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/JwtTokenService.cs, Program.cs; curl against lab"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "main.dart @ stage-1: DonHangApp.build 'final apiClient = ApiClient();' passed to ProductListScreen; api_client.dart line 14 'String? _token;' (null on a new object); no storage package, only setToken/login write it. Headless Chrome: after successful login, Page.reload -> app starts on product screen again (fresh ApiClient).",
+        "source": "examples/don-hang @ stage-1: DonHang.App/lib/main.dart, api_client.dart; headless Chrome against lab"
+      },
+      {
+        "n": 11,
+        "verdict": "rephrased",
+        "evidence": "Headless Chrome Network log after Try-it steps 1+2: 'POST .../auth/login 401', 'OPTIONS .../auth/login 204' (preflight, type Other), 'POST .../auth/login 200'; POST 200 body '{\"token\":\"eyJ...' ; sign-in IconButton at x=944,y=8 (top right of AppBar). So after step 2 the list holds at least two POST login entries, one of them the 401 from step 1 whose body is Problem Details, not a token. 'the POST one, if two are listed' is inaccurate.",
+        "source": "headless Chrome 153 (CDP Network domain) against http://localhost:8081; product_list_screen.dart @ stage-1 AppBar actions",
+        "suggested_text": "In the Network tab, select the last `login` request, the `POST` with status `200`, and open its response."
+      },
+      {
+        "n": 12,
+        "verdict": "not-needed",
+        "evidence": "Security principle / design consequence (more copies = more exposure; a 401 must surface to the user), consistent with outline item 3 and misconception 2; no version-dependent behavior asserted. Lesson wording has no 'always/never' beyond what it reasons from.",
+        "source": "track.yaml outline entry frontend.l1.logging-in-from-the-app"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "major",
+        "section": 7,
+        "kind": "accuracy",
+        "text": "Try-it step 2 says to pick 'the POST one, if two are listed', implying only one POST. After step 1 the Network tab already holds a POST login with 401 (Problem Details body); step 2 adds another POST with 200 (plus an OPTIONS preflight). Verified in headless Chrome: POST 401, OPTIONS 204, POST 200. A learner who opens the first POST sees type/title/status JSON, not the expected single token field.",
+        "quote": "select the `login` request (the `POST` one, if two are listed) and open its response",
+        "fix": "Replace with: \"In the Network tab, select the last `login` request, the `POST` with status `200`, and open its response.\" Update claim 11 accordingly."
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "Unlisted claim: that the product list endpoint needs no sign-in (also Section 2 'The product list ... works for anyone'). True at stage-1 (ProductsController has no [Authorize]; curl GET /api/v1/products without a header -> 200), but not in the ledger; claim 5 only covers what fetchProducts sends, not what the API requires.",
+        "quote": "The product list request does not, because listing products needs no sign-in.",
+        "fix": "Add a claim to .meta.json: \"GET /api/v1/products has no [Authorize] and answers 200 without an Authorization header (ProductsController.cs @ stage-1)\", kind fact, section 5. No text change needed."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "State.mounted means the State is still in the tree (until dispose), not that the screen is 'still showing'. A mounted State can be hidden under another route. The code is right; the prose overstates what the check tests.",
+        "quote": "The `mounted` check before that makes sure the screen is still showing after the wait, since `context` belongs to it.",
+        "fix": "Replace with: \"The `mounted` check before that makes sure the screen is still in the widget tree after the wait (the user may have left it with Back), since `context` belongs to it.\""
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "fix-required"
+  }
+}
