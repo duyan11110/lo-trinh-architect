@@ -15,7 +15,9 @@ vocab: [tls-termination]
 example_tag: stage-1
 versions_used: [aspnetcore, caddy]
 content_version: 1
-status: draft
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-27T13:00:00+07:00"
 ---
 
 ## Before you start
@@ -45,7 +47,7 @@ flowchart LR
 
 A TLS connection has two ends, and whichever program sits at the far end is the one that needs the certificate and does the decrypting. With **TLS termination**, that program is the reverse proxy. The client's HTTPS connection ends at the proxy: the proxy shows its certificate, decrypts the request, reads it as ordinary HTTP, and decides where it goes, just as it does for plain requests. It then forwards the request to the upstream over a second connection, which can be plain HTTP. The upstream's answer comes back the same way, and the proxy encrypts it on the TLS side before it leaves.
 
-This has a cost and a benefit. The cost is that the part between the proxy and the upstream is not encrypted, so it must run where no one else can listen: the same machine, or a private network. The benefit is that only one program deals with certificates. Adding, renewing or replacing a certificate is done in one place, and every application behind the proxy can stay a plain HTTP server that never loads a key or checks a date. If the proxy forwards to five services, there is still one certificate to manage, not five.
+This has a cost and a benefit. The cost is that the part between the proxy and the upstream is not encrypted, so it must run where no one else can listen: the same machine, or a private network. The benefit is that only one program deals with certificates. Adding, renewing or replacing a certificate is done in one place, and every application behind the proxy can stay a plain HTTP server that never loads a certificate or watches its expiry date. If the proxy forwards to five services, there is still one certificate to manage, not five.
 
 ## In the Đơn Hàng system
 
@@ -82,7 +84,7 @@ On the other side, the API is set up for plain HTTP only. `DonHang.Api/Dockerfil
 
 With the lab running, from the repository root:
 
-1. Run `curl -sk -i --resolve donhang.local:8443:127.0.0.1 https://donhang.local:8443/api/v1/products/1`. `-i` shows the answer's headers, `--resolve` points `donhang.local` at your own machine for this one command, and `-k` accepts the certificate Caddy signed with its own authority, which your laptop does not trust.
+1. Run `curl -sk -i --resolve donhang.local:8443:127.0.0.1 https://donhang.local:8443/api/v1/products/1`. `-i` (for `curl`) shows the answer's headers, `--resolve` points `donhang.local` at your own machine for this one command, and `-k` accepts the certificate Caddy signed with its own authority, which your laptop does not trust.
 2. Run `ssh -p 2222 -i secrets/lab_key dev@localhost 'curl -sS https://api:8080/api/v1/products/1'`, which speaks HTTPS straight to Kestrel from the lab box.
 3. Run `ssh -p 2222 -i secrets/lab_key dev@localhost 'curl -s http://api:8080/api/v1/products/1'`, the same request in plain HTTP.
 

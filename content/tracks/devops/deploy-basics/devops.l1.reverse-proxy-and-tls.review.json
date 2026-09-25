@@ -1,7 +1,7 @@
 {
   "id": "devops.l1.reverse-proxy-and-tls",
   "technical": {
-    "reviewed_at": "2026-09-26T06:30:00+07:00",
+    "reviewed_at": "2026-09-26T06:45:00+07:00",
     "reviewer": "claude-opus-5-5",
     "claim_verdicts": [
       {
@@ -12,10 +12,9 @@
       },
       {
         "n": 2,
-        "verdict": "rephrased",
-        "evidence": "Caddy tls docs: `internal` means to \"use Caddy's internal, locally-trusted CA to produce certificates for this site\"; \"Caddy will attempt to install the root CA certificate to the system trust store, but this may fail when Caddy is running as an unprivileged user, or when running in a Docker container.\" So 'clients do not trust by default' is too general; it holds here because Caddy runs in a container (host curl without -k: exit 60). Served chain: leaf issued by 'Caddy Local Authority - ECC Intermediate'.",
-        "source": "https://caddyserver.com/docs/caddyfile/directives/tls; openssl s_client -connect localhost:8443 -servername donhang.local (lab box)",
-        "suggested_text": "tls internal makes Caddy issue the site's certificate from its own local certificate authority; in the lab Caddy runs in a container, so your laptop does not trust that authority and curl needs -k."
+        "verdict": "verified",
+        "evidence": "Caddy tls docs: `internal` means to \"use Caddy's internal, locally-trusted CA to produce certificates for this site\"; \"Caddy will attempt to install the root CA certificate to the system trust store, but this may fail ... when running in a Docker container.\" Lab: chain leaf <- 'Caddy Local Authority - ECC Intermediate' <- '2026 ECC Root' (openssl s_client, r1). Host curl without -k: exit 60; with -k: 200 (re-run r2).",
+        "source": "https://caddyserver.com/docs/caddyfile/directives/tls; execution on host and lab box, 2026-09-26"
       },
       {
         "n": 3,
@@ -32,8 +31,8 @@
       {
         "n": 5,
         "verdict": "verified",
-        "evidence": "Ran the exact command on the host (curl 8.9.0, Schannel): `HTTP/1.1 200 OK`, `Server: Kestrel`, `Via: 1.1 Caddy`, body `{\"id\":1,\"name\":\"Bàn phím cơ\",\"priceVnd\":1250000}`. Same command without -k: exit 60 (peer certificate cannot be authenticated). Plain site http://localhost:8080/api/v1/products/1 returns the same Server and Via headers.",
-        "source": "execution against running lab, 2026-09-26"
+        "evidence": "r3 re-run on host (curl 8.9.0): exact command -> `HTTP/1.1 200 OK`, headers incl. `Server: Kestrel`, `Via: 1.1 Caddy`, body `{\"id\":1,\"name\":\"Bàn phím cơ\",...}` (-i prints status line + headers). Lab box `curl -s -i http://api:8080/api/v1/products/1` -> `Server: Kestrel`, no Via header, so Via is added by Caddy. Without -k: exit 60 (r2).",
+        "source": "execution against running lab (host and ssh -p 2222 lab box), 2026-09-26"
       },
       {
         "n": 6,
@@ -52,140 +51,60 @@
         "verdict": "not-needed",
         "evidence": "Conditional design judgement ('acceptable only on the same machine or a private network') plus a definitional consequence of termination (one program holds the certificate). The lesson states the condition; no version-specific behaviour. Consistent with refs/aspnetcore-docs host-and-deploy/proxy-load-balancer.md, which describes HTTPS proxied over HTTP as a normal setup.",
         "source": "outline items 1-3; refs/aspnetcore-docs/aspnetcore/host-and-deploy/proxy-load-balancer.md"
-      }
-    ],
-    "issues": [
-      {
-        "severity": "major",
-        "section": 5,
-        "kind": "accuracy",
-        "quote": "Kestrel cannot tell which kind of connection the client used.",
-        "text": "Unlisted claim, and false as written. Caddy reverse_proxy docs: \"It sets the `X-Forwarded-Proto` header field.\" ASP.NET Core docs (proxy-load-balancer.md:21): \"When HTTPS requests are proxied over HTTP, the original scheme (HTTPS) is lost and must be forwarded in a header.\" Kestrel's own connection is plain in both cases, but every request from the HTTPS site arrives carrying a header that says the client used HTTPS.",
-        "fix": "Replace the sentence with: \"The connection Kestrel receives is plain HTTP in both cases; the encrypted part ended at Caddy.\" If the claim is kept in any form, add it to the claims ledger."
       },
       {
-        "severity": "major",
-        "section": 7,
-        "kind": "accuracy",
-        "quote": "`-k` accepts Caddy's self-signed certificate, which your laptop does not trust.",
-        "text": "Unlisted claim that contradicts claim 2 and the lab. `tls internal` certificates are not self-signed: the served chain is leaf issued by 'CN=Caddy Local Authority - ECC Intermediate', itself issued by 'CN=Caddy Local Authority - 2026 ECC Root' (openssl s_client from the lab box). Caddy docs: \"use Caddy's internal, locally-trusted CA\".",
-        "fix": "Replace with: \"`-k` accepts the certificate Caddy signed with its own authority, which your laptop does not trust.\""
-      },
-      {
-        "severity": "major",
-        "section": 6,
-        "kind": "accuracy",
-        "quote": "You notice this when you speak HTTPS straight to Kestrel and it cannot answer at all, because it was only ever listening for plain HTTP.",
-        "text": "Unlisted claim, contradicted by execution. Sending a TLS record to api:8080 (nc from the lab box) gets a plain reply `HTTP/1.1 400 Bad Request ... Server: Kestrel`; curl -v shows 5 bytes received, then 'wrong version number'. Kestrel does answer, in plain HTTP, which curl cannot read as TLS. The quiz q4 explanation ('gets a plain answer back') already says the correct thing, so lesson and quiz disagree.",
-        "fix": "Replace \"it cannot answer at all\" with \"no TLS connection can be set up: Kestrel answers in plain HTTP, which curl cannot read as TLS\"."
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "r2 from lab box: printf '\u0016\u0003\u0001...' | nc api 8080 -> `HTTP/1.1 400 Bad Request`, `Content-Length: 0`, `Connection: close`; curl -v https://api:8080/ -> 5 bytes received, then `error:0A00010B:SSL routines::wrong version number`. Caddy reverse_proxy docs (Headers): \"It sets the `X-Forwarded-Proto` header field.\" Upstream `api:8080` has no scheme -> plaintext HTTP (claim 3). Docs opened: Caddy tls, reverse_proxy; refs/aspnetcore-docs kestrel/endpoints.md, proxy-load-balancer.md.",
+        "source": "execution via ssh -p 2222 dev@localhost, 2026-09-26; https://caddyserver.com/docs/caddyfile/directives/reverse_proxy"
       }
     ],
+    "issues": [],
     "scope": {
       "outline_covered": true,
       "beyond_scope": []
     },
-    "verdict": "fix-required"
+    "verdict": "pass"
   },
   "junior": {
-    "reviewed_at": "2026-09-26T08:00:00+07:00",
+    "reviewed_at": "2026-09-26T10:00:00+07:00",
     "reviewer": "claude-opus-5-5",
     "issues": [
       {
-        "severity": "major",
-        "section": 5,
-        "kind": "term",
-        "quote": "Its `Dockerfile` sets `ASPNETCORE_URLS=http://+:8080`, which tells Kestrel to listen for plain HTTP on port `8080`",
-        "text": "`Dockerfile` is not in known_vocab and not defined. I understand what ASPNETCORE_URLS does from the sentence, but I don't know what a Dockerfile is, where it lives in the repo, or why the API's settings are there instead of in the C# code.",
-        "fix": "Replace \"Its `Dockerfile` sets\" with \"The file that builds the API's part of the lab sets the environment variable\", or name the file path without relying on the word Dockerfile being known."
-      },
-      {
-        "severity": "major",
-        "section": 5,
-        "kind": "term",
-        "quote": "`tls internal` makes Caddy sign a certificate for `donhang.local` with an authority of its own, as in the TLS lesson.",
-        "text": "\"authority\" (also in Try it: \"signed with its own authority, which your laptop does not trust\") is not in known_vocab. The TLS prereq summary only says a certificate is checked by \"signer\". I can't tell whether an authority is a program, a file or a company, or why my laptop trusts some and not this one.",
-        "fix": "Add one sentence after the first mention: \"An authority here is just the signer of a certificate; your laptop trusts only a fixed list of signers, and Caddy's own is not on it.\""
-      },
-      {
-        "severity": "major",
-        "section": "quiz",
-        "kind": "term",
-        "quote": "A copy of Caddy's private key",
-        "text": "q3 option c and its explanation use \"private key\". Not in known_vocab; the TLS prereq summary mentions only a \"public key\". The lesson body says the API \"never loads a key\" without saying which key. I can rule the option out by elimination, but the explanation (\"The private key stays with the program at the end of the TLS connection\") teaches something the lesson never said.",
-        "fix": "Replace option c with a distractor using known words, e.g. \"A copy of Caddy's certificate\", and adjust its explanation accordingly."
-      },
-      {
-        "severity": "major",
-        "section": 5,
-        "kind": "gap",
-        "quote": "The new part in stage 1 is `handle /api/v1/*` with `reverse_proxy api:8080`, the same line as on the plain `:8080` site.",
-        "text": "There are two different 8080s in one sentence: Caddy's plain `:8080` site and Kestrel's `api:8080`. The code block doesn't show the plain site and the prereq summary doesn't say it is on :8080, so I first read it as \"the same line as on Kestrel\" and got lost.",
-        "fix": "Rewrite as: \"...the same line as in Caddy's plain-HTTP site (the one on your laptop's port 8080, from the reverse-proxy lesson).\""
-      },
-      {
-        "severity": "major",
-        "section": 5,
-        "kind": "gap",
-        "quote": "An answer from Kestrel through the HTTPS site carries the same `Server: Kestrel` and `Via: 1.1 Caddy` headers as through the plain one. The connection Kestrel receives is plain HTTP in both cases",
-        "text": "The second sentence reads as a conclusion drawn from the first, but I can't get from \"the headers are the same\" to \"Kestrel's connection is plain\". Headers are the answer's content; they don't say how Kestrel's connection was made. The actual proof only comes later in Try it (steps 2-3).",
-        "fix": "Replace the link with: \"The headers show the same Kestrel answered both; the ASPNETCORE_URLS setting above shows it can only have received plain HTTP. Try it checks this directly.\""
-      },
-      {
         "severity": "minor",
-        "section": 5,
-        "kind": "gap",
-        "quote": "carries the same `Server: Kestrel` and `Via: 1.1 Caddy` headers",
-        "text": "The lesson relies on what `Via` means (only the Try-it suggested answer says it shows the answer passed through Caddy). The prereq summaries don't mention it, so on first read in section 5 I don't know why it matters.",
-        "fix": "At first mention add: \"(`Via` is the header Caddy adds to show the answer passed through it)\"."
-      },
-      {
-        "severity": "minor",
-        "section": 5,
-        "kind": "code",
-        "quote": "root * /srv/www",
-        "text": "The prose explains `donhang.local:8443`, `tls internal` and `handle /api/v1/*`, but not `root * /srv/www` or the second `handle { file_server }`. I can guess it is the static pages from stage 0, but I have to guess.",
-        "fix": "Add one clause: \"the rest of the block (`root`, `handle { file_server }`) is stage 0's static pages, now answering every path except `/api/v1/*`.\""
+        "section": 7,
+        "kind": "style",
+        "quote": "`-i` shows the answer's headers",
+        "text": "Step 1 now says `-i` shows the headers. Steps 2 and 3 then run `ssh ... -i secrets/lab_key ...`, where `-i` clearly means something else (it is followed by a file). Having just learned `-i`, I paused and wondered whether step 2 also prints headers. I can still run the command by copying it.",
+        "fix": "In step 1 write \"`-i` (for `curl`) shows the answer's headers\", or add to step 2: \"here `-i secrets/lab_key` is the key `ssh` logs in with, not curl's `-i`\"."
       },
       {
         "severity": "minor",
         "section": 7,
-        "kind": "example",
-        "quote": "1 — `200`, `Server: Kestrel`, `Via: 1.1 Caddy`, and the keyboard as JSON.",
-        "text": "\"the keyboard\" assumes I remember product 1 from another lesson; nothing here says product 1 is a keyboard. Also `-i` (needed to see the status and headers) is the one flag in step 1 not explained, while `-k` and `--resolve` are.",
-        "fix": "Write \"product 1 (a keyboard) as JSON\" and add \"`-i` prints the status line and headers\" to the step 1 explanation."
+        "kind": "term",
+        "quote": "which speaks HTTPS straight to Kestrel from the lab box.",
+        "text": "\"lab box\" and `ssh` are not in known_vocab and not defined here (also \"lab box\" in quiz q4). From prereq summary 5 (\"no port of its own outside the lab\") I can infer I must be inside the lab to reach `api:8080`, and the commands are copy-pasteable, so the Try-it still works. Minor because the step is doable and the point is inferable.",
+        "fix": "Add in step 2 one clause: \"`ssh ... dev@localhost` runs the quoted command on the lab box, a machine inside the lab network that can reach `api:8080`\"."
       },
       {
         "severity": "minor",
-        "section": "quiz",
-        "kind": "quiz",
-        "quote": "Because that part runs on the lab's private network, where outsiders cannot listen",
-        "text": "q5's correct option is close to verbatim from section 4 (\"it must run where no one else can listen... a private network\") and section 6 (\"the lab's network between them is private\"). Answerable by matching words.",
-        "fix": "Reword the correct option, e.g. \"Because no machine outside the lab can see traffic between Caddy and Kestrel\"."
-      },
-      {
-        "severity": "minor",
-        "section": "quiz",
-        "kind": "quiz",
-        "quote": "Nothing: it can listen for plain HTTP, and Caddy handles TLS",
-        "text": "q3's correct option is the only one with a reason attached and is clearly the longest; I can pick it by shape without understanding.",
-        "fix": "Shorten it to \"Nothing; plain HTTP is enough\" or give the distractors a similar reason clause."
+        "section": 4,
+        "kind": "gap",
+        "quote": "every application behind the proxy can stay a plain HTTP server that never loads a key or checks a date.",
+        "text": "\"a key\" is not said to be which key. The TLS prereq summary only mentions the public key inside a certificate. I guess it means something the program needs alongside its certificate, but I have to guess; section 5 repeats the idea as \"nothing in the API loads a certificate\" without a key.",
+        "fix": "Replace \"never loads a key or checks a date\" with \"never loads a certificate or watches its expiry date\"."
       }
     ],
     "readability": {
       "unknown_terms": [
-        "Dockerfile",
-        "authority (certificate signer)",
-        "private key"
+        "lab box",
+        "ssh"
       ],
-      "skipped_steps": [
-        "Which 8080 is meant by 'the plain `:8080` site' vs Kestrel's `api:8080` (section 5)",
-        "From 'same Server/Via headers' to 'Kestrel receives plain HTTP' (section 5)",
-        "What the `Via` header shows, before the Try-it answer explains it (section 5)"
-      ],
+      "skipped_steps": [],
       "situation_connects": true,
       "try_it_feasible": true,
       "summary_matches": true
     },
-    "verdict": "fix-required"
+    "verdict": "pass"
   }
 }
