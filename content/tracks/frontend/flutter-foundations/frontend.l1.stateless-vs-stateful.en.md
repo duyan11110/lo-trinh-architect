@@ -94,7 +94,9 @@ class _ProductListScreenState extends State<ProductListScreen> {
   }
 ```
 
-The widget class keeps only its input, the `apiClient`, and `createState` tells Flutter which `State` to create. The `State` holds `_products`, the product list currently being loaded; `late` means it gets its value after the object is created, here in `initState`. `initState` runs once, when the `State` is created, and starts the first load. Because `_products` lives in the `State`, it survives every rebuild of the screen: the load is not started again each time the tree is described. And when the user presses the refresh button, the screen replaces `_products` with a new load by itself, in a `_reload` method further down the same file; nothing outside passes it a new value. Inside the `State`, `widget.apiClient` reads the input from the widget object. How the `State` tells Flutter to build again after replacing `_products` is the subject of the next lesson.
+The widget class keeps only its input, the `apiClient`, and `createState` tells Flutter which `State` to create. The `State` holds `_products`, the product list currently being loaded; `late` means it gets its value after the object is created, here in `initState`. `initState` runs once, when the `State` is created, and starts the first load. Because `_products` lives in the `State`, it survives every rebuild of the screen: the load is not started again each time the tree is described.
+
+And when the user presses the refresh button, the screen replaces `_products` with a new load by itself, in a `_reload` method further down the same file; nothing outside passes it a new value. Inside the `State`, `widget.apiClient` reads the input from the widget object. How the `State` tells Flutter to build again after replacing `_products` is the subject of the next lesson.
 
 ## Beginners often think…
 
