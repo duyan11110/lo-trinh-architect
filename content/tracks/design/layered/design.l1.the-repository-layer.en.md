@@ -85,7 +85,7 @@ public sealed class EfOrderRepository(DonHangDbContext db) : IOrderRepository
 }
 ```
 
-The `// lesson:` comment only marks the lesson where `ListByCustomerAsync` was added. Each method is a thin wrapper around one EF Core query or call. `FindAsync` always brings the items along with `Include`, so no caller can forget them. `ListByCustomerAsync` filters, loads the customer and sorts, all in one query. `OrderService` sees none of this; it knows only the names in the interface, and calls three of them — `ListByCustomerAsync` is called by `OrdersController`. `OrdersController` also calls `FindAsync` and `ListByCustomerAsync` directly in its `Get` and `List` methods, skipping the service — the next lesson looks at that shortcut.
+The `// lesson:` comment only marks the lesson where `ListByCustomerAsync` was added. Each method is a thin wrapper around one EF Core query or call. `FindAsync` always brings the items along with `Include`, so no caller can forget them. `ListByCustomerAsync` filters, loads the customer and sorts, all in one query. `OrderService` sees none of this; it knows only the names in the interface and calls three of them. The fourth, `ListByCustomerAsync`, is called by `OrdersController.List`, which — like `Get` with `FindAsync` — goes to the repository directly, skipping the service; the next lesson looks at that shortcut.
 
 ## Beginners often think…
 
@@ -106,7 +106,7 @@ One more class would also have to change for the solution to compile. Which one,
 
 <details><summary>Suggested answer</summary>
 
-`FakeOrderRepository` in `DonHang.Tests`: it implements `IOrderRepository` too, and a class must provide every method its interface declares — here, all four. That is the cost of a new repository method — every implementation grows with it — and the reason to keep the interface small.
+`FakeOrderRepository` in `DonHang.Tests`: it implements `IOrderRepository` too, and a class must provide every method its interface declares — the new fifth one as well as the four it already has. That is the cost of a new repository method — every implementation grows with it — and the reason to keep the interface small.
 
 </details>
 
