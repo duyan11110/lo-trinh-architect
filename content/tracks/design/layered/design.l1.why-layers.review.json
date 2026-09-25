@@ -1,0 +1,109 @@
+{
+  "id": "design.l1.why-layers",
+  "technical": {
+    "reviewed_at": "2026-09-25T22:10:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "git ls-tree -r stage-1: DonHang.Api/{Controllers/*.cs, Dtos.cs, Middleware/*.cs, Program.cs}; DonHang.Domain/{Entities.cs, OrderService.cs, INotifier.cs, IOrderRepository.cs, PasswordHasher.cs}; DonHang.Infrastructure/{DonHangDbContext.cs, EfOrderRepository.cs, Migrations/*}. STAGE.md: \"a 3-layer ASP.NET Core API\". (Exclusivity of 'the code that talks to PostgreSQL' is a separate issue: ProductsController in DonHang.Api uses DonHangDbContext.)",
+        "source": "examples/don-hang @ stage-1: git ls-tree; STAGE.md"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "git show stage-1:DonHang.Domain/DonHang.Domain.csproj — 10 lines, only a PropertyGroup (TargetFramework net10.0, ImplicitUsings, Nullable, RootNamespace). Directory.Packages.props at stage-1 has only PackageVersion items, no GlobalPackageReference, so nothing is injected.",
+        "source": "examples/don-hang @ stage-1: DonHang.Domain/DonHang.Domain.csproj; Directory.Packages.props"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "DonHang.Infrastructure.csproj lines 10-20 at stage-1: ProjectReference ..\\DonHang.Domain\\DonHang.Domain.csproj; PackageReference Microsoft.EntityFrameworkCore.Design (PrivateAssets all) and Npgsql.EntityFrameworkCore.PostgreSQL.",
+        "source": "examples/don-hang @ stage-1: DonHang.Infrastructure/DonHang.Infrastructure.csproj"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "\"CS0246: The type or namespace name could not be found (are you missing a using directive or an assembly reference?)\" ... \"These compiler errors indicate one of these problems in your code: The project doesn't reference the required assembly.\" (Local build experiment not run: permission denied.)",
+        "source": "refs/dotnet-docs/docs/csharp/language-reference/compiler-messages/assembly-references.md#missing-references"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "OrderService.PlaceOrderAsync: `if (items.Count == 0) throw new ArgumentException(\"an order needs at least one item\");` ExceptionHandlingMiddleware already maps ArgumentException to 400, so a 20-item check thrown the same way needs no change in DonHang.Api.",
+        "source": "examples/don-hang @ stage-1: DonHang.Domain/OrderService.cs:10; DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs:21-24"
+      },
+      {
+        "n": 6,
+        "verdict": "rephrased",
+        "evidence": "OrdersController has [Route(\"api/v1/orders\")] (verified). But the lesson says Infrastructure is \"where the EF Core queries live\" (all of them). ProductsController in DonHang.Api injects DonHangDbContext and runs `db.Products.Select(...).ToListAsync()` / `db.Products.FindAsync(id)` with `using Microsoft.EntityFrameworkCore;`. Only the order queries live in EfOrderRepository.",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/Controllers/OrdersController.cs:11, ProductsController.cs:1-26; DonHang.Infrastructure/EfOrderRepository.cs",
+        "suggested_text": "3 is a data concern, `DonHang.Infrastructure` — the order queries live in `EfOrderRepository` there."
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "git show stage-1:samples/DonHang.Samples/Samples/Clean/PlaceOrderSplit.cs | wc -l → 38; cat -n ends at line 38 with the closing brace.",
+        "source": "examples/don-hang @ stage-1: samples/DonHang.Samples/Samples/Clean/PlaceOrderSplit.cs"
+      },
+      {
+        "n": 8,
+        "verdict": "not-needed",
+        "evidence": "Framing required by outline item 1 (\"a layered architecture applies the same idea to a whole application\"); it is the lesson's definition/analogy, not a checkable fact about a pinned version.",
+        "source": "content/tracks/design/track.yaml: design.l1.why-layers outline[0]"
+      },
+      {
+        "n": 9,
+        "verdict": "not-needed",
+        "evidence": "Conditioned opinion (cost of each layer vs. application size), stated with its condition in section 6 and matching outline misconception 2; no version-dependent behaviour involved.",
+        "source": "content/tracks/design/track.yaml: design.l1.why-layers misconceptions[1]"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "`public sealed class OrderService(IOrderRepository repository, INotifier notifier)`; both interfaces are in namespace DonHang.Domain; `EfOrderRepository(DonHangDbContext db) : IOrderRepository` and `LoggingNotifier(...) : INotifier` are in DonHang.Infrastructure.",
+        "source": "examples/don-hang @ stage-1: DonHang.Domain/OrderService.cs:6; IOrderRepository.cs; INotifier.cs; DonHang.Infrastructure/EfOrderRepository.cs:7; LoggingNotifier.cs:9"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "code",
+        "text": "The diagram and prose say the HTTP layer calls the business layer, which calls the data layer, and that 'a new query would touch only the data layer'. That is not true of this code at stage-1: ProductsController (DonHang.Api) injects DonHangDbContext and runs EF Core queries itself; OrdersController.Get/List call IOrderRepository directly, not OrderService; DonHang.Api.csproj references DonHang.Infrastructure. A junior who opens the repo will see the HTTP layer reaching the data layer directly.",
+        "quote": "The HTTP layer calls into the business layer to get work done, and the business layer relies on the data layer to store what it decides.",
+        "fix": "Keep the diagram as the idea, but add one sentence in section 5: \"Not every request goes through `DonHang.Domain` yet: `ProductsController` reads `DonHangDbContext` directly, and `OrdersController.Get` asks the repository without `OrderService`. Later lessons in this module look at these shortcuts.\" Change 'a new index or a different query would touch only the data layer' to 'a new index or a different order query would touch only the data layer'."
+      },
+      {
+        "severity": "major",
+        "section": 7,
+        "kind": "accuracy",
+        "text": "Unlisted/overbroad claim: the Try-it answer says DonHang.Infrastructure is 'where the EF Core queries live' and section 5 says Infrastructure holds 'the code that talks to PostgreSQL'. ProductsController in DonHang.Api also talks to PostgreSQL through EF Core (`db.Products...ToListAsync()`). Claim 6 only covers EfOrderRepository.",
+        "quote": "3 is a data concern, `DonHang.Infrastructure`, where the EF Core queries live.",
+        "fix": "Section 7: \"3 is a data concern, `DonHang.Infrastructure` — the order queries live in `EfOrderRepository` there.\" Section 5: \"`DonHang.Infrastructure` holds the data side: `DonHangDbContext`, the migrations and the repository that loads and saves orders.\" Update claim 6 accordingly."
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "Unlisted claim, partly false: the missing references keep EF Core, Npgsql and ASP.NET Core out of DonHang.Domain, but not 'HTTP' in general. An SDK project targeting net10.0 implicitly references the Microsoft.NETCore.App framework (NETSDK1086: a FrameworkReference 'is implicitly referenced by the .NET SDK'), which includes System.Net.Http (HttpClient); the compiler would accept HTTP client code in DonHang.Domain. Same wording in quiz q5 explanation 'correct'.",
+        "quote": "the business layer does not know EF Core, PostgreSQL or HTTP exist",
+        "fix": "Replace with: \"the business layer cannot use EF Core, the PostgreSQL driver or ASP.NET Core — none of them is referenced.\" In q5 explanation (en/vi) replace 'EF Core, PostgreSQL or HTTP types' with 'EF Core, the PostgreSQL driver or ASP.NET Core types'. Add the statement to claims (kind behavior)."
+      },
+      {
+        "severity": "minor",
+        "section": 9,
+        "kind": "accuracy",
+        "text": "'references nothing' overstates the csproj: the project has no ProjectReference or PackageReference, but it still implicitly references the .NET shared framework. Same in q5 explanation 'has no reference at all'.",
+        "quote": "`DonHang.Domain` references nothing, so data-access code cannot creep into the business layer.",
+        "fix": "Summary line 5: \"`DonHang.Domain` has no project or package reference, so EF Core code cannot creep into the business layer.\" q5 explanation: 'has no project or package reference'."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "fix-required"
+  }
+}

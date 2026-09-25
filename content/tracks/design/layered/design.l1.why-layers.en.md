@@ -45,13 +45,13 @@ flowchart LR
 
 SRP says one class, one reason to change. A layered architecture applies the same idea one level up: instead of judging classes one by one, it groups them by the kind of reason they change for. Code that changes when the HTTP interface changes goes in one layer. Code that changes when a business rule changes goes in another. Code that changes when the way data is stored changes goes in a third.
 
-With that map, the question from the situation has an answer before you open a file. "At most 20 items" is a business rule, so it belongs in the business layer. A renamed route would touch only the HTTP layer; a new index or a different query would touch only the data layer.
+With that map, the question from the situation has an answer before you open a file. "At most 20 items" is a business rule, so it belongs in the business layer. A renamed route would touch only the HTTP layer; a new index or a different order query would touch only the data layer.
 
 The arrows show which layer uses which. The HTTP layer calls into the business layer to get work done, and the business layer relies on the data layer to store what it decides. Each layer can then change for its own reason without dragging the others along.
 
 ## In the Đơn Hàng system
 
-At stage-1, the API is split into three projects, one per kind of concern. `DonHang.Api` holds the HTTP side: the endpoints, the DTOs and the middleware. `DonHang.Domain` holds the business side: the entities and `OrderService`, which decides whether an order can be placed. `DonHang.Infrastructure` holds the data side: `DonHangDbContext`, the migrations and the code that talks to PostgreSQL.
+At stage-1, the API is split into three projects, one per kind of concern. `DonHang.Api` holds the HTTP side: the endpoints, the DTOs and the middleware. `DonHang.Domain` holds the business side: the entities and `OrderService`, which decides whether an order can be placed. `DonHang.Infrastructure` holds the data side: `DonHangDbContext`, the migrations and the order queries in `EfOrderRepository`. The split is not perfectly clean: the products endpoints in `DonHang.Api` query `DonHangDbContext` directly, and the read endpoints for orders call the data layer without going through `OrderService` — shortcuts a later lesson in this module comes back to.
 
 The project files show which way the dependencies go. This is all of `DonHang.Domain.csproj`:
 
@@ -68,7 +68,7 @@ The project files show which way the dependencies go. This is all of `DonHang.Do
 </Project>
 ```
 
-No project reference and no package reference: the business layer does not know EF Core, PostgreSQL or HTTP exist. The data project, by contrast, references it:
+No project reference and no package reference: the business layer cannot use EF Core, the PostgreSQL driver or ASP.NET Core. The data project, by contrast, references it:
 
 ```xml file=DonHang.Infrastructure/DonHang.Infrastructure.csproj tag=stage-1 lines=10-20
   <ItemGroup>
@@ -99,7 +99,7 @@ For each change, name the layer — and the Đơn Hàng project — it belongs i
 2. An order may have at most 20 items.
 3. Loading an order should also load its customer's name in the same query.
 
-Expected result: 1 is an HTTP concern, `DonHang.Api`. 2 is a business rule, `DonHang.Domain` — next to the existing check that an order has at least one item. 3 is a data concern, `DonHang.Infrastructure`, where the EF Core queries live.
+Expected result: 1 is an HTTP concern, `DonHang.Api`. 2 is a business rule, `DonHang.Domain` — next to the existing check that an order has at least one item. 3 is a data concern, `DonHang.Infrastructure`, where the order queries live in `EfOrderRepository`.
 
 Which of the three changes would also force a change in another layer?
 
@@ -121,4 +121,4 @@ None of them has to. The route lives only in the HTTP layer, the item limit only
 2. A layered architecture is SRP for a whole application: each layer changes for its own reason.
 3. Knowing the layers tells you where a new change belongs before you open a file.
 4. Đơn Hàng's API splits into `DonHang.Api`, `DonHang.Domain` and `DonHang.Infrastructure`, one project per layer.
-5. `DonHang.Domain` references nothing, so data-access code cannot creep into the business layer.
+5. `DonHang.Domain` has no project or package reference, so EF Core code cannot creep into the business layer.
