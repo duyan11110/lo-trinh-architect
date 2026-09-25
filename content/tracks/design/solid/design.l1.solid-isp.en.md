@@ -30,8 +30,8 @@ A teammate wants every notification channel to "look the same", so they propose 
 
 ## Core concepts
 
-- **Interface Segregation Principle (ISP)** — no code should be forced to depend on methods it does not use; many small, focused interfaces beat one large one.
-- depend on — code depends on an interface when it implements it or calls through it; a change to any method of that interface can reach that code.
+- **Interface Segregation Principle (ISP)** — no code should be forced to depend on methods it does not use; when different users need different parts of an interface, split it into small, focused interfaces instead of one large one.
+- depend on — code depends on an interface when it implements it or calls through it; implementers must change when its methods change, and callers can only be given classes that provide all of it.
 - fat interface — an interface with methods that some of its implementers or callers have no use for.
 
 ## How it works
@@ -44,9 +44,9 @@ flowchart LR
   I --> M[SmsNotifier]
 ```
 
-A fat interface hurts on two sides. On the implementing side, C# requires a class to provide every member of an interface it implements. `SmsNotifier` has real behaviour for `SendSms` only, so the other three get filler: an empty body, a made-up result, or an exception. An exception there breaks the promise from the LSP lesson: code that holds an `INotificationChannel` may call `SendEmail` and has no way to know this one will fail.
+A fat interface hurts on two sides. On the implementing side, C# requires a class to provide every method the interface declares without a body of its own, which is all four here. `SmsNotifier` has real behaviour for `SendSms` only, so the other three get filler: an empty body, a made-up result, or an exception. An exception there breaks the promise from the LSP lesson: code that holds an `INotificationChannel` may call `SendEmail` and has no way to know this one will fail.
 
-On the calling side, the order confirmation code uses one method but depends on four. If someone changes the parameters of `GetDeliveryReport`, every class that implements the interface has to change, including `SmsNotifier`, even though nothing it does is about delivery reports.
+On the calling side, the order confirmation code uses one method but asks for an `INotificationChannel`, so it can only be given classes that provide all four. If someone changes the parameters of `GetDeliveryReport`, every class that implements the interface has to change, including `SmsNotifier`, even though nothing it does is about delivery reports.
 
 ISP's answer is to cut interfaces along what their users need. Code that sends a message about an order needs one thing: a way to send it. That is exactly what `INotifier` already offers. If delivery reports are ever needed, they belong in a separate interface that only reporting code uses and only classes that can report implement.
 
@@ -77,11 +77,11 @@ public sealed class SmsNotifier : NotifierBase
 }
 ```
 
-Neither class carries a method it has no behaviour for. `SmsNotifier` does not know email exists; `EmailNotifier` does not know about SMS. Code that needs to send something asks for an `INotifier` and can be given either one. Compare that with the proposed `INotificationChannel`, where `SmsNotifier` would carry three methods it has no real behaviour for.
+Neither class carries a method it has no behaviour for. `SmsNotifier` does not know email exists; `EmailNotifier` does not know about SMS. Both are `INotifier`s, so either one can be used wherever an `INotifier` is expected. Compare that with the proposed `INotificationChannel`, where `SmsNotifier` would carry three methods it has no real behaviour for.
 
 ## Beginners often think…
 
-- **"A big interface is fine as long as every class implementing it eventually uses every method somewhere."** → Actually ISP asks about each piece of code that depends on the interface, not about the system as a whole. The confirmation code calls one method of `INotificationChannel` and still has to live with changes to the other three. You notice this when a change to a method you never call forces edits in your class anyway.
+- **"A big interface is fine as long as every class implementing it eventually uses every method somewhere."** → Actually ISP asks about each piece of code that depends on the interface, not about the system as a whole. The confirmation code calls one method of `INotificationChannel`, yet it can only be given classes that implement all four. You notice this when a class that does exactly what you need cannot be passed in without filler for methods you never call.
 - **"ISP is only about how many methods an interface has, not about who is forced to depend on it."** → Actually a small count is a symptom, not the goal. An interface with three methods is fine when every caller and every implementer needs all three; `INotificationChannel` is a problem because `SmsNotifier` needs one of its four. You notice this when you find yourself writing filler bodies just to make a class compile.
 
 ## Try it (3 minutes)
