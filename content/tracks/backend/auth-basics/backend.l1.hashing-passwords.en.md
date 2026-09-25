@@ -31,7 +31,7 @@ Reviewing the `customers` table, you notice `password_hash` holds values like `1
 
 ## Core concepts
 
-- **authentication** — answering "who is making this request"; a login endpoint's job is to check that the credentials submitted really belong to the account they claim.
+- **authentication** — answering "who is making this request"; a login endpoint's job is to check that the email and password submitted really belong to the account they claim.
 - **password hash** — a one-way transformation of a password, stored instead of the password itself; checking a login recomputes the same transformation and compares results, never the password itself.
 - salt — a random value mixed into the password before hashing, unique per computed hash, stored alongside it.
 - iteration count — how many times the transformation repeats; a higher count makes computing one hash slower, on purpose.
@@ -48,9 +48,9 @@ flowchart LR
 
 In the situation above, `PasswordHasher.Verify` is what `POST /api/v1/auth/login` calls once the customer's row is found. It never compares the typed password directly against the stored value; instead, it splits the stored string into its iteration count, salt, and hash, exactly as the diagram's `A` shows. It then runs `Rfc2898DeriveBytes.Pbkdf2` — the one-way transformation itself — again on the password just typed, using that same salt and iteration count (`B`). The recomputed hash and the stored hash are then compared (`C`): a match means the password was right and the login succeeds (`D`); anything else and the login is rejected (`E`) — the typed password is never compared against a stored password, because no stored password exists.
 
-The comparison itself uses `CryptographicOperations.FixedTimeEquals`, not `==` — a comparison whose duration depends on the length of the two byte sequences, not on their contents — so how long the comparison takes doesn't tell anyone how much of the stored hash the typed password got right.
+The comparison itself uses `CryptographicOperations.FixedTimeEquals`, not `==` — a comparison whose duration depends on the length of the two byte sequences, not on their contents. An ordinary comparison can stop at the first byte that differs, so its duration could hint how many leading bytes of the two hashes matched; this one can't.
 
-Storing this way costs something too: nothing computes the password back from a hash. The only route back is guessing a password and hashing it again to see if it matches, which this app's 100,000 iterations — the number at the front of the stored string — make slow, one guess at a time. If a customer forgets their password, the API can only issue a new one — it can never recover and show the old one, because nothing here ever kept it.
+What storing a hash buys is this: anyone who reads the `password_hash` column — through a leak, a backup, or a curious admin — still doesn't have a single password. Storing this way costs something too: nothing computes the password back from a hash. Someone holding a leaked hash can only guess a password and hash it again to see if it matches, which this app's 100,000 iterations — the number at the front of the stored string — make slow, one guess at a time. If a customer forgets their password, the API can only issue a new one — it can never recover and show the old one, because nothing here ever kept it.
 
 ## In the Đơn Hàng system
 
@@ -84,7 +84,7 @@ public static class PasswordHasher
 }
 ```
 
-`Hash` generates a fresh random salt with `RandomNumberGenerator.GetBytes` every time it runs, so calling it twice with the identical password produces two different stored strings — the salt, not the password, is what makes them differ. The algorithm name picks which hash `Pbkdf2` repeats inside, and the `Convert` calls on both sides only turn bytes into text and back — the salt is what this lesson turns on. `Verify` is the only one of the two this app's own code ever calls, from `AuthController.Login`; there's no registration endpoint yet that would call `Hash` for a new customer.
+`Hash` generates a fresh random salt with `RandomNumberGenerator.GetBytes` every time it runs, so calling it twice with the identical password produces two different stored strings — the salt, not the password, is what makes them differ. `HashAlgorithmName.SHA256` picks the inner function `Pbkdf2` repeats, and the `Convert` calls on both sides only turn bytes into text and back — the salt is the part that matters here. `Verify` is the only one of the two this app's own code ever calls, from `AuthController.Login`; there's no registration endpoint yet that would call `Hash` for a new customer.
 
 `customers.password_hash` exists because of a real migration, not a hand-edited column — the first schema change after the baseline `InitialCreate` migration:
 
