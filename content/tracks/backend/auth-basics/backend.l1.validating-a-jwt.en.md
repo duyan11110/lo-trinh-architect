@@ -27,7 +27,7 @@ reviewed_at: null
 
 ## The situation
 
-You call `GET /api/v1/orders` three times. With no `Authorization` header at all, the answer is `401`. With a made-up token, `abc.def.ghi`, it is `401` again, but the response now carries `WWW-Authenticate: Bearer error="invalid_token"`. With the token from logging in, it is `200` and your orders. Then you send that same made-up token to `GET /api/v1/orders/1` — and get `200`, the order, as if the token were fine: the same bad token is rejected by one endpoint and ignored by the other. What actually decides whether a request is turned away?
+You call `GET /api/v1/orders` three times. With no `Authorization` header at all, the answer is `401`. With a made-up token, `abc.def.ghi`, it is `401` again, but its `WWW-Authenticate` header now adds `error="invalid_token"` after `Bearer`. With the token from logging in, it is `200` and your orders. Then you send that same made-up token to `GET /api/v1/orders/1` — and get `200`, the order, as if the token were fine: the same bad token is rejected by one endpoint and ignored by the other. What actually decides whether a request is turned away?
 
 ## Core concepts
 
@@ -101,7 +101,7 @@ Which endpoints actually require a caller is decided in the controllers:
 ## Beginners often think…
 
 - **"A JWT that's expired still works as long as the signature is valid."** → Actually the signature only proves the API issued the token; `ValidateLifetime` separately checks `exp`, and a token well past it is rejected even though every byte is genuine. You notice this when a token that worked this morning starts returning `401` with `The token expired at ...` in the `WWW-Authenticate` header.
-- **"401 and 403 both mean roughly 'not allowed', so either one is fine for a missing or invalid token."** → Actually `401` says the API does not know who is asking; the client's fix is to log in again and send a valid token. `403` says the API knows who is asking and still refuses, so sending the same caller's token again changes nothing. You notice this when an API answers `403` for an expired token: a client that sends the user to log in only on `401` never does, and every call keeps failing.
+- **"401 and 403 both mean roughly 'not allowed', so either one is fine for a missing or invalid token."** → Actually `401` says the API does not know who is asking; the client's fix is to log in again and send a valid token. `403` says the API knows who is asking and still refuses, so sending the same caller's token again changes nothing. You notice this when an API answers `403` for an expired token: a client that sends the user to log in only on `401` never sends them there, and every call keeps failing.
 
 ## Try it (3 minutes)
 
