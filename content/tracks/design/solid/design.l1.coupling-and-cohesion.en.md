@@ -51,9 +51,9 @@ flowchart LR
 
 Cohesion looks inside one unit and asks: do these lines belong together? `TotalWithShippingVnd` has high cohesion — every line in it serves one job, working out a total. `PlaceOrderLong.Place` had low cohesion: checking, pricing, saving and notifying all lived in one body.
 
-Coupling looks between units and asks: if this one changes, must that one change too? In the diagram, each arrow is a place where one unit relies on another. `Place` calls all four private methods, so it depends on each one's name and parameters, and on the result of the two that return one. `TotalWithShippingVnd` relies on `NamingAfter.TotalVnd`, a method in another class, and on what that result means — the lines added up with the discount already taken off.
+Coupling looks between units and asks: if this one changes, must that one change too? In the diagram, each arrow is a place where one unit relies on another. `Place` calls all four private methods, so it depends on each one's name and parameters, and on the results of `FirstProblemWith` and `TotalWithShippingVnd`. `TotalWithShippingVnd` relies on `NamingAfter.TotalVnd`, a method in another class, and on what that result means — the lines added up with the discount already taken off. `Save` and `Notify` both rely on `Console`, which is where their output goes.
 
-The two measurements can disagree. Every method in `PlaceOrderSplit` may do one focused job, yet the class as a whole still holds all four jobs, and its `Place` still has an arrow to each of them. Splitting raised the cohesion of each method; it did not reduce how much `Place` depends on — it only made those dependencies visible as calls instead of a shared variable. High cohesion and low coupling usually both make a change cheaper, but you have to check each one separately.
+The two measurements can disagree. Each method in `PlaceOrderSplit` does one focused job: high cohesion at the method level. The class as a whole still holds all four jobs, which is low cohesion at the class level, and its `Place` still has an arrow to each of them, which is coupling. Splitting raised the cohesion of each method; it did not reduce how much `Place` depends on — it only made those dependencies visible as calls instead of a shared variable. High cohesion and low coupling usually both make a change cheaper, but you have to check each one separately.
 
 ## In the Đơn Hàng system
 
@@ -73,7 +73,7 @@ The two measurements can disagree. Every method in `PlaceOrderSplit` may do one 
     }
 ```
 
-Each job has a name, and the only thing that passes between them is what each call takes and returns. That is a real improvement over `PlaceOrderLong`, where the discount and fee rules both changed the one variable `totalVnd`, and the saving line read it. But `Place` names all four methods and decides what each receives. `Notify` receives only `customerId`, so putting the total in the email means changing `Notify` and the line in `Place` that calls it — two methods for one change.
+`FirstProblemWith` checks the input and returns a message for the first problem it finds, or `null`. Each job has a name, and the only thing that passes between them is what each call takes and returns. That is a real improvement over `PlaceOrderLong`, where the discount and fee rules both changed the one variable `totalVnd`, and the saving line read it. But `Place` names all four methods and decides what each receives. `Notify` receives only `customerId`, so putting the total in the email means changing `Notify` and the line in `Place` that calls it — two methods for one change.
 
 The last three methods:
 
