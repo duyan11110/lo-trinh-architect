@@ -99,7 +99,7 @@ Màn hình đặt đơn gọi nó từ `_placeOrder`, trong `DonHang.App/lib/scr
 
 ## Người mới hay nghĩ rằng…
 
-- **"App vẫn nên gửi customer_id trong body của request; server có thể kiểm tra lại xem nó có khớp với token không."** → Thực ra token đã cho biết khách hàng là ai, và API đã ký nó; một id trong body chỉ là thứ client chọn gõ vào. Nếu hai id khác nhau, server chỉ có thể tin token, nên field thêm vào chẳng thêm gì ngoài một cách để sai. Bạn sẽ nhận ra khi một server có đọc id trong body lưu đơn dưới tên người khác vì một client gửi nhầm id.
+- **"App vẫn nên gửi customer_id trong body của request; server có thể kiểm tra lại xem nó có khớp với token không."** → Thực ra token đã cho biết khách hàng là ai, và API đã ký nó; một id trong body chỉ là thứ client chọn gõ vào. Nếu hai id khác nhau, server chỉ có thể tin token, nên field thêm vào chỉ thêm một chỗ để sai. Bạn sẽ nhận ra khi một server có đọc id trong body lưu đơn dưới tên người khác vì một client gửi nhầm id.
 - **"Hiện một thông báo chung chung 'something went wrong' là đủ cho mọi kiểu thất bại mà một POST có thể gặp."** → Thực ra `401` đòi người dùng đăng nhập lại, `400` đòi họ sửa đơn, và `500` đòi họ thử lại sau. Một thông báo cho cả ba khiến họ phải đoán. Bạn sẽ nhận ra khi người dùng báo "nó hỏng rồi" và không ai biết vấn đề nằm ở đăng nhập, ở đơn hàng hay ở server.
 
 ## Thử ngay (3 phút)
