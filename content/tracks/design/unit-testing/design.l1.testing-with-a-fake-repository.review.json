@@ -1,7 +1,7 @@
 {
   "id": "design.l1.testing-with-a-fake-repository",
   "technical": {
-    "reviewed_at": "2026-09-25T22:30:00+07:00",
+    "reviewed_at": "2026-09-26T15:00:00+07:00",
     "reviewer": "claude-opus-5-5",
     "claim_verdicts": [
       {
@@ -19,8 +19,8 @@
       {
         "n": 3,
         "verdict": "verified",
-        "evidence": "Ran `dotnet test DonHang.Tests` on a git archive of stage-1, no Postgres or containers running: \"Passed!  - Failed: 0, Passed: 5, Skipped: 0, Total: 5, Duration: 280 ms\" (first run); later runs 35-60 ms. Wall clock of the whole command incl. restore+build was 13.8 s (see section 2 issue on wording).",
-        "source": "execution, SDK 10.0.300, stage-1 archive"
+        "evidence": "Round 2 rerun: `dotnet test DonHang.Tests` on a git archive of stage-1, no Postgres or containers running. Build lines: \"DonHang.Domain -> ...\", \"DonHang.Tests -> ...\"; then \"Passed!  - Failed: 0, Passed: 5, Skipped: 0, Total: 5, Duration: 273 ms\". Reworded claim (build, then run under a second) matches the output.",
+        "source": "execution, SDK 10.0.300, stage-1 archive (round 2)"
       },
       {
         "n": 4,
@@ -48,74 +48,45 @@
       },
       {
         "n": 8,
-        "verdict": "rephrased",
-        "evidence": "C# requires the async modifier for await: CS4033 \"The 'await' operator can only be used within an async method. Consider marking this method with the 'async' modifier and changing its return type to 'Task'.\" Task is the compiler's suggestion and what these tests use; 'must be declared async Task' is stronger than the evidence.",
-        "source": "refs/dotnet-docs/docs/csharp/language-reference/compiler-messages/async-await-errors.md:131",
-        "suggested_text": "Test methods that use await must be marked async; OrderServiceTests' methods are declared async Task, the return type C# suggests for an async method that returns no value."
+        "verdict": "verified",
+        "evidence": "CS4033: \"The 'await' operator can only be used within an async method.\" OrderServiceTests.cs lines 12/25 are `public async Task ...`. xUnit observes the returned Task: with `notifier.Send` removed (fake completes synchronously, so the Assert exception is stored in the Task, not thrown), run gives \"Failed ...PlaceOrderAsync_ValidItems_SendsOneNotification\", \"Failed: 1, Passed: 4\".",
+        "source": "refs/dotnet-docs/docs/csharp/language-reference/compiler-messages/async-await-errors.md:131; execution on stage-1 archive (round 2)"
       },
       {
         "n": 9,
         "verdict": "verified",
         "evidence": "OrderServiceTests.cs line 42 `Assert.ThrowsAsync<ArgumentException>(... items: [])`; lines 49/54 `repository.Seed(new Order { Id = 1, ... Status = \"new\" })` then `Assert.Equal(\"cancelled\", order.Status)`; line 62 `Assert.ThrowsAsync<KeyNotFoundException>(() => service.CancelOrderAsync(999))`.",
         "source": "stage-1:DonHang.Tests/Services/OrderServiceTests.cs:37-63"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Assertions in OrderServiceTests.cs: Equal(\"new\"), Equal(1, CustomerId), Single(notifier.Sent)+Equal(order.Id), ThrowsAsync<ArgumentException>, Equal(\"cancelled\"), ThrowsAsync<KeyNotFoundException>; none reads the repository. Round 2 run with OrderService.cs lines 19-20 (AddAsync, SaveChangesAsync) deleted: \"Passed: 5, Total: 5, Duration: 34 ms\". FakeOrderRepository has FindAsync, so the read-back check is possible.",
+        "source": "stage-1:DonHang.Tests/Services/OrderServiceTests.cs, DonHang.Tests/FakeOrderRepository.cs; execution on stage-1 archive"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Build output of `dotnet test DonHang.Tests` lists only \"DonHang.Domain ->\" and \"DonHang.Tests ->\". DonHang.Domain.csproj has no PackageReference or ProjectReference; DonHang.Tests.csproj references only Microsoft.NET.Test.Sdk, xunit, xunit.runner.visualstudio and DonHang.Domain. No Directory.Build.props at stage-1; Directory.Packages.props only sets PackageVersion (no GlobalPackageReference).",
+        "source": "stage-1: DonHang.Domain/DonHang.Domain.csproj, DonHang.Tests/DonHang.Tests.csproj, Directory.Packages.props; execution"
       }
     ],
     "issues": [
       {
         "severity": "major",
-        "section": 4,
-        "kind": "accuracy",
-        "text": "Unlisted claim, contradicted by execution: the tests are said to prove OrderService makes 'the right calls' (summary line 4: 'rules and calls'). No test asserts the repository calls. On stage-1 I deleted both `await repository.AddAsync(order);` and `await repository.SaveChangesAsync();` from PlaceOrderAsync: \"Passed: 5\" (order.Id stays 0 and the notifier records 0, so SendsOneNotification still passes). Only the notification call is checked.",
-        "quote": "They prove that `OrderService` makes the right decisions and the right calls, given a repository that behaves as the interface promises.",
-        "fix": "Section 4: \"They check what the tests assert: the status `OrderService` sets, the notification it sends, and the exceptions it throws, given a repository that behaves as the interface promises.\" Summary line 4: \"These tests check `OrderService`'s own rules, not that `EfOrderRepository` stores data correctly.\" Add a claim for the new sentence to the ledger."
-      },
-      {
-        "severity": "major",
-        "section": 4,
-        "kind": "accuracy",
-        "text": "Unlisted claim: build behaviour stated without a ledger entry. It is true (build output of `dotnet test DonHang.Tests` shows only `DonHang.Domain ->` and `DonHang.Tests ->`; DonHang.Domain.csproj has no PackageReference), but it is a specific behaviour claim and must be in `claims`.",
-        "quote": "Nothing opens a connection or sends SQL, and the test project does not even reference `DonHang.Infrastructure`, so EF Core is not part of the build.",
-        "fix": "Add a claim to .meta.json: \"`dotnet test DonHang.Tests` builds only DonHang.Domain and DonHang.Tests; neither references an EF Core package, so no connection is opened.\" kind behavior, section 4, source_hint: the two csproj files and the dotnet test build output. No lesson text change needed."
-      },
-      {
-        "severity": "minor",
-        "section": 4,
-        "kind": "accuracy",
-        "text": "'every line of OrderService' is too broad: calling PlaceOrderAsync runs PlaceOrderAsync only, never CancelOrderAsync; in PlaceOrderAsync_NoItems_Throws only the check runs. Summary line 2 repeats the overstatement ('Every line of `OrderService` runs for real').",
-        "quote": "So when a test calls `PlaceOrderAsync`, every line of `OrderService` runs for real",
-        "fix": "Section 4: \"So when a test calls `PlaceOrderAsync`, the real `PlaceOrderAsync` runs: ...\". Summary line 2: \"The `OrderService` code a test calls runs for real; only the repository and notifier underneath are fakes.\""
-      },
-      {
-        "severity": "minor",
-        "section": 2,
-        "kind": "accuracy",
-        "text": "The test run reports under a second (Duration 280 ms first run, 35-60 ms after), but the `dotnet test` command itself, with restore and build, took 13.8 s on stage-1. A junior timing the command will see seconds.",
-        "quote": "`dotnet test` runs them in well under a second with the lab switched off",
-        "fix": "\"and the test run that `dotnet test` reports takes well under a second, with the lab switched off: ...\""
-      },
-      {
-        "severity": "minor",
-        "section": 7,
-        "kind": "code",
-        "text": "Step 2 is ambiguous. Source: `public async Task AddAsync(Order order) => await db.Orders.AddAsync(order);`. Keeping `async` and writing `=> Task.CompletedTask;` gives CS0201 in DonHang.Infrastructure (verified). Tests still pass since Infrastructure is not built, but then 'broke order saving for the real API' is wrong: the API does not compile.",
-        "quote": "change `AddAsync` so it returns `Task.CompletedTask` without calling `db.Orders.AddAsync`",
-        "fix": "\"replace the `AddAsync` line with `public Task AddAsync(Order order) => Task.CompletedTask;`\" (verified: DonHang.Api builds, 5 tests pass). Put the exact replacement line in claim 6."
-      },
-      {
-        "severity": "minor",
-        "section": 6,
-        "kind": "accuracy",
-        "text": "Column mappings are not in EfOrderRepository; they are in DonHangDbContext.OnModelCreating (`e.Property(c => c.Id).HasColumnName(\"id\")` ...). Quiz q3 option c repeats it ('`EfOrderRepository` maps a property to the wrong column'). The key stays correct (tests cannot catch it either way), but the premise is false.",
-        "quote": "A wrong column mapping or a forgotten save in it would leave all five tests green.",
-        "fix": "Section 6: \"A wrong column mapping in `DonHangDbContext` or a forgotten save in `EfOrderRepository` would leave all five tests green.\" Quiz q3 option c (en and vi): \"`DonHangDbContext` maps a property to the wrong column\"; explanation c can stay."
-      },
-      {
-        "severity": "minor",
         "section": 5,
         "kind": "accuracy",
-        "text": "Claim 8 overstates: C# requires `async` to use await (CS4033); `Task` is the return type used here and suggested by the compiler, not something await itself requires. The lesson sentence is acceptable; the ledger text should match the evidence.",
-        "quote": "The methods are `async Task`, because `PlaceOrderAsync` is awaited.",
-        "fix": "Replace claim 8 text with suggested_text of claim_verdicts n=8. Optional lesson wording: \"The methods are marked `async` because they await `PlaceOrderAsync`, and return `Task`.\""
+        "text": "Unlisted claim (new in round 2): xUnit `[Fact]`/`Assert` behaviour stated without a ledger entry. It is true (xunit 2.9.2 XML docs: FactAttribute is \"applied to a method to indicate that it is a fact that should be run by the test runner\"; Assert \"Contains various static methods that are used to verify that conditions are met\"), but it is a specific library-behaviour claim and must be in `claims`.",
+        "quote": "`[Fact]` marks each method as a test that `dotnet test` runs through xUnit, and `Assert` holds xUnit's checks.",
+        "fix": "Add claim 12 to .meta.json: \"[Fact] marks a method as a test the xUnit runner runs; Assert is xUnit's class of static check methods.\" kind behavior, version_key xunit, section 5, source_hint: xunit.extensibility.core / xunit.assert 2.9.2 XML docs (FactAttribute, Assert). No lesson text change needed."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Round-1 minor only partly resolved. 'every line of that method' is still literally false for any single call: the throw and the rest of PlaceOrderAsync are mutually exclusive (valid items: the throw never runs; empty items: nothing after the check runs). The listed items are correct.",
+        "quote": "So when a test calls `PlaceOrderAsync`, every line of that method runs for real",
+        "fix": "\"So when a test calls `PlaceOrderAsync`, the real method runs: the empty-items check, building the `Order`, the calls to add and save, the notification.\""
       }
     ],
     "scope": {
