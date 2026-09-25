@@ -87,9 +87,9 @@ For each change, decide whether the source of the order-placing code must be edi
 
 1. Send confirmations by SMS instead of email.
 2. Add a new push-notification channel.
-3. Change the wording of the email.
+3. Change the fixed wording every email starts with.
 
-Expected result: (a) all three edit the order-placing code, because `Notify` holds the channel and the wording. (b) none of them do: 1 passes `SmsNotifier` instead of `EmailNotifier`; 2 writes a new class that implements `INotifier` and passes that; 3 edits the format in `EmailNotifier`.
+Expected result: (a) all three edit the order-placing code, because `Notify` holds the channel and the wording. (b) none of them do: 1 passes `SmsNotifier` instead of `EmailNotifier`; 2 writes a new class that implements `INotifier` and passes that; 3 edits the fixed format in `EmailNotifier` (the subject text itself is still whatever the order code passes to `Send`).
 
 In (b), where do the three edits land, and what does the order code still know?
 
