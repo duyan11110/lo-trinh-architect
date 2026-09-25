@@ -15,7 +15,9 @@ vocab: [unit-test]
 example_tag: stage-0
 versions_used: [dotnet, xunit]
 content_version: 1
-status: draft
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-26T11:40:00+07:00"
 ---
 
 ## Before you start
@@ -85,7 +87,7 @@ Put the test next to the rule from the situation. "Standard shipping is free for
 
 ## Try it (3 minutes)
 
-From the root of the example repository. `--filter ShippingFeeTests` tells `dotnet test` to run only the tests whose full name contains `ShippingFeeTests`, the class holding both shipping tests.
+From the root of the example repository. `--filter ShippingFeeTests` tells `dotnet test` to run only the tests whose full name (which includes the class name) contains `ShippingFeeTests`, the class in `SamplesTests.cs` holding both shipping tests.
 
 1. Run `dotnet test samples/DonHang.Samples.Tests --filter ShippingFeeTests`.
 2. In `ShippingFee.cs`, change `2_000_000` to `2_500_000` in `StandardShipping`, and run the same command again.
