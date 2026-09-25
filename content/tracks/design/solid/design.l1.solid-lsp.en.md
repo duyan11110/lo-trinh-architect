@@ -15,9 +15,9 @@ vocab: [lsp]
 example_tag: stage-1
 versions_used: [dotnet]
 content_version: 1
-status: draft
-approved_by: null
-reviewed_at: null
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-25T19:00:00+07:00"
 ---
 
 ## Before you start
