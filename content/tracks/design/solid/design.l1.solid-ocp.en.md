@@ -48,7 +48,7 @@ OCP is about where a new case goes. In `ShippingFeeIfElseChain`, a kind of shipp
 
 In `ShippingFee`, each kind is a class that derives from the same abstract class and overrides one method, `ForOrder`. A new kind is a new class beside the others, so adding it is an extension. `StandardShipping`, `ExpressShipping` and `PickUpInStore` are not opened, and the tests that check them do not change.
 
-Code that only calls `ForOrder` through a `ShippingFee` variable does not change either: it never asks which kind it has. Some code still has to create the new kind, and that may mean a small edit where the kind is chosen; but it sits outside the fee rules, and the rules that already work are not edited. That is the goal of OCP: the change you are asked for arrives as new code, and the code you trusted yesterday stays as it was.
+Code that only calls `ForOrder` through a `ShippingFee` variable does not change either: it never asks which kind it has. Some code still has to create the new kind. In the samples, the only place that creates the kinds is a test in `SamplesTests.cs`, which writes `new StandardShipping()` and the others; code that offered same-day would add one more `new` like that. That is a small edit where the kind is chosen, not inside a fee rule — OCP protects the rules that already work and the tests that check them. That is the goal of OCP: the change you are asked for arrives as new code, and the code you trusted yesterday stays as it was.
 
 ## In the Đơn Hàng system
 
@@ -132,7 +132,7 @@ In `ShippingFeeIfElseChain`: same-day needs a new branch inside `ForOrder`, the 
 
 - [[design.l1.solid-srp]] — SRP gives each class one reason to change; OCP asks that a new case arrive as new code instead of another edit to that class.
 - [[foundation.l1.oop-polymorphism]] — where `ShippingFee` and its three classes were first introduced; polymorphism is what lets callers stay unchanged.
-- [[design.l1.solid-lsp]] — the next SOLID principle: every new subtype must keep the promise its base type makes.
+- [[design.l1.solid-lsp]] — the next SOLID principle: every new class that derives from a base type must keep the promise that base type makes.
 
 ## Five-line summary
 
