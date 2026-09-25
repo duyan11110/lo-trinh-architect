@@ -47,13 +47,13 @@ flowchart LR
 
 In the top row, the high-level code points straight at a low-level detail. `PlaceOrderSplit` knows exactly how a customer is told: one console line about an email. Every change to that detail — another channel, other wording — is an edit to the order-placing class.
 
-In the rows below, the high-level code depends only on `INotifier`: "send a message about this order". It does not know whether email, SMS or something newer answers that. The concrete classes now point up at the same abstraction instead of the order code pointing down at them. That change of direction is the "inversion": both sides depend on the abstraction, and the high-level code no longer depends on any concrete notifier.
+In the rows below, the high-level code depends only on `INotifier`: "send a message about this order". It does not know whether email, SMS or something newer answers that. The concrete classes depend on `INotifier` too: implementing it means they must match exactly what it declares, so a change to it reaches them. Before, the arrow ran from the order code to the low-level detail; now the low-level classes have arrows to an abstraction shaped by what the order code needs. That turn in direction is the "inversion": both sides depend on the abstraction, and the high-level code no longer depends on any concrete notifier.
 
 Using an interface is not enough by itself. If the order code wrote `new EmailNotifier()` inside itself, it would be tied to `EmailNotifier` again, whatever type its variable had — the tight coupling from the coupling lesson. With DIP, the order code receives an `INotifier`, for example as a constructor parameter, and something outside it decides which concrete class to pass. Then it can be given `EmailNotifier`, `SmsNotifier`, or a class written next year, and its own source does not change.
 
 ## In the Đơn Hàng system
 
-The high-level code, as it is today:
+In `PlaceOrderSplit` today, `Place` — the high-level steps — ends by calling these two methods:
 
 ```csharp file=samples/DonHang.Samples/Samples/Clean/PlaceOrderSplit.cs tag=stage-0 lines=33-37
     private static void Save(int customerId, int totalVnd) =>
@@ -63,7 +63,7 @@ The high-level code, as it is today:
         Console.WriteLine($"sending an email to customer {customerId}");
 ```
 
-`Notify` depends on a concrete detail: `Console.WriteLine`, with the word "email" written into the text. Nothing in `PlaceOrderSplit` mentions `INotifier`. So switching to SMS means editing this line, inside the class whose job is placing orders.
+Here the high-level class reaches straight into a low-level detail. `Save` does it for saving; this lesson follows `Notify`, which depends on `Console.WriteLine` with the word "email" written into the text. Nothing in `PlaceOrderSplit` mentions `INotifier`. So switching to SMS means editing this line, inside the class whose job is placing orders.
 
 The abstraction the samples already have:
 
