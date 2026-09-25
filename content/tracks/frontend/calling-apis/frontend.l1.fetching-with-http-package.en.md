@@ -82,7 +82,7 @@ class Product {
 }
 ```
 
-`factory` marks a constructor that builds its object in its own way, here from a `Map`. The keys `id`, `name` and `priceVnd` match the JSON the API sends for its `ProductDto`. Each `as` is a checked cast — unlike C#'s `as`, which gives `null`, Dart's `as` throws when the value has the wrong type: if `priceVnd` were missing, `json['priceVnd']` would be `null`, and `null as int` throws. The `Future` returned by `fetchProducts` then completes with an error instead of a list; the next lesson shows how the screen reacts. The same happens if a value has the wrong type, such as a price sent as text: the check stops it at the edge of the app.
+`factory` marks a constructor that runs its own code and returns the object; here it reads the `Map` and calls the ordinary `Product(...)` constructor. The keys `id`, `name` and `priceVnd` match the JSON the API sends for its `ProductDto`. Each `as` is a checked cast — unlike C#'s `as`, which gives `null`, Dart's `as` throws when the value has the wrong type: if `priceVnd` were missing, `json['priceVnd']` would be `null`, and `null as int` throws. The `Future` returned by `fetchProducts` then completes with an error instead of a list; the next lesson shows how the screen reacts. The same happens if a value has the wrong type, such as a price sent as text: the check stops it at the edge of the app.
 
 ## Beginners often think…
 

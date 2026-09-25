@@ -1,7 +1,7 @@
 {
   "id": "frontend.l1.fetching-with-http-package",
   "technical": {
-    "reviewed_at": "2026-09-26T03:25:00+07:00",
+    "reviewed_at": "2026-09-27T09:00:00+07:00",
     "reviewer": "claude-opus-5-5",
     "claim_verdicts": [
       {
@@ -37,53 +37,56 @@
       {
         "n": 6,
         "verdict": "verified",
-        "evidence": "Ran fromJson + an async fetch(body) copy in scratch. Dart VM: key renamed to price -> \"_TypeError: type 'Null' is not a subtype of type 'int' in type cast\" caught from the awaited Future; priceVnd:\"5000\" -> \"type 'String' is not a subtype of type 'int'\". dart compile js -O4 (flutter build web release default, flutter_tools compiler_config.dart) run in node: same two TypeErrors, so the cast is not stripped in the lab's release web build.",
-        "source": "scratch execution (dart run; dart compile js -O1/-O4 + node); flutter_tools/lib/src/web/compiler_config.dart:110-116"
+        "evidence": "Round 1 runs (VM + dart2js -O4): missing key -> \"_TypeError: type 'Null' is not a subtype of type 'int' in type cast\" caught from the awaited Future. Round 2 run: `Future<int> f() async { throw Exception('boom'); }` -> \"f returned Future<int> without throwing\", \"awaiting caught: Exception: boom\". C#: type-testing-and-cast.md:74 \"If the conversion isn't possible, the as operator returns null.\" creating-and-throwing-exceptions.md:49 \"Exceptions thrown in an async method are stored in the returned task\".",
+        "source": "scratch execution (dart run); refs/dotnet-docs/docs/csharp/language-reference/operators/type-testing-and-cast.md:74; refs/dotnet-docs/docs/csharp/fundamentals/exceptions/creating-and-throwing-exceptions.md:49"
       },
       {
         "n": 7,
         "verdict": "verified",
-        "evidence": "http-1.6.0 README:254 \"By default, package:http uses BrowserClient on the web\". flutter-for/uikit-devs.md:1631-1638 \"Dart's single-threaded model doesn't mean you are required to run everything as a blocking operation that causes the UI to freeze... you can run network code without causing the UI to hang by using async/await\". Scratch run (VM and dart2js -O4): after f() hits await, main and a timer run before f resumes.",
-        "source": "http-1.6.0/README.md:254; refs/flutter-website/sites/docs/src/content/flutter-for/uikit-devs.md:1631-1638; scratch execution"
+        "evidence": "http-1.6.0 README: \"By default, package:http uses BrowserClient on the web\"; lib/src/browser_client.dart:36-43 @JS('fetch') ... \"window.fetch\". docker-compose.yml @ stage-1 app-web: \"caddy file-server --root /srv/app\" serving ./DonHang.App/build/web, so the app runs in the browser. uikit-devs.md:1631-1638 async/await runs network code without the UI hanging.",
+        "source": "http-1.6.0/README.md, lib/src/browser_client.dart; examples/don-hang @ stage-1: docker-compose.yml:104-110; refs/flutter-website/.../flutter-for/uikit-devs.md:1631-1638"
       },
       {
         "n": 8,
         "verdict": "verified",
         "evidence": "Supported by the code and execution rather than opinion: api_client.dart:25-27 throws on non-200 before touching the body; the checked casts throw TypeError on a missing or mistyped key (see claim 6 runs), so the Future fails instead of yielding a Product. Flutter cookbook fetch-data.md:116-119 recommends the same: \"If the server does not return an OK response with a status code of 200, then throw an exception.\"",
         "source": "examples/don-hang @ stage-1: DonHang.App/lib/api_client.dart:25-27; refs/flutter-website/sites/docs/src/content/cookbook/networking/fetch-data.md:116-119"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "android-devs.md:759-763: \"use the asynchronous facilities that the Dart language provides, such as async/await, to perform asynchronous work. You might be familiar with the async/await paradigm if you've used it in C#, Javascript, or if you have used Kotlin's coroutines.\" Lesson wording \"if you have used await in C#, the idea is the same\" matches this level (idea, not identical semantics).",
+        "source": "refs/flutter-website/sites/docs/src/content/flutter-for/android-devs.md:759-763"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "ProductsController.cs @ stage-1: List() \"db.Products.Select(p => new ProductDto(p.Id, p.Name, p.PriceVnd)).ToListAsync(); return Ok(products);\"; DonHangDbContext.cs:10 \"DbSet<Product> Products\"; Dtos.cs:5 \"record ProductDto(int Id, string Name, int PriceVnd)\". Product -> ProductDto -> JSON on the server; fromJson does JSON -> Product on the client.",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/Controllers/ProductsController.cs:13-20; DonHang.Infrastructure/DonHangDbContext.cs:10; DonHang.Api/Dtos.cs:5"
+      },
+      {
+        "n": 11,
+        "verdict": "rephrased",
+        "evidence": "pubspec.yaml @ stage-1 line 37 under dependencies: \"http: ^1.6.0\" (verified). factory: only source seen is fetch-data.md:76-77 \"It includes a factory constructor that creates an Album from JSON.\" No pinned-docs sentence for \"builds its object in its own way\"; a plain constructor could also take a Map, so the gloss implies a difference it does not state. Code shows what this factory does: reads the Map and calls Product(...).",
+        "source": "examples/don-hang @ stage-1: DonHang.App/pubspec.yaml:37; refs/flutter-website/sites/docs/src/content/cookbook/networking/fetch-data.md:76-77",
+        "suggested_text": "`factory` marks a constructor that runs its own code and returns the object; here it reads the `Map` and calls the ordinary `Product(...)` constructor."
       }
     ],
     "issues": [
       {
-        "severity": "major",
-        "section": 4,
-        "kind": "accuracy",
-        "text": "Unlisted claim: a comparison between Dart and C# await semantics is not in the claims ledger. Flutter docs only say the async/await paradigm will be familiar from C# (android-devs.md:762); \"the same way\" is stronger than that (Dart resumes on its single event loop; C# resumption depends on the synchronization context).",
-        "quote": "`await` pauses that function until the answer arrives, the same way `await` works in C#.",
-        "fix": "Change to \"`await` pauses that function until the answer arrives; if you have used `await` in C#, the idea is the same.\" and add a claim (kind comparison/behavior, source: docs.flutter.dev flutter-for/android-devs async/await paragraph)."
-      },
-      {
-        "severity": "major",
-        "section": 4,
-        "kind": "accuracy",
-        "text": "Unlisted claim, and overstated: the API's DTO mapping does not \"read each key and check its type\". At stage-1 ProductsController does `new ProductDto(p.Id, p.Name, p.PriceVnd)` from typed entity fields and the serializer writes JSON; no key reading or type checking happens. \"exactly\" is false; it is only the reverse direction of the same mapping.",
-        "quote": "which is exactly what the API did in the other direction when it turned a `Product` into a `ProductDto` and then into JSON",
-        "fix": "Rewrite as: \"This is the reverse of what the API did: it turned a `Product` into a `ProductDto` and then into JSON; the app turns that JSON back into a `Product`.\" Add it to claims (source: DonHang.Api/Controllers/ProductsController.cs @ stage-1)."
-      },
-      {
         "severity": "minor",
         "section": 5,
-        "kind": "scope",
-        "text": "depth_notes: \"Không nói loading/error/empty — bài sau.\" The lesson points at the screen's error display twice, and the Try-it answer names an \"error branch\" the learner has not seen. It is a mention, not teaching, but it leans on the next lesson.",
-        "quote": "the screen's error branch would then show it",
-        "fix": "In §5 replace \"and the screen can show it\" with \"and whoever awaited it receives the error\"; in the Try-it answer replace \"the screen's error branch would then show it\" with \"the next lesson shows how the screen displays that error\"."
+        "kind": "accuracy",
+        "text": "The factory gloss is vaguer than any source: \"in its own way\" suggests an ordinary constructor could not build from a Map, which the lesson does not justify. Pinned docs only call fromJson a factory constructor that creates an object from JSON.",
+        "quote": "`factory` marks a constructor that builds its object in its own way, here from a `Map`.",
+        "fix": "Replace with: \"`factory` marks a constructor that runs its own code and returns the object; here it reads the `Map` and calls the ordinary `Product(...)` constructor.\" Keep claim 11 as is."
       }
     ],
     "scope": {
       "outline_covered": true,
       "beyond_scope": []
     },
-    "verdict": "fix-required"
+    "verdict": "pass"
   },
   "junior": {
     "reviewed_at": "2026-09-26T10:00:00+07:00",
