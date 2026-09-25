@@ -42,13 +42,13 @@ flowchart LR
   R -.->|broken by| X[current time, random numbers, test order]
 ```
 
-A good unit test has three properties. It is fast, because it runs only the class under test with fakes underneath — no database, no network — so it can run on every change. It checks one behaviour, so when it fails, its name tells you which rule broke. And it is repeatable: against the same code, it gives the same answer every time.
+A good unit test has three properties. It is fast, because it runs only the class under test with fakes underneath — no database, no network. It checks one behaviour, so its name says which rule broke. And it is repeatable: against the same code, it gives the same answer every time.
 
 A test that breaks the third property is a **flaky test**. The usual causes are inputs the test does not control. The current time changes between runs, so a test that asserts "placed today" passes all day and fails for an order placed just before midnight UTC and checked just after. A random number changes on every run.
 
-Shared state is the third cause. xUnit, the testing library that runs `OrderServiceTests`, does not promise to run tests in the order they are written. If the tests shared one repository — say, through a `static` field every test used — the id a test gets would depend on how many orders the tests before it had added, because the fake gives each new order the next id. The order xUnit picks for the tests in one class stays the same between identical runs, but running one test on its own changes which tests ran before it, so the same test can pass alone and fail in the full run. xUnit creates a new instance of the test class for every test, so values stored in each instance's fields are not shared, and each test in `OrderServiceTests` creates its own fakes. Nothing leaks from one test into the next.
+Shared state is the third cause. xUnit, the testing library that runs `OrderServiceTests`, does not promise to run tests in the order they are written. If the tests shared one repository — say, through a `static` field every test used — the id a test gets would depend on how many orders the tests before it had added, because the fake gives each new order the next id. The order xUnit picks for the tests in one class stays the same between identical runs, but running one test on its own changes which tests ran before it, so the same test can pass alone and fail in the full run. xUnit creates a new instance of the test class for every test, so values stored in each instance's fields are not shared, and each test in `OrderServiceTests` creates its own fakes.
 
-A flaky test can do more harm than having no test at all. When it fails, nobody knows whether the code broke or the clock moved, so people learn to rerun it until it passes, and then they ignore it when it catches a real bug.
+A flaky test can do more harm than having no test at all. When it fails, nobody knows whether the code or the clock is at fault, so people rerun it until it passes and ignore it even when it catches a real bug.
 
 ## In the Đơn Hàng system
 
