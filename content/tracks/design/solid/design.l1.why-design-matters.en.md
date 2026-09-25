@@ -27,7 +27,7 @@ reviewed_at: null
 
 ## The situation
 
-The shop wants loyal customers to get 5% off instead of 10%. You open `PlaceOrderLong.Place`, find the line that takes 10% off, and change `10` to `5`. It is a one-character edit to the discount, and nothing else looks touched. A week later, a loyal customer who ordered two items at 1,100,000 VND each asks why their shipping fee disappeared. Nobody changed the shipping fee. How did a change to the discount end up changing it?
+The shop wants loyal customers to get 5% off instead of 10%. You open `PlaceOrderLong.Place`, find the line that takes 10% off, and change `10` to `5`. It is a tiny edit to the discount, and nothing else looks touched. A week later, a loyal customer who ordered two items at 1,100,000 VND each asks why their shipping fee disappeared. Nobody changed the shipping fee. How did a change to the discount end up changing it?
 
 ## Core concepts
 
@@ -43,16 +43,16 @@ flowchart LR
   P --> C[calculate the price]
   P --> S[save the order]
   P --> N[notify the customer]
-  C --> T[totalVnd, shared by everything after it]
+  C --> T[totalVnd]
+  T --> F[shipping fee decided from it]
   T --> S
-  T --> N
 ```
 
 `PlaceOrderLong.Place` does four jobs in one method body: it checks the input, calculates the price, saves the order and notifies the customer. Each of those is a separate reason to change — the checking rules, the pricing rules, how saving works and how notifications go out can each change on their own. None of the four has a name: they are just stretches of lines inside `Place`.
 
-Because they share one body, they also share its variables. The price calculation builds up `totalVnd` in several steps, and every step after the discount reads the discounted value — including the shipping fee, which is only added when the total is below 2,000,000 VND. In the situation, the order came to 2,200,000 VND. With 10% off, it dropped to 1,980,000, below the threshold, so the fee was added. With 5% off, it dropped only to 2,090,000, so the fee vanished. The discount edit changed the fee because both rules sit in the same method and read the same variable, not because anyone touched the fee.
+Because they share one body, they also share its variables. The price calculation builds up `totalVnd` in several steps, and the lines after the discount that read `totalVnd` see the discounted value — the shipping fee, which is only added when the total is below 2,000,000 VND, and the saving line. In the situation, the order came to 2,200,000 VND. With 10% off, it dropped to 1,980,000, below the threshold, so the fee was added. With 5% off, it dropped only to 2,090,000, so the fee vanished. The discount edit changed the fee because both rules sit in the same method and read the same variable, not because anyone touched the fee.
 
-That is what design is about. The code worked before the edit and after it; what changed is how much you had to know to edit it safely. Where each piece of work lives decides that cost for every change that comes later.
+That is what design is about. The code ran exactly as written before the edit and after it; what changed is how much you had to know to edit it safely. Where each piece of work lives is a large part of that cost for the changes that come later.
 
 ## In the Đơn Hàng system
 
@@ -92,11 +92,11 @@ The second half applies the discount, adds the shipping fee, then "saves" and "n
         return $"order placed, total {totalVnd}";
 ```
 
-The discount line changes `totalVnd` in place, and the very next statement decides the shipping fee from that same `totalVnd`. Nothing in the code says the fee is meant to depend on the discounted total rather than the original one — it just does, because of where the lines sit. The saving and email lines read `totalVnd` too, so a pricing change reaches them as well. The file's own comment names the problem: "Four reasons to change one place, and no name for any of the four."
+The discount line changes `totalVnd` in place, and the very next statement decides the shipping fee from that same `totalVnd`. Nothing in the code says the fee is meant to depend on the discounted total rather than the original one — it just does, because of where the lines sit. The saving line prints `totalVnd` too, so a pricing change reaches it as well; the email line uses only `customerId`, yet it still sits in the same body you have to read. The file's own comment names the problem: "Four reasons to change one place, and no name for any of the four."
 
 ## Beginners often think…
 
-- **"Code that works and passes its tests doesn't need any more design thought."** → Actually working code can still be expensive to change: `Place` gave correct answers both before and after the discount edit, and the fee change it caused was still a surprise. Tests check what the code does today; design decides how much you must understand to change it tomorrow. You notice this when a small, correct-looking edit changes a result nobody asked you to touch.
+- **"Code that works and passes its tests doesn't need any more design thought."** → Actually working code can still be expensive to change: `Place` ran exactly as written both before and after the discount edit, and the fee change it caused was still a surprise. Tests check what the code does today; design decides how much you must understand to change it tomorrow. You notice this when a small, correct-looking edit changes a result nobody asked you to touch.
 - **"Design is about making code look elegant, not about how easy it is to change later."** → Actually the point of design is the cost of the next change, not the look of the current code. `Place` is short and readable, yet a one-character pricing edit reached the shipping fee. You notice this when you have to trace a whole method to be sure a one-line change is safe.
 
 ## Try it (3 minutes)
@@ -112,7 +112,7 @@ Which line decided the fee in each case, and what would you have to read before 
 
 <details><summary>Suggested answer</summary>
 
-The fee line, `totalVnd += totalVnd >= 2_000_000 ? 0 : 30_000;`, decided it both times, by reading the already-discounted `totalVnd`. Before changing the discount again you would have to read everything after it in `Place` that uses `totalVnd` — the fee, the saving line, the email line and the return — because they all share that one variable. That reading is the change cost this lesson is about.
+The fee line, `totalVnd += totalVnd >= 2_000_000 ? 0 : 30_000;`, decided it both times, by reading the already-discounted `totalVnd`. Before changing the discount again you would have to read everything after it in `Place` that uses `totalVnd` — the fee, the saving line and the return — because they all read that one variable. That reading is the change cost this lesson is about.
 
 </details>
 
@@ -128,4 +128,4 @@ The fee line, `totalVnd += totalVnd >= 2_000_000 ? 0 : 30_000;`, decided it both
 2. Sharing one body means sharing variables, so a change to one job can reach the others.
 3. Changing the discount changed the shipping fee, because the fee is decided from the already-discounted total.
 4. Working code can still be expensive to change; tests describe today's behaviour, design decides tomorrow's change cost.
-5. Design is the set of choices about where each piece of work lives, and it sets the cost of every later change.
+5. Design is the set of choices about where each piece of work lives, and it is a large part of what later changes cost.
