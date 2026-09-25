@@ -43,7 +43,7 @@ flowchart TD
 
 Every `build` method receives a **BuildContext**, and it always describes one position: the place in the tree of the widget being built. It is not a bag of app data; it is an address. From that address, code can look upward, through the widget's ancestors, for something one of them provides.
 
-That is what `Navigator.of(context)` does. It starts at the position `context` describes — in the diagram, the product screen — and walks up the tree until it finds a `Navigator`. Here `MaterialApp` is given a `home`, so it creates one, and any widget below `MaterialApp` finds it, however deep it sits, without the navigator being passed down through each constructor. The same kind of lookup is how widgets find other things an ancestor provides, such as the app's colours and fonts.
+That is what `Navigator.of(context)` does. It starts at the position `context` describes — in the diagram, the product screen — and walks up the tree until it finds a `Navigator`. Here `MaterialApp` is given a `home` — the first screen it shows, the product screen — so it creates one, and any widget below `MaterialApp` finds it, however deep it sits, without the navigator being passed down through each constructor. The same kind of lookup is how widgets find other things an ancestor provides, such as the app's colours and fonts.
 
 Because a context is a position, which context you use matters. Looking up from a widget below `MaterialApp` finds its navigator. Looking up from a widget above it, such as `DonHangApp`, finds nothing, because the navigator is not among that widget's ancestors. And a context is only useful while its widget is still in the tree. Once the widget has been removed, for example because the user left that screen, its context no longer describes a position, and code should not use it.
 
@@ -64,7 +64,7 @@ The login icon on the product screen:
 
 The `context` here belongs to `ProductListScreen`, the `home` of `MaterialApp`, so it sits below the navigator. When the icon is pressed, `Navigator.of(context)` walks up, finds the navigator, and `push` puts a new `LoginScreen`, wrapped in a `MaterialPageRoute`, on top of the stack. "On top of the stack" means in front of the product screen, not above the navigator: in the tree, the new screen sits below the navigator too. The product screen never had to be given the navigator.
 
-The sign-in screen shows the second rule, that a context is only good while its widget is in the tree:
+The sign-in screen shows the second rule (there, `widget.apiClient` is the `ApiClient` the screen received through its constructor), that a context is only good while its widget is in the tree:
 
 ```dart file=DonHang.App/lib/screens/login_screen.dart tag=stage-1 lines=29-33
       await widget.apiClient.login(_emailController.text, _passwordController.text);
@@ -95,7 +95,7 @@ Why does the sign-in code check `mounted` before using `context`, but the login 
 
 <details><summary>Suggested answer</summary>
 
-The login icon uses `context` straight away, while the product screen is on screen. The sign-in code uses it after waiting for the API, and during that wait the user could have left the screen, removing it from the tree; `mounted` tells the code whether its context still describes a position.
+The login icon uses `context` straight away, while the product screen is on screen. The sign-in code uses it after waiting for the server's response, and during that wait the user could have left the screen, removing it from the tree; `mounted` tells the code whether its context still describes a position.
 
 </details>
 
