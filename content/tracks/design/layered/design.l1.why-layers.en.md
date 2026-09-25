@@ -43,7 +43,7 @@ flowchart LR
   B --> D[data layer: EF Core, SQL, migrations]
 ```
 
-SRP says one class, one reason to change. A layered architecture applies the same idea one level up: instead of judging classes one by one, it groups them by the kind of reason they change for. Code that changes when the HTTP interface changes goes in one layer. Code that changes when a business rule changes goes in another. Code that changes when the way data is stored changes goes in a third.
+SRP says one class, one reason to change. Splitting an application into layers applies the same idea one level up: instead of judging classes one by one, it groups them by the kind of reason they change for. Code that changes when the HTTP side — routes, requests, status codes — changes goes in one layer. Code that changes when a business rule changes goes in another. Code that changes when the way data is stored changes goes in a third.
 
 With that map, the question from the situation has an answer before you open a file. "At most 20 items" is a business rule, so it belongs in the business layer. A renamed route would touch only the HTTP layer; a new index or a different order query would touch only the data layer.
 
@@ -68,7 +68,7 @@ The project files show which way the dependencies go. This is all of `DonHang.Do
 </Project>
 ```
 
-No project reference and no package reference: the business layer cannot use EF Core, the PostgreSQL driver or ASP.NET Core. The data project, by contrast, references it:
+No project reference and no package reference: the business layer cannot use EF Core, the Npgsql package that lets EF Core talk to PostgreSQL, or ASP.NET Core. The data project, by contrast, references it:
 
 ```xml file=DonHang.Infrastructure/DonHang.Infrastructure.csproj tag=stage-1 lines=10-20
   <ItemGroup>
@@ -84,11 +84,13 @@ No project reference and no package reference: the business layer cannot use EF 
   </ItemGroup>
 ```
 
-`DonHang.Infrastructure` knows `DonHang.Domain` and brings in the EF Core packages. Notice that this reference points from the data project to the business project — the opposite of the call arrow in the diagram. The business layer calls the data layer only through interfaces it declares itself, as the DIP lesson showed; a later lesson in this module shows how. So EF Core code cannot creep into `DonHang.Domain` by accident: without a reference to those packages, the compiler would reject it. `PlaceOrderSplit` in the samples hinted at these concerns inside one small class; the API gives each group its own project.
+The lines that matter are the `ProjectReference` to `DonHang.Domain` and the two `PackageReference` lines for EF Core; `IncludeAssets` and `PrivateAssets` are packaging details you can skip. So `DonHang.Infrastructure` knows `DonHang.Domain` and brings in EF Core, while EF Core code cannot creep into `DonHang.Domain` by accident: without a reference to those packages, the compiler would reject it.
+
+Notice that this reference points from the data project to the business project — the opposite of the call arrow in the diagram. That works because of DIP: `DonHang.Domain` declares the interfaces `IOrderRepository` and `INotifier`, `EfOrderRepository` and `LoggingNotifier` in `DonHang.Infrastructure` implement them, and `OrderService` only knows the interfaces. `PlaceOrderSplit` in the samples hinted at these concerns inside one small class; the API gives each group its own project.
 
 ## Beginners often think…
 
-- **"Layers are just folders for organizing files; putting a class in the right folder is what matters."** → Actually a layer is defined by what its classes change for and what they are allowed to depend on. In Đơn Hàng the layers are separate projects, and `DonHang.Domain` has no reference to EF Core, so data-access code there would not even compile. You notice this when moving a file to another folder changes nothing, but the build still stops you from reaching the wrong way.
+- **"Layers are just folders for organizing files; putting a class in the right folder is what matters."** → Actually a layer is defined by what its classes change for and what they are allowed to depend on. In Đơn Hàng the layers are separate projects, and `DonHang.Domain` has no reference to EF Core, so data-access code there would not even compile. You notice this when moving a file to another folder changes nothing, but a missing project reference still makes the build fail.
 - **"More layers is always better design, no matter how small the application."** → Actually each layer adds a step to read through and a boundary to maintain. `PlaceOrderSplit` is 38 lines and needs no projects of its own; the whole API, with HTTP, order rules and a database, earns its three. You notice this when a tiny change has to be passed through several layers that add nothing to it.
 
 ## Try it (3 minutes)
@@ -105,7 +107,7 @@ Which of the three changes would also force a change in another layer?
 
 <details><summary>Suggested answer</summary>
 
-None of them has to. The route lives only in the HTTP layer, the item limit only in the business layer, and the query only in the data layer. That is the point of grouping by reason to change: each change lands in one place.
+Changes 1 and 2 do not: the route lives only in the HTTP layer and the item limit only in the business layer. Change 3 lands in the data layer's query; if the name must also appear in the response, the DTO in the HTTP layer changes too — a second change, for a second reason. That is the point of grouping by reason to change: each reason lands in one place.
 
 </details>
 
@@ -118,7 +120,7 @@ None of them has to. The route lives only in the HTTP layer, the item limit only
 ## Five-line summary
 
 1. A layer groups classes by the kind of concern they handle: HTTP, business rules, or data.
-2. A layered architecture is SRP for a whole application: each layer changes for its own reason.
+2. Splitting an application into layers is SRP for a whole application: each layer changes for its own reason.
 3. Knowing the layers tells you where a new change belongs before you open a file.
 4. Đơn Hàng's API splits into `DonHang.Api`, `DonHang.Domain` and `DonHang.Infrastructure`, one project per layer.
 5. `DonHang.Domain` has no project or package reference, so EF Core code cannot creep into the business layer.
