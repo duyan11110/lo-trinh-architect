@@ -41,13 +41,13 @@ The shop decides order confirmations should go out by SMS instead of email. The 
 flowchart LR
   T[OrderPlacedTightlyCoupled] -->|creates and calls| E[EmailNotifier]
   N[OrderNotifications] -->|depends on| I[INotifier]
-  E2[EmailNotifier] -->|implements, via NotifierBase| I
+  E -->|implements, via NotifierBase| I
   S[SmsNotifier] -->|implements, via NotifierBase| I
 ```
 
-In the top row, the high-level code points straight at a low-level class. `OrderPlacedTightlyCoupled` knows exactly how a customer is told: by an `EmailNotifier` it creates itself. Every change to that detail — another channel, a stand-in for a test — is an edit to this class.
+In the top arrow, the high-level code points straight at a low-level class. `OrderPlacedTightlyCoupled` knows exactly how a customer is told: by an `EmailNotifier` it creates itself. Every change to that detail — another channel, a stand-in for a test — is an edit to this class.
 
-In the rows below, `OrderNotifications` depends only on `INotifier`: "send a message about this order". It does not know whether email, SMS or something newer answers that. The concrete classes depend on `INotifier` too: implementing it means providing every method it declares, so if `Send` changed, `NotifierBase`, which implements it for `EmailNotifier` and `SmsNotifier`, would have to change too. Before, the arrow ran from the policy to the concrete class; now the concrete classes have arrows to the abstraction the policy uses. That turn in direction is the "inversion": both sides depend on the abstraction, and the high-level code no longer depends on any concrete notifier.
+In the other arrows, `OrderNotifications` depends only on `INotifier`: "send a message about this order". It does not know whether email, SMS or something newer answers that. The concrete classes depend on `INotifier` too: implementing it means providing every method it declares, so if `Send` changed, `NotifierBase`, which implements it for `EmailNotifier` and `SmsNotifier`, would have to change too. Before, the arrow ran from the high-level code to the concrete class; now the concrete classes have arrows to the abstraction the high-level code uses. That turn in direction is the "inversion": both sides depend on the abstraction, and the high-level code no longer depends on any concrete notifier.
 
 `OrderNotifications` receives its `INotifier` as a constructor parameter, and something outside it decides which concrete class to pass. Then it can be given `EmailNotifier`, `SmsNotifier`, or a class written next year, and its own source does not change. Merely using an interface is not enough: code that stored `new EmailNotifier()` in an `INotifier` field of its own would still be tied to `EmailNotifier`.
 
@@ -73,7 +73,7 @@ public sealed class OrderNotifications(INotifier notifier)
 }
 ```
 
-The two `Handle` methods are identical. The only difference is where the notifier comes from and what type it has: `OrderPlacedTightlyCoupled` names `EmailNotifier` and creates it; `OrderNotifications` names only `INotifier` and receives one.
+The `// lesson:` comment only marks where a later lesson picks `OrderNotifications` up again. The two `Handle` methods are identical. The only difference is where the notifier comes from and what type it has: `OrderPlacedTightlyCoupled` names `EmailNotifier` and creates it; `OrderNotifications` names only `INotifier` and receives one.
 
 The real API follows the same rule. `OrderService`, in the `DonHang.Domain` project, places orders and then notifies:
 
@@ -98,7 +98,12 @@ public sealed class OrderService(IOrderRepository repository, INotifier notifier
     }
 ```
 
-`OrderService` asks for an `INotifier` in its constructor and calls `notifier.Send` — it never names a concrete notifier. That `INotifier` is declared in `DonHang.Domain` itself — a separate interface from the samples' one, with the same single `Send` method — so the samples' `EmailNotifier` cannot be passed to `OrderService`. The concrete class, `LoggingNotifier`, lives in the `DonHang.Infrastructure` project: it implements `INotifier` by writing a log line instead of sending a real message. `DonHang.Infrastructure` references `DonHang.Domain`, not the other way round: the project with the concrete notifier depends on the project that owns the abstraction. `DonHang.Domain` references no other project at all.
+`OrderService` asks for an `INotifier` in its constructor and calls `notifier.Send` — it never names a concrete notifier. Its other constructor parameter, `IOrderRepository`, is an interface for storing orders; this lesson follows only the notifier.
+
+This `INotifier` is declared in `DonHang.Domain` itself. It is a separate interface from the samples' `INotifier`, with the same single `Send` method; the samples' `EmailNotifier` implements the samples' one, so it cannot be passed to `OrderService`. The API's concrete class is `LoggingNotifier`, in the `DonHang.Infrastructure` project: it implements the Domain's `INotifier` by writing a log line instead of sending a real message.
+
+`DonHang.Infrastructure` references `DonHang.Domain`, not the other way round: the project with the concrete notifier depends on the project that owns the abstraction, and `DonHang.Domain` references no other project at all. Because the abstraction lives next to the code that uses it, the code that places orders never needs to know that logging, email or SMS exists.
+
 
 ## Beginners often think…
 
@@ -126,7 +131,7 @@ They land in the place that chooses which notifier to pass, or in a new low-leve
 ## Connections
 
 - [[design.l1.solid-isp]] — `INotifier` is small enough that depending on it costs the caller nothing it does not use.
-- [[design.l1.coupling-and-cohesion]] — creating `new EmailNotifier()` inside the policy class is the tight coupling that lesson measured.
+- [[design.l1.coupling-and-cohesion]] — creating `new EmailNotifier()` inside the high-level class is the tight coupling that lesson measured.
 - [[design.l1.solid-srp]] — moving the channel choice out of a class takes one of its reasons to change away from it.
 
 ## Five-line summary
