@@ -15,7 +15,9 @@ vocab: []
 example_tag: stage-1
 versions_used: [dotnet]
 content_version: 1
-status: draft
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-26T10:40:00+07:00"
 ---
 
 ## Before you start
