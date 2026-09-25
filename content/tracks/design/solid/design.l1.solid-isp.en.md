@@ -26,7 +26,7 @@ reviewed_at: null
 
 ## The situation
 
-The samples have two notifier interfaces: `INotifier` has one method, `Send`; `IFullNotifier` bundles three: `Send`, `History` and `Retry`. `SmsOnlyNotifier` implements `IFullNotifier`, but it only ever sends: it keeps no history and never resends. So its `History` and `Retry` throw `NotSupportedException`, and a support screen that asks any `IFullNotifier` for its `History()` crashes the first time it is handed this one. The class compiles, the interface looks complete, and yet two of its three methods cannot do what they promise. What went wrong?
+The samples have two notifier interfaces: `INotifier` has one method, `Send`; `IFullNotifier` bundles three: `Send`, `History` and `Retry`. `SmsOnlyNotifier` implements `IFullNotifier`, but it only ever sends: it keeps no history and never resends. So its `History` and `Retry` throw `NotSupportedException`, and a support screen that asks any `IFullNotifier` for its `History()` gets a `NotSupportedException` the first time it is handed this one. The class compiles, the interface looks complete, and yet two of its three methods cannot do what they promise. What went wrong?
 
 ## Core concepts
 
