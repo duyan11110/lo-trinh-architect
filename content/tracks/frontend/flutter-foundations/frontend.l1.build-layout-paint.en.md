@@ -66,7 +66,7 @@ The body of the product screen, while it waits for the products or when loading 
           }
 ```
 
-The `waiting` check is true while the products are still loading; the two lines to look at are the `return Center(...)` ones. In build, the first only says "a `Center` with a `CircularProgressIndicator` inside", and the second says the same about an error message. In layout, the `Scaffold` gives its body the space below the title bar, and the `Center` takes that space. The spinner picks its own small size, and the `Center` places it in the middle. Paint then draws it there. Make the window wider, and layout runs again with the new space: the spinner keeps its size, and its position moves to the new middle. An error message would be placed the same way.
+The `waiting` check is true while the products are still loading; the two lines to look at are the `return Center(...)` ones. In build, the first only says "a `Center` with a `CircularProgressIndicator` inside", and the second says the same about an error message. In layout, the `Scaffold` gives its body the space below the title bar, and the `Center` takes that space. The spinner picks its own small size, and the `Center` places it in the middle, where paint then draws it. Make the window wider, and layout runs again with the new space: the spinner keeps its size, and its position moves to the new middle. An error message would be placed the same way.
 
 Each product row works on the same principle:
 
