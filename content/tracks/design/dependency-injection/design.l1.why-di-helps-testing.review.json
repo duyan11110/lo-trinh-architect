@@ -1,0 +1,208 @@
+{
+  "id": "design.l1.why-di-helps-testing",
+  "technical": {
+    "reviewed_at": "2026-09-26T16:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "OrderService.cs:6 `public sealed class OrderService(IOrderRepository repository, INotifier notifier)`; :10 `if (items.Count == 0) throw new ArgumentException(\"an order needs at least one item\");`; :16 `Status = \"new\",`; :19-21 `await repository.AddAsync(order);` `await repository.SaveChangesAsync();` `notifier.Send(order.Id, \"order placed\");`. No other member of repository/notifier is called in PlaceOrderAsync.",
+        "source": "examples/don-hang @ stage-1: DonHang.Domain/OrderService.cs:6-23"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "OrderNotifications.cs:9-14 `public sealed class OrderPlacedTightlyCoupled` `private readonly EmailNotifier notifier = new();` `public void Handle(int orderId) => notifier.Send(orderId, \"order placed\");`. Lesson block (lines=9-14) matches tools/extract-code output byte-for-byte (diff empty).",
+        "source": "examples/don-hang @ stage-1: samples/DonHang.Samples/Samples/Design/OrderNotifications.cs:9-14"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "NotifierBase.cs:7 `private readonly List<string> sent = new();` :9 `public IReadOnlyList<string> Sent => sent;` :13-15 `var message = Format(orderId, subject);` `sent.Add(message);` `Console.WriteLine(message);` :21 `public sealed class EmailNotifier : NotifierBase`. Lesson block (lines=5-16) matches tools/extract-code output byte-for-byte.",
+        "source": "examples/don-hang @ stage-1: samples/DonHang.Samples/Samples/Oop/NotifierBase.cs:5-25"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "OrderNotifications.cs:20-23 `public sealed class OrderNotifications(INotifier notifier)` `public void Handle(int orderId) => notifier.Send(orderId, \"order placed\");`. EmailNotifier is public sealed with an implicit public parameterless ctor (NotifierBase.cs:21), Sent is public (:9), so a caller can new it, pass it and read Sent; Handle(42) yields one entry \"email about order 42: order placed\" (:23-24 Format).",
+        "source": "examples/don-hang @ stage-1: samples/DonHang.Samples/Samples/Design/OrderNotifications.cs:20-23; Samples/Oop/NotifierBase.cs:9,21-25"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "OrderServiceTests.cs `var repository = new FakeOrderRepository(); var notifier = new FakeNotifier(); var service = new OrderService(repository, notifier);` then `service.PlaceOrderAsync(...)`. FakeOrderRepository : IOrderRepository keeps a Dictionary<int, Order>; FakeNotifier : INotifier appends to a List. `dotnet test DonHang.Tests` at stage-1: `Total tests: 5  Passed: 5`, no database running.",
+        "source": "examples/don-hang @ stage-1: DonHang.Tests/Services/OrderServiceTests.cs:14-16; DonHang.Tests/FakeOrderRepository.cs; DonHang.Tests/FakeNotifier.cs; dotnet test run 2026-09-26"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "OrderService is `public sealed class` with a primary constructor; DonHang.Tests (a separate assembly, no container) calls `new OrderService(repository, notifier)` and `new OrderService(new FakeOrderRepository(), new FakeNotifier())`; the project builds and all 5 tests pass (`dotnet test`, SDK 10.0.300).",
+        "source": "examples/don-hang @ stage-1: DonHang.Domain/OrderService.cs:6; DonHang.Tests/Services/OrderServiceTests.cs:16,40; dotnet test run 2026-09-26"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "\"In this case, the `Worker` class creates and directly depends on the `MessageWriter` class. Hard-coded dependencies like this are problematic ... This implementation is difficult to unit test. The app should use a mock or stub `MessageWriter` class, which isn't possible with this approach.\" Same shape as OrderPlacedTightlyCoupled (field initialised with new()).",
+        "source": "refs/dotnet-docs/docs/core/extensions/dependency-injection/overview.md:24-28"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "major",
+        "section": 2,
+        "kind": "accuracy",
+        "text": "Unlisted claim: the requirements for exercising PlaceOrderAsync through the API (database, signed-in customer, HTTP request, leftover row) are a concrete fact about the repo not in the claims ledger. It is true at stage-1 (OrdersController.Create has [Authorize] and calls orderService.PlaceOrderAsync; EfOrderRepository persists) but must be listed.",
+        "quote": "Running the whole API for that means a database, a signed-in customer and an HTTP request, and a leftover order row every time you check.",
+        "fix": "Add a claim (kind fact, section 2): \"POST /api/v1/orders (OrdersController.Create) is [Authorize] and calls OrderService.PlaceOrderAsync, which saves through EfOrderRepository to PostgreSQL\", source_hint DonHang.Api/Controllers/OrdersController.cs:17-27 @ stage-1. No text change needed."
+      },
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Unlisted claim: a speed/side-effect statement with no ledger entry. It is supported by execution (dotnet test DonHang.Tests at stage-1: PlaceOrderAsync tests 6-8 ms each, no Postgres) but must be listed.",
+        "quote": "a check of `PlaceOrderAsync` runs in milliseconds, needs no PostgreSQL, and leaves nothing behind",
+        "fix": "Add a claim (kind behavior, section 4): \"With in-memory stand-ins, a check of PlaceOrderAsync runs in milliseconds without PostgreSQL\", source_hint `dotnet test DonHang.Tests` @ stage-1 (observed 6-8 ms per PlaceOrderAsync test) and FakeOrderRepository.cs comment."
+      },
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Unlisted and inaccurate claim about the course structure. In track.yaml, DIP (design.l1.solid-dip) is in module `solid`; the module right before this one is `layered`; dependency injection is the current module `dependency-injection`. \"The last two modules\" therefore points the reader at solid+layered, not DIP+DI.",
+        "quote": "That is the payoff of the last two modules. DIP made `OrderService` depend on interfaces, and dependency injection made the concrete objects come from outside.",
+        "fix": "Replace with: \"That is the payoff of DIP and of this module. DIP made `OrderService` depend on interfaces, and dependency injection made the concrete objects come from outside.\""
+      },
+      {
+        "severity": "major",
+        "section": 6,
+        "kind": "accuracy",
+        "text": "Unlisted and overstated claim about the previous lesson. design.l1.wiring-the-container did not swap the notifier; its Try it only asked the reader which file would change for a hypothetical SmsGatewayNotifier (answer: one line in ServiceCollectionExtensions.cs). The repo at stage-1 still registers LoggingNotifier.",
+        "quote": "the last lesson swapped the notifier for the whole API by changing one registration",
+        "fix": "Replace with: \"the last lesson showed that swapping the notifier for the whole API means changing one registration\" and add a claim citing DonHang.Infrastructure/ServiceCollectionExtensions.cs @ stage-1 (`services.AddScoped<INotifier, LoggingNotifier>();`)."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Too strong. PlaceOrderAsync also reads `DateTimeOffset.UtcNow` (OrderService.cs:15, PlacedAt) and constructs `Order`; it does not call only the abstractions' methods. Claim 1 is scoped correctly (\"only calls ... on them\"), the lesson sentence is not.",
+        "quote": "`OrderService` asks for two abstractions in its constructor and calls only their methods.",
+        "fix": "Replace with: \"`OrderService` asks for two abstractions in its constructor, and every call it makes to the database or the notifier goes through them.\""
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "Absolute wording: a private field is still reachable via reflection, and console output can be captured by a test (Console.SetOut). The point stands, but \"no outside code can read it\" is stronger than C# guarantees.",
+        "quote": "it sits in a private field of `OrderPlacedTightlyCoupled`, so no outside code can read it",
+        "fix": "Replace with: \"it sits in a private field of `OrderPlacedTightlyCoupled`, so ordinary calling code has no way to reach it\"."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "fix-required"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-25T17:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation)",
+    "issues": [
+      {
+        "severity": "major",
+        "section": 6,
+        "kind": "term",
+        "text": "\"testing framework\" is not in known_vocab and not defined in Core concepts. Core concepts defines \"test (here)\" as a small piece of code, but never says what a framework adds, so I cannot judge whether the misconception is plausible or what \"installed\" means.",
+        "quote": "A class needs a testing framework installed before dependency injection is worth doing.",
+        "fix": "Replace \"a testing framework installed\" with \"a special testing tool installed\", or add one clause after it: \"(a library that runs tests and reports which passed)\"."
+      },
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "term",
+        "text": "\"abstractions\" is not in known_vocab. I know \"interface\" and DIP, and the next paragraph says \"depend on interfaces\", but here I have to guess that \"two abstractions\" means the two interfaces IOrderRepository and INotifier.",
+        "quote": "`OrderService` asks for two abstractions in its constructor and calls only their methods.",
+        "fix": "Replace \"two abstractions\" with \"two interfaces, `IOrderRepository` and `INotifier`,\"."
+      },
+      {
+        "severity": "major",
+        "section": 2,
+        "kind": "term",
+        "text": "\"PostgreSQL\" is a tool name not in known_vocab or the prereq summary. The same sentence group lets me guess it is the database, but the lesson never says so, and it recurs in section 4, the summary and the quiz.",
+        "quote": "But `OrderService` does not know it talks to PostgreSQL;",
+        "fix": "On first mention write \"PostgreSQL, the database Đơn Hàng uses\"."
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "gap",
+        "text": "Expected result says PlaceOrderAsync returns the order and that the notifier records an \"order placed\" message. The situation only says the order \"is saved\" and \"sends one notification\"; \"order placed\" appeared only in the OrderPlacedTightlyCoupled sample. I could not have produced this wording myself.",
+        "quote": "the returned order's status is `\"new\"`, the repository's list holds that order, and the notifier recorded one \"order placed\" message for it.",
+        "fix": "In section 2, change \"is saved with status \\\"new\\\" and sends one notification\" to \"is saved and returned with status \\\"new\\\", and one \\\"order placed\\\" notification is sent\"."
+      },
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "gap",
+        "text": "The prereq summary tells me one registration serves every class and that the implementation choice lives in DonHang.Infrastructure, but not that the last lesson actually swapped the notifier. I cannot connect this reference to anything I remember.",
+        "quote": "the last lesson swapped the notifier for the whole API by changing one registration",
+        "fix": "Rephrase to what the prereq established: \"the last lesson showed that one registration decides the notifier for the whole API\"."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "code",
+        "text": "OrderNotifications is central to the contrast (and to quiz q2 and q4) but its code is not shown; I have to trust one sentence to know it takes an INotifier through its constructor.",
+        "quote": "`OrderNotifications`, its injected neighbour, does the same job with an `INotifier` it receives.",
+        "fix": "Add one clause: \"— its constructor takes an `INotifier`, and `Handle` calls `Send` on it —\" after \"its injected neighbour\"."
+      },
+      {
+        "severity": "minor",
+        "section": 8,
+        "kind": "style",
+        "text": "Summary line 4 says \"channel\"; the lesson body only says \"notifier\". Small, but it reads like a new idea.",
+        "quote": "DIP plus injection leave a gap exactly where a real database or channel would plug in; stand-ins fill it.",
+        "fix": "Replace \"a real database or channel\" with \"the real database and notifier\"."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "text": "q1: the correct option is a near-verbatim copy of the Core concepts definition of stand-in, so I can match wording without understanding.",
+        "quote": "A simple object passed in instead of a class's real dependency",
+        "fix": "Reword option a as an example instead of the definition, e.g. \"A repository that keeps orders in a list, passed to `OrderService` instead of the real one\"."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "text": "q2: the explanation for option a uses \"side effects\", which is not in known_vocab and not in the lesson; it confuses rather than clears up the wrong answer.",
+        "quote": "Many results are side effects, like a notification sent; seeing them needs control over the dependency.",
+        "fix": "Replace \"Many results are side effects, like a notification sent\" with \"Some results are not returned at all, like a notification sent\"."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "text": "q4: the correct option is clearly the longest and the only one with two clauses naming the lesson's key idea (constructor); guessable by length.",
+        "quote": "The notifier is created in a private field, so no caller can reach its list; receiving it through the constructor would fix that.",
+        "fix": "Lengthen distractors b-d to similar two-part shape, or shorten a to \"It is created privately inside the class; passing it in would fix that.\""
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "testing framework",
+        "abstractions",
+        "PostgreSQL",
+        "side effects (quiz q2 explanation)"
+      ],
+      "skipped_steps": [
+        "Expected result: PlaceOrderAsync returns the order and sends \"order placed\" — not established in the lesson.",
+        "\"the last lesson swapped the notifier\" — not in the prereq summary."
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "fix-required"
+  }
+}
