@@ -26,7 +26,7 @@ reviewed_at: null
 
 ## The situation
 
-The shop wants a fourth way to ship: same-day delivery. The samples project works out a shipping fee in two places: one is `ShippingFeeIfElseChain.ForOrder`, a single method that takes the kind of shipping as a string and walks an `if`/`else if` chain. The other is `ShippingFee`, with one class per kind of shipping and tests that already check them. In the first, same-day means opening a method that works today and adding a branch next to the ones that answer standard, express and pick-up orders. In the second, it means writing a new class and leaving the old ones alone. Why is the second one so much safer?
+The shop wants a fourth way to ship: same-day delivery. Two files in the samples project work out the same shipping fees in different ways: one is `ShippingFeeIfElseChain.ForOrder`, a single method that takes the kind of shipping as a string and walks an `if`/`else if` chain. The other is `ShippingFee`, with one class per kind of shipping and tests that already check them. In the first, same-day means opening a method that works today and adding a branch next to the ones that answer standard, express and pick-up orders. In the second, it means writing a new class and leaving the old ones alone. Why is the second one so much safer?
 
 ## Core concepts
 
