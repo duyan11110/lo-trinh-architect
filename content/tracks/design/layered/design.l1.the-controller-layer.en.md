@@ -40,12 +40,12 @@ A teammate is asked to make orders refuse more than 20 items. They open `OrdersC
 ```mermaid
 flowchart LR
   R[HTTP request] --> C[controller: read the request]
-  C --> B[business layer: decide and store]
+  C --> B[business layer: decide, then have it stored]
   B --> C2[controller: shape DTO and status code]
   C2 --> S[HTTP response]
 ```
 
-A controller sits at the edge of the application, where HTTP comes in. Its job has three parts. First it reads what the request says: the route values, the body and who the caller is. Then it calls into the layer below with plain values, not with the request itself. Finally it turns what comes back into HTTP: a DTO for the body and a status code.
+A controller sits at the edge of the application, where HTTP comes in. Its job has three parts. First it reads what the request says: the route values, the body and who the caller is. Then it calls into the layer below with values it has pulled out of the request, not with the request itself. Finally it turns what comes back into HTTP: a DTO for the body and a status code.
 
 What a controller does not do is decide business rules or talk to the database. Whether an order is allowed is a business rule, so it belongs in the business layer; saving the order is a data concern, so it belongs in the data layer. The controller delegates both. That keeps it changing only for HTTP reasons — a new route, a new DTO shape, a different status code.
 
@@ -70,7 +70,7 @@ The payoff is that a rule lives in one place. If "at most 20 items" goes into `C
     }
 ```
 
-It reads the caller's id from the token's `sub`, maps the request's items into `OrderItem` objects, and calls `orderService.PlaceOrderAsync` with those plain values. Then it answers `201` through `CreatedAtAction`, with the order shaped by `ToDto`. There is no `if` about items and no `SaveChangesAsync` anywhere in the method. The empty-items check lives in `OrderService`; when it throws `ArgumentException`, the exception-handling middleware turns that into a `400`.
+It reads the caller's id from the token's `sub`, maps the request's items into `OrderItem` objects, and calls `orderService.PlaceOrderAsync` with the caller's id and that list — not with the request itself. Then it answers `201` through `CreatedAtAction`, with the order shaped by `ToDto`. There is no `if` about items and no `SaveChangesAsync` anywhere in the method. The empty-items check lives in `OrderService`; when it throws `ArgumentException`, the exception-handling middleware turns that into a `400`.
 
 `ToDto`, at the bottom of the same class, is HTTP work too — it decides what the response body looks like:
 
@@ -88,7 +88,7 @@ Not every controller in Đơn Hàng is this strict: `ProductsController` queries
 ## Beginners often think…
 
 - **"Business rules like discount logic belong in the controller, since that's what the client is asking for."** → Actually the client asks for an order; whether that order is allowed, or what it costs, is the business layer's decision. A rule in `Create` would be skipped by every caller that does not come through HTTP, such as the tests in `DonHang.Tests` that call `OrderService` directly. You notice this when the same rule has to be copied into a second entry point.
-- **"A thin controller means writing less code overall, not moving code to a different layer."** → Actually the checks and the saving still exist; they just live in the layer that owns them. `Create` is short because `PlaceOrderAsync` does the checking and saving. You notice this when you search for a rule in the controller and find it one layer down instead.
+- **"A thin controller means writing less code overall, not moving code to a different layer."** → Actually the checks and the saving still exist; they just live in the layer that owns them. `Create` is short because `PlaceOrderAsync` does the checking and has the order saved. You notice this when you search for a rule in the controller and find it one layer down instead.
 
 ## Try it (3 minutes)
 
@@ -105,14 +105,14 @@ Where would "at most 20 items" go, and which of these four lines would change?
 
 <details><summary>Suggested answer</summary>
 
-Next to the empty-items check in `OrderService.PlaceOrderAsync`, in the business layer. None of the four lines in `Create` would change: the controller already passes the items along, and a failed check already becomes a `400` through the middleware.
+Next to the empty-items check in `OrderService.PlaceOrderAsync`, in the business layer. None of the four lines in `Create` would change: the controller already passes the items along, and a new check that throws `ArgumentException`, like the existing one, becomes a `400` through the middleware.
 
 </details>
 
 ## Connections
 
 - [[design.l1.why-layers]] — the HTTP layer from that lesson, seen from inside one class.
-- [[backend.l1.validating-input]] — where the empty-items check in `OrderService` and its `400` were introduced.
+- [[backend.l1.validating-input]] — where the empty-items check in `OrderService` and its `400` were looked at as input validation.
 - [[design.l1.the-service-layer]] — the next lesson, which opens the business layer that `Create` delegates to.
 
 ## Five-line summary
