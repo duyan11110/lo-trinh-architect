@@ -101,7 +101,7 @@ Which endpoints actually require a caller is decided in the controllers:
 ## Beginners often think…
 
 - **"A JWT that's expired still works as long as the signature is valid."** → Actually the signature only proves the API issued the token; `ValidateLifetime` separately checks `exp`, and a token well past it is rejected even though every byte is genuine. You notice this when a token that worked this morning starts returning `401` with `The token expired at ...` in the `WWW-Authenticate` header.
-- **"401 and 403 both mean roughly 'not allowed', so either one is fine for a missing or invalid token."** → Actually `401` says the API does not know who is asking; the client's fix is to log in again and send a valid token. `403` says the API knows who is asking and still refuses, so sending the same caller's token again changes nothing. You notice this when a client that treats every `401` as "log in again" stops working the moment an endpoint answers `403` for a caller it has already identified.
+- **"401 and 403 both mean roughly 'not allowed', so either one is fine for a missing or invalid token."** → Actually `401` says the API does not know who is asking; the client's fix is to log in again and send a valid token. `403` says the API knows who is asking and still refuses, so sending the same caller's token again changes nothing. You notice this when an API answers `403` for an expired token: a client that sends the user to log in only on `401` never does, and every call keeps failing.
 
 ## Try it (3 minutes)
 
@@ -129,6 +129,6 @@ Why does step 3 succeed with a token that step 2 rejected?
 
 1. `UseAuthentication` checks the Bearer token's signature, issuer, audience and expiry, and records a caller or no caller — it rejects nothing itself.
 2. `UseAuthorization` short-circuits an `[Authorize]` endpoint with `401` when no caller was identified, before the endpoint runs.
-3. An endpoint without `[Authorize]` runs whatever token is sent, valid or not.
+3. In Đơn Hàng, an endpoint without `[Authorize]` runs whatever token is sent, valid or not.
 4. An expired token is rejected even with a valid signature, because `ValidateLifetime` checks `exp` separately.
 5. `401` means "who are you?", fixed by logging in again; `403` means "I know you, and no".

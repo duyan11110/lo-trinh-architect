@@ -1,63 +1,86 @@
 {
   "id": "backend.l1.validating-a-jwt",
   "technical": {
-    "reviewed_at": "2026-09-25T09:15:00+07:00",
-    "reviewer": "claude-opus-5-5 (technical review round 1)",
+    "reviewed_at": "2026-09-25T09:30:00+07:00",
+    "reviewer": "claude-opus-5-5 (technical review round 2)",
     "claim_verdicts": [
       {
         "n": 1,
         "verdict": "verified",
-        "evidence": "git show stage-1:DonHang.Api/Program.cs lines 23-42: ValidateIssuer = true, ValidIssuer = builder.Configuration[\"Jwt:Issuer\"], ValidateAudience = true, ValidAudience = ...[\"Jwt:Audience\"], ValidateIssuerSigningKey = true, IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey)) with signingKey = Configuration[\"Jwt:SigningKey\"], ValidateLifetime = true. appsettings.json: Issuer \"donhang-api\", Audience \"donhang-app\". tools/extract-code output diffs clean against the lesson block.",
+        "evidence": "git show stage-1:DonHang.Api/Program.cs 23-42: ValidateIssuer/ValidateAudience/ValidateIssuerSigningKey/ValidateLifetime = true; ValidIssuer = Configuration[\"Jwt:Issuer\"], ValidAudience = Configuration[\"Jwt:Audience\"]; IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey)), signingKey = Configuration[\"Jwt:SigningKey\"]. appsettings.json @ stage-1: Issuer \"donhang-api\", Audience \"donhang-app\". Lesson block matches source verbatim.",
         "source": "examples/don-hang @ stage-1 (4fca60a = HEAD): DonHang.Api/Program.cs, DonHang.Api/appsettings.json"
       },
       {
         "n": 2,
         "verdict": "verified",
-        "evidence": "Program.cs @ stage-1 line 70 app.UseAuthentication(); line 71 app.UseAuthorization(); line 72 app.MapControllers();",
-        "source": "examples/don-hang @ stage-1: DonHang.Api/Program.cs:70-72"
+        "evidence": "Program.cs @ stage-1 line 70 app.UseAuthentication(); 71 app.UseAuthorization(); 72 app.MapControllers(); - below the AddAuthentication/AddJwtBearer block (25-42), so \"added further down, in that order\" holds.",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/Program.cs:25-42, 70-72"
       },
       {
         "n": 3,
         "verdict": "verified",
-        "evidence": "middleware/index.md (>= aspnetcore-8.0): \"Authentication doesn't short-circuit unauthenticated requests. Although authentication middleware authenticates requests, authorization occurs after the framework selects ... a controller and action in an MVC app.\" authentication/index.md: \"An authentication challenge is invoked by Authorization when an unauthenticated user requests an endpoint that requires authentication.\" Example: \"A JWT bearer scheme returning a 401 result with a `www-authenticate: bearer` header.\"",
-        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/middleware/index.md:653; refs/aspnetcore-docs/aspnetcore/security/authentication/index.md:111-116"
+        "evidence": "middleware/index.md: \"Authentication doesn't short-circuit unauthenticated requests.\" authentication/index.md: \"An authentication challenge is invoked by Authorization when an unauthenticated user requests an endpoint that requires authentication.\" Example: \"A JWT bearer scheme returning a 401 result with a www-authenticate: bearer header.\" Live: no-token and bad-token calls to the [Authorize] List -> 401.",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/middleware/index.md; refs/aspnetcore-docs/aspnetcore/security/authentication/index.md"
       },
       {
         "n": 4,
         "verdict": "verified",
-        "evidence": "Live 2026-09-25: curl -i localhost:8080/api/v1/orders (no header) -> HTTP/1.1 401, Www-Authenticate: Bearer. With Bearer abc.def.ghi -> 401, Www-Authenticate: Bearer error=\"invalid_token\". Login anh.tran@example.com -> token (payload sub \"1\", iss donhang-api, aud donhang-app) -> 200.",
-        "source": "live run, examples/don-hang stage-1 via Caddy :8080"
+        "evidence": "Live 2026-09-25 via Caddy :8080: no header -> HTTP/1.1 401, Www-Authenticate: Bearer. Bearer abc.def.ghi -> 401, Www-Authenticate: Bearer error=\"invalid_token\". POST /api/v1/auth/login (anh.tran@example.com, password from scripts/backend/auth-and-orders.sh) -> token -> GET /api/v1/orders 200.",
+        "source": "live run, examples/don-hang stage-1"
       },
       {
         "n": 5,
         "verdict": "verified",
-        "evidence": "Live: GET /api/v1/orders/1 with Bearer abc.def.ghi -> 200 {\"id\":1,\"customerId\":1,\"status\":\"paid\",...}; without header -> 200. OrdersController.cs @ stage-1 lines 30-36: Get has [HttpGet(\"{id:int}\")] and no [Authorize]; no class-level [Authorize] and no fallback policy (AddAuthorization() without options, Program.cs line 43).",
+        "evidence": "Live: GET /api/v1/orders/1 with Bearer abc.def.ghi -> 200 {\"id\":1,\"customerId\":1,\"status\":\"paid\",...}. OrdersController.cs @ stage-1 30-36: [HttpGet(\"{id:int}\")] Get, no [Authorize]; no class-level [Authorize]; Program.cs 43 AddAuthorization() with no fallback policy.",
         "source": "live run; examples/don-hang @ stage-1: OrdersController.cs:10-36, Program.cs:43"
       },
       {
         "n": 6,
         "verdict": "verified",
-        "evidence": "Reproduced: HS256 token built with .env JWT_SIGNING_KEY, iss/aud correct, exp = now-3600 -> 401, Www-Authenticate: Bearer error=\"invalid_token\", error_description=\"The token expired at '09/25/2026 01:05:41'\". Holds for 1 h past exp; see issue on the default leeway (exp-60 s and exp-290 s -> 200, exp-310 s -> 401).",
+        "evidence": "Reproduced: HS256 token signed with .env JWT_SIGNING_KEY, iss donhang-api, aud donhang-app, exp = now-600 s -> 401, Www-Authenticate: Bearer error=\"invalid_token\", error_description=\"The token expired at '09/25/2026 02:08:28'\".",
         "source": "live run 2026-09-25, GET /api/v1/orders"
       },
       {
         "n": 7,
         "verdict": "verified",
-        "evidence": "OrdersController.cs @ stage-1 lines 49-56: [Authorize] [HttpGet] public async Task<ActionResult<List<OrderSummaryDto>>> List() { var customerId = int.Parse(User.FindFirstValue(JwtRegisteredClaimNames.Sub)!); ... }. Diffs clean against the lesson block.",
-        "source": "examples/don-hang @ stage-1: DonHang.Api/Controllers/OrdersController.cs:49-56"
+        "evidence": "OrdersController.cs @ stage-1 49-56: [Authorize] [HttpGet] public async Task<ActionResult<List<OrderSummaryDto>>> List() { var customerId = int.Parse(User.FindFirstValue(JwtRegisteredClaimNames.Sub)!); ... }. Class route \"api/v1/orders\" (line 11) -> List answers GET /api/v1/orders. Block matches source verbatim.",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/Controllers/OrdersController.cs:11, 49-56"
       },
       {
         "n": 8,
-        "verdict": "rephrased",
-        "evidence": "RFC 9110 15.5.2: 401 \"indicates that the request has not been applied because it lacks valid authentication credentials for the target resource.\" 15.5.4: 403 \"the server understood the request but refuses to fulfill it... The client SHOULD NOT automatically repeat the request with the same credentials. The client MAY repeat the request with new or different credentials.\" So \"re-sending credentials will not change that\" holds only for the same credentials.",
-        "source": "refs/rfc/rfc9110.txt sections 15.5.2, 15.5.4",
-        "suggested_text": "`403` says the API knows who is asking and still refuses, so sending the same caller's token again changes nothing."
+        "verdict": "verified",
+        "evidence": "RFC 9110 15.5.2: 401 \"lacks valid authentication credentials for the target resource\". 15.5.4: \"If authentication credentials were provided in the request, the server considers them insufficient to grant access. The client SHOULD NOT automatically repeat the request with the same credentials.\" ASP.NET Core: \"forbid action is called by Authorization when an authenticated user attempts to access a resource they're not permitted to access.\" Lesson now says \"the same caller's token\".",
+        "source": "refs/rfc/rfc9110.txt 15.5.2, 15.5.4; refs/aspnetcore-docs/aspnetcore/security/authentication/index.md:122"
       },
       {
         "n": 9,
         "verdict": "verified",
-        "evidence": "RFC 9110 15.5.2: \"The server generating a 401 response MUST send a WWW-Authenticate header field ... containing at least one challenge\". RFC 6750 s.3: \"If the protected resource request included an access token and failed authentication, the resource server SHOULD include the 'error' attribute\"; invalid_token: \"The access token provided is expired, revoked, malformed, or invalid for other reasons.\" Live output matches.",
-        "source": "refs/rfc/rfc9110.txt 15.5.2; https://www.rfc-editor.org/rfc/rfc6750 sections 3, 3.1 (WebFetch)"
+        "evidence": "RFC 9110 15.5.2: \"The server generating a 401 response MUST send a WWW-Authenticate header field ... containing at least one challenge\". RFC 6750 s.3 (round 1 WebFetch): resource server SHOULD include error when a token was sent and failed; invalid_token covers expired/malformed. Live: no token -> Bearer; bad token -> Bearer error=\"invalid_token\".",
+        "source": "refs/rfc/rfc9110.txt 15.5.2; RFC 6750 s.3; live run"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "TokenValidationParameters.DefaultClockSkew: \"Default for the clock skew.\" Remarks: \"300 seconds (5 minutes).\" Program.cs sets no ClockSkew. Live, key-signed tokens: exp now-60 s -> 200, now-290 s -> 200, now-310 s -> 401 \"The token expired at ...\", now-600 s -> 401.",
+        "source": "https://learn.microsoft.com/dotnet/api/microsoft.identitymodel.tokens.tokenvalidationparameters.defaultclockskew (WebFetch); live run"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "ValidateIssuerSigningKey: \"controls if validation of the SecurityKey that signed the securityToken is called.\" Remarks: \"The default is false.\" Live: token signed with a different key -> 401 error_description=\"The signature key was not found\"; token signed with the .env key -> 200. Signature check uses IssuerSigningKey; \"only tokens signed with that key can pass\" holds.",
+        "source": "https://learn.microsoft.com/dotnet/api/microsoft.identitymodel.tokens.tokenvalidationparameters.validateissuersigningkey (WebFetch); live run"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "RFC 9110 5.1: \"Field names are case-insensitive\". Live curl -i output prints \"Www-Authenticate:\".",
+        "source": "refs/rfc/rfc9110.txt line 1468; live run"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "authentication/index.md: \"The AddAuthentication parameter JwtBearerDefaults.AuthenticationScheme is the name of the scheme to use by default when a specific scheme isn't requested.\" Scheme-specific methods \"such as AddJwtBearer ... register schemes with appropriate settings.\" \"Calling UseAuthentication registers the middleware that uses the previously registered authentication schemes.\"",
+        "source": "refs/aspnetcore-docs/aspnetcore/security/authentication/index.md:25-45"
       }
     ],
     "issues": [
@@ -65,49 +88,33 @@
         "severity": "major",
         "section": 4,
         "kind": "accuracy",
-        "text": "Unlisted claim, inaccurate as stated: expiry is enforced with a default clock-skew leeway, not the instant exp passes. Live, tokens signed with the real key: exp = now-60 s -> 200, now-290 s -> 200, now-310 s -> 401. Program.cs sets no ClockSkew. Same over-statement in sec 4 \"once `exp` has passed, the check fails\", sec 6 \"a token past it is rejected\", sec 8 item 4, quiz q2 option c.",
-        "quote": "and `exp` must not have passed",
-        "fix": "Sec 4: \"...and `exp` must not have passed (the check allows a few minutes of leeway for clock differences, so a token just past `exp` can still pass)\". Sec 4 para 3: \"once `exp` is more than a few minutes in the past, the check fails\". Sec 6: \"a token well past it is rejected\". Add a claims entry (behavior, aspnetcore, source: live run exp-60 s -> 200, exp-310 s -> 401)."
+        "text": "Unlisted claim (new in round 2): where the JWT bearer handler reads the token from is a behaviour claim not in the ledger. It is true (configure-jwt-bearer-authentication.md: \"request data from an API resource by using the Authorization header and a bearer token\"; live runs), but it must be listed.",
+        "quote": "Clients send their JWT in an `Authorization: Bearer <token>` header, so that is where it looks.",
+        "fix": "Add a claims entry: kind behavior, version_key aspnetcore, section 4, text \"The JWT bearer handler reads the token from the Authorization header after 'Bearer '\", source_hint refs/aspnetcore-docs/aspnetcore/security/authentication/configure-jwt-bearer-authentication.md line 16 + live curl. No lesson text change."
       },
       {
         "severity": "major",
         "section": 5,
         "kind": "accuracy",
-        "text": "Unlisted claim, wrong about ValidateIssuerSigningKey: docs say it \"controls if validation of the SecurityKey that signed the securityToken is called\", default false; it does not switch on the signature check (signature is checked against IssuerSigningKey regardless; wrong-key token -> 401 \"The signature key was not found\"). \"only tokens this API issued can pass\": anyone holding the key can mint one (reviewer did -> 200).",
-        "quote": "Each `Validate...` line switches one check on: issuer, audience, signing key, and `ValidateLifetime` for `exp`.",
-        "fix": "Replace the paragraph with: \"`ValidateIssuer`, `ValidateAudience` and `ValidateLifetime` name the issuer, audience and `exp` checks. The signature is checked against `IssuerSigningKey`, built from the same `Jwt:SigningKey` that `JwtTokenService` signs with, so only tokens signed with that key can pass.\" Add both sentences to claims (source: TokenValidationParameters.ValidateIssuerSigningKey API page + live run)."
+        "text": "Unlisted claim (new in round 2): what MapInboundClaims = false does (and, via \"only\", what it does not do) is not in the ledger; quiz q5 explanation c repeats it. True per claims.md (\"disable the namespaces per scheme ... MapInboundClaims = false\") and the repo comment at Program.cs 28-30.",
+        "quote": "`MapInboundClaims = false` only keeps claim names such as `sub` as they were issued.",
+        "fix": "Add a claims entry: kind behavior, version_key aspnetcore, section 5, text \"MapInboundClaims = false stops the handler mapping JWT claim names (e.g. sub) to ClaimTypes URIs; it does not affect validation\", source_hint refs/aspnetcore-docs/aspnetcore/security/authentication/claims.md:80 + Program.cs @ stage-1:28-31. No lesson text change."
       },
       {
         "severity": "minor",
         "section": 6,
         "kind": "accuracy",
-        "text": "Over-strong per RFC 9110 15.5.4: the client \"MAY repeat the request with new or different credentials\"; logging in as a different customer can change a 403. See claim 8.",
-        "quote": "so logging in again changes nothing",
-        "fix": "Use claim 8's suggested_text: \"`403` says the API knows who is asking and still refuses, so sending the same caller's token again changes nothing.\""
+        "text": "The observable symptom does not follow from the misconception. The misconception is answering 403 for a missing/invalid token; the sentence instead describes an API answering 403 correctly, for an identified caller, and says the client \"stops working\" - a client that re-logs only on 401 behaves correctly there. Quiz q4 has the right symptom.",
+        "quote": "You notice this when a client that treats every `401` as \"log in again\" stops working the moment an endpoint answers `403` for a caller it has already identified.",
+        "fix": "Replace with: \"You notice this when an API answers `403` for an expired token: a client that sends the user to log in only on `401` never does, and every call keeps failing.\""
       },
       {
         "severity": "minor",
-        "section": 4,
-        "kind": "accuracy",
-        "text": "Unlisted claim: which caller the login token identifies. True (live login as anh.tran@example.com -> payload sub \"1\"), but sec 2 never says which account logged in, and it is not in the ledger.",
-        "quote": "the request now carries a caller — customer 1, from `sub`",
-        "fix": "Add a claims entry (fact, source: live login anh.tran@example.com -> sub \"1\"), or write \"the customer named in `sub`\" instead of \"customer 1\"."
-      },
-      {
-        "severity": "minor",
-        "section": 7,
-        "kind": "example",
-        "text": "Through Caddy the header prints as `Www-Authenticate: Bearer` (live curl -i output), not `WWW-Authenticate`. A learner comparing literally may think the output differs.",
-        "quote": "step 1 answers `401` with `WWW-Authenticate: Bearer`",
-        "fix": "Append to Expected result: \"(curl prints the header name as `Www-Authenticate`; header names are not case-sensitive)\" and add that to claims (RFC 9110 section 5.1: field names are case-insensitive)."
-      },
-      {
-        "severity": "minor",
-        "section": "backend.l1.validating-a-jwt.q5",
-        "kind": "quiz",
-        "text": "Key is correct, but the explanation for option b misdescribes ValidateIssuerSigningKey: it validates the signing key itself (default false); it is not the signature check that proves the API issued the token.",
-        "quote": "This check is about the signature and key — whether the API issued the token — not about its expiry.",
-        "fix": "en b: \"This validates the signing key itself; it has nothing to do with `exp`.\" vi b: \"Dòng này kiểm tra bản thân signing key; không liên quan tới `exp`.\""
+        "section": 8,
+        "kind": "opinion-as-fact",
+        "text": "Generalises a property of this app to all endpoints. An action without its own [Authorize] is still protected under a class-level [Authorize] or an authorization fallback policy; it runs here only because OrdersController has neither and AddAuthorization() sets no fallback (Program.cs:43). Same over-reach in quiz q1 explanation d: \"an unmarked endpoint is never rejected\".",
+        "quote": "An endpoint without `[Authorize]` runs whatever token is sent, valid or not.",
+        "fix": "Summary line 3: \"In Đơn Hàng, an endpoint without `[Authorize]` runs whatever token is sent, valid or not.\" q1 explanation d (en): replace \"and in any case an unmarked endpoint is never rejected\" with \"and in Đơn Hàng an unmarked endpoint is not rejected\"; vi: \"và trong Đơn Hàng endpoint không đánh dấu không bị từ chối\"."
       }
     ],
     "scope": {
