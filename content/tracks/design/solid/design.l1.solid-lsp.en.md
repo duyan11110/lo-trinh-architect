@@ -26,7 +26,7 @@ reviewed_at: null
 
 ## The situation
 
-A teammate adds bulk shipping, `BulkOnlyShipping`: 45,000 VND for orders from 5,000,000 VND, and for anything smaller its `ForOrder` throws an exception, because "bulk shipping is only for big orders." It derives from `ShippingFeeBase`, overrides `ForOrder`, and compiles. Following OCP, nothing else was edited. Then some code loops over the day's orders, calling `ForOrder(order.TotalVnd)` on whichever shipping each one chose — code that has not changed in months — and it crashes on the first 500,000 VND order that picked bulk. Nothing it relied on was edited, so what broke it?
+A teammate adds bulk shipping, `BulkOnlyShipping`: 45,000 VND for orders from 5,000,000 VND, and for anything smaller its `ForOrder` throws an exception, because "bulk shipping is only for big orders." It derives from `ShippingFeeBase` — a second base class in the samples with the same shape as `ShippingFee`, one method `ForOrder`, alongside a well-behaved `StandardShippingOk` — overrides `ForOrder`, and compiles. Following OCP, nothing else was edited. Then some code loops over the day's orders, calling `ForOrder(order.TotalVnd)` on whichever shipping each one chose — code that has not changed in months — and it crashes on the first 500,000 VND order that picked bulk. Nothing it relied on was edited, so what broke it?
 
 ## Core concepts
 
@@ -43,11 +43,11 @@ flowchart LR
   F --> X[BulkOnlyShipping: throws below 5,000,000]
 ```
 
-Code written against a shipping base type knows only one thing about it: you give `ForOrder` a total, and it gives you back a fee. It does not know which subtype it has, and with OCP it should not need to. So it relies on every subtype keeping that promise for any total it might pass.
+In the diagram, each arrow from `ForOrder` shows what a call to that subtype gives back. Code written against a shipping base type knows only one thing about it: you give `ForOrder` a total, and it gives you back a fee. It does not know which subtype it has, and with OCP it should not need to. So it relies on every subtype keeping that promise for any total it might pass.
 
 The `ShippingFee` kinds keep it. `StandardShipping`, `ExpressShipping` and `PickUpInStore` each return a number for every total, so any one of them can be substituted for any other and the caller behaves correctly. That is LSP holding. `StandardShippingOk`, under `ShippingFeeBase`, keeps it too.
 
-`BulkOnlyShipping` breaks it. For a total below 5,000,000 it does not return a fee at all; it throws. The caller did nothing wrong: it asked `ShippingFeeBase` the question `ShippingFeeBase` says it answers. The subtype changed what the question means, so code that was correct for the base type is no longer correct for this subtype. That is what LSP forbids.
+`BulkOnlyShipping` breaks it. For a total below 5,000,000 it does not return a fee at all; it throws. The caller did nothing wrong: it asked `ShippingFeeBase` the question `ShippingFeeBase` says it answers. The subtype refused some totals the base type accepts, so code that was correct for the base type is no longer correct for this subtype. That is what LSP forbids.
 
 The compiler cannot catch this. It checks that `ForOrder` exists with the right parameters and return type; it does not check what the method does with a total of 500,000. So LSP is something you check yourself when you write a subtype, by asking: does this keep the base type's promise for every input a caller might pass, not just the ones I had in mind?
 
