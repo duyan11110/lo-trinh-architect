@@ -33,31 +33,33 @@ The last lesson left a question open: when one request needs an `IOrderRepositor
 - singleton — one object for the whole run of the app; every request that asks gets the same one.
 - scoped — one object per scope; ASP.NET Core opens one scope per request, so each request gets its own object, shared by everything in that request.
 - transient — a new object every time anything asks for it.
-- scope — a boundary the container keeps scoped objects in; when the scope ends, its objects are disposed.
+- scope — a boundary the container keeps scoped objects in; when the scope ends, its objects are disposed: told to release what they hold, the way a `using` block does.
 
 ## How it works
 
 ```mermaid
 flowchart LR
   subgraph R1[request 1]
-    A1[OrdersController] --> C1[DonHangDbContext #1]
+    A1[OrdersController] --> E1[EfOrderRepository]
+    S1[OrderService] --> E1
+    E1 --> C1[DonHangDbContext #1]
   end
   subgraph R2[request 2]
-    A2[OrdersController] --> C2[DonHangDbContext #2]
+    A2[OrdersController] --> E2[EfOrderRepository]
+    S2[OrderService] --> E2
+    E2 --> C2[DonHangDbContext #2]
   end
-  A1 --> J[JwtTokenService, one for all]
-  A2 --> J
 ```
 
-Every registration carries a **service lifetime**, and the container follows it on every resolve. For a singleton, it builds the object the first time it is asked and then hands out that same object for as long as the app runs. For a scoped registration, it keeps one object per scope. ASP.NET Core opens a new scope when a request arrives and closes it when the response has been sent, so inside one request every class asking for a scoped type gets the same object, and the next request gets a fresh one. For a transient registration, it builds a new object on every resolve, even twice within one request.
+Every registration carries a **service lifetime**, and the container follows it on every resolve. For a singleton, it builds the object the first time it is asked and then hands out that same object for as long as the app runs. For a scoped registration, it keeps one object per scope. ASP.NET Core opens a new scope when a request arrives and disposes it, with its scoped objects, when the request ends, so inside one request every class asking for a scoped type gets the same object, and the next request gets a fresh one. For a transient registration, it builds a new object on every resolve, even twice within one request. The diagram shows the scoped case: each request has its own `EfOrderRepository` and `DonHangDbContext`, and inside one request the controller and `OrderService` point at the same repository.
 
-The lifetime is a correctness decision, not only a speed one. A `DbContext` keeps a change tracker and a connection for one unit of work, and EF Core does not support using one instance from two requests at the same time. Registered as a singleton, the one `DonHangDbContext` would serve every concurrent request: two customers' orders would land in the same change tracker, and two queries running at once on it would fail. Scoped is the lifetime that matches: one context per request, used by one request at a time.
+The lifetime is a correctness decision, not only a speed one. A `DbContext` keeps a change tracker for the work of one request, and EF Core does not support using one instance from two requests at the same time. Registered as a singleton, the one `DonHangDbContext` would serve every concurrent request: two customers' orders would land in the same change tracker, and two queries could run on it at once — EF Core throws when it detects that, and when it does not, the results can be wrong. Scoped is the lifetime that matches: one context per request, used by one request at a time.
 
 A class with nothing request-specific inside it has no such problem. If it only reads settings and computes a result, one instance can serve every request, and a singleton saves building it again and again.
 
 ## In the Đơn Hàng system
 
-The registrations in `DonHang.Api`'s startup code, which the last lesson of this module reads line by line:
+The registrations in `DonHang.Api`'s startup code, which the next lesson reads line by line:
 
 ```csharp file=DonHang.Api/Program.cs tag=stage-1 lines=18-20
 builder.Services.AddDonHangInfrastructure(connectionString);
@@ -65,9 +67,9 @@ builder.Services.AddScoped<OrderService>();
 builder.Services.AddSingleton<JwtTokenService>();
 ```
 
-`AddDonHangInfrastructure` registers `DonHangDbContext` with `AddDbContext`, whose default lifetime is scoped, and `EfOrderRepository` and `LoggingNotifier` with `AddScoped`. `OrderService` is scoped too. So during one `POST /api/v1/orders`, `OrdersController` and `OrderService` receive the same `EfOrderRepository`, which holds the same `DonHangDbContext`: the answer to the last lesson's question is "one". The next request gets a new set.
+`AddDonHangInfrastructure` registers `DonHangDbContext` with `AddDbContext`, whose default lifetime is scoped, and `EfOrderRepository` and `LoggingNotifier` (the class that writes notifications to the log) with `AddScoped`. `OrderService` is scoped too. So during one `POST /api/v1/orders`, `OrdersController` and `OrderService` receive the same `EfOrderRepository`, which holds the same `DonHangDbContext`: the answer to the last lesson's question is "one". The next request gets a new set.
 
-`JwtTokenService` is a singleton. It receives the app's configuration and reads the signing key from it each time it issues a token; it keeps nothing that changes between calls, so one instance can serve every login.
+`JwtTokenService` is a singleton. It receives the app's configuration and, each time a customer logs in, reads the settings it needs from it; it keeps nothing that changes between calls, so one instance can serve every login.
 
 Scoped objects need a scope, and at startup no request has opened one yet. Program.cs therefore opens a scope by hand before it applies migrations:
 
@@ -80,11 +82,11 @@ using (var scope = app.Services.CreateScope())
 }
 ```
 
-`CreateScope` does by hand what a request does automatically. The context is resolved from `scope.ServiceProvider`, and when the `using` block ends, the scope is disposed, and so is that `DonHangDbContext`.
+`CreateScope` does by hand what a request does automatically. The two middle lines bring the database schema up to date; what matters here is where `context` comes from. It is resolved from `scope.ServiceProvider`, and when the `using` block ends, the scope is disposed, and so is that `DonHangDbContext`.
 
 ## Beginners often think…
 
-- **"Singleton is the safest default, since there's only ever one object to worry about."** → Actually one object means every concurrent request shares it, and whatever it keeps inside is shared too. A singleton `DonHangDbContext` would mix different customers' orders in one change tracker and fail when two requests query at once. You notice this when errors appear only under load, or when one request sees an entity another request just loaded.
+- **"Singleton is the safest default, since there's only ever one object to worry about."** → Actually one object means every concurrent request shares it, and whatever it keeps inside is shared too. A singleton `DonHangDbContext` would mix different customers' orders in one change tracker and break when two requests query at once. You notice this when errors appear only when many requests arrive at once, or when one request sees an order object another request just loaded.
 - **"Service lifetime only affects performance, not correctness."** → Actually the lifetime decides who shares an object, and sharing changes behaviour. Scoped is what makes `OrdersController` and `OrderService` work on one `DonHangDbContext` within a request, and keeps other requests out of it. You notice this when a lifetime change makes a feature misbehave without any change to its code.
 
 ## Try it (3 minutes)
@@ -112,7 +114,7 @@ Answer 1 would become two: the controller and `OrderService` would each get a ne
 
 ## Five-line summary
 
-1. A service lifetime tells the container how long to keep an object it built: singleton for the app, scoped per request, transient never.
+1. A service lifetime says how long the container keeps an object: singleton for the app, scoped per request, transient never reused.
 2. `DonHangDbContext`, `EfOrderRepository`, `LoggingNotifier` and `OrderService` are scoped, so one request shares one set of them.
 3. A singleton `DonHangDbContext` would be shared by concurrent requests, which EF Core does not support — a correctness bug, not a slowdown.
 4. `JwtTokenService` is a singleton because it keeps nothing that changes between calls.

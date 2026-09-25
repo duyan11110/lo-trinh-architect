@@ -1,0 +1,240 @@
+{
+  "id": "design.l1.service-lifetimes",
+  "technical": {
+    "reviewed_at": "2026-09-25T22:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Transient: \"created each time it's requested from the service container.\" Scoped: \"created once per client request (connection).\" Singleton: \"created either: The first time they're requested. ... Every subsequent request of the service implementation from the dependency injection container uses the same instance.\" \"singleton services are disposed when the ServiceProvider is disposed on application shutdown.\"",
+        "source": "refs/dotnet-docs/docs/core/extensions/dependency-injection/service-lifetimes.md:13,19,39-44,48"
+      },
+      {
+        "n": 2,
+        "verdict": "rephrased",
+        "evidence": "\"The framework creates a scope per request, and RequestServices exposes the scoped service provider. All scoped services are valid for as long as the request is active.\" \"In apps that process requests, scoped services are disposed at the end of the request.\" Docs tie disposal to the end of the request; the lesson's \"closes it when the response has been sent\" (§4) is more specific than anything found.",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/dependency-injection.md:818; refs/dotnet-docs/docs/core/extensions/dependency-injection/service-lifetimes.md:19",
+        "suggested_text": "ASP.NET Core opens a new scope for each request and disposes it when the request ends, so inside one request every class asking for a scoped type gets the same object, and the next request gets a fresh one."
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "\"Entity Framework Core does not support multiple parallel operations being run on the same DbContext instance. This includes both parallel execution of async queries and any explicit concurrent use from multiple threads.\" \"A DbContext instance is designed to be used for a single unit-of-work.\" \"DbContext is Not thread-safe.\"",
+        "source": "refs/efcore-docs/entity-framework/core/dbcontext-configuration/index.md:18,40,401"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "\"The AddDbContext extension method registers DbContext types with a scoped lifetime by default.\" Same sentence in the .NET DI note: \"When using Entity Framework Core, the AddDbContext extension method registers DbContext types with a scoped lifetime by default.\"",
+        "source": "refs/efcore-docs/entity-framework/core/dbcontext-configuration/index.md:419; refs/dotnet-docs/docs/core/extensions/dependency-injection/service-lifetimes.md:22"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "ServiceCollectionExtensions.cs:14-16 `services.AddDbContext<DonHangDbContext>(options => options.UseNpgsql(connectionString));` `services.AddScoped<IOrderRepository, EfOrderRepository>();` `services.AddScoped<INotifier, LoggingNotifier>();`. Program.cs:18-20 `AddDonHangInfrastructure(connectionString);` `AddScoped<OrderService>();` `AddSingleton<JwtTokenService>();`.",
+        "source": "examples/don-hang @ stage-1: DonHang.Infrastructure/ServiceCollectionExtensions.cs:14-16; DonHang.Api/Program.cs:18-20"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "OrdersController.cs:12 `OrdersController(OrderService orderService, IOrderRepository repository)`; OrderService.cs:6 `OrderService(IOrderRepository repository, INotifier notifier)`; EfOrderRepository.cs:7 `EfOrderRepository(DonHangDbContext db)`. All scoped (claim 5), and scoped = \"created once per client request\" (claim 1) → one EfOrderRepository and one DonHangDbContext per request.",
+        "source": "examples/don-hang @ stage-1: OrdersController.cs:12, OrderService.cs:6, EfOrderRepository.cs:7; refs/dotnet-docs/.../service-lifetimes.md:19"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "JwtTokenService.cs:11 `public sealed class JwtTokenService(IConfiguration configuration)`; :15 inside IssueToken `new SymmetricSecurityKey(Encoding.UTF8.GetBytes(configuration[\"Jwt:SigningKey\"]!))`. The class declares no fields; only the captured primary-constructor parameter.",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/JwtTokenService.cs:11-35"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Program.cs:57-62 `using (var scope = app.Services.CreateScope()) { var context = scope.ServiceProvider.GetRequiredService<DonHangDbContext>(); ... }`. Docs: \"The following code shows how to resolve a scoped service for a limited duration when the app starts: using (var serviceScope = app.Services.CreateScope())\"; \"Scoped services are disposed by the container that created them.\"",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/Program.cs:57-62; refs/aspnetcore-docs/aspnetcore/fundamentals/dependency-injection.md:792-805; refs/dotnet-docs/.../overview.md:160"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Transient: \"created each time it's requested from the service container\" → controller and OrderService each get a new EfOrderRepository. \"It's also fine to: ... Resolve a scoped service from another scoped or transient service.\" Scoped: \"created once per client request\" → both repositories receive the same DonHangDbContext.",
+        "source": "refs/dotnet-docs/docs/core/extensions/dependency-injection/service-lifetimes.md:13,19,30-33"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Supported, not just opinion: \"Do not resolve a scoped service directly from a singleton ... Doing so causes the scoped service to behave like a singleton, which can lead to incorrect state when processing subsequent requests.\" EF: \"When concurrent access goes undetected, it can result in undefined behavior, application crashes and data corruption.\"",
+        "source": "refs/dotnet-docs/.../service-lifetimes.md:26; refs/efcore-docs/entity-framework/core/dbcontext-configuration/index.md:407"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "code",
+        "text": "The diagram draws an edge OrdersController --> JwtTokenService. At stage-1 OrdersController's constructor is `(OrderService orderService, IOrderRepository repository)`; JwtTokenService is injected only into AuthController (`AuthController(DonHangDbContext db, JwtTokenService tokenService)`). The diagram also shows OrdersController --> DonHangDbContext directly, whereas the controller reaches the context only through EfOrderRepository.",
+        "quote": "A1 --> J[JwtTokenService, one for all]",
+        "fix": "Redraw with the real classes: in each request subgraph, `OrdersController --> EfOrderRepository --> DonHangDbContext #N`; add `AuthController` nodes (one per login request) pointing to the shared `J[JwtTokenService, one for all]`, or drop the JwtTokenService node and show the singleton only in prose."
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "Unlisted claim, and wrong: the module's lessons in track.yaml are dependency-injection-intro, the-di-container, service-lifetimes, wiring-the-container, why-di-helps-testing. The lesson that reads these registrations line by line (design.l1.wiring-the-container) is the NEXT lesson, not the last one.",
+        "quote": "which the last lesson of this module reads line by line",
+        "fix": "Replace with \"which the next lesson, [[design.l1.wiring-the-container]], reads line by line\"."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Claim 2 wording: docs say scoped services are disposed \"at the end of the request\" / valid \"for as long as the request is active\"; nothing found ties scope closing to the moment the response has been sent.",
+        "quote": "closes it when the response has been sent",
+        "fix": "Use claim 2's suggested_text: \"ASP.NET Core opens a new scope for each request and disposes it when the request ends, ...\"."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Unlisted claim: \"would fail\" is stronger than the docs. EF Core throws InvalidOperationException only when it detects concurrent use; \"When concurrent access goes undetected, it can result in undefined behavior, application crashes and data corruption.\" (efcore dbcontext-configuration/index.md:405-407). Same wording in §6 misconception 1 (\"fail when two requests query at once\").",
+        "quote": "two queries running at once on it would fail",
+        "fix": "Change to \"two queries running at once on it could throw an error or corrupt its state\" (and in §6: \"and break when two requests query at once\"). Add the detection sentence to claim 3's ledger entry."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Unlisted claim: \"keeps ... a connection for one unit of work\". The EF Core lifetime docs describe the unit of work as creation, tracking, SaveChanges, disposal; they do not say the context holds a connection for that span (EF opens/closes connections per operation by default). Not in the ledger.",
+        "quote": "A `DbContext` keeps a change tracker and a connection for one unit of work",
+        "fix": "Drop \"and a connection\": \"A `DbContext` keeps a change tracker for one unit of work\" (supported by dbcontext-configuration/index.md:18-32)."
+      },
+      {
+        "severity": "minor",
+        "section": 9,
+        "kind": "accuracy",
+        "text": "\"transient never\" contradicts the docs on disposal tracking: \"In apps that process requests, transient services are disposed at the end of the request\" — the container does keep disposable transients until the scope ends. Also \"how long to keep an object\" for transient reads as zero lifetime.",
+        "quote": "singleton for the app, scoped per request, transient never",
+        "fix": "Rewrite line 1: \"A service lifetime tells the container when to build a new object and when to hand back one it already built: singleton once for the app, scoped once per request, transient on every resolve.\""
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "fix-required"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-25T23:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation)",
+    "issues": [
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "diagram",
+        "text": "Section 4's prose never mentions the diagram or JwtTokenService; that class first appears in section 5. The arrow OrdersController -> JwtTokenService is never explained, and section 5 says it serves logins, not orders, so I cannot tell why the orders controller uses it. The arrow OrdersController -> DonHangDbContext also skips EfOrderRepository, while section 5 says the controller gets the context through the repository.",
+        "quote": "A1 --> J[JwtTokenService, one for all]",
+        "fix": "Draw only what section 4/5 prose explains: per request, OrdersController -> EfOrderRepository -> DonHangDbContext #N; put the shared singleton behind the class the prose says uses it (logins), and add one sentence in section 4 walking through the two request boxes and the shared node."
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "term",
+        "text": "\"signing key\", \"issues a token\" and the \"Jwt\" in JwtTokenService are not in what I know. I can follow that the class keeps nothing that changes, but I do not know what a token or a signing key is, or what a login has to do with it.",
+        "quote": "reads the signing key from it each time it issues a token",
+        "fix": "Replace with plain words the reader knows, e.g. \"It receives the app's configuration and reads one setting from it each time it is called during a login; it keeps nothing that changes between calls.\""
+      },
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "term",
+        "text": "\"unit of work\" is not in known_vocab and not defined; it reads like a named idea I am supposed to know. It sits in the sentence that explains why the DbContext must not be shared.",
+        "quote": "A `DbContext` keeps a change tracker and a connection for one unit of work",
+        "fix": "Replace \"one unit of work\" with plain words, e.g. \"for the changes of one request\", or define it in one clause."
+      },
+      {
+        "severity": "major",
+        "section": 6,
+        "kind": "term",
+        "text": "\"entity\" is not in known_vocab. Earlier lessons (as far as I know them) say a DbSet returns objects; I have to guess that an entity means one of those objects.",
+        "quote": "one request sees an entity another request just loaded",
+        "fix": "Replace \"an entity\" with \"an order object\"."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "term",
+        "text": "LoggingNotifier is named as a scoped registration and again in summary line 2, but the lesson never says what it is. I know OrderService and EfOrderRepository from the prerequisite; not this one.",
+        "quote": "`EfOrderRepository` and `LoggingNotifier` with `AddScoped`",
+        "fix": "Add a short clause after LoggingNotifier, saying in a few words what it is and who receives it (e.g. the class OrderService uses to notify)."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "code",
+        "text": "The second code block calls MigrationBaseline.ApplyIfNeeded(context); the prose never says what it is, so I wonder whether it matters for the scope point.",
+        "quote": "MigrationBaseline.ApplyIfNeeded(context);",
+        "fix": "Add half a sentence: the two lines inside the block only use the context to apply migrations; what they do is not part of this lesson."
+      },
+      {
+        "severity": "minor",
+        "section": 3,
+        "kind": "term",
+        "text": "\"disposed\" is used in the scope definition and section 5 without explanation. I know the C# using statement, so I can guess it means cleaned up, but the lesson leans on it.",
+        "quote": "when the scope ends, its objects are disposed",
+        "fix": "Add \"(cleaned up, as at the end of a using block)\" after \"disposed\" in the scope definition."
+      },
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "style",
+        "text": "\"under load\" is casual jargon; I can guess it from \"concurrent request\" in the same bullet, but the quiz calls it \"busy hours\".",
+        "quote": "You notice this when errors appear only under load",
+        "fix": "Replace \"under load\" with \"only when many requests arrive at the same time\"."
+      },
+      {
+        "severity": "minor",
+        "section": 9,
+        "kind": "gap",
+        "text": "Summary line 1 says transient is kept \"never\"; the body only says transient builds a new object on every resolve. \"Never\" made me wonder if the object is thrown away immediately.",
+        "quote": "singleton for the app, scoped per request, transient never",
+        "fix": "Say \"transient: a new one on every resolve\" to match the Core concepts line."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "text": "q1, q2 and q5: the correct option is close to a sentence in the lesson (q1 = the scoped Core concepts line; q2 c = misconception 1 correction; q5 a = \"at startup no request has opened one yet\"), so I can match wording rather than reason.",
+        "quote": "At startup no request has opened a scope, and the scoped context needs one",
+        "fix": "Reword the correct options of q1, q2 and q5 so they state the idea in different words than the lesson."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "text": "q5 explanation for option c uses `Build()`, which the lesson never shows; it adds a new thing right where I am checking my mistake.",
+        "quote": "Registrations are made before `Build()`; `CreateScope` only opens a boundary to resolve within.",
+        "fix": "Replace with \"Registrations are made at startup, before any scope exists; CreateScope only opens a boundary to resolve within.\""
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "signing key",
+        "token (issues a token / JWT)",
+        "unit of work",
+        "entity",
+        "LoggingNotifier",
+        "MigrationBaseline",
+        "disposed",
+        "under load",
+        "Build()"
+      ],
+      "skipped_steps": [
+        "Diagram arrow OrdersController -> JwtTokenService, never explained in prose",
+        "Diagram arrow OrdersController -> DonHangDbContext, skipping EfOrderRepository"
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "fix-required"
+  }
+}
