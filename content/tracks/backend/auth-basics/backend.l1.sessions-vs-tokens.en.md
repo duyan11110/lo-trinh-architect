@@ -74,7 +74,7 @@ Each choice has a cost. A session store grows with every logged-in client. And o
 
 Read it for what is missing. After `PasswordHasher.Verify` succeeds, nothing is added to `db` and nothing is saved: the method issues a token and returns it.
 
-Because the API keeps no record of who is logged in, any copy of the API holding the same signing key can recognize the caller — and a restarted API recognizes the same token it issued before the restart.
+The signing key doesn't live in the API's memory either: the API reads it at startup from the `Jwt__SigningKey` environment variable that `docker-compose.yml` passes in. So, because the API keeps no record of who is logged in, any copy of the API started with that same key can recognize the caller — and a restarted API recognizes the same token it issued before the restart.
 
 The token also carries its own end: `tokenService.IssueToken` sets it to expire eight hours after it was issued, and this app has no code that can end one earlier. What sits inside the token, and how it is signed, is the next lesson.
 
@@ -86,8 +86,8 @@ The token also carries its own end: `tokenService.IssueToken` sets it to expire 
 ## Try it (3 minutes)
 
 1. From the Đơn Hàng project's root folder, with the example system running (`scripts/up.sh`), log in: `curl -s -X POST http://localhost:8080/api/v1/auth/login -H "Content-Type: application/json" -d '{"email": "anh.tran@example.com", "password": "donhang-dev-password"}'`. Copy the value of the `token` field from the response.
-2. Call `curl -sS -o /dev/null -w "%{http_code}\n" http://localhost:8080/api/v1/orders -H "Authorization: Bearer <token>"`.
-3. Restart only the API: `docker compose restart api`. Wait a few seconds, then repeat step 2 with the same token. If it prints `502`, the API is still starting — wait a few more seconds and run it again.
+2. Call `curl -sS -o /dev/null -w "%{http_code}\n" http://localhost:8080/api/v1/orders -H "Authorization: Bearer <token>"` — it prints only the status code. Without the `-H ...` part it prints `401`.
+3. Restart only the API process, leaving the database running: `docker compose restart api`. Wait a few seconds, then repeat step 2 with the same token. If it prints `502`, the API is still starting — wait a few more seconds and run it again.
 
 Expected result: `200` both times — the restarted API accepts the token it issued before the restart.
 
