@@ -83,7 +83,7 @@ The array is typed `ShippingFee[]`, and `kinds.Select(kind => kind.ForOrder(2_00
 ## Beginners often think…
 
 - **"LSP just means a subclass must implement every method its base type declares."** → Actually the compiler already enforces that for abstract methods; LSP is about what the method does. `FreeShippingOnly` implements `ForOrder` and still breaks code written for `ShippingFee`. You notice this when a new subtype compiles cleanly but callers that never changed start failing.
-- **"As long as a subclass compiles against its base type, it automatically satisfies LSP."** → Actually compiling only proves the method signatures match. Whether `ForOrder` returns a fee or throws for a 500,000 total is behaviour the compiler never checks. You notice this when the failure appears only for certain inputs, far from where the subtype was written.
+- **"As long as a subclass compiles against its base type, it automatically satisfies LSP."** → Actually compiling proves the override has the right signature and its body is valid C#, not what it does for each input. Whether `ForOrder` returns a fee or throws for a 500,000 total is behaviour the compiler never checks. You notice this when the failure appears only for certain inputs, far from where the subtype was written.
 
 ## Try it (3 minutes)
 
