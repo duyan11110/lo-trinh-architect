@@ -80,7 +80,7 @@ That is why the page looks and behaves the way it does. Its look is the browser'
 ## Beginners often think…
 
 - **"HTML alone can make a page interactive, the same way a button click can run code."** → Actually HTML only describes content, including buttons and links; it does not run your own code when they are clicked. A link in `www/index.html` works, but its "behaviour" is the browser loading a different address, not logic changing this page. You notice the difference when you want something on the page to change in answer to a click, and find there is nowhere in the HTML to say what should happen.
-- **"CSS changes what content is there, not just how it looks."** → Actually CSS changes how the content looks: size, colour, position, even whether it is shown — but hidden content is still in the HTML. `www/index.html` has no CSS of its own, and its heading, text and links are all there. You notice this when the same page shows the same words with any CSS, or none, only looking different.
+- **"CSS changes what content is there, not just how it looks."** → Actually CSS changes how the content looks: size, colour, position, even whether it is shown — but hidden content is still in the HTML. You notice this on `www/index.html` itself: it has no CSS of its own, yet its heading, text and links are all on screen.
 
 ## Try it (3 minutes)
 
