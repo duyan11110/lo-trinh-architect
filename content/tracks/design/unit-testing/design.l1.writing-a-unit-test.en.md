@@ -46,7 +46,7 @@ flowchart LR
   E -->|different| F[failed: name, Expected, Actual]
 ```
 
-When you run `dotnet test`, xUnit looks through the test project for public classes and, in them, for methods marked `[Fact]`; the class must be public; xUnit would also find a non-public method, but the usual practice, followed here, is to make test methods public too. It runs each one on its own. A `[Fact]` method takes no parameters, because nobody is there to pass them, and returns `void`; a test that awaits something is written as `public async Task` instead. There is no list of tests to keep up to date: adding a method with `[Fact]` is enough for xUnit to find it on the next run.
+When you run `dotnet test`, xUnit looks through the test project for public classes and, in them, for methods marked `[Fact]`. The class must be public; xUnit would also find a non-public method, but the usual practice, followed here, is to make test methods public too. It runs each one on its own. A `[Fact]` method takes no parameters, because nobody is there to pass them, and returns `void`; a test that awaits something is written as `public async Task` instead. There is no list of tests to keep up to date: adding a method with `[Fact]` is enough for xUnit to find it on the next run.
 
 The method's name is what the report shows when the test fails, so it should say what is supposed to happen. `AnEmptyOrderCannotBePaid` states a rule; if it fails, the report tells you which rule broke without opening the file. `TestMarkPaid` only says which method was called, and `Test1` says nothing. The name is for the person reading the failure, possibly months later.
 
