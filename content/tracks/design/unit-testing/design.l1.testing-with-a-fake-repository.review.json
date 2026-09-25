@@ -1,0 +1,219 @@
+{
+  "id": "design.l1.testing-with-a-fake-repository",
+  "technical": {
+    "reviewed_at": "2026-09-25T22:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "stage-1 OrderServiceTests.cs has exactly five [Fact] methods (lines 11-63). Lines 14-16 and 27-29 build `new OrderService(repository, notifier)` from variables; lines 40, 50, 60 pass `new FakeOrderRepository()` / `new FakeNotifier()` directly (line 50 uses a seeded `repository` variable). dotnet test: Total: 5.",
+        "source": "git -C examples/don-hang show stage-1:DonHang.Tests/Services/OrderServiceTests.cs"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "DonHang.Tests.csproj lines 17-19: the only ProjectReference is `..\\DonHang.Domain\\DonHang.Domain.csproj`. EfOrderRepository.cs and DonHangDbContext.cs are under DonHang.Infrastructure/ (namespace DonHang.Infrastructure). Build output of `dotnet test DonHang.Tests` lists only `DonHang.Domain ->` and `DonHang.Tests ->`.",
+        "source": "stage-1:DonHang.Tests/DonHang.Tests.csproj; stage-1:DonHang.Infrastructure/*.cs; dotnet test on git archive of stage-1"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Ran `dotnet test DonHang.Tests` on a git archive of stage-1, no Postgres or containers running: \"Passed!  - Failed: 0, Passed: 5, Skipped: 0, Total: 5, Duration: 280 ms\" (first run); later runs 35-60 ms. Wall clock of the whole command incl. restore+build was 13.8 s (see section 2 issue on wording).",
+        "source": "execution, SDK 10.0.300, stage-1 archive"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "xunit.assert 2.9.2 XML docs for Assert.Single<T>(IEnumerable<T>): \"Verifies that the given collection contains only a single element of the given type.\" returns \"The single item in the collection.\"; throws SingleException \"when the collection does not contain exactly one element.\" Also by run: deleting notifier.Send makes SendsOneNotification fail.",
+        "source": "~/.nuget/packages/xunit.assert/2.9.2/lib/net6.0/xunit.assert.xml (xunit 2.9.2 pinned in versions.yaml)"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "OrderServiceTests.cs line 9: `private static OrderItem OneItem => new() { ProductId = 1, Quantity = 2, UnitPriceVnd = 100_000 };` - a static expression-bodied property that returns a new OrderItem on each read.",
+        "source": "stage-1:DonHang.Tests/Services/OrderServiceTests.cs:9"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Executed on stage-1 archive. AddAsync replaced by `public Task AddAsync(Order order) => Task.CompletedTask;`: DonHang.Api builds, tests \"Passed: 5\". Deleting OrderService.cs line 10 (empty-items throw): \"Failed DonHang.Tests.Services.OrderServiceTests.PlaceOrderAsync_NoItems_Throws\", \"Failed: 1, Passed: 4\". Keeping `async` on AddAsync gives CS0201 in Infrastructure, yet tests still pass - see section 7 issue.",
+        "source": "execution on git archive of stage-1"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "DonHang.Tests has no reference to DonHang.Infrastructure (csproj lines 17-19), so no test in this project can run EfOrderRepository; by execution, breaking EfOrderRepository.AddAsync leaves all 5 green. Checking it needs a test that references Infrastructure and runs against a real database. The lesson names it only as 'a different kind of test', consistent with depth_notes.",
+        "source": "stage-1:DonHang.Tests/DonHang.Tests.csproj; execution"
+      },
+      {
+        "n": 8,
+        "verdict": "rephrased",
+        "evidence": "C# requires the async modifier for await: CS4033 \"The 'await' operator can only be used within an async method. Consider marking this method with the 'async' modifier and changing its return type to 'Task'.\" Task is the compiler's suggestion and what these tests use; 'must be declared async Task' is stronger than the evidence.",
+        "source": "refs/dotnet-docs/docs/csharp/language-reference/compiler-messages/async-await-errors.md:131",
+        "suggested_text": "Test methods that use await must be marked async; OrderServiceTests' methods are declared async Task, the return type C# suggests for an async method that returns no value."
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "OrderServiceTests.cs line 42 `Assert.ThrowsAsync<ArgumentException>(... items: [])`; lines 49/54 `repository.Seed(new Order { Id = 1, ... Status = \"new\" })` then `Assert.Equal(\"cancelled\", order.Status)`; line 62 `Assert.ThrowsAsync<KeyNotFoundException>(() => service.CancelOrderAsync(999))`.",
+        "source": "stage-1:DonHang.Tests/Services/OrderServiceTests.cs:37-63"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Unlisted claim, contradicted by execution: the tests are said to prove OrderService makes 'the right calls' (summary line 4: 'rules and calls'). No test asserts the repository calls. On stage-1 I deleted both `await repository.AddAsync(order);` and `await repository.SaveChangesAsync();` from PlaceOrderAsync: \"Passed: 5\" (order.Id stays 0 and the notifier records 0, so SendsOneNotification still passes). Only the notification call is checked.",
+        "quote": "They prove that `OrderService` makes the right decisions and the right calls, given a repository that behaves as the interface promises.",
+        "fix": "Section 4: \"They check what the tests assert: the status `OrderService` sets, the notification it sends, and the exceptions it throws, given a repository that behaves as the interface promises.\" Summary line 4: \"These tests check `OrderService`'s own rules, not that `EfOrderRepository` stores data correctly.\" Add a claim for the new sentence to the ledger."
+      },
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Unlisted claim: build behaviour stated without a ledger entry. It is true (build output of `dotnet test DonHang.Tests` shows only `DonHang.Domain ->` and `DonHang.Tests ->`; DonHang.Domain.csproj has no PackageReference), but it is a specific behaviour claim and must be in `claims`.",
+        "quote": "Nothing opens a connection or sends SQL, and the test project does not even reference `DonHang.Infrastructure`, so EF Core is not part of the build.",
+        "fix": "Add a claim to .meta.json: \"`dotnet test DonHang.Tests` builds only DonHang.Domain and DonHang.Tests; neither references an EF Core package, so no connection is opened.\" kind behavior, section 4, source_hint: the two csproj files and the dotnet test build output. No lesson text change needed."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "'every line of OrderService' is too broad: calling PlaceOrderAsync runs PlaceOrderAsync only, never CancelOrderAsync; in PlaceOrderAsync_NoItems_Throws only the check runs. Summary line 2 repeats the overstatement ('Every line of `OrderService` runs for real').",
+        "quote": "So when a test calls `PlaceOrderAsync`, every line of `OrderService` runs for real",
+        "fix": "Section 4: \"So when a test calls `PlaceOrderAsync`, the real `PlaceOrderAsync` runs: ...\". Summary line 2: \"The `OrderService` code a test calls runs for real; only the repository and notifier underneath are fakes.\""
+      },
+      {
+        "severity": "minor",
+        "section": 2,
+        "kind": "accuracy",
+        "text": "The test run reports under a second (Duration 280 ms first run, 35-60 ms after), but the `dotnet test` command itself, with restore and build, took 13.8 s on stage-1. A junior timing the command will see seconds.",
+        "quote": "`dotnet test` runs them in well under a second with the lab switched off",
+        "fix": "\"and the test run that `dotnet test` reports takes well under a second, with the lab switched off: ...\""
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "code",
+        "text": "Step 2 is ambiguous. Source: `public async Task AddAsync(Order order) => await db.Orders.AddAsync(order);`. Keeping `async` and writing `=> Task.CompletedTask;` gives CS0201 in DonHang.Infrastructure (verified). Tests still pass since Infrastructure is not built, but then 'broke order saving for the real API' is wrong: the API does not compile.",
+        "quote": "change `AddAsync` so it returns `Task.CompletedTask` without calling `db.Orders.AddAsync`",
+        "fix": "\"replace the `AddAsync` line with `public Task AddAsync(Order order) => Task.CompletedTask;`\" (verified: DonHang.Api builds, 5 tests pass). Put the exact replacement line in claim 6."
+      },
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "accuracy",
+        "text": "Column mappings are not in EfOrderRepository; they are in DonHangDbContext.OnModelCreating (`e.Property(c => c.Id).HasColumnName(\"id\")` ...). Quiz q3 option c repeats it ('`EfOrderRepository` maps a property to the wrong column'). The key stays correct (tests cannot catch it either way), but the premise is false.",
+        "quote": "A wrong column mapping or a forgotten save in it would leave all five tests green.",
+        "fix": "Section 6: \"A wrong column mapping in `DonHangDbContext` or a forgotten save in `EfOrderRepository` would leave all five tests green.\" Quiz q3 option c (en and vi): \"`DonHangDbContext` maps a property to the wrong column\"; explanation c can stay."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "Claim 8 overstates: C# requires `async` to use await (CS4033); `Task` is the return type used here and suggested by the compiler, not something await itself requires. The lesson sentence is acceptable; the ledger text should match the evidence.",
+        "quote": "The methods are `async Task`, because `PlaceOrderAsync` is awaited.",
+        "fix": "Replace claim 8 text with suggested_text of claim_verdicts n=8. Optional lesson wording: \"The methods are marked `async` because they await `PlaceOrderAsync`, and return `Task`.\""
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "fix-required"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-25T23:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation)",
+    "issues": [
+      {
+        "severity": "major",
+        "section": 2,
+        "kind": "term",
+        "text": "'connection string' is not in known_vocab and is not defined in Core concepts. I can guess it is 'how the app finds the database', but I am guessing. It appears again in quiz q3 option d ('The connection string points at the wrong database'), so I need it to judge that option.",
+        "quote": "no PostgreSQL, no database server, no connection string",
+        "fix": "In section 2 replace 'no connection string' with 'no database address to connect to'; in quiz q3 option d (en and vi) use the same wording, e.g. 'The app's database settings point at the wrong database'."
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "term",
+        "text": "The code block starts each test with `[Fact]`, and `Assert.Equal` / `Assert.Single` come from somewhere, but the prose never says what `[Fact]` does or where `Assert` comes from. I know 'unit test' but not how `dotnet test` finds these methods; I would stop and wonder whether `[Fact]` is required.",
+        "quote": "Each test arranges with three `new`s, acts with one `await service.PlaceOrderAsync(...)`, and asserts.",
+        "fix": "Add one sentence before that one: '`[Fact]` marks a method as a test for xUnit, the test framework `dotnet test` runs; `Assert` is xUnit's class of checks that fail the test when they do not hold.'"
+      },
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "term",
+        "text": "'the API' is used as if known ('placing an order through the API', also in Try it and quiz q4), but API is not in known_vocab. I can map it to 'the endpoints of Đơn Hàng' from context, so it did not stop me for long.",
+        "quote": "You notice this when the tests pass and placing an order through the API still fails to store it.",
+        "fix": "At first use write 'through the API (the Đơn Hàng endpoints)', or say 'through the `POST` endpoint' instead of 'the API'."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "text": "The step from 'does not reference DonHang.Infrastructure' to 'EF Core is not part of the build' needs a fact the lesson does not state: that DonHang.Domain itself does not use EF Core. I know from the prereq that the interface is in Domain and the EF Core code in Infrastructure, but not that Domain has no EF Core at all.",
+        "quote": "the test project does not even reference `DonHang.Infrastructure`, so EF Core is not part of the build.",
+        "fix": "Change to: '...does not even reference `DonHang.Infrastructure`, and `DonHang.Domain` has no EF Core in it, so EF Core is not part of the build.'"
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "example",
+        "text": "Step 3 says 'In `OrderService.PlaceOrderAsync`' but not which file or folder it is in, while step 2 gives a full path. I would have to search the repository.",
+        "quote": "In `OrderService.PlaceOrderAsync`, delete the line that throws on an empty items list.",
+        "fix": "Give the file path the same way step 2 does, e.g. 'In `DonHang.Domain/.../OrderService.cs`, in `PlaceOrderAsync`, delete ...'."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "text": "q1 options c and d name `DonHang.Api` and 'All three API projects'. The lesson never mentions `DonHang.Api` or that there are three projects, so these distractors bring in things I have not seen; they are easy to rule out but confusing.",
+        "quote": "All three API projects",
+        "fix": "Use distractors built from names in the lesson, e.g. 'Only `DonHang.Infrastructure`' and 'No project; the tests copy the code they need'."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "text": "q2 explanation b says the fake's `SaveChangesAsync` 'does nothing'. The lesson never says what the fake's save does (section 4 only says 'the calls to add and save'), so this is a new fact that appears only in the quiz.",
+        "quote": "The call goes to the fake's `SaveChangesAsync`, which does nothing.",
+        "fix": "Replace with: 'The call goes to the fake's `SaveChangesAsync`, not to EF Core, so nothing reaches PostgreSQL.'"
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "text": "q4: option a is the only long, reasoned answer; b, c, d are short and d ('only because it makes the test count higher') is obviously silly. I can pick a by shape without understanding.",
+        "quote": "The rule lives in `OrderService`, which runs for real in the test; the test checks it in milliseconds on every change.",
+        "fix": "Make one wrong option equally reasoned, e.g. 'Keep it, because the fake also checks that `EfOrderRepository` saves the cancelled status.'"
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "text": "q5 correct option is almost verbatim from section 5 ('passes only if exactly one notification was recorded, and returns it'), and it is the longest option. I can match it by memory of the words.",
+        "quote": "That exactly one notification was recorded, which it then returns",
+        "fix": "Reword the correct option, e.g. 'That the fake holds one and only one recorded `Send`, and gives that record back for the next check'."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "connection string",
+        "[Fact] / Assert (xUnit)",
+        "API"
+      ],
+      "skipped_steps": [
+        "Section 4: from 'does not reference DonHang.Infrastructure' to 'EF Core is not part of the build' without saying DonHang.Domain has no EF Core."
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "fix-required"
+  }
+}
