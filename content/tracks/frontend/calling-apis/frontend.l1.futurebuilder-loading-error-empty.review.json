@@ -1,0 +1,81 @@
+{
+  "id": "frontend.l1.futurebuilder-loading-error-empty",
+  "technical": {
+    "reviewed_at": "2026-09-26T03:55:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "rephrased",
+        "evidence": "Flutter 3.47.2 SDK async.dart, FutureBuilder: 'The [builder] callback is called at the discretion of the Flutter pipeline, and will thus receive a timing-dependent sub-sequence of the snapshots' ... 'the [builder] will be called with either both or only the latter of' (waiting, done) ... 'it may be called multiple times.' connectionState/hasError/error/data confirmed on AsyncSnapshot. Lesson's 'calls the builder once while the Future is still waiting, and again when it completes' fixes a count the docs do not promise.",
+        "source": "C:/Flutter/flutter/packages/flutter/lib/src/widgets/async.dart (FutureBuilder class doc 'Timing', 'Builder contract', builder field doc), Flutter 3.47.2",
+        "suggested_text": "It calls the builder whenever it builds: typically while the `Future` is still waiting, and again once it completes (and again whenever the screen around it builds)."
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "git show stage-1:DonHang.App/lib/screens/product_list_screen.dart lines 17-24: 'late Future<List<Product>> _products;' ... '_products = widget.apiClient.fetchProducts();' inside initState; line 44: 'future: _products,'.",
+        "source": "examples/don-hang @ stage-1: DonHang.App/lib/screens/product_list_screen.dart"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "product_list_screen.dart @ stage-1 lines 46-65: waiting -> 'const Center(child: CircularProgressIndicator())'; hasError -> Text('Could not load products: ${snapshot.error}'); 'final products = snapshot.data ?? [];' then isEmpty -> Text('No products yet.'); otherwise ListView.builder.",
+        "source": "examples/don-hang @ stage-1: DonHang.App/lib/screens/product_list_screen.dart"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Flutter 3.47.2 async.dart: 'The [future] must have been obtained earlier, e.g. during [State.initState] ... It must not be created during the [State.build] ... If the [future] is created at the same time as the [FutureBuilder], then every time the [FutureBuilder]'s parent is rebuilt, the asynchronous task will be restarted.'",
+        "source": "C:/Flutter/flutter/packages/flutter/lib/src/widgets/async.dart, FutureBuilder 'Managing the future'"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "api_client.dart @ stage-1 lines 25-29: 'if (response.statusCode != 200) { throw Exception(...) }' then jsonDecode and 'Product.fromJson(item as Map<String, dynamic>)'; models.dart: 'id: json['id'] as int' etc. (a failed cast throws). async.dart: on error 'AsyncSnapshot.hasError will be true and AsyncSnapshot.error will be set to the error object.' Note: jsonDecode/'as List<dynamic>' can also fail; lesson's list is not exhaustive but not wrong.",
+        "source": "examples/don-hang @ stage-1: DonHang.App/lib/api_client.dart, DonHang.App/lib/models.dart; Flutter async.dart FutureBuilder.builder doc"
+      },
+      {
+        "n": 6,
+        "verdict": "wrong",
+        "evidence": "Ran: curl -i -H 'Origin: http://localhost:8081' localhost:8080/api/v1/products -> 200 with 'Access-Control-Allow-Origin: *' (added by the api's AddCors). After 'docker compose stop api': 'HTTP/1.1 502 Bad Gateway / Server: Caddy / Content-Length: 0' with NO Access-Control-Allow-Origin. App (8081) and Caddy (8080) are different origins, so the browser rejects it: headless Chrome fetch to the same URL with api stopped -> 'TypeError: Failed to fetch' (control with api up -> 'STATUS 200'). http 1.6.0 browser_client.dart wraps this as ClientException, never a status.",
+        "source": "Execution in examples/don-hang (lab running, api stopped/started, headless Chrome 'fetch'); Pub cache http-1.6.0/lib/src/browser_client.dart _toClientException; exception.dart toString 'ClientException: $message, uri=$uri'",
+        "suggested_text": "2 — the spinner, then an error such as \"Could not load products: ClientException: Failed to fetch, uri=http://localhost:8080/api/v1/products\" (the exact wording depends on the browser)."
+      },
+      {
+        "n": 7,
+        "verdict": "unverified",
+        "evidence": "compose part verified: ran 'docker compose stop api' -> 'Container donhang-api Stopped', 'docker compose start api' -> 'Started', then GET /api/v1/products -> 200 after ~8 s; refs/docker-docs compose FAQ: 'The docker compose stop command attempts to stop a container by sending a SIGTERM'. Browser throttling presets: no allowed doc root (versions.yaml) covers browser DevTools; Grep of refs/ for 'throttl' found nothing relevant. Could not verify that half.",
+        "source": "Execution in examples/don-hang; refs/docker-docs/content/manuals/compose/support-and-feedback/faq.md"
+      },
+      {
+        "n": 8,
+        "verdict": "not-needed",
+        "evidence": "Opinion that restates outline items 1 and 3; the lesson frames it as the lesson's position and gives the user-facing reason (wait vs. give up). No versioned behaviour involved."
+      }
+    ],
+    "issues": [
+      {
+        "severity": "blocker",
+        "section": 7,
+        "kind": "accuracy",
+        "text": "Expected result 2 and the whole Suggested answer are wrong for the browser app. Caddy's own 502 carries no Access-Control-Allow-Origin (that header comes from the api's CORS policy, which is stopped), and the app at :8081 is a different origin from :8080, so the browser blocks the response. Verified: headless Chrome fetch -> 'TypeError: Failed to fetch'; package:http 1.6.0 BrowserClient turns that into ClientException. fetchProducts never sees 502, so the learner sees a different message and the question's premise ('shows a status code of 502') is false.",
+        "quote": "2 — the spinner, then \"Could not load products: Exception: failed to load products (502)\".",
+        "fix": "Replace expected result 2 with: 'the spinner, then an error such as \"Could not load products: ClientException: Failed to fetch, uri=http://localhost:8080/api/v1/products\" (wording depends on the browser).' Replace the question and suggested answer with one that does not rely on the 502 reaching the app, e.g. 'Why does the screen show an error and not a spinner that never ends?' -> 'The request fails, so the Future completes with an error; FutureBuilder builds again with hasError true and the error branch runs.' Do not introduce CORS (not in known_vocab). Update claim 6 accordingly."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Fixed call count not promised by the docs: the builder may be called only for the done snapshot, and is called again on every rebuild of the parent ('it may be called multiple times'). This also undercuts section 5's point that the screen can build many times with the same Future.",
+        "quote": "It calls the builder once while the `Future` is still waiting, and again when it completes.",
+        "fix": "Use claim 1's suggested_text: 'It calls the builder whenever it builds: typically while the `Future` is still waiting, and again once it completes (and again whenever the screen around it builds).'"
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "fix-required"
+  }
+}

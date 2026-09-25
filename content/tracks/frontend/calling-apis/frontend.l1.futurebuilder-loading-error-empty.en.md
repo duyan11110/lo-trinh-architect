@@ -48,7 +48,7 @@ flowchart TD
 
 A screen that fetches data is not in one state but in several over time, and each needs its own UI. Loading means the answer has not arrived: the right thing is to show that something is happening. Error means it will not arrive this time: the right thing is to say so. Empty means it arrived, successfully, with nothing in it: that is a real answer. Content is the normal case.
 
-`FutureBuilder` makes these states easy to tell apart. It is given the `Future` and a builder function. It calls the builder once while the `Future` is still waiting, and again when it completes. Each time it passes a snapshot: `connectionState` says whether it is still waiting, `hasError` and `error` say whether it failed, and `data` holds the result once there is one. The builder checks these in order and returns a different widget for each state.
+`FutureBuilder` makes these states easy to tell apart. It is given the `Future` and a builder function. It builds with a snapshot saying "waiting" while the `Future` has not completed, and builds again once it completes; it may also build at other times, so the builder must work from the snapshot alone. Each time it passes a snapshot: `connectionState` says whether it is still waiting, `hasError` and `error` say whether it failed, and `data` holds the result once there is one. The builder checks these in order and returns a different widget for each state.
 
 The order matters, and so does keeping the states apart. A screen that shows the same blank area for loading and for empty hides the difference between "wait a moment" and "there is nothing". Loading ends on its own; empty is the final answer. An error is different again: something went wrong somewhere between sending the request and turning the answer into products, and the user should hear about it rather than stare at a blank screen.
 
@@ -100,13 +100,13 @@ With the lab running and the app open at `http://localhost:8081`:
 2. From the repository root, run `docker compose stop api`, then reload the page.
 3. Run `docker compose start api`, wait a few seconds, and reload the page again.
 
-Expected result: 1 — a spinner shows for longer, then the list. 2 — the spinner, then "Could not load products: Exception: failed to load products (502)". 3 — the list again.
+Expected result: 1 — a spinner shows for longer, then the list. 2 — the spinner, then a message starting "Could not load products: ClientException: Failed to fetch" (the exact wording depends on the browser). 3 — the list again.
 
-Why does step 2 show a status code of `502`, and not a network error?
+In step 2, the app never got a response it could read. Which line of `fetchProducts` threw, and did the check for `200` ever run?
 
 <details><summary>Suggested answer</summary>
 
-The app does not talk to the API directly; it talks to Caddy at `localhost:8080`. Caddy is still running, and when it cannot reach the stopped API it answers `502 Bad Gateway` itself. `fetchProducts` sees a status other than `200` and throws, and the `FutureBuilder`'s error branch shows that exception.
+The `await http.get(...)` line threw: the browser reported that the request failed, and the `http` package turned that into a `ClientException`. The status check never ran, because there was no response to check. The exception still ended up in the `Future`, so the `FutureBuilder`'s error branch showed it, just as it would show a bad status or a field `fromJson` could not read.
 
 </details>
 
