@@ -13,7 +13,7 @@ prereqs: [design.l1.why-layers, backend.l1.rest-resources]
 related: []
 vocab: [controller]
 example_tag: stage-1
-versions_used: [aspnetcore]
+versions_used: [aspnetcore, efcore]
 content_version: 1
 status: draft
 approved_by: null
