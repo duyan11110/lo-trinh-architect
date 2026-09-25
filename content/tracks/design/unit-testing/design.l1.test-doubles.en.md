@@ -15,7 +15,9 @@ vocab: [test-double, fake]
 example_tag: stage-1
 versions_used: [dotnet, efcore]
 content_version: 1
-status: draft
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-26T13:40:00+07:00"
 ---
 
 ## Before you start
@@ -44,7 +46,7 @@ flowchart LR
   FN[FakeNotifier: list] -->|implements| N
 ```
 
-`OrderService` depends on two interfaces. In the running API, `EfOrderRepository` implements the first; in a test, `FakeOrderRepository` implements it instead, and `FakeNotifier` implements the second. A **test double** stands where a real dependency would. It implements the same interface, so the class under test needs no change to accept it. Think of a stunt double, who takes an actor's place for a scene the actor should not do. Here, the scene is a test, and what the real dependency should not do is reach a database or send a message.
+`OrderService` depends on two interfaces. In the running API, `EfOrderRepository` implements the first; in a test, `FakeOrderRepository` implements it instead, and `FakeNotifier` implements the second, where the API uses `LoggingNotifier`. A **test double** stands where a real dependency would. It implements the same interface, so the class under test needs no change to accept it. Think of a stunt double, who takes an actor's place for a scene the actor should not do. Here, the scene is a test, and what the real dependency should not do is reach a database or produce output the test cannot read back.
 
 There are several kinds of test double, and this course uses one, which it calls a **fake**; other sources, including the .NET docs, use that word more loosely. A fake in this sense really does its job, only in a simpler way. `FakeOrderRepository.AddAsync` really keeps the order, and `FindAsync` really finds it again, but in a dictionary rather than in PostgreSQL. `FakeNotifier`'s simpler way of sending is to write the call down. Because the fakes behave predictably, the class under test can run its normal steps against them.
 
