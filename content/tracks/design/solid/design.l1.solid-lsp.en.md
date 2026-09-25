@@ -26,7 +26,7 @@ reviewed_at: null
 
 ## The situation
 
-For a promotion, a teammate adds a fourth kind of shipping, `FreeShippingOnly`: free for orders from 2,000,000 VND, and for anything smaller its `ForOrder` throws an exception, because "this kind should never be used for small orders." It derives from `ShippingFee`, overrides `ForOrder`, and compiles. Following OCP, nothing else was edited. Then a customer with a 500,000 VND order reaches the fee step, and the code that works out the fee — code that has not changed in months — crashes. Nothing it relied on was edited, so what broke it?
+For a promotion, a teammate adds a fourth kind of shipping, `FreeShippingOnly`: free for orders from 2,000,000 VND, and for anything smaller its `ForOrder` throws an exception, because "this kind should never be used for small orders." It derives from `ShippingFee`, overrides `ForOrder`, and compiles. Following OCP, nothing else was edited. During the promotion the checkout offers every kind, so a customer with a 500,000 VND order picks it, and the code that works out the fee — code that has not changed in months — crashes. Nothing it relied on was edited, so what broke it?
 
 ## Core concepts
 
@@ -82,12 +82,12 @@ The array is typed `ShippingFee[]`, and `kinds.Select(kind => kind.ForOrder(2_00
 
 ## Beginners often think…
 
-- **"LSP just means a subclass must implement every method its base type declares."** → Actually the compiler already enforces that for abstract methods; LSP is about what the method does. `FreeShippingOnly` implements `ForOrder` and still breaks code written for `ShippingFee`. You notice this when a new subtype compiles cleanly but callers that never changed start failing.
-- **"As long as a subclass compiles against its base type, it automatically satisfies LSP."** → Actually compiling proves the override has the right signature and its body is valid C#, not what it does for each input. Whether `ForOrder` returns a fee or throws for a 500,000 total is behaviour the compiler never checks. You notice this when the failure appears only for certain inputs, far from where the subtype was written.
+- **"LSP just means a subclass must implement every method its base type declares."** → Actually the compiler already enforces that for abstract methods; LSP is about keeping the promise — for every input a caller may pass, the caller gets back what the base type said it would. `FreeShippingOnly` implements `ForOrder` and still breaks code written for `ShippingFee`. You notice this when a new subtype compiles cleanly but callers that never changed start failing.
+- **"As long as a subclass compiles against its base type, it automatically satisfies LSP."** → Actually compiling proves the override has the right parameters and return type and its body is valid C#, not what it does for each input. Whether `ForOrder` returns a fee or throws for a 500,000 total is behaviour the compiler never checks. You notice this when the failure appears only for certain inputs, far from where the subtype was written.
 
 ## Try it (3 minutes)
 
-For each kind, work out what `ForOrder(500_000)` does. Use the `ShippingFee.cs` code you read in the OCP lesson for the three real kinds, and the description in the situation for `FreeShippingOnly`.
+For each kind, work out what `ForOrder(500_000)` does. For the three real kinds, use `samples/DonHang.Samples/Samples/Oop/ShippingFee.cs`, lines 10-23, which you read in the OCP lesson; for `FreeShippingOnly`, use the description in the situation.
 
 1. `StandardShipping`
 2. `ExpressShipping`
@@ -115,5 +115,5 @@ Which of the four could not be handed to code that works out a fee for any order
 1. The Liskov Substitution Principle says code written for a base type must keep working with any of its subtypes.
 2. `ShippingFee.ForOrder` promises a fee for a total; the three existing kinds return a number for every total.
 3. A `FreeShippingOnly` that throws below 2,000,000 breaks that promise, so unchanged callers start failing.
-4. The compiler checks that methods exist with the right signatures, not what they do for each input.
+4. The compiler checks that methods exist with the right parameters and return types, not what they do for each input.
 5. A test at one value, like 2,000,000, can pass even when a subtype breaks the promise elsewhere.
