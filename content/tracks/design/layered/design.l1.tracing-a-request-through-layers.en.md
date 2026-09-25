@@ -47,7 +47,7 @@ flowchart LR
   C --> A[201 + Location]
 ```
 
-The request first passes through the middleware — exception handling, logging, the token check — and then reaches the controller. `OrdersController.Create` reads who the caller is and what they sent, turns the request's items into `OrderItem` objects, and calls `OrderService.PlaceOrderAsync`. The controller does not check the items or save anything.
+The request first passes through the middleware — exception handling, logging and the token check, among others — and then reaches the controller. `OrdersController.Create` reads who the caller is and what they sent, turns the request's items into `OrderItem` objects, and calls `OrderService.PlaceOrderAsync`. The controller does not check the items or save anything.
 
 The service does the business work. It refuses an empty list, builds the `Order` with status `"new"`, and asks `IOrderRepository` to add and save it. At run time that interface is `EfOrderRepository`, which hands the order to EF Core; `SaveChangesAsync` sends the `INSERT`s — the order row and its item rows — to PostgreSQL, and PostgreSQL assigns the order's id. The service then sends the "order placed" notification through `INotifier` — at stage-1, `LoggingNotifier` writes it as a log line — and returns the `Order`.
 
