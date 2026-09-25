@@ -72,7 +72,7 @@ The part of `Caddyfile` that serves port `8080`, in stage 1:
 
 `root` sets the folder that files are served from, `@guest` and `@signedIn` name request conditions used further down for `/admin`, and `route` makes Caddy try the `handle` blocks inside it in the order they are written. `handle /api/v1/*` catches every request whose path starts with `/api/v1/`, and `reverse_proxy api:8080` forwards it to port `8080` on `api`. That one line replaced all the `respond` blocks that faked `/api/v1/*` in stage 0. `/admin`, just below it in the same file, still answers with `respond` lines of its own.
 
-The lab runs Caddy, the API and the database as separate parts on a private network of its own, which the lab box is also on; `api` is the API's name on that network. The lab also decides which ports your laptop can reach: Caddy's `8080` is one of them, the API's is not. Because `api` is a different part from Caddy, its port `8080` is not the `8080` you type on your laptop. Caddy adds a `Via: 1.1 Caddy` header to the answers it passes back, and Kestrel's `Server: Kestrel` header comes through unchanged.
+The lab runs the API and the database as separate parts on a private network of its own, and Caddy shares the lab box's place on that network; `api` is the API's name there. The lab also decides which ports your laptop can reach: Caddy's `8080` is one of them, the API's is not. Because `api` is a different part from Caddy, its port `8080` is not the `8080` you type on your laptop. Caddy adds a `Via: 1.1 Caddy` header to the answers it passes back, and Kestrel's `Server: Kestrel` header comes through unchanged.
 
 The same `route` still answers other paths itself, the way every path was answered in stage 0:
 
