@@ -48,11 +48,11 @@ flowchart LR
   K -->|no| U[401, endpoint never runs]
 ```
 
-In the situation above, every request passes through `UseAuthentication` first. It looks for an `Authorization: Bearer` header. If there is one, it checks the token the way the previous lesson described: the signature has to match what the signing key produces, the issuer and audience have to be `donhang-api` and `donhang-app`, and `exp` must not have passed. If all of that holds, the request now carries a caller — customer 1, from `sub`. If the header is missing or the token fails any check, the request simply carries no caller. Nothing is rejected yet.
+In the situation above, every request passes through `UseAuthentication` first. It looks for an `Authorization: Bearer` header. If there is one, it checks the token the way the previous lesson described: the signature has to match what the signing key produces, the issuer and audience have to be `donhang-api` and `donhang-app`, and `exp` must not have passed — the check allows a few minutes of leeway for clock differences, so a token just past `exp` can still pass. If all of that holds, the request now carries a caller: the customer named in `sub`. If the header is missing or the token fails any check, the request simply carries no caller. Nothing is rejected yet.
 
 The rejecting happens one step later, in `UseAuthorization`, and only for an endpoint marked `[Authorize]`. There, a request with no identified caller is short-circuited: the answer is `401`, and the endpoint's code never runs. `GET /api/v1/orders` is marked, so the made-up token gets `401`. `GET /api/v1/orders/1` is not marked, so the same token passes straight through to the endpoint, which never asks who the caller is.
 
-An expired token fails the same way as a forged one. Its signature can be perfectly valid — the API really did issue it — but once `exp` has passed, the check fails and the response says so: `error_description="The token expired at '...'"`.
+An expired token fails the same way as a forged one. Its signature can be perfectly valid — the API really did issue it — but once `exp` is more than a few minutes in the past, the check fails and the response says so: `error_description="The token expired at '...'"`.
 
 ## In the Đơn Hàng system
 
@@ -81,7 +81,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 ```
 
-Each `Validate...` line switches one check on: issuer, audience, signing key, and `ValidateLifetime` for `exp`. `IssuerSigningKey` is built from the same `Jwt:SigningKey` that `JwtTokenService` signs with, so only tokens this API issued can pass.
+`ValidateIssuer`, `ValidateAudience` and `ValidateLifetime` name the issuer, audience and `exp` checks. The signature is checked against `IssuerSigningKey`, built from the same `Jwt:SigningKey` that `JwtTokenService` signs with, so only tokens signed with that key can pass.
 
 Which endpoints actually require a caller is decided in the controllers:
 
@@ -100,8 +100,8 @@ Because of `[Authorize]`, by the time `List` runs there is always a caller, so r
 
 ## Beginners often think…
 
-- **"A JWT that's expired still works as long as the signature is valid."** → Actually the signature only proves the API issued the token; `ValidateLifetime` separately checks `exp`, and a token past it is rejected even though every byte is genuine. You notice this when a token that worked this morning starts returning `401` with `The token expired at ...` in the `WWW-Authenticate` header.
-- **"401 and 403 both mean roughly 'not allowed', so either one is fine for a missing or invalid token."** → Actually `401` says the API does not know who is asking; the client's fix is to log in again and send a valid token. `403` says the API knows exactly who is asking and still refuses, so logging in again changes nothing. You notice this when a client that treats every `401` as "log in again" stops working the moment an endpoint answers `403` for a caller it has already identified.
+- **"A JWT that's expired still works as long as the signature is valid."** → Actually the signature only proves the API issued the token; `ValidateLifetime` separately checks `exp`, and a token well past it is rejected even though every byte is genuine. You notice this when a token that worked this morning starts returning `401` with `The token expired at ...` in the `WWW-Authenticate` header.
+- **"401 and 403 both mean roughly 'not allowed', so either one is fine for a missing or invalid token."** → Actually `401` says the API does not know who is asking; the client's fix is to log in again and send a valid token. `403` says the API knows who is asking and still refuses, so sending the same caller's token again changes nothing. You notice this when a client that treats every `401` as "log in again" stops working the moment an endpoint answers `403` for a caller it has already identified.
 
 ## Try it (3 minutes)
 
@@ -109,7 +109,7 @@ Because of `[Authorize]`, by the time `List` runs there is always a caller, so r
 2. Call it again with a made-up token: add `-H "Authorization: Bearer abc.def.ghi"`.
 3. Send the same made-up token to `http://localhost:8080/api/v1/orders/1`.
 
-Expected result: step 1 answers `401` with `WWW-Authenticate: Bearer`; step 2 answers `401` with `WWW-Authenticate: Bearer error="invalid_token"`; step 3 answers `200` with order 1.
+Expected result: step 1 answers `401` with `WWW-Authenticate: Bearer`; step 2 answers `401` with `WWW-Authenticate: Bearer error="invalid_token"`; step 3 answers `200` with order 1. curl prints the header name as `Www-Authenticate`; header names are not case-sensitive.
 
 Why does step 3 succeed with a token that step 2 rejected?
 
