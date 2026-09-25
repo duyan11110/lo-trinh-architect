@@ -39,16 +39,16 @@ reviewed_at: null
 ```mermaid
 flowchart LR
   A[PlaceOrderSplit: checking rules] --> V[validator]
-  B[PlaceOrderSplit: pricing rules] --> P[pricer]
+  B[PlaceOrderSplit: shipping fee rule] --> P[pricer]
   C[PlaceOrderSplit: how orders are saved] --> S[order saver]
   D[PlaceOrderSplit: how customers are told] --> N[notifier]
 ```
 
-Each arrow in the diagram moves one reason to change out of `PlaceOrderSplit` into a class of its own. The test SRP gives you is not about size or tidiness. It asks one question about a class: how many different reasons could make it change? For `PlaceOrderSplit` the answer is four — a new checking rule, a new pricing rule, a new way of saving, a new way of telling the customer. Each of those could be requested by a different person, at a different time.
+Each arrow in the diagram moves one reason to change out of `PlaceOrderSplit` into a class of its own. The test SRP gives you is not about size or tidiness. It asks one question about a class: how many different reasons could make it change? For `PlaceOrderSplit` the answer is four — a new checking rule, a new shipping fee rule, a new way of saving, a new way of telling the customer. Each of those could be requested by a different person, at a different time.
 
-Cohesion inside each method was already high; SRP looks one level up, at the class. A class with four reasons to change is a class four people have to edit, re-read and re-test, even when each of them cares about only one part of it.
+Cohesion inside each method was already high; SRP looks one level up, at the class. A class with four reasons to change can end up edited, re-read and re-tested by up to four different people, even when each of them cares about only one part of it.
 
-What SRP asks for is one class per reason: a validator, a pricer, an order saver and a notifier. None of the four needs to know how the others work. The notifier, for example, does not need to know how the total was worked out, only what it is. Something still has to run them in order — check, price, save, notify — and that sequence is itself one reason to change, so it can stay in `Place`.
+What SRP asks for is one class per reason: a validator, a pricer, an order saver and a notifier. None of the four needs to know how the others work. The notifier, for example, does not need to know how the total was worked out; today it only needs the customer id. Something still has to run them in order — check, price, save, notify — and that sequence is itself one reason to change, so it can stay in `Place`.
 
 ## In the Đơn Hàng system
 
@@ -115,6 +115,6 @@ Today all four edit one class, `PlaceOrderSplit`, so four people change, review 
 
 1. SOLID names five design principles; the Single Responsibility Principle, SRP, is the first.
 2. SRP says a class should have only one reason to change.
-3. `PlaceOrderSplit` is short and focused per method, yet it has four reasons to change: checking, pricing, saving, notifying.
+3. `PlaceOrderSplit` is short and focused per method, yet it has four reasons to change: checking, the shipping fee, saving, notifying.
 4. SRP asks for one class per reason — validator, pricer, order saver, notifier — each unaware of how the others work.
-5. The test is who might ask for a change, not how many lines or methods a class has.
+5. SRP's test is how many reasons to change a class has, not how many lines or methods it has.
