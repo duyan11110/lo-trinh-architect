@@ -15,7 +15,9 @@ vocab: []
 example_tag: stage-0
 versions_used: [dotnet, xunit]
 content_version: 1
-status: draft
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-26T12:30:00+07:00"
 ---
 
 ## Before you start
@@ -24,7 +26,7 @@ status: draft
 
 ## The situation
 
-You want to add a test for `ExpressShipping`, which always charges 60,000 VND. You copy the shape of `StandardShippingIsFreeFromTwoMillion`, but three questions stop you. The test might pass whichever way you answer them; what changes is what you see on the day it fails. What makes xUnit treat your new method as a test at all? What should you call it — `TestForOrder`, `Test1`, something longer? And in `Assert.Equal`, which value goes first, the one you expect or the one the code returns?
+You want to add a test for `ExpressShipping`, which always charges 60,000 VND. You copy the shape of `StandardShippingIsFreeFromTwoMillion`, but three questions stop you. For the last two, the test might pass whichever way you answer; what changes is what you see on the day it fails. What makes xUnit treat your new method as a test at all? What should you call it — `TestForOrder`, `Test1`, something longer? And in `Assert.Equal`, which value goes first, the one you expect or the one the code returns?
 
 ## Core concepts
 
@@ -44,7 +46,7 @@ flowchart LR
   E -->|different| F[failed: name, Expected, Actual]
 ```
 
-When you run `dotnet test`, xUnit looks through the test project for public classes and, in them, for methods marked `[Fact]`; the class must be public, and the methods here are public too. It runs each one on its own. A `[Fact]` method takes no parameters, because nobody is there to pass them, and returns `void`; a test that awaits something is written as `public async Task` instead. There is no list of tests to keep up to date: adding a method with `[Fact]` is enough for xUnit to find it on the next run.
+When you run `dotnet test`, xUnit looks through the test project for public classes and, in them, for methods marked `[Fact]`; the class must be public; xUnit would also find a non-public method, but the usual practice, followed here, is to make test methods public too. It runs each one on its own. A `[Fact]` method takes no parameters, because nobody is there to pass them, and returns `void`; a test that awaits something is written as `public async Task` instead. There is no list of tests to keep up to date: adding a method with `[Fact]` is enough for xUnit to find it on the next run.
 
 The method's name is what the report shows when the test fails, so it should say what is supposed to happen. `AnEmptyOrderCannotBePaid` states a rule; if it fails, the report tells you which rule broke without opening the file. `TestMarkPaid` only says which method was called, and `Test1` says nothing. The name is for the person reading the failure, possibly months later.
 
@@ -81,7 +83,7 @@ The class is `public`, and each method is `public void`, takes no parameters, an
 
 `AnEmptyOrderCannotBePaid` checks a different kind of result: not a value, but that an exception is thrown. `Assert.Throws<InvalidOperationException>` receives `order.MarkPaid` — the method itself, not a call to it — calls it, and passes only if that exact exception comes out. Both names read as rules: the total follows the lines; an empty order cannot be paid.
 
-A new test for `ExpressShipping` fits the same shape. In the `ShippingFeeTests` class, a `[Fact]` method named `ExpressShippingAlwaysCostsSixtyThousand` would store `new ExpressShipping()` in a `ShippingFee fee`, as the existing test does, and assert `Assert.Equal(60_000, fee.ForOrder(500_000))`: expected first, then what the code returns.
+A new test for `ExpressShipping` fits the same shape. In the `ShippingFeeTests` class, a `[Fact]` method named `ExpressShippingAlwaysCostsSixtyThousand` would store `new ExpressShipping()` in a `ShippingFee fee`, as the existing test does, and assert `Assert.Equal(60_000, fee.ForOrder(500_000))`: expected first, then what the code returns. Any order total would do, since the express fee is fixed.
 
 ## Beginners often think…
 
@@ -96,7 +98,7 @@ In `samples/DonHang.Samples.Tests/SamplesTests.cs`, inside `ShippingFeeTests`:
 2. Run `dotnet test samples/DonHang.Samples.Tests --filter ShippingFeeTests`.
 3. Change the expected value to `50_000`, run again, read the report, then undo both changes.
 
-Expected result: step 2 reports three tests passed. Step 3 reports one failure, for `ExpressShippingAlwaysCostsSixtyThousand`, with Expected `50000` and Actual `60000`.
+Expected result: step 2 reports three tests passed — the two already in `ShippingFeeTests` and yours, since the filter keeps only that class's tests. Step 3 reports one failure, for `ExpressShippingAlwaysCostsSixtyThousand`, with Expected `50000` and Actual `60000`.
 
 If you had written `Assert.Equal(fee.ForOrder(500_000), 50_000)` instead, what would the report in step 3 have said?
 
