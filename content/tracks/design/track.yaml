@@ -301,12 +301,15 @@ levels:
       prereqs: [design.l1.solid-srp, backend.l1.saving-changes]
       related: []
       vocab: [layer]
-      example_tag: stage-0
-      example_files: [samples/DonHang.Samples/Samples/Clean/PlaceOrderSplit.cs]
+      example_tag: stage-1
+      example_files:
+      - samples/DonHang.Samples/Samples/Clean/PlaceOrderSplit.cs
+      - DonHang.Domain/DonHang.Domain.csproj
+      - DonHang.Infrastructure/DonHang.Infrastructure.csproj
       outline:
       - "SRP asks one class to have one reason to change; a layered architecture applies the same idea to a whole application, grouping classes into a few large-scale concerns instead of judging one class at a time."
       - "A typical split is by kind of concern: talking HTTP, deciding what the business allows, and reading or writing the database — each layer changes for a different reason."
-      - "`PlaceOrderSplit`'s `FirstProblemWith`, `TotalWithShippingVnd`, `Save` and `Notify` already hint at four separate concerns; a layered Đơn Hàng API turns groups of these into their own classes, in their own layers."
+      - "`PlaceOrderSplit`'s four methods hint at separate concerns; the Đơn Hàng API at stage-1 is already split into three projects — `DonHang.Api`, `DonHang.Domain`, `DonHang.Infrastructure` — one per kind of concern."
       misconceptions:
       - "Layers are just folders for organizing files; putting a class in the right folder is what matters."
       - "More layers is always better design, no matter how small the application."
@@ -321,16 +324,17 @@ levels:
       prereqs: [design.l1.why-layers, backend.l1.rest-resources]
       related: []
       vocab: [controller]
-      example_tag: stage-0
-      example_files: []
+      example_tag: stage-1
+      example_files:
+      - DonHang.Api/Controllers/OrdersController.cs
       outline:
       - "A controller only speaks HTTP: it reads the request, calls into the layer below, and shapes the result into a DTO and a status code."
       - "A controller doesn't decide business rules or touch the database directly — it delegates both to the layers below it."
-      - "The endpoints built in the REST and validation lessons currently do more than a controller should: they hold checks and persistence code that belong one layer down."
+      - "`OrdersController.Create` does only HTTP work: it reads the caller's id from the token, maps the request to `OrderItem`s, calls `OrderService.PlaceOrderAsync`, and turns the result into `201` with an `OrderDto`."
       misconceptions:
       - "Business rules like discount logic belong in the controller, since that's what the client is asking for."
       - "A thin controller means writing less code overall, not moving code to a different layer."
-      depth_notes: "Không nói action filter hay model binding chi tiết — ngoài phạm vi GĐ1. Chưa refactor thật — hai bài sau mới chuyển code."
+      depth_notes: "Không nói action filter hay model binding chi tiết — ngoài phạm vi GĐ1. Chỉ đọc controller; service và repository là hai bài sau."
     - id: design.l1.the-service-layer
       title:
         vi: "Service giữ quy tắc nghiệp vụ, không biết gì về HTTP"
@@ -341,12 +345,14 @@ levels:
       prereqs: [design.l1.the-controller-layer, backend.l1.validating-input]
       related: []
       vocab: [service-layer]
-      example_tag: stage-0
-      example_files: []
+      example_tag: stage-1
+      example_files:
+      - DonHang.Domain/OrderService.cs
+      - DonHang.Api/Controllers/OrdersController.cs
       outline:
-      - "The service layer holds business rules and orchestration: what the validation lesson checked before saving an order belongs here, not in the controller."
+      - "The service layer holds business rules and orchestration: `OrderService.PlaceOrderAsync` checks for items, builds the `Order`, saves it and notifies — the validation lesson's empty-items check lives here, not in the controller."
       - "A service method takes plain input, not an HTTP request, and returns a plain result, not an HTTP response, so it can be tested without any HTTP involved."
-      - "Moving order-placing logic from the endpoint into an `OrderService` is what SRP predicted: deciding whether an order is valid is now a different class from turning it into JSON and a status code."
+      - "`OrdersController` knows HTTP and DTOs while `OrderService` knows orders: deciding whether an order is valid sits in a different class from turning it into JSON and a status code, as SRP predicted."
       misconceptions:
       - "The service layer is just where you put code that doesn't fit anywhere else."
       - "A service method should accept the raw HTTP request object, so it has access to everything it might need."
@@ -361,11 +367,14 @@ levels:
       prereqs: [design.l1.the-service-layer, backend.l1.querying-with-linq]
       related: []
       vocab: [repository]
-      example_tag: stage-0
-      example_files: []
+      example_tag: stage-1
+      example_files:
+      - DonHang.Domain/IOrderRepository.cs
+      - DonHang.Infrastructure/EfOrderRepository.cs
+      - DonHang.Domain/OrderService.cs
       outline:
       - "A repository hides how data is fetched or saved behind a small set of methods that describe what the service needs, not how EF Core does it."
-      - "The service layer depends on a repository abstraction, not on the `DbContext` directly — DIP again, now between the service and data-access layers instead of between two classes."
+      - "`OrderService` depends on `IOrderRepository`, declared in `DonHang.Domain`, while `EfOrderRepository` in `DonHang.Infrastructure` implements it with the `DbContext` — DIP again, now between the service and data-access layers."
       - "Because the service only sees the repository's methods, changing how data is stored later would not require changing the service's own code."
       misconceptions:
       - "A repository is just a different name for a DbContext; wrapping it in a class with the same methods changes nothing."
@@ -381,12 +390,15 @@ levels:
       prereqs: [design.l1.the-repository-layer]
       related: []
       vocab: []
-      example_tag: stage-0
-      example_files: []
+      example_tag: stage-1
+      example_files:
+      - DonHang.Api/Controllers/OrdersController.cs
+      - DonHang.Domain/OrderService.cs
+      - DonHang.Infrastructure/EfOrderRepository.cs
       outline:
-      - "`POST /api/v1/orders` now travels: the controller parses the request, the service validates it and computes the total, the repository saves it, and the controller turns the result into `201` with a `Location` header."
-      - "Each layer only calls the one directly below it; the controller never calls the repository directly, and the repository never calls back up into the service."
-      - "A change to how a discount is calculated only touches the service; a change to how data is queried only touches the repository — one change no longer forces several unrelated ones."
+      - "`POST /api/v1/orders` travels: the controller reads the caller and the request, the service checks the items and builds the order, the repository saves it, and the controller turns the result into `201` with a `Location` header."
+      - "In `Create`, each layer only calls the one directly below it, and the repository never calls back up; `Get` and `List` read through the repository without a service — a shortcut for simple reads, with no rule to enforce."
+      - "A change to which orders are allowed only touches the service; a change to how orders are queried only touches the repository — one change no longer forces several unrelated ones."
       misconceptions:
       - "Any layer can call any other layer directly, as long as the end result is correct."
       - "Splitting into layers means writing the same logic three times, once per layer."
