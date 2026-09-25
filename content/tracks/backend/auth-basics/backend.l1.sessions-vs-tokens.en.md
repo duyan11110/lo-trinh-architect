@@ -74,7 +74,7 @@ Each choice has a cost. A session store grows with every logged-in client. And o
 
 Read it for what is missing. After `PasswordHasher.Verify` succeeds, nothing is added to `db` and nothing is saved: the method issues a token and returns it.
 
-The signing key doesn't live in the API's memory either: the API reads it at startup from the `Jwt__SigningKey` environment variable that `docker-compose.yml` passes in. So, because the API keeps no record of who is logged in, any copy of the API started with that same key can recognize the caller — and a restarted API recognizes the same token it issued before the restart.
+The signing key isn't made up inside the API process either: the API reads it at startup from the `Jwt__SigningKey` environment variable that `docker-compose.yml` passes in. So, because the API keeps no record of who is logged in, any copy of the API started with that same key can recognize the caller — and a restarted API recognizes the same token it issued before the restart.
 
 The token also carries its own end: `tokenService.IssueToken` sets it to expire eight hours after it was issued, and this app has no code that can end one earlier. What sits inside the token, and how it is signed, is the next lesson.
 
