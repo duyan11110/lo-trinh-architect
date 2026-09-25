@@ -25,7 +25,7 @@ status: draft
 
 ## The situation
 
-The product screen in the Đơn Hàng app shows real products, with real prices, from PostgreSQL. You have called the same endpoint with `curl` and seen the JSON it returns: a list of objects with `id`, `name` and `priceVnd`. Somewhere between that JSON text and a list of `Product` objects on screen, the app has to send the request, wait for the answer, and turn text into typed Dart values. What does that code look like, and what happens while the app is waiting?
+The product screen in the Đơn Hàng app shows real products, with real prices, from the database. You have called the same endpoint with `curl` and seen the JSON it returns: a list of objects with `id`, `name` and `priceVnd`. Somewhere between that JSON text and a list of `Product` objects on screen, the app has to send the request, wait for the answer, and turn text into typed Dart values. What does that code look like, and what happens while the app is waiting?
 
 ## Core concepts
 
@@ -47,7 +47,7 @@ Fetching data in a Flutter app is three steps. First, `http.get(uri)` sends the 
 
 Second, the answer is an `http.Response`, with a `statusCode` and a `body`. The body is just text, the same JSON you saw with `curl`. Before trusting it, the code checks the status: `200` means the body is the list; anything else means it is not.
 
-Third, `jsonDecode` turns the text into Dart values, but untyped ones: a `List` whose items are `Map`s with string keys. To get a typed `Product`, the code reads each key and checks its type: the reverse of what the API did when it built a `ProductDto` from a `Product` and turned it into JSON. If a key is missing or has a different type, that check fails loudly instead of quietly producing a half-empty product.
+Third, `jsonDecode` turns the text into Dart values, but untyped ones: a `List` whose items are `Map`s with string keys. To get a typed `Product`, `Product.fromJson` reads each key and checks its type: the reverse of what the API did when it built a `ProductDto` from a `Product` and turned it into JSON. If a key is missing or has a different type, that check fails loudly instead of quietly producing a half-empty product.
 
 ## In the Đơn Hàng system
 
@@ -64,7 +64,7 @@ Third, `jsonDecode` turns the text into Dart values, but untyped ones: a `List` 
   }
 ```
 
-`baseUrl` is `http://localhost:8080/api/v1`: the app goes through Caddy, like `curl` did. The method is `async` and returns a `Future<List<Product>>`, so whoever calls it also gets an answer that arrives later. It `await`s the response, throws if the status is not `200`, decodes the body as a list, and turns each item into a `Product`. An exception thrown inside an `async` function does not escape at once: it is stored in the `Future` the function returned, and whoever `await`s that `Future` receives it, as with a failed `Task` in C#.
+`baseUrl` is `http://localhost:8080/api/v1`: the same address you used with `curl`. The method is `async` and returns a `Future<List<Product>>`, so whoever calls it also gets an answer that arrives later. It `await`s the response, throws if the status is not `200`, decodes the body as a list, and turns each item into a `Product`. An exception thrown inside an `async` function does not escape at once: it is stored in the `Future` the function returned, and whoever `await`s that `Future` receives it, as with a failed `Task` in C#.
 
 ```dart file=DonHang.App/lib/models.dart tag=stage-1 lines=3-15
 class Product {
