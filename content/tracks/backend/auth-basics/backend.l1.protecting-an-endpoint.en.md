@@ -32,7 +32,7 @@ You log in as customer 1 and call `GET /api/v1/orders/3` with your token. The an
 ## Core concepts
 
 - **authorization** — answering "is this caller, already identified, allowed to do this?"; it is asked after authentication, and the answer can differ per endpoint and per resource.
-- `403 Forbidden` — the status meaning "I know who you are, and I won't do this for you"; unlike `401`, which a fresh login can fix, a new token for the same caller changes nothing.
+- `403 Forbidden` — the status meaning "I know who you are, and I won't do this for you"; unlike `401`, which a fresh login can fix. When the refusal is about ownership, a new token for the same customer still names the same customer, so it changes nothing.
 - ownership check — the simplest form of authorization: compare the resource's owner, such as an order's `customerId`, with the caller's `sub` — the claim in the token that holds the caller's customer id.
 
 ## How it works
@@ -65,7 +65,7 @@ Authentication happens once per request, in the middleware, the same way for eve
     }
 ```
 
-It finds the order by id and returns it. There is no `[Authorize]`, so it does not even require a caller, and nothing compares `order.CustomerId` with the caller's `sub`. An ownership check here would do exactly that comparison after the `NotFound()` line and answer `403` when they differ — that code does not exist yet, so this describes what should happen, not what happens today.
+It finds the order by id and returns it. There is no `[Authorize]`, so it does not even require a caller, and nothing compares `order.CustomerId` with the caller's `sub`. An ownership check here would do exactly that comparison after the `NotFound()` line — together with `[Authorize]`, so that there is always a caller to compare with — and answer `403` when they differ — that code does not exist yet, so this describes what should happen, not what happens today.
 
 `List`, a few lines further down, already answers the question in a different way:
 
