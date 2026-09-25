@@ -72,7 +72,7 @@ With the lab running (`scripts/up.sh` from the repository root):
 2. Open `DonHang.Api/appsettings.json` and look for the same settings.
 3. Run `curl -s http://localhost:8080/api/v1/products` and note that it answers.
 
-Expected result: 1 — the connection string with `Host=db`, `Jwt__SigningKey`, and a third line, `ASPNETCORE_ENVIRONMENT`, that this lesson does not need. 2 — other settings (logging, and the JWT issuer and audience), but no connection string and no signing key. 3 — a JSON list of products, answered through Caddy.
+Expected result: 1 — the connection string with `Host=db`, `Jwt__SigningKey`, and a third line, `ASPNETCORE_ENVIRONMENT`, that this lesson does not need. 2 — other settings, such as logging and the JWT issuer and audience, but no connection string and no signing key. 3 — a JSON list of products, answered through Caddy.
 
 The API answers in the lab, but would stop at startup if you ran it from your editor with no extra setup. Which two settings would you have to supply, and why could the database address not be `db` on your laptop?
 
