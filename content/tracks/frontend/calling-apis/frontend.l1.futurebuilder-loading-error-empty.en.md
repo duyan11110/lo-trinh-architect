@@ -48,9 +48,9 @@ flowchart TD
 
 A screen that fetches data is not in one state but in several over time, and each needs its own UI. Loading means the answer has not arrived: the right thing is to show that something is happening. Error means it will not arrive this time: the right thing is to say so. Empty means it arrived, successfully, with nothing in it: that is a real answer. Content is the normal case.
 
-`FutureBuilder` makes these states easy to tell apart. It is given the `Future` and a builder function. It builds with a snapshot saying "waiting" while the `Future` has not completed, and builds again once it completes; it may also build at other times, so the builder must work from the snapshot alone. Each time it passes a snapshot: `connectionState` says whether it is still waiting, `hasError` and `error` say whether it failed, and `data` holds the result once there is one. The builder checks these in order and returns a different widget for each state.
+`FutureBuilder` makes these states easy to tell apart. It is given the `Future` and a builder function. It builds with a snapshot saying "waiting" while the `Future` has not completed, and builds again once it completes; it may also build at other times, for example when its parent builds again, so the builder decides what to show from the snapshot it is given each time. Each time it passes a snapshot: `connectionState` says whether it is still waiting, `hasError` and `error` say whether it failed, and `data` holds the result once there is one. The builder checks these in order and returns a different widget for each state.
 
-The order matters, and so does keeping the states apart. A screen that shows the same blank area for loading and for empty hides the difference between "wait a moment" and "there is nothing". Loading ends on its own; empty is the final answer. An error is different again: something went wrong somewhere between sending the request and turning the answer into products, and the user should hear about it rather than stare at a blank screen.
+The order matters: while the `Future` is waiting or has failed there is no data yet, so checking for "empty" first would show "No products yet." when the truth is "still loading" or "failed". Keeping the states apart matters too. A screen that shows the same blank area for loading and for empty hides the difference between "wait a moment" and "there is nothing". Loading ends on its own; empty is the final answer. An error is different again: something went wrong somewhere between sending the request and turning the answer into products, and the user should hear about it rather than stare at a blank screen.
 
 ## In the Đơn Hàng system
 
@@ -85,18 +85,18 @@ Starting the load in `initState` and keeping it in a field means every build of 
           }
 ```
 
-Waiting shows a spinner. An error shows a message that includes the error itself, such as the exception `fetchProducts` threw. A finished, error-free result that turns out to be an empty list shows "No products yet.". Only after all three checks does the code build the list of products. The `?? []` treats a missing result as an empty list, so the empty check also covers it.
+Waiting shows a spinner. An error shows a message that includes the error itself, such as the exception `fetchProducts` threw. A finished, error-free result that turns out to be an empty list shows "No products yet.". Only after all three checks does the code build the list of products. The `?? []` is a guard: if the `Future` ever finished with no data at all, the screen would treat it as empty rather than crash.
 
 ## Beginners often think…
 
 - **"An empty product list and a still-loading one can show the same blank screen; the user can't tell the difference anyway."** → Actually that is exactly the problem: the user cannot tell, so they cannot decide whether to wait or give up. A spinner says "wait"; "No products yet." says "this is the answer". You notice this when users report a "broken" screen that was really just loading, or keep waiting on one that was really empty.
-- **"Error handling only matters for the request itself; once data arrives, nothing else can go wrong."** → Actually the `Future` from `fetchProducts` also fails after the response has arrived, if the status is not `200` or if `Product.fromJson` cannot read a field. All of those reach the builder as `hasError`. You notice this when the network looks fine in the developer tools, yet the screen shows "Could not load products".
+- **"Error handling only matters for the request itself; once data arrives, nothing else can go wrong."** → Actually the `Future` from `fetchProducts` also fails after the response has arrived, if the status is not `200` or if `Product.fromJson` cannot read a field. Both reach the builder as `hasError`. You notice this when the network looks fine in the developer tools, yet the screen shows "Could not load products".
 
 ## Try it (3 minutes)
 
 With the lab running and the app open at `http://localhost:8081`:
 
-1. In the browser's developer tools, open the Network tab, choose a slow throttling preset, and reload the page. Watch the body while the products load.
+1. In the browser's developer tools, open the Network tab, use its setting that slows the connection down on purpose (pick one of the slow options), and reload the page. Watch the body while the products load.
 2. From the repository root, run `docker compose stop api`, then reload the page.
 3. Run `docker compose start api`, wait a few seconds, and reload the page again.
 
