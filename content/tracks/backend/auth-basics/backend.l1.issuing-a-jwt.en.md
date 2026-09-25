@@ -33,7 +33,7 @@ The token `POST /api/v1/auth/login` hands back looks like noise, but it contains
 - **JWT (JSON Web Token)** — a token that says who the caller is and can be checked without the server storing anything; a signed JWT like the ones Đơn Hàng issues has three dot-separated parts — header, payload, signature.
 - claim — one named fact inside the payload, such as `sub` (which customer), `exp` (when the token stops being accepted) or `iss` (who issued it).
 - Base64url — the text encoding each of the first two parts uses: it makes JSON safe to put in a URL or a header, and anyone can reverse it.
-- signature — the third part, computed from the first two with the API's signing key; changing a single character of the header or payload makes it no longer match.
+- signature — the third part: raw bytes computed from the first two with the API's signing key, then Base64url-encoded like the others; changing a single character of the header or payload makes it no longer match.
 
 ## How it works
 
@@ -46,9 +46,9 @@ flowchart LR
   SIG --> T[token: header.payload.signature]
 ```
 
-A token starts as two small pieces of JSON. The header says how the token is signed — here `"alg":"HS256"`, HMAC with SHA-256. The payload holds the claims: `sub` is the customer's id, `email` their address, `exp` the moment the token expires, written as the number of seconds since 1 January 1970 (UTC), and `iss` and `aud` name who issued it and who it is meant for.
+A token starts as two small pieces of JSON. The header says what the token is — `"typ":"JWT"` — and how it is signed: `"alg":"HS256"`. HS256 is short for HMAC-SHA256, a calculation that takes some text and a key and produces a fixed-size result: the same text and key always give the same result, and without the key nobody can produce it. The payload holds the claims: `sub` is the customer's id, `email` their address, `exp` the moment the token expires, written as the number of seconds since 1 January 1970 (UTC), and `iss` and `aud` name who issued it and who it is meant for.
 
-Each piece is then encoded with Base64url. That turns JSON into text that can travel in a URL or a header without breaking it, and it is fully reversible — which is why the situation's decoding worked. Encoding hides nothing.
+Each piece is then encoded with Base64url. That turns JSON into text that can travel in a URL or a header without breaking it, and it is fully reversible — which is why the situation's decoding worked. Encoding hides nothing; encrypting would mean scrambling the text so that only someone holding a key could turn it back, and these tokens do not do that.
 
 The signature is what protects the token. The API runs HMAC-SHA256 over the encoded header and payload together, using its signing key, and appends the result as the third part. When a token comes back, the API recomputes that signature from the first two parts it received and compares. Change `"sub":"1"` to `"sub":"2"` and the recomputed signature no longer matches the one attached, so the token is rejected. Computing a matching signature for the new payload would need the signing key, which only the API holds.
 
@@ -84,7 +84,7 @@ public sealed class JwtTokenService(IConfiguration configuration)
 }
 ```
 
-`configuration["Jwt:SigningKey"]` is the signing key the previous lesson traced to the `Jwt__SigningKey` environment variable; `SecurityAlgorithms.HmacSha256` is what becomes `"alg":"HS256"` in the header. The two `Claim` lines become `sub` and `email`, the issuer and audience come from the API's own settings (`donhang-api`, `donhang-app`), and `expires` becomes `exp`, eight hours ahead. `WriteToken` does the encoding and signing and returns the finished `header.payload.signature` string — the same string `AuthController.Login` returns as the `token` field, and nothing about it is saved.
+`configuration["Jwt:SigningKey"]` is the signing key the previous lesson traced to the `Jwt__SigningKey` environment variable — the double underscore in the variable's name stands for the colon. `SymmetricSecurityKey(Encoding.UTF8.GetBytes(...))` turns that key's text into bytes; "symmetric" means the same key both signs a token and checks it. `SecurityAlgorithms.HmacSha256` is what becomes `"alg":"HS256"` in the header. The two `Claim` lines become `sub` and `email`, the issuer and audience come from the API's own settings (`donhang-api`, `donhang-app`), and `expires` becomes `exp`, eight hours ahead. `WriteToken` does the encoding and signing and returns the finished `header.payload.signature` string — the same string `AuthController.Login` returns as the `token` field, and nothing about it is saved.
 
 ## Beginners often think…
 
