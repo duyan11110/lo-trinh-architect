@@ -47,9 +47,9 @@ flowchart LR
 
 A controller sits at the edge of the application, where HTTP comes in. Its job has three parts. First it reads what the request says: the route values, the body and who the caller is. Then it calls into the layer below with values it has pulled out of the request, not with the request itself. Finally it turns what comes back into HTTP: a DTO for the body and a status code.
 
-What a controller does not do is decide business rules or talk to the database. Whether an order is allowed is a business rule, so it belongs in the business layer; saving the order is a data concern, so it belongs in the data layer. The controller delegates both. That keeps it changing only for HTTP reasons — a new route, a new DTO shape, a different status code.
+What a controller does not do is decide business rules or talk to the database. Whether an order is allowed is a business rule, so it belongs in the business layer; saving the order is a data concern, so it belongs in the data layer. The controller hands the decision to the business layer, which in turn has the order stored by the data layer. That keeps it changing only for HTTP reasons — a new route, a new DTO shape, a different status code.
 
-The payoff is that a rule lives in one place. If "at most 20 items" goes into `Create`, any other code that places orders — a test, a future import job — skips it. If it goes into the business layer, every caller gets it, and the controller does not change at all.
+The payoff is that a rule lives in one place. If "at most 20 items" goes into `Create`, any other code that places orders — a test, or a future program that reads orders from a file and calls `PlaceOrderAsync` itself — skips it. If it goes into the business layer, every caller gets it, and the controller does not change at all.
 
 ## In the Đơn Hàng system
 
@@ -70,7 +70,7 @@ The payoff is that a rule lives in one place. If "at most 20 items" goes into `C
     }
 ```
 
-It reads the caller's id from the token's `sub`, maps the request's items into `OrderItem` objects, and calls `orderService.PlaceOrderAsync` with the caller's id and that list — not with the request itself. Then it answers `201` through `CreatedAtAction`, with the order shaped by `ToDto`. There is no `if` about items and no `SaveChangesAsync` anywhere in the method. The empty-items check lives in `OrderService`; when it throws `ArgumentException`, the exception-handling middleware turns that into a `400`.
+`CreateOrderRequest` is the DTO for the request body. The method reads the caller's id from the token's `sub`, maps the request's items into `OrderItem` objects, and calls `orderService.PlaceOrderAsync` with the caller's id and that list — not with the request itself. Then it answers `201` through `CreatedAtAction`, with the order shaped by `ToDto`. There is no `if` about items and no `SaveChangesAsync` — the EF Core call that writes to the database — anywhere in the method. The empty-items check lives in `OrderService`; when it throws `ArgumentException`, the exception-handling middleware turns that into a `400`.
 
 `ToDto`, at the bottom of the same class, is HTTP work too — it decides what the response body looks like:
 
@@ -87,8 +87,8 @@ Not every controller in Đơn Hàng is this strict: `ProductsController` queries
 
 ## Beginners often think…
 
-- **"Business rules like discount logic belong in the controller, since that's what the client is asking for."** → Actually the client asks for an order; whether that order is allowed, or what it costs, is the business layer's decision. A rule in `Create` would be skipped by every caller that does not come through HTTP, such as the tests in `DonHang.Tests` that call `OrderService` directly. You notice this when the same rule has to be copied into a second entry point.
-- **"A thin controller means writing less code overall, not moving code to a different layer."** → Actually the checks and the saving still exist; they just live in the layer that owns them. `Create` is short because `PlaceOrderAsync` does the checking and has the order saved. You notice this when you search for a rule in the controller and find it one layer down instead.
+- **"Business rules like discount logic belong in the controller, since that's what the client is asking for."** → Actually the client asks for an order; whether that order is allowed, or what it costs, is the business layer's decision. A rule in `Create` would be skipped by every caller that does not come through HTTP, such as the tests in `DonHang.Tests` that call `OrderService` directly. You notice this when the same rule has to be copied into a second place that places orders without going through `Create`, such as a test.
+- **"A thin controller means writing less code overall, not moving code to a different layer."** → Actually a thin controller — one that only does HTTP work — still has the checks and the saving somewhere; they just live in the layer that owns them. `Create` is short because `PlaceOrderAsync` does the checking and has the order saved. You notice this when you search for a rule in the controller and find it one layer down instead.
 
 ## Try it (3 minutes)
 
@@ -99,7 +99,7 @@ Read `Create` above and sort each line into one of two groups: reading the reque
 3. `var order = await orderService.PlaceOrderAsync(customerId, items);`
 4. `return CreatedAtAction(nameof(Get), new { id = order.Id }, ToDto(order));`
 
-Expected result: 1 and 2 read the request (the token and the body). 3 delegates to the business layer. 4 shapes the response: status `201`, a `Location` pointing at `Get`, and the `OrderDto` body.
+Expected result: 1 and 2 read the request (the token and the body). 3 delegates to the business layer. 4 shapes the response: status `201`, a `Location` header pointing at the new order's own URL (the `Get` method just below), and the `OrderDto` body.
 
 Where would "at most 20 items" go, and which of these four lines would change?
 
