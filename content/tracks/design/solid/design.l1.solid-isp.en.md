@@ -12,12 +12,12 @@ skills: [design.solid.isp]
 prereqs: [design.l1.solid-lsp]
 related: []
 vocab: [isp]
-example_tag: stage-0
+example_tag: stage-1
 versions_used: [dotnet]
 content_version: 1
-status: approved
-approved_by: auto
-reviewed_at: "2026-09-25T15:00:00+07:00"
+status: draft
+approved_by: null
+reviewed_at: null
 ---
 
 ## Before you start
@@ -26,7 +26,7 @@ reviewed_at: "2026-09-25T15:00:00+07:00"
 
 ## The situation
 
-A teammate wants every notification channel to "look the same", so they propose one interface, `INotificationChannel`, with four methods: `SendEmail`, `SendSms`, `SendPush` and `GetDeliveryReport`. Then they try to make `SmsNotifier` implement it. It can send an SMS, but what should its `SendEmail` do? Its `SendPush`, or its `GetDeliveryReport`, when nothing in the samples tracks delivery at all? And code that sends an order confirmation — imagined for this lesson — would call only one of the four, yet depend on all of them. What went wrong with an interface that looked so complete?
+The samples have two notifier interfaces: `INotifier` has one method, `Send`; `IFullNotifier` bundles three: `Send`, `History` and `Retry`. `SmsOnlyNotifier` implements `IFullNotifier`, but an SMS channel only ever sends: it keeps no history and never resends. So its `History` and `Retry` throw `NotSupportedException`. The class compiles, the interface looks complete, and yet two of its three methods cannot do what they promise. What went wrong?
 
 ## Core concepts
 
@@ -38,70 +38,80 @@ A teammate wants every notification channel to "look the same", so they propose 
 
 ```mermaid
 flowchart LR
-  S[SmsNotifier under the proposal: 1 real, 3 filler] -->|implements| F[INotificationChannel: 4 methods]
-  C[confirmation code: calls 1] -->|asks for| F
+  S[SmsOnlyNotifier: 1 real, 2 throw] -->|implements| F[IFullNotifier: Send, History, Retry]
   B[NotifierBase] -->|implements| I[INotifier: Send]
   E[EmailNotifier] -->|derives from| B
   M[SmsNotifier] -->|derives from| B
 ```
 
-In the diagram, the two arrows into `INotificationChannel` are the proposal; the three arrows around `INotifier` and `NotifierBase` are what the samples have today. A fat interface hurts on two sides.
+In the diagram, the arrow into `IFullNotifier` is the fat design; the three arrows around `INotifier` and `NotifierBase` are the small one. Both live in the samples today. A fat interface hurts on two sides.
 
-On the implementing side, C# requires a class to provide every method the interface declares, apart from any the interface already gives a body to — and none of these four has one. `SmsNotifier` has real behaviour for `SendSms` only, so the other three get filler: an empty body, a made-up result, or an exception. And if someone changes the parameters of `GetDeliveryReport`, every implementing class must change, `SmsNotifier` included, even though nothing it does is about delivery reports.
+On the implementing side, C# requires a class to provide every method the interface declares, apart from any the interface already gives a body to — and none of these three has one. `SmsOnlyNotifier` has real behaviour for `Send` only, so the other two get filler: here, a `throw`. And if someone changes the parameters of `Retry`, every class that implements `IFullNotifier` must change, `SmsOnlyNotifier` included, even though it never retries anything.
 
-On the calling side, the order confirmation code uses one method but asks for an `INotificationChannel`, so it can only be given classes that provide all four. A class that can send an SMS and nothing else cannot be handed to it without filler. If that filler throws, the promise from the LSP lesson breaks: code that holds an `INotificationChannel` may call `SendEmail` and has no way to know this one will fail.
+On the calling side, code that only needs to send a message but asks for an `IFullNotifier` can only be given classes that provide all three methods. A class that can send and nothing else cannot be handed to it without filler. And that filler breaks the promise from the LSP lesson: code that holds an `IFullNotifier` may call `History` and has no way to know this one will throw.
 
-ISP's answer is to cut interfaces along what the code that calls or implements them needs. Code that sends a message about an order needs one thing: a way to send it. That is exactly what `INotifier` offers, and `EmailNotifier` and `SmsNotifier` implement it through `NotifierBase`. If delivery reports are ever needed, they belong in a separate interface that only reporting code uses and only classes that can report implement.
+ISP's answer is to cut interfaces along what the code that calls or implements them needs. Code that sends a message about an order needs one thing: a way to send it. That is exactly what `INotifier` offers. If history or retries are needed, they belong in separate interfaces that only the code using them asks for, and only classes that can really keep history or retry implement.
 
 ## In the Đơn Hàng system
 
-The interface the samples already have:
+The fat interface and the class forced to implement it:
 
-```csharp file=samples/DonHang.Samples/Samples/Oop/INotifier.cs tag=stage-0 lines=5-8
+```csharp file=samples/DonHang.Samples/Samples/Design/NotifierIspViolation.cs tag=stage-1 lines=7-26
+public interface IFullNotifier
+{
+    void Send(int orderId, string subject);
+    IReadOnlyList<string> History();
+    void Retry(int orderId);
+}
+
+// SmsNotifier only ever sends. It still has to answer for History and Retry —
+// neither means anything for a channel that does not keep or resend messages.
+public sealed class SmsOnlyNotifier : IFullNotifier
+{
+    public void Send(int orderId, string subject) =>
+        Console.WriteLine($"sms about order {orderId}: {subject}");
+
+    public IReadOnlyList<string> History() =>
+        throw new NotSupportedException("this channel keeps no history");
+
+    public void Retry(int orderId) =>
+        throw new NotSupportedException("this channel does not retry");
+}
+```
+
+`Send` does real work. `History` and `Retry` exist only because the interface demands them, and both throw `NotSupportedException`. Nothing stops a caller holding an `IFullNotifier` from calling them.
+
+The small interface next to it:
+
+```csharp file=samples/DonHang.Samples/Samples/Oop/INotifier.cs tag=stage-1 lines=5-8
 public interface INotifier
 {
     void Send(int orderId, string subject);
 }
 ```
 
-One method. A class that implements `INotifier` promises to send a message about an order, and nothing else. In the samples, `NotifierBase` implements it: it provides `Send`, keeps a list of sent messages, prints each one, and leaves a single step, `Format`, to the classes that derive from it. The two channels fill in only that step:
-
-```csharp file=samples/DonHang.Samples/Samples/Oop/NotifierBase.cs tag=stage-0 lines=21-31
-public sealed class EmailNotifier : NotifierBase
-{
-    protected override string Format(int orderId, string subject) =>
-        $"email about order {orderId}: {subject}";
-}
-
-public sealed class SmsNotifier : NotifierBase
-{
-    protected override string Format(int orderId, string subject) =>
-        $"sms about order {orderId}: {subject}";
-}
-```
-
-Neither class carries a method it has no behaviour for. `SmsNotifier` does not know email exists; `EmailNotifier` does not know about SMS. Both are `INotifier`s, so either one can be used wherever an `INotifier` is expected. Compare that with the proposed `INotificationChannel`, where `SmsNotifier` would carry three methods it has no real behaviour for.
+One method. A class that implements `INotifier` promises to send a message about an order, and nothing else. In the samples, `NotifierBase` implements it and leaves a single step, `Format`, to `EmailNotifier` and `SmsNotifier`. Neither carries a method it has no behaviour for, and either one can be used wherever an `INotifier` is expected.
 
 ## Beginners often think…
 
-- **"A big interface is fine as long as every class implementing it eventually uses every method somewhere."** → Actually, even when each method is used by some class somewhere, ISP asks about each piece of code that depends on the interface, not about the system as a whole. The confirmation code calls one method of `INotificationChannel`, yet it can only be given classes that implement all four. You notice this when a class that does exactly what you need cannot be passed in without filler for methods you never call.
-- **"ISP is only about how many methods an interface has, not about who is forced to depend on it."** → Actually a small count is a symptom, not the goal. An interface with three methods is fine when every caller and every implementer needs all three; `INotificationChannel` is a problem because `SmsNotifier` needs one of its four. You notice this when you find yourself writing filler bodies just to make a class compile.
+- **"A big interface is fine as long as every class implementing it eventually uses every method somewhere."** → Actually, even when each method is used by some class somewhere, ISP asks about each piece of code that depends on the interface, not about the system as a whole. `History` might matter to some channel, but `SmsOnlyNotifier` still has to carry it, and a caller that only sends still asks for all three. You notice this when a class that does exactly what you need cannot be passed in without filler for methods you never call.
+- **"ISP is only about how many methods an interface has, not about who is forced to depend on it."** → Actually a small count is a symptom, not the goal. An interface with three methods is fine when every caller and every implementer needs all three; `IFullNotifier` is a problem because `SmsOnlyNotifier` needs one of its three. You notice this when you find yourself writing filler bodies just to make a class compile.
 
 ## Try it (3 minutes)
 
-Take the proposed `INotificationChannel` from the situation, with `SendEmail`, `SendSms`, `SendPush` and `GetDeliveryReport`.
+Use the first code block.
 
-1. List the methods `SmsNotifier` would have real behaviour for, and the ones it would have to fill with something.
-2. List the methods the order confirmation code calls, if it sends an SMS.
-3. Say which interface in the samples already gives both of them exactly what they need.
+1. List the methods `SmsOnlyNotifier` has real behaviour for, and the ones it only fills.
+2. What happens when code calls `History()` on a `SmsOnlyNotifier`?
+3. Say which interface in the samples already gives a send-only channel exactly what it needs.
 
-Expected result: 1 — real: `SendSms`; filler: `SendEmail`, `SendPush`, `GetDeliveryReport`. 2 — only `SendSms`. 3 — `INotifier`, with its single `Send`, which `SmsNotifier` gets through `NotifierBase`.
+Expected result: 1 — real: `Send`; filler: `History`, `Retry`. 2 — it throws `NotSupportedException` with the message `this channel keeps no history`. 3 — `INotifier`, with its single `Send`.
 
-If `GetDeliveryReport` later needs a new parameter, which classes must change under each design?
+If `Retry` later needs a new parameter, which classes must change under each design?
 
 <details><summary>Suggested answer</summary>
 
-With `INotificationChannel`, every implementing class must change, `SmsNotifier` and `EmailNotifier` included, even though neither reports anything. With `INotifier`, nothing changes: delivery reports would live in their own interface, implemented only by classes that can report.
+With `IFullNotifier`, every implementing class must change, `SmsOnlyNotifier` included, even though it never retries. With `INotifier`, nothing changes: retries would live in their own interface, implemented only by classes that can really retry.
 
 </details>
 
@@ -115,6 +125,6 @@ With `INotificationChannel`, every implementing class must change, `SmsNotifier`
 
 1. The Interface Segregation Principle says no code should be forced to depend on methods it does not use.
 2. A fat interface makes implementers write filler methods and makes callers depend on methods they never call.
-3. Filler that throws also breaks the promise LSP asks every implementation to keep.
+3. `SmsOnlyNotifier` must implement `History` and `Retry` from `IFullNotifier`, and both just throw `NotSupportedException`.
 4. `INotifier` has one method, `Send`, so `EmailNotifier` and `SmsNotifier` carry only what they really do.
 5. Cut interfaces by what each caller and implementer needs, not by a wish for every channel to look the same.
