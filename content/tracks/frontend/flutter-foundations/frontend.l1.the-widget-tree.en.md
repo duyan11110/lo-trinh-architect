@@ -15,7 +15,9 @@ vocab: [widget, widget-tree]
 example_tag: stage-1
 versions_used: [flutter]
 content_version: 1
-status: draft
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-27T00:30:00+07:00"
 ---
 
 ## Before you start
@@ -47,7 +49,7 @@ flowchart TD
 
 In Flutter, almost everything you see is a **widget**. A line of text is a `Text` widget. Space around it is a `Padding` widget. A row in a list is a `ListTile`. A whole screen, with its title bar and body, is a widget too. Each widget describes one piece of the UI and says which widgets sit inside it, either in a `build` method or through constructor arguments.
 
-Put together, those descriptions form the **widget tree**. In the diagram, each arrow points from a widget to one it contains: the app at the top, a screen under it, a page layout under that, and so on down to single rows. It plays the role nested HTML elements played on a web page: containment, level by level.
+Put together, those descriptions form the **widget tree**. In the diagram, each arrow points from a widget to one it contains: the app at the top, a screen under it, a page layout under that, and so on down to single rows; the next section names each box. It plays the role nested HTML elements played on a web page: containment, level by level.
 
 The big difference is what happens when something changes. On a web page, JavaScript finds a DOM node and changes it in place. In Flutter, code does not edit the old tree. The `build` method runs again and returns a new description of what the UI should be now. Flutter compares it with the previous description, works out the smallest set of changes between the two, and applies only those to the screen. Building the description is cheap, because widgets are small, short-lived objects.
 
@@ -67,7 +69,9 @@ The tree starts with `DonHangApp`, a widget in `DonHang.App/lib/main.dart`:
   }
 ```
 
-Its `build` returns a `MaterialApp`, which sets the app's name and colours — not the text in the title bar — and whose first screen, `home`, is a `ProductListScreen`. `ProductListScreen` describes its page in a companion class, `_ProductListScreenState`; a later lesson explains why some widgets need one. That class's `build` returns a `Scaffold`, the standard page layout.
+It creates an `ApiClient`, the class that calls the API (`context` can be ignored for now). Its `build` returns a `MaterialApp`, which sets the app's name and colours — not the text in the title bar — and whose first screen, `home`, is a `ProductListScreen`.
+
+`ProductListScreen` describes its page in a companion class, `_ProductListScreenState`; a later lesson explains why some widgets need one. That class's `build` returns a `Scaffold`, the standard page layout.
 
 The `Scaffold` holds an `AppBar` with the "Đơn Hàng" title, a `body`, and the refresh button. The body is a `FutureBuilder`, which shows a spinner while the products load. When they arrive, it builds again and returns the list instead; `snapshot.data` is that list of products:
 
@@ -97,7 +101,7 @@ The `Scaffold` holds an `AppBar` with the "Đơn Hàng" title, a `body`, and the
 
 ## Try it (3 minutes)
 
-Start the lab (`scripts/up.sh` from the repository root; the app is served on port 8081), open `http://localhost:8081`, and open `DonHang.App/lib/screens/product_list_screen.dart` next to it. For each thing on screen, name the widget in the code that describes it:
+Start the lab (`scripts/up.sh` from the repository root; it needs the Flutter SDK installed on your machine, and the app is served on port 8081), open `http://localhost:8081`, and open `DonHang.App/lib/screens/product_list_screen.dart` next to it. For each thing on screen, name the widget in the code that describes it:
 
 1. The "Đơn Hàng" title at the top.
 2. One product's name and one product's price.
