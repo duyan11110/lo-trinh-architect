@@ -45,7 +45,7 @@ flowchart TD
   A -->|other status| F[Failed: status code]
 ```
 
-Placing an order is a `POST` that creates a resource, so success is `201`, not `200`. The request body lists only what is being ordered: for each line, a product id, a quantity and a unit price. It says nothing about who is ordering. That comes from the `Authorization` header the app already attaches after login: the API's authentication middleware checks the token, and the endpoint takes the customer id from the token's `sub` claim. The API signed the token, so the client cannot change the id inside it without the signature failing; an id typed into the body would have no such protection.
+Placing an order is a `POST` that creates a resource, and this API answers a successful one with `201`, not `200`. The request body lists only what is being ordered: for each line, a product id, a quantity and a unit price. It says nothing about who is ordering. That comes from the `Authorization` header the app already attaches after login: the API's authentication middleware checks the token, and the endpoint takes the customer id from the token's `sub` claim. The API signed the token, so the client cannot change the id inside it without the signature failing; an id typed into the body would have no such protection.
 
 What comes back decides what the screen shows. A `201` carries the new order as JSON, and the app reads its id and status. Anything else is a failure, and a `POST` can fail in more than one way: `401` when the token is missing or has expired, `400` when the API rejects the order, `500` when something broke on the server. Each asks the user for something different: sign in again, change the order, or try later.
 
@@ -69,7 +69,7 @@ A `POST` is not idempotent: sending the same request twice creates two orders. A
   }
 ```
 
-`createOrder` sends `_headers`, so the request carries `Content-Type` and, after login, `Authorization: Bearer <token>`. The body is `{"items": [...]}`, with each item turned into JSON by `OrderItemRequest.toJson`: `productId`, `quantity` and `unitPriceVnd`, and no customer id anywhere. On the API side, the create-order request type has only `Items`, and the endpoint, marked `[Authorize]`, reads the customer id from the token. Only `201` counts as success; `OrderResult.fromJson` then reads the new order's `id` and `status`. Any other status becomes an exception whose text holds just the status code. The Problem Details body the API sent, with its title and detail, is never read.
+`createOrder` sends `_headers`, so the request carries `Content-Type` and, after login, `Authorization: Bearer <token>`. The body is `{"items": [...]}`, with each item turned into JSON by `OrderItemRequest.toJson`: `productId`, `quantity` and `unitPriceVnd`, and no customer id anywhere. On the API side, the create-order request type has only `Items`, and the endpoint, marked `[Authorize]`, reads the customer id from the token. Only `201` counts as success; `OrderResult.fromJson` then reads the new order's `id` and `status`. Any other status becomes an exception whose text holds just the status code. When the API sent a Problem Details body with a title and detail, as it does for `400` and `500`, that body is never read.
 
 The order screen calls it from `_placeOrder`, in `DonHang.App/lib/screens/create_order_screen.dart`:
 
@@ -109,7 +109,7 @@ In step 1 the body had no customer id. Where did the API get the one it stored w
 
 <details><summary>Suggested answer</summary>
 
-From the token. The endpoint is marked `[Authorize]`, so the authentication middleware had already checked the `Authorization` header and recorded the caller before `Create` ran. `Create` then read the customer id from the token's `sub` claim, which the API wrote when it issued the token at login. The order belongs to whoever the token names.
+From the token. The authentication middleware checked the `Authorization` header and recorded the caller, and because the endpoint is marked `[Authorize]`, a request with no valid caller would have been turned away with `401` before `Create` ran. `Create` then read the customer id from the token's `sub` claim, which the API wrote when it issued the token at login. The order belongs to whoever the token names.
 
 </details>
 

@@ -1,0 +1,101 @@
+{
+  "id": "frontend.l1.creating-an-order",
+  "technical": {
+    "reviewed_at": "2026-09-26T04:58:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "OrdersController.cs @stage-1: `[Authorize] [HttpPost] public async Task<ActionResult<OrderDto>> Create(CreateOrderRequest request)` with `var customerId = int.Parse(User.FindFirstValue(JwtRegisteredClaimNames.Sub)!);`. Dtos.cs: `record CreateOrderRequest(List<CreateOrderItemRequest> Items)`, `record CreateOrderItemRequest(int ProductId, int Quantity, int UnitPriceVnd)`. Program.cs sets `MapInboundClaims = false` so `sub` is kept as issued.",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/Controllers/OrdersController.cs:17-21; DonHang.Api/Dtos.cs:11-13; DonHang.Api/Program.cs:31"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Lab (curl via Caddy :8080, valid token): `HTTP/1.1 201 Created`, `Location: http://localhost:8080/api/v1/orders/29`, body `{\"id\":29,\"customerId\":1,\"status\":\"new\",\"placedAt\":\"2026-09-25T21:54:32.92...+00:00\",\"items\":[{\"productId\":1,\"quantity\":1,\"unitPriceVnd\":1250000}]}`. OrderService.PlaceOrderAsync sets `Status = \"new\"`.",
+        "source": "lab run 2026-09-26; examples/don-hang @ stage-1: DonHang.Domain/OrderService.cs:13-17"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Lab: took a real login token, changed the payload `sub` from \"1\" to \"2\" keeping the original signature, POST /api/v1/orders -> `HTTP/1.1 401 Unauthorized`, `Www-Authenticate: Bearer error=\"invalid_token\"`. Program.cs: `ValidateIssuerSigningKey = true` with the HMAC key from config; JwtTokenService signs with HmacSha256.",
+        "source": "lab run 2026-09-26; DonHang.Api/Program.cs:32-41; DonHang.Api/JwtTokenService.cs"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Lab: no Authorization -> `401`, `Content-Length: 0`, `Www-Authenticate: Bearer`. HMAC-signed token with exp 1h in the past -> `401`, `error_description=\"The token expired at ...\"`. `{\"items\":[]}` -> `400` `{\"title\":\"Invalid request\",\"status\":400,\"detail\":\"an order needs at least one item\"}`. db stopped -> `500` `{\"title\":\"Server error\",\"status\":500,\"detail\":\"something went wrong\"}`. 401 has no body; 400/500 carry Problem Details.",
+        "source": "lab run 2026-09-26; DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs; DonHang.Domain/OrderService.cs:10"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "api_client.dart @stage-1 48-58: `http.post(Uri.parse('$baseUrl/orders'), headers: _headers, body: jsonEncode({'items': items.map((item) => item.toJson()).toList()}))`; `if (response.statusCode != 201) throw Exception('failed to create order (${response.statusCode})')`; body not read on failure. models.dart: toJson keys productId/quantity/unitPriceVnd; OrderResult.fromJson reads id, status.",
+        "source": "examples/don-hang @ stage-1: DonHang.App/lib/api_client.dart:12,18-21,48-58; DonHang.App/lib/models.dart:17-41"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "create_order_screen.dart @stage-1: `OrderItemRequest(productId: 1, quantity: 1, unitPriceVnd: 1250000)`; `onPressed: _loading ? null : _placeOrder`; child `CircularProgressIndicator()` while loading. seed.sql: `(1, 'Bàn phím cơ', 1250000)`; GET /products returns id 1 priceVnd 1250000. Flutter API (ElevatedButton): \"If onPressed and onLongPress callbacks are null, then the button will be disabled.\"",
+        "source": "create_order_screen.dart:21-33,43-45; db/seed.sql:6; https://api.flutter.dev/flutter/material/ElevatedButton-class.html"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Headless Chrome on http://localhost:8081, signed in, `docker compose stop db`, tapped \"Order 1 keyboard\": screen text \"Failed: Exception: failed to create order (500)\"; CDP Network: POST /api/v1/orders status 500, response header `Access-Control-Allow-Origin: *`, body `{\"title\":\"Server error\",\"status\":500,\"detail\":\"something went wrong\"}`. db restarted afterwards (healthy).",
+        "source": "lab run 2026-09-26 (Chrome 153 headless + CDP)"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Same Chrome run, db up: screen \"Order 30 placed, status new\"; CDP Network shows OPTIONS preflight (204) then POST /api/v1/orders 201 with request headers `Authorization: Bearer eyJhbGciOiJIU...`, `Content-Type: application/json`, postData `{\"items\":[{\"productId\":1,\"quantity\":1,\"unitPriceVnd\":1250000}]}`. `docker compose stop db` / `start db` stopped and started container donhang-db.",
+        "source": "lab run 2026-09-26; examples/don-hang docker-compose.yml service db"
+      },
+      {
+        "n": 9,
+        "verdict": "not-needed",
+        "evidence": "Kind opinion, taken from outline misconception 2; phrased as a consequence for the user, not as a documented rule. The 401/400/500 mapping it relies on is verified under claim 4."
+      }
+    ],
+    "issues": [
+      {
+        "severity": "major",
+        "section": 7,
+        "kind": "accuracy",
+        "quote": "The endpoint is marked `[Authorize]`, so the authentication middleware had already checked the `Authorization` header and recorded the caller before `Create` ran.",
+        "text": "Unlisted claim, and the causality is backwards. The authentication middleware (`app.UseAuthentication()`, default scheme JwtBearer) runs on every request whether or not the endpoint has `[Authorize]`. What `[Authorize]` adds is that authorization refuses a request with no authenticated user (challenge -> 401) before `Create` runs. ASP.NET Core docs: \"Calling UseAuthentication registers the middleware that uses the previously registered authentication schemes.\"",
+        "fix": "Replace with: \"The authentication middleware checks the `Authorization` header on every request and records the caller. Because `Create` is marked `[Authorize]`, a request without a valid token is answered `401` before `Create` runs.\" Keep the rest. Add a claim (kind behavior, version_key aspnetcore, source security/authentication/index.md)."
+      },
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "accuracy",
+        "quote": "A `POST` is not idempotent: sending the same request twice creates two orders.",
+        "text": "Unlisted claim. The statement is correct (RFC 9110 §9.2.2: \"Of the request methods defined by this specification, PUT, DELETE, and safe request methods are idempotent.\"; lab: two identical POSTs created orders 29 and 30), but it is a specific HTTP-semantics claim that quiz q5 depends on, and it is missing from `claims`.",
+        "fix": "No text change needed. Add to meta.json claims: \"POST is not idempotent (RFC 9110 §9.2.2); two identical POST /api/v1/orders create two orders\", kind behavior, version_key http, section 4."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "quote": "The Problem Details body the API sent, with its title and detail, is never read.",
+        "text": "Follows \"Any other status becomes an exception\", so it reads as if every failure carries Problem Details. A 401 from this API has no body at all (lab: `401`, `Content-Length: 0`, `Www-Authenticate: Bearer`); only the 400 and 500 paths write Problem Details.",
+        "fix": "Change to: \"When the API sent a Problem Details body (as it does for `400` and `500`), its title and detail are never read.\""
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "quote": "Placing an order is a `POST` that creates a resource, so success is `201`, not `200`.",
+        "text": "Stated as an HTTP rule, but RFC 9110 §9.3.3 only says the origin server \"SHOULD send a 201 (Created) response\" when a POST created a resource. What is certain is this API's behaviour (CreatedAtAction -> 201, verified under claim 2).",
+        "fix": "Change to: \"Placing an order is a `POST` that creates a resource, and this API answers it with `201 Created`, not `200`.\""
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "fix-required"
+  }
+}
