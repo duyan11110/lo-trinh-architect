@@ -48,7 +48,7 @@ Each arrow in the diagram moves one reason to change out of `PlaceOrderSplit` in
 
 Cohesion inside each method was already high; SRP looks one level up, at the class. A class with four reasons to change can end up edited, re-read and re-tested by up to four different people, even when each of them cares about only one part of it.
 
-What SRP asks for is one class per reason: a validator, a pricer, an order saver and a notifier. None of the four needs to know how the others work. The notifier, for example, does not need to know how the total was worked out; today it only needs the customer id. Something still has to run them in order — check, price, save, notify. That can stay in `Place`, which would then be all that is left of `PlaceOrderSplit`; it changes only when the steps themselves change, for example if the customer had to be told before the order is saved.
+What SRP asks for is one class per reason: a validator, a pricer, an order saver and a notifier. None of the four needs to know how the others work. The notifier, for example, does not need to know how the total was worked out; today it only needs the customer id. Something still has to run them in order — check, price, save, notify. That can stay in `Place`, which would then be all that is left of `PlaceOrderSplit`; its reason to change is the sequence of steps — for example, if the customer had to be told before the order is saved.
 
 ## In the Đơn Hàng system
 
