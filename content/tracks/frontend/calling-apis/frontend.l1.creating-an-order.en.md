@@ -30,7 +30,7 @@ The customer has signed in, and the "Place an order" screen shows a single butto
 ## Core concepts
 
 - `ApiClient.createOrder` — the method that `POST`s the order's items to `/api/v1/orders` with the headers from `_headers`, and returns the new order's id and status on `201`.
-- customer id from the token — the API reads which customer is ordering from the signed token's `sub` claim, never from the request body.
+- customer id from the token — the API reads which customer is ordering from the signed token's `sub` claim, the field in its payload where the API wrote the customer id at login, never from the request body.
 - in-flight request — a request that has been sent and has not yet been answered; while one is in flight, the order button accepts no taps.
 
 ## How it works
@@ -69,7 +69,7 @@ A `POST` is not idempotent: sending the same request twice creates two orders. A
   }
 ```
 
-`baseUrl` is `http://localhost:8080/api/v1`, so the request goes to `/api/v1/orders`. `createOrder` sends `_headers`, so it carries `Content-Type` and, after login, `Authorization: Bearer <token>`. The body is `{"items": [...]}`, with each item turned into JSON by `OrderItemRequest.toJson`: `productId`, `quantity` and `unitPriceVnd`, and no customer id anywhere. On the API side, the create-order request type has only `Items`, and the endpoint's `Create` method, marked `[Authorize]`, reads the customer id from the token.
+`baseUrl` is `http://localhost:8080/api/v1`, so the request goes to `/api/v1/orders`. `createOrder` sends `_headers`, so it carries `Content-Type` and, after login, `Authorization: Bearer <token>`. The body is `{"items": [...]}`, with each item turned into JSON by `OrderItemRequest.toJson`: `productId`, `quantity` and `unitPriceVnd`, and no customer id anywhere. On the API side, the create-order request type has only `Items`, and the endpoint's `Create` method reads the customer id from the token; it is marked `[Authorize]`, so a request without a valid token is answered `401` before `Create` runs.
 
 Back in the app, only `201` counts as success; `OrderResult.fromJson` then reads the new order's `id` and `status`. Any other status becomes an exception whose text holds just the status code. When the API sent a Problem Details body with a title and detail, as it does for `400` and `500`, that body is never read.
 
@@ -93,7 +93,7 @@ The order screen calls it from `_placeOrder`, in `DonHang.App/lib/screens/create
 
 In stage 1 this screen always orders the same thing: one of product 1, the keyboard, at its listed price. `_placeOrder` sets `_loading` first. The button, built further down in the same file and not shown here, has `onPressed: _loading ? null : _placeOrder`, so it is disabled and shows a spinner until the request ends. On success, the screen shows "Order <id> placed, status <status>"; a new order's status is `new`. On failure it shows "Failed: " followed by the exception, for example "Failed: Exception: failed to create order (500)".
 
-`finally` enables the button again, so a later tap places a second, separate order on purpose; `if (mounted)` is the same check as on the login screen: this last `setState` runs only if the screen is still in the widget tree. The "Failed: …" text is still one message for every failure, just with the status code attached: a developer can tell a `401` from a `500`, but the user gets no advice on what to do.
+`finally` enables the button again, so a later tap places a second, separate order on purpose; `if (mounted)` guards this last `setState`: the user may have left the screen while the request was running, and `finally` runs anyway, so it updates the screen only if the screen is still in the widget tree. The "Failed: …" text is still one message for every failure, just with the status code attached: a developer can tell a `401` from a `500`, but the user gets no advice on what to do.
 
 ## Beginners often think…
 
