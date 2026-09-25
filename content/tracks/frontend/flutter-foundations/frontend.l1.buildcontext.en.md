@@ -62,7 +62,7 @@ The login icon on the product screen:
         ],
 ```
 
-The `context` here belongs to `ProductListScreen`, the `home` of `MaterialApp`, so it sits below the navigator. When the icon is pressed, `Navigator.of(context)` walks up, finds the navigator, and `push` puts a new `LoginScreen`, wrapped in a `MaterialPageRoute` that animates it in, on top of the stack. "On top of the stack" means in front of the product screen, not above the navigator: in the tree, the new screen sits below the navigator too. The product screen never had to be given the navigator.
+The `context` here belongs to `ProductListScreen`, the `home` of `MaterialApp`, so it sits below the navigator. When the icon is pressed, `Navigator.of(context)` walks up, finds the navigator, and `push` puts a new `LoginScreen`, wrapped in a `MaterialPageRoute`, on top of the stack. "On top of the stack" means in front of the product screen, not above the navigator: in the tree, the new screen sits below the navigator too. The product screen never had to be given the navigator.
 
 The sign-in screen shows the second rule, that a context is only good while its widget is in the tree:
 
