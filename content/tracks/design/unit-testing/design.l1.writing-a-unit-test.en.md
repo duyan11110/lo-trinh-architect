@@ -44,7 +44,7 @@ flowchart LR
   E -->|different| F[failed: name, Expected, Actual]
 ```
 
-When you run `dotnet test`, xUnit looks through the test project for public classes and, in them, for methods marked `[Fact]`. It runs each one on its own. A `[Fact]` method takes no parameters, because nobody is there to pass them, and returns `void`; a test that awaits something is written as `public async Task` instead. There is no list of tests to keep up to date: adding a method with `[Fact]` is enough for xUnit to find it on the next run.
+When you run `dotnet test`, xUnit looks through the test project for public classes and, in them, for methods marked `[Fact]`; the class must be public, and the methods here are public too. It runs each one on its own. A `[Fact]` method takes no parameters, because nobody is there to pass them, and returns `void`; a test that awaits something is written as `public async Task` instead. There is no list of tests to keep up to date: adding a method with `[Fact]` is enough for xUnit to find it on the next run.
 
 The method's name is what the report shows when the test fails, so it should say what is supposed to happen. `AnEmptyOrderCannotBePaid` states a rule; if it fails, the report tells you which rule broke without opening the file. `TestMarkPaid` only says which method was called, and `Test1` says nothing. The name is for the person reading the failure, possibly months later.
 
@@ -81,7 +81,7 @@ The class is `public`, and each method is `public void`, takes no parameters, an
 
 `AnEmptyOrderCannotBePaid` checks a different kind of result: not a value, but that an exception is thrown. `Assert.Throws<InvalidOperationException>` receives `order.MarkPaid` — the method itself, not a call to it — calls it, and passes only if that exact exception comes out. Both names read as rules: the total follows the lines; an empty order cannot be paid.
 
-A new test for `ExpressShipping` fits the same shape. In the `ShippingFeeTests` class, a `[Fact]` method named `ExpressShippingAlwaysCostsSixtyThousand` would create `new ExpressShipping()` and assert `Assert.Equal(60_000, fee.ForOrder(500_000))`: expected first, then what the code returns.
+A new test for `ExpressShipping` fits the same shape. In the `ShippingFeeTests` class, a `[Fact]` method named `ExpressShippingAlwaysCostsSixtyThousand` would store `new ExpressShipping()` in a `ShippingFee fee`, as the existing test does, and assert `Assert.Equal(60_000, fee.ForOrder(500_000))`: expected first, then what the code returns.
 
 ## Beginners often think…
 
@@ -113,7 +113,7 @@ Expected `60000` and Actual `50000` — the labels swap, because xUnit calls the
 
 ## Five-line summary
 
-1. xUnit runs every public `[Fact]` method it finds; there is no list of tests to register them in.
+1. xUnit runs every `[Fact]` method in the project's public classes; there is no list of tests to register them in.
 2. A `[Fact]` method takes no parameters and returns `void`, or `Task` when it awaits something.
 3. Name a test after the behaviour it checks, like `AnEmptyOrderCannotBePaid`, so a failure reads as the broken rule.
 4. `Assert.Equal` takes the expected value first and the actual value second; the report labels them that way.
