@@ -1,8 +1,8 @@
 {
   "id": "backend.l1.validating-a-jwt",
   "technical": {
-    "reviewed_at": "2026-09-25T09:30:00+07:00",
-    "reviewer": "claude-opus-5-5 (technical review round 2)",
+    "reviewed_at": "2026-09-25T17:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (technical review round 3)",
     "claim_verdicts": [
       {
         "n": 1,
@@ -25,13 +25,13 @@
       {
         "n": 4,
         "verdict": "verified",
-        "evidence": "Live 2026-09-25 via Caddy :8080: no header -> HTTP/1.1 401, Www-Authenticate: Bearer. Bearer abc.def.ghi -> 401, Www-Authenticate: Bearer error=\"invalid_token\". POST /api/v1/auth/login (anh.tran@example.com, password from scripts/backend/auth-and-orders.sh) -> token -> GET /api/v1/orders 200.",
+        "evidence": "Re-run live 2026-09-25 (round 3) via Caddy :8080, examples/don-hang HEAD = stage-1^{commit} 4fca60a: no header -> HTTP/1.1 401, Www-Authenticate: Bearer. Bearer abc.def.ghi -> 401, Www-Authenticate: Bearer error=\"invalid_token\". Login token -> GET /api/v1/orders 200 (round 2 run). Section 2 wording \"adds error=\\\"invalid_token\\\" after Bearer\" matches the header exactly.",
         "source": "live run, examples/don-hang stage-1"
       },
       {
         "n": 5,
         "verdict": "verified",
-        "evidence": "Live: GET /api/v1/orders/1 with Bearer abc.def.ghi -> 200 {\"id\":1,\"customerId\":1,\"status\":\"paid\",...}. OrdersController.cs @ stage-1 30-36: [HttpGet(\"{id:int}\")] Get, no [Authorize]; no class-level [Authorize]; Program.cs 43 AddAuthorization() with no fallback policy.",
+        "evidence": "Re-run live round 3: GET /api/v1/orders/1 with Bearer abc.def.ghi -> HTTP/1.1 200 {\"id\":1,\"customerId\":1,\"status\":\"paid\",...}. OrdersController.cs @ stage-1 30-36: Get has no [Authorize]; no class-level [Authorize]; Program.cs 43 AddAuthorization() with no fallback policy - supports summary line 3 and q1 d now scoped to Dong Hang.",
         "source": "live run; examples/don-hang @ stage-1: OrdersController.cs:10-36, Program.cs:43"
       },
       {
@@ -81,47 +81,26 @@
         "verdict": "verified",
         "evidence": "authentication/index.md: \"The AddAuthentication parameter JwtBearerDefaults.AuthenticationScheme is the name of the scheme to use by default when a specific scheme isn't requested.\" Scheme-specific methods \"such as AddJwtBearer ... register schemes with appropriate settings.\" \"Calling UseAuthentication registers the middleware that uses the previously registered authentication schemes.\"",
         "source": "refs/aspnetcore-docs/aspnetcore/security/authentication/index.md:25-45"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "configure-jwt-bearer-authentication.md:16: \"The client that requests the JWT can request data from an API resource by using the Authorization header and a bearer token.\" Live round 3: Authorization: Bearer abc.def.ghi changes the challenge to Bearer error=\"invalid_token\" (header read and token rejected); no header -> plain Bearer.",
+        "source": "refs/aspnetcore-docs/aspnetcore/security/authentication/configure-jwt-bearer-authentication.md:16; live run"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "JwtBearerOptions.MapInboundClaims (aspnetcore-10.0): \"used when determining whether or not to map claim types that are extracted when validating a JwtSecurityToken or a JsonWebToken. If this is set to true, the Claim Type is set to the JSON claim name after translating using this mapping. Otherwise, no mapping occurs. The default value is true.\" Only claim-type mapping is described. claims.md:80 same. Docs opened this round: refs claims.md, configure-jwt-bearer-authentication.md, this API page; live curl.",
+        "source": "https://learn.microsoft.com/dotnet/api/microsoft.aspnetcore.authentication.jwtbearer.jwtbeareroptions.mapinboundclaims?view=aspnetcore-10.0 (WebFetch); refs/aspnetcore-docs/aspnetcore/security/authentication/claims.md:80"
       }
     ],
-    "issues": [
-      {
-        "severity": "major",
-        "section": 4,
-        "kind": "accuracy",
-        "text": "Unlisted claim (new in round 2): where the JWT bearer handler reads the token from is a behaviour claim not in the ledger. It is true (configure-jwt-bearer-authentication.md: \"request data from an API resource by using the Authorization header and a bearer token\"; live runs), but it must be listed.",
-        "quote": "Clients send their JWT in an `Authorization: Bearer <token>` header, so that is where it looks.",
-        "fix": "Add a claims entry: kind behavior, version_key aspnetcore, section 4, text \"The JWT bearer handler reads the token from the Authorization header after 'Bearer '\", source_hint refs/aspnetcore-docs/aspnetcore/security/authentication/configure-jwt-bearer-authentication.md line 16 + live curl. No lesson text change."
-      },
-      {
-        "severity": "major",
-        "section": 5,
-        "kind": "accuracy",
-        "text": "Unlisted claim (new in round 2): what MapInboundClaims = false does (and, via \"only\", what it does not do) is not in the ledger; quiz q5 explanation c repeats it. True per claims.md (\"disable the namespaces per scheme ... MapInboundClaims = false\") and the repo comment at Program.cs 28-30.",
-        "quote": "`MapInboundClaims = false` only keeps claim names such as `sub` as they were issued.",
-        "fix": "Add a claims entry: kind behavior, version_key aspnetcore, section 5, text \"MapInboundClaims = false stops the handler mapping JWT claim names (e.g. sub) to ClaimTypes URIs; it does not affect validation\", source_hint refs/aspnetcore-docs/aspnetcore/security/authentication/claims.md:80 + Program.cs @ stage-1:28-31. No lesson text change."
-      },
-      {
-        "severity": "minor",
-        "section": 6,
-        "kind": "accuracy",
-        "text": "The observable symptom does not follow from the misconception. The misconception is answering 403 for a missing/invalid token; the sentence instead describes an API answering 403 correctly, for an identified caller, and says the client \"stops working\" - a client that re-logs only on 401 behaves correctly there. Quiz q4 has the right symptom.",
-        "quote": "You notice this when a client that treats every `401` as \"log in again\" stops working the moment an endpoint answers `403` for a caller it has already identified.",
-        "fix": "Replace with: \"You notice this when an API answers `403` for an expired token: a client that sends the user to log in only on `401` never does, and every call keeps failing.\""
-      },
-      {
-        "severity": "minor",
-        "section": 8,
-        "kind": "opinion-as-fact",
-        "text": "Generalises a property of this app to all endpoints. An action without its own [Authorize] is still protected under a class-level [Authorize] or an authorization fallback policy; it runs here only because OrdersController has neither and AddAuthorization() sets no fallback (Program.cs:43). Same over-reach in quiz q1 explanation d: \"an unmarked endpoint is never rejected\".",
-        "quote": "An endpoint without `[Authorize]` runs whatever token is sent, valid or not.",
-        "fix": "Summary line 3: \"In Đơn Hàng, an endpoint without `[Authorize]` runs whatever token is sent, valid or not.\" q1 explanation d (en): replace \"and in any case an unmarked endpoint is never rejected\" with \"and in Đơn Hàng an unmarked endpoint is not rejected\"; vi: \"và trong Đơn Hàng endpoint không đánh dấu không bị từ chối\"."
-      }
-    ],
+    "issues": [],
     "scope": {
       "outline_covered": true,
       "beyond_scope": []
     },
-    "verdict": "fix-required"
+    "verdict": "pass"
   },
   "junior": {
     "reviewed_at": "2026-09-25T15:00:00+07:00",
