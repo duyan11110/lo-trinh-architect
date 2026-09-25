@@ -26,7 +26,7 @@ reviewed_at: null
 
 ## The situation
 
-A customer places an order from the app. One `POST /api/v1/orders` arrives, and a moment later the app gets back `201` and a link to the new order. In between, the request passed through three projects, four classes and a database. When something goes wrong — an order refused, a `500`, a missing notification — you need to know which class handled which step, and which classes never saw the request at all. What exactly happens, in what order, between the request arriving and the `201` going back?
+A customer places an order from the app. One `POST /api/v1/orders` arrives, and a moment later the app gets back `201` and a link to the new order. In between, the request passed through three projects, several classes and a database. When something goes wrong — an order refused, a `500`, a missing notification — you need to know which class handled which step, and which classes never saw the request at all. What exactly happens, in what order, between the request arriving and the `201` going back?
 
 ## Core concepts
 
@@ -38,18 +38,20 @@ A customer places an order from the app. One `POST /api/v1/orders` arrives, and 
 
 ```mermaid
 flowchart LR
-  R[POST /api/v1/orders] --> C[OrdersController.Create]
+  R[POST /api/v1/orders] --> M[middleware]
+  M --> C[OrdersController.Create]
   C --> S[OrderService.PlaceOrderAsync]
   S --> E[EfOrderRepository]
   E --> P[(PostgreSQL)]
+  S --> N[INotifier.Send]
   C --> A[201 + Location]
 ```
 
-The request enters at the controller. `OrdersController.Create` reads who the caller is and what they sent, turns the request's items into `OrderItem` objects, and calls `OrderService.PlaceOrderAsync`. The controller does not check the items or save anything.
+The request first passes through the middleware — exception handling, logging, authentication — and then reaches the controller. `OrdersController.Create` reads who the caller is and what they sent, turns the request's items into `OrderItem` objects, and calls `OrderService.PlaceOrderAsync`. The controller does not check the items or save anything.
 
-The service does the business work. It refuses an empty list, builds the `Order` with status `"new"`, and asks `IOrderRepository` to add and save it. At run time that interface is `EfOrderRepository`, which hands the order to EF Core; `SaveChangesAsync` sends the `INSERT` to PostgreSQL, and PostgreSQL assigns the order's id. The service then sends the "order placed" notification and returns the `Order`.
+The service does the business work. It refuses an empty list, builds the `Order` with status `"new"`, and asks `IOrderRepository` to add and save it. At run time that interface is `EfOrderRepository`, which hands the order to EF Core; `SaveChangesAsync` sends the `INSERT`s — the order row and its item rows — to PostgreSQL, and PostgreSQL assigns the order's id. The service then sends the "order placed" notification through `INotifier` — at stage-1, `LoggingNotifier` writes it as a log line — and returns the `Order`.
 
-Back in the controller, the `Order` becomes an `OrderDto`, and `CreatedAtAction` answers `201` with a `Location` header pointing at the new order. Each layer called only the one directly below it, and nothing called back up: the data layer never asked the service anything, and the service never touched HTTP. That is why a change to which orders are allowed touches only the service, and a change to how orders are queried touches only the repository.
+Back in the controller, the `Order` becomes an `OrderDto`, and `CreatedAtAction` answers `201` with a `Location` header pointing at the new order. Each layer called only the one directly below it, and nothing called back up: the data layer never asked the service anything, and the service never touched HTTP. That is why a rule about which orders may be placed can stay in the service, and a change to how orders are queried touches only the repository.
 
 ## In the Đơn Hàng system
 
@@ -78,9 +80,9 @@ Between `PlaceOrderAsync` being called and returning, the service from the previ
     public Task SaveChangesAsync() => db.SaveChangesAsync();
 ```
 
-`AddAsync` only stages the order in EF Core; `SaveChangesAsync` is the moment the row reaches PostgreSQL and `order.Id` gets its value. That is why the controller can use `order.Id` for the `Location` header: by the time `PlaceOrderAsync` returns, the id exists.
+`AddAsync` only stages the order in EF Core; `SaveChangesAsync` is the moment the rows reach PostgreSQL and `order.Id` gets its value. That is why the controller can use `order.Id` for the `Location` header: by the time `PlaceOrderAsync` returns, the id exists.
 
-Not every request in Đơn Hàng takes all three steps. `OrdersController.Get` and `List` call `IOrderRepository` directly, skipping `OrderService`, and the products and login endpoints query `DonHangDbContext` themselves. These are shortcuts for simple reads with no business rule to apply today. The cost shows up later: if a rule about reading orders appears, it has no place in the business layer until those reads go through it.
+Not every request in Đơn Hàng takes all three steps. `OrdersController.Get` and `List` call `IOrderRepository` directly, skipping `OrderService`, and the products endpoints query `DonHangDbContext` themselves — shortcuts for simple reads with no business rule to apply today. The login endpoint also queries `DonHangDbContext` itself, and checks the password from the controller with `PasswordHasher` from `DonHang.Domain`. The cost shows up later: if a rule about reading orders appears, it has no place in the business layer until those reads go through it.
 
 ## Beginners often think…
 
@@ -114,6 +116,6 @@ The data layer never saw it: `EfOrderRepository` was not called, and nothing rea
 
 1. `POST /api/v1/orders` goes controller → service → repository → PostgreSQL, and the answer comes back up to the controller.
 2. The controller reads and shapes HTTP, the service checks and builds the order, and the repository stores it.
-3. Each layer calls only the one below it, and nothing calls back up.
-4. `Get`, `List`, and the products and login endpoints skip layers for simple reads — a shortcut with a cost if a read rule appears.
+3. In `Create`, each layer calls only the one below it, and nothing calls back up.
+4. `Get`, `List` and the products endpoints skip the service for simple reads — a shortcut with a cost if a read rule appears.
 5. Because each concern lives in one layer, a rule change touches the service and a query change touches the repository.
