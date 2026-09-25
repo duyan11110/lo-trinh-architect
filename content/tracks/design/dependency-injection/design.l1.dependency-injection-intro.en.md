@@ -45,7 +45,7 @@ flowchart LR
 
 A class can get a dependency in two ways. It can create it: `OrderPlacedTightlyCoupled` writes `new()` for its `EmailNotifier` field, so that decision is made inside the class, once, forever. Or it can receive it: `OrderNotifications` lists an `INotifier` as a constructor parameter, so whoever creates an `OrderNotifications` must create a notifier first and hand it over. The second way is dependency injection: the class that uses the dependency no longer chooses it, the caller does.
 
-DIP and DI answer different questions. DIP asks what type the class should depend on, and answers: an abstraction, such as `INotifier`. DI asks how the object reaches the class, and answers: through the constructor, from outside. DIP is the principle; injection is the usual mechanic that makes it work in code. A class that writes `new EmailNotifier()` names the concrete class in its own code, even when the field's type is `INotifier`. For the caller to choose the object, it has to come from outside, and injection is how it usually gets there.
+DIP and DI answer different questions. DIP asks what type the class should depend on, and answers: an abstraction, such as `INotifier`. DI asks how the object reaches the class, and answers: from outside, here through the constructor. DIP is the principle; injection is the usual mechanic that makes it work in code. A class that writes `new EmailNotifier()` names the concrete class in its own code, even when the field's type is `INotifier`. For the caller to choose the object, it has to come from outside, and injection is how it usually gets there.
 
 Injection can also appear without inversion. A class can receive a concrete class through its constructor: that is injection, but not inversion, because it still names the concrete type. The caller still chooses the object, but only among instances of that one class.
 
@@ -105,7 +105,7 @@ Only `OrderNotifications`: it is injected and names an abstraction, so any `INot
 ## Five-line summary
 
 1. Dependency injection means a class receives its dependencies from outside, usually as constructor parameters, instead of creating them with `new`.
-2. DIP says what to depend on (an abstraction); DI says how the object gets there (from outside, through the constructor).
+2. DIP says what to depend on (an abstraction); DI says how the object gets there (from outside, here through the constructor).
 3. `OrderNotifications` uses both: it names only `INotifier`, and the notifier is passed in.
 4. `OrdersController` is injected with both of its dependencies, but `OrderService` is a concrete class — DI without inversion.
 5. Because these classes never create their dependencies, something outside must build and pass them in when the API runs.
