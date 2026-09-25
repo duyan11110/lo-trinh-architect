@@ -38,9 +38,7 @@ A teammate adds bulk shipping, `BulkOnlyShipping`: 45,000 VND for orders from 5,
 
 ```mermaid
 flowchart LR
-  C[code that asks for a fee] --> F[ForOrder on the base type]
-  F --> S[StandardShipping: a number]
-  F --> E[ExpressShipping: a number]
+  C[code that asks for a fee] --> F[ShippingFeeBase.ForOrder]
   F --> K[StandardShippingOk: a number]
   F --> X[BulkOnlyShipping: throws below 5,000,000]
 ```
@@ -96,7 +94,7 @@ The array is typed `ShippingFee[]`, and `kinds.Select(kind => kind.ForOrder(2_00
 
 ## Beginners often think…
 
-- **"LSP just means a subclass must implement every method its base type declares."** → Actually the compiler already enforces that for abstract methods; LSP is about keeping the promise — for every input a caller may pass, the caller gets back what the base type said it would. `BulkOnlyShipping` implements `ForOrder` and still breaks code written for `ShippingFeeBase`. You notice this when a subtype that implements every method still makes callers fail for some inputs.
+- **"LSP just means a subclass must implement every method its base type declares."** → Actually the compiler already enforces that for abstract methods in any subclass that is not itself abstract; LSP is about keeping the promise — for every input a caller may pass, the caller gets back what the base type said it would. `BulkOnlyShipping` implements `ForOrder` and still breaks code written for `ShippingFeeBase`. You notice this when a subtype that implements every method still makes callers fail for some inputs.
 - **"As long as a subclass compiles against its base type, it automatically satisfies LSP."** → Actually compiling proves the override has the right parameters and return type and its body is valid C#, not what it does for each input. Whether `ForOrder` returns a fee or throws for a 500,000 total is behaviour the compiler never checks. You notice this when the failure appears only for certain inputs, far from where the subtype was written.
 
 ## Try it (3 minutes)
