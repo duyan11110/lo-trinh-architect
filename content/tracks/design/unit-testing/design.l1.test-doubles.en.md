@@ -13,7 +13,7 @@ prereqs: [design.l1.writing-a-unit-test, design.l1.why-di-helps-testing]
 related: []
 vocab: [test-double, fake]
 example_tag: stage-1
-versions_used: [dotnet]
+versions_used: [dotnet, efcore]
 content_version: 1
 status: draft
 ---
@@ -98,7 +98,7 @@ public sealed class FakeNotifier : INotifier
 
 ## Beginners often think…
 
-- **"A test double is a copy of the real class, with the same code, just renamed."** → Actually a test double shares only the interface with the real class. `EfOrderRepository` works through EF Core, Đơn Hàng's ORM, and its `DonHangDbContext`; `FakeOrderRepository` has neither, and its `FindAsync` is one dictionary lookup. You notice this when you compare the two files and find that, apart from the method signatures the interface requires, their code has nothing in common.
+- **"A test double is a copy of the real class, with the same code, just renamed."** → Actually a test double shares only the interface with the real class. `EfOrderRepository` works through EF Core, Đơn Hàng's ORM, and its `DonHangDbContext`; `FakeOrderRepository` has neither, and its `FindAsync` is one dictionary lookup. You notice this when you compare the two files: they share the interface's method signatures and nothing about storage — one goes through `DonHangDbContext`, the other through a dictionary.
 - **"Any class taking a constructor parameter can already be tested without a test double."** → Actually the constructor parameter only makes room for a double; something still has to fill it. Passed an `EfOrderRepository`, `OrderService` needs a running PostgreSQL, because that is the only database the repository is set up for. Faking one level lower does not help either: `EfOrderRepository(DonHangDbContext db)` asks for the concrete `DonHangDbContext`, the class that talks to the database, not an interface a fake could implement. You notice this when you try to build the class in a test and every argument you can pass drags in a database.
 
 ## Try it (3 minutes)
