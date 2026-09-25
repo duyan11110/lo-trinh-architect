@@ -45,11 +45,11 @@ flowchart TD
   A -->|other status| F[Failed: status code]
 ```
 
-Placing an order is a `POST` that creates a resource, and this API answers a successful one with `201`, not `200`. The request body lists only what is being ordered: for each line, a product id, a quantity and a unit price. It says nothing about who is ordering. That comes from the `Authorization` header the app already attaches after login: the API's authentication middleware checks the token, and the endpoint takes the customer id from the token's `sub` claim. The API signed the token, so the client cannot change the id inside it without the signature failing; an id typed into the body would have no such protection.
+Tapping the button runs `_placeOrder`, which disables the button and then sends a `POST` that creates a resource; this API answers a successful one with `201`, not `200`. The request body lists only what is being ordered: for each line, a product id, a quantity and a unit price, and nothing about who is ordering. That comes from the `Authorization` header the app already attaches after login: the API's authentication middleware checks the token, and the endpoint takes the customer id from the token's `sub` claim. The API signed the token, so the client cannot change the id inside it without the signature failing; an id typed into the body would have no such protection.
 
 What comes back decides what the screen shows. A `201` carries the new order as JSON, and the app reads its id and status. Anything else is a failure, and a `POST` can fail in more than one way: `401` when the token is missing or has expired, `400` when the API rejects the order, `500` when something broke on the server. Each asks the user for something different: sign in again, change the order, or try later.
 
-A `POST` is not idempotent: sending the same request twice creates two orders. A user who taps twice because nothing seemed to happen would do exactly that. So while the request is in flight, the screen shows the loading state and does not accept another tap.
+A `POST` is not idempotent: sending the same request twice creates two orders. A user who taps twice because nothing seemed to happen would do exactly that, which is why the button stays disabled while the request is in flight.
 
 ## In the Đơn Hàng system
 
@@ -69,7 +69,9 @@ A `POST` is not idempotent: sending the same request twice creates two orders. A
   }
 ```
 
-`createOrder` sends `_headers`, so the request carries `Content-Type` and, after login, `Authorization: Bearer <token>`. The body is `{"items": [...]}`, with each item turned into JSON by `OrderItemRequest.toJson`: `productId`, `quantity` and `unitPriceVnd`, and no customer id anywhere. On the API side, the create-order request type has only `Items`, and the endpoint, marked `[Authorize]`, reads the customer id from the token. Only `201` counts as success; `OrderResult.fromJson` then reads the new order's `id` and `status`. Any other status becomes an exception whose text holds just the status code. When the API sent a Problem Details body with a title and detail, as it does for `400` and `500`, that body is never read.
+`baseUrl` is `http://localhost:8080/api/v1`, so the request goes to `/api/v1/orders`. `createOrder` sends `_headers`, so it carries `Content-Type` and, after login, `Authorization: Bearer <token>`. The body is `{"items": [...]}`, with each item turned into JSON by `OrderItemRequest.toJson`: `productId`, `quantity` and `unitPriceVnd`, and no customer id anywhere. On the API side, the create-order request type has only `Items`, and the endpoint's `Create` method, marked `[Authorize]`, reads the customer id from the token.
+
+Back in the app, only `201` counts as success; `OrderResult.fromJson` then reads the new order's `id` and `status`. Any other status becomes an exception whose text holds just the status code. When the API sent a Problem Details body with a title and detail, as it does for `400` and `500`, that body is never read.
 
 The order screen calls it from `_placeOrder`, in `DonHang.App/lib/screens/create_order_screen.dart`:
 
@@ -89,7 +91,9 @@ The order screen calls it from `_placeOrder`, in `DonHang.App/lib/screens/create
   }
 ```
 
-In stage 1 this screen always orders the same thing: one of product 1, the keyboard, at its listed price. `_placeOrder` sets `_loading` first, and the button's `onPressed` is `null` while `_loading` is true, so the button is disabled and shows a spinner until the request ends. On success, the screen shows "Order <id> placed, status <status>"; a new order's status is `new`. On failure it shows "Failed: " followed by the exception, for example "Failed: Exception: failed to create order (500)". `finally` enables the button again, so a later tap places a second, separate order on purpose.
+In stage 1 this screen always orders the same thing: one of product 1, the keyboard, at its listed price. `_placeOrder` sets `_loading` first. The button, built further down in the same file and not shown here, has `onPressed: _loading ? null : _placeOrder`, so it is disabled and shows a spinner until the request ends. On success, the screen shows "Order <id> placed, status <status>"; a new order's status is `new`. On failure it shows "Failed: " followed by the exception, for example "Failed: Exception: failed to create order (500)".
+
+`finally` enables the button again, so a later tap places a second, separate order on purpose; `mounted` is the same check as on the login screen, so `setState` runs only while the screen is still in the widget tree. The "Failed: …" text is still one message for every failure, just with the status code attached: a developer can tell a `401` from a `500`, but the user gets no advice on what to do.
 
 ## Beginners often think…
 
@@ -98,10 +102,10 @@ In stage 1 this screen always orders the same thing: one of product 1, the keybo
 
 ## Try it (3 minutes)
 
-Start the lab (`scripts/up.sh` from the repository root), open the app at `http://localhost:8081`, and open the browser's developer tools on the Network tab.
+Start the lab (`scripts/up.sh` from the repository root) and open the app at `http://localhost:8081`. Open the browser's developer tools (F12 in most browsers) on the Network tab, which lists each request the page sends, with its headers, body and response.
 
-1. Tap the sign-in icon at the top right, then "Sign in" with the filled-in details. On "Place an order", tap "Order 1 keyboard". In the Network tab, select the `orders` request with method `POST` and look at its request headers and the body it sent.
-2. From the repository root, run `docker compose stop db`. Tap the button again, then open that request's response in the Network tab. Run `docker compose start db` afterwards.
+1. Tap the sign-in icon at the top right, then "Sign in" with the filled-in details; the app then opens the "Place an order" screen by itself. Tap "Order 1 keyboard". In the Network tab, select the `orders` request with method `POST` and look at its request headers and the body it sent.
+2. From the repository root, run `docker compose stop db`, which stops the lab's database, so the API can no longer save orders. Tap the button again, then open that request's response in the Network tab. Run `docker compose start db` afterwards.
 
 Expected result: 1 — "Order <n> placed, status new" under the button; the request has an `Authorization: Bearer …` header, and its body holds only `items`. 2 — "Failed: Exception: failed to create order (500)" on screen, while the response in the Network tab is a Problem Details body with the detail "something went wrong".
 
