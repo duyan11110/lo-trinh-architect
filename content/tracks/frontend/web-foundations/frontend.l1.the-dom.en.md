@@ -60,7 +60,7 @@ A welcome message on this page would work like the shop's "Add to cart" line. A 
 ## Beginners often think…
 
 - **"The DOM and the page's HTML source are always the same thing, since the DOM is just built from the HTML."** → Actually they match only until something changes the DOM. The source is the text the server sends; the DOM is a tree in memory that JavaScript, or your developer tools, can change at any time. You notice this when the page shows something, like the "Add to cart" line, that "view page source" does not contain.
-- **"JS can only read the DOM, not change it — changing what's on screen needs a new page load."** → Actually a script in the page can add, remove and edit nodes, and each change shows on screen without loading a new page. A new page load is what a plain link does, not what a script needs. You notice this when part of a page updates while the address bar and the rest of the page stay the same.
+- **"JS can only read the DOM, not change it — changing what's on screen needs a new page load."** → Actually a script in the page can add, remove and edit nodes, and each change shows on screen without loading a new page. A new page load is what following a link to another page does, not what a script needs. You notice this when part of a page updates while the address bar and the rest of the page stay the same.
 
 ## Try it (3 minutes)
 
