@@ -87,7 +87,7 @@ Put the test next to the rule from the situation. "Standard shipping is free for
 
 ## Try it (3 minutes)
 
-From the root of the example repository. `--filter ShippingFeeTests` tells `dotnet test` to run only the tests whose full name (which includes the class name) contains `ShippingFeeTests`, the class in `SamplesTests.cs` holding both shipping tests.
+Run these steps from the root of the example repository. `--filter ShippingFeeTests` tells `dotnet test` to run only the tests whose full name (which includes the class name) contains `ShippingFeeTests`, the class in `SamplesTests.cs` holding both shipping tests.
 
 1. Run `dotnet test samples/DonHang.Samples.Tests --filter ShippingFeeTests`.
 2. In `ShippingFee.cs`, change `2_000_000` to `2_500_000` in `StandardShipping`, and run the same command again.
