@@ -51,7 +51,9 @@ Each test builds `OrderService` itself with `new`, passing a `FakeOrderRepositor
 
 So when a test calls `PlaceOrderAsync`, the real method runs: the empty-items check, building the `Order`, the calls to add and save, the notification. What runs underneath is the fake. Nothing opens a connection or sends SQL. The test project references only `DonHang.Domain`, which has no EF Core in it, and not `DonHang.Infrastructure`, so EF Core is not even part of the build. That is why the tests take milliseconds and can run on every change.
 
-The same fact limits what the tests prove. They prove only what they assert about `OrderService`, given a repository that behaves as the interface promises. Those assertions cover the status, the customer, the one notification and the refusals. No test here asserts that the order was actually added to the repository, so deleting the add and save calls from `PlaceOrderAsync` would leave all five green — even the notification test, since the order's id and the recorded id would both stay `0`. A test could close that gap by reading the order back with the repository's `FindAsync`. They say nothing about whether `EfOrderRepository` really stores an order in PostgreSQL, because that code never ran. Checking that needs a different kind of test, one that runs against a real database.
+The same fact limits what the tests prove. They prove only what they assert about `OrderService`, given a repository that behaves as the interface promises. Those assertions cover the status, the customer, the one notification and the refusals. No test here asserts that the order was actually added to the repository, so deleting the add and save calls from `PlaceOrderAsync` would leave all five green — even the notification test, since the order's id and the recorded id would both stay `0`. A test could close that gap by reading the order back with the repository's `FindAsync`.
+
+And the tests say nothing about whether `EfOrderRepository` really stores an order in PostgreSQL, because that code never ran. Checking that needs a different kind of test, one that runs against a real database.
 
 ## In the Đơn Hàng system
 
