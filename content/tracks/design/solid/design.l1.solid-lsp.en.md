@@ -26,7 +26,7 @@ reviewed_at: null
 
 ## The situation
 
-A teammate adds bulk shipping, `BulkOnlyShipping`: 45,000 VND for orders from 5,000,000 VND, and for anything smaller its `ForOrder` throws an exception, because "bulk shipping is only for big orders." `ShippingFeeBase` is a second base class in the samples with the same shape as `ShippingFee`: one method, `ForOrder`; its other subtype, `StandardShippingOk`, behaves like `StandardShipping`. `BulkOnlyShipping` derives from `ShippingFeeBase`, overrides `ForOrder`, and compiles. Following OCP, nothing else was edited. Then some code loops over the day's orders, calling `ForOrder(order.TotalVnd)` on whichever shipping each one chose — code that has not changed in months — and it crashes on the first 500,000 VND order that picked bulk. Nothing it relied on was edited, so what broke it?
+A teammate adds bulk shipping, `BulkOnlyShipping`: 45,000 VND for orders from 5,000,000 VND, and for anything smaller its `ForOrder` throws an exception. `ShippingFeeBase` is a second base class in the samples with the same shape as `ShippingFee`: one method, `ForOrder`; its other subtype, `StandardShippingOk`, behaves like `StandardShipping`. `BulkOnlyShipping` derives from `ShippingFeeBase`, overrides `ForOrder`, and compiles. Following OCP, nothing else was edited. Then some code loops over the day's orders, calling `ForOrder(order.TotalVnd)` on whichever shipping each one chose — code that has not changed in months — and it crashes on the first 500,000 VND order that picked bulk. Nothing it relied on was edited, so what broke it?
 
 ## Core concepts
 
