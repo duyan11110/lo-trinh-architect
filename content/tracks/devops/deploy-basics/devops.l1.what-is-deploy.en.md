@@ -51,7 +51,7 @@ So "it works on my machine" answers a narrower question than it seems to. It say
 
 ## In the Đơn Hàng system
 
-The lab is a small version of this. When you run `scripts/up.sh`, it does not start the API from your editor. It builds the API from the repository's source, following the steps in `DonHang.Api/Dockerfile`, with the .NET 10 SDK on Linux, whatever your laptop runs; the built API then runs on Linux as well. It runs apart from your editor, next to Postgres, and nothing outside the lab can reach it directly. The only way in is Caddy on port `8080`, which passes `/api/v1/*` requests on to the API.
+The lab is a small version of this. When you run `scripts/up.sh`, it does not start the API from your editor. It builds the API from the repository's source, following the steps in `DonHang.Api/Dockerfile`, with the .NET 10 SDK on Linux, whatever your laptop runs; the built API then runs on Linux as well. It runs apart from your editor, next to Postgres, and nothing outside the lab can reach it directly. The only way in is Caddy, which passes `/api/v1/*` requests on to the API; in this lesson you use its plain-HTTP port, `8080`.
 
 The API also takes its settings from the lab, not from your laptop. `docker-compose.yml` gives it a database address, `Host=db`, a name that means something only inside the lab, and a JWT signing key that `scripts/dev-secrets.sh` wrote into a `.env` file; both arrive as environment variables. `appsettings.json` holds neither. Start the API straight from your editor without them, and `Program.cs` stops at startup with "ConnectionStrings:Default is not set". The code is the same; the settings around it are not, and so the result is not either.
 

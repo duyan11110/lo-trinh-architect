@@ -1,0 +1,80 @@
+{
+  "id": "devops.l1.what-is-deploy",
+  "technical": {
+    "reviewed_at": "2026-09-26T05:37:45+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "stage-1 scripts/up.sh: `docker compose up -d --build --wait`; docker-compose.yml api.build: context `.`, dockerfile `DonHang.Api/Dockerfile`; Dockerfile: `FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build` ... `FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final`. Running lab: `docker image inspect donhang-api:stage-1` -> linux/amd64; /etc/os-release in donhang-api -> Ubuntu 24.04.5 LTS; `dotnet --list-runtimes` -> Microsoft.AspNetCore.App 10.0.12.",
+        "source": "examples/don-hang@stage-1: scripts/up.sh, docker-compose.yml, DonHang.Api/Dockerfile; docker inspect/exec on running lab"
+      },
+      {
+        "n": 2,
+        "verdict": "rephrased",
+        "evidence": "api has no `ports:` (docker ps: donhang-api `8080/tcp`, unpublished); host curl to 172.28.0.13:8080 timed out. But Caddyfile also has `donhang.local:8443 { ... handle /api/v1/* { reverse_proxy api:8080 } }`, and `curl -k --resolve donhang.local:8443:127.0.0.1 https://donhang.local:8443/api/v1/products` -> 200. So the way in is Caddy on 8080 and 8443, not 8080 only.",
+        "source": "examples/don-hang@stage-1: docker-compose.yml, Caddyfile; curl on running lab",
+        "suggested_text": "The only way in is Caddy, which passes `/api/v1/*` requests on to the API; in this lesson you use its plain-HTTP port, `8080`."
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "docker-compose.yml api.environment: `ConnectionStrings__Default: \"Host=db;Database=donhang;...\"`, `Jwt__SigningKey: \"${JWT_SIGNING_KEY}\"`, `ASPNETCORE_ENVIRONMENT: \"Development\"` (exactly three). scripts/dev-secrets.sh: `echo \"JWT_SIGNING_KEY=$(openssl rand -base64 48)\" >> .env`. appsettings.json: Logging, AllowedHosts, Jwt.Issuer, Jwt.Audience only. No appsettings.Development.json or launchSettings.json at the tag.",
+        "source": "examples/don-hang@stage-1: docker-compose.yml, scripts/dev-secrets.sh, DonHang.Api/appsettings.json"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Ran outside the lab (git archive stage-1 to scratch dir, SDK 10.0.300, no config env vars): `dotnet run --project DonHang.Api` -> `Unhandled exception. System.InvalidOperationException: ConnectionStrings:Default is not set at Program.<Main>$ ... Program.cs:line 16`. With only ConnectionStrings__Default set: `Jwt:SigningKey is not set ... line 23`. Confirms order and the two required settings.",
+        "source": "execution: dotnet run on archived examples/don-hang@stage-1"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Compose docs: \"Each container for a service joins the default network and is both reachable by other containers on that network, and discoverable by its service name.\" Execution: inside donhang-api `getent hosts db` -> 172.28.0.11 db; on the host `nslookup db` -> \"can't find db: Non-existent domain\", `curl http://db:5432/` exit 6 (could not resolve host).",
+        "source": "refs/docker-docs/content/manuals/compose/how-tos/networking.md:15; execution on running lab"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "file-path-formats: \"A peculiarity of the Windows file system ... is that path and directory names are case-insensitive.\" \"Starting with .NET 8 on Unix-based operating systems, the runtime no longer converts back slash (\\) characters to directory separators\". package-and-deploy-resources: \"On operating systems with case-sensitive file systems (that is, Linux and macOS)...\"",
+        "source": "refs/dotnet-docs/docs/standard/io/file-path-formats.md:158,206; refs/dotnet-docs/docs/core/extensions/package-and-deploy-resources.md:140"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "ProductsController at stage-1 has `[Route(\"api/v1/products\")]`, `[HttpGet] List()`, no [Authorize]. Running lab: `curl -s -w '%{http_code}' http://localhost:8080/api/v1/products` -> 200, body `[{\"id\":1,\"name\":\"Bàn phím cơ\",\"priceVnd\":1250000},...,{\"id\":8,\"name\":\"Đèn bàn LED\",\"priceVnd\":280000}]`.",
+        "source": "examples/don-hang@stage-1: DonHang.Api/Controllers/ProductsController.cs; curl on running lab"
+      },
+      {
+        "n": 8,
+        "verdict": "not-needed",
+        "evidence": "Definitional: restates the lesson's own definition of deploy (running and reachable) and its consequence; no version-dependent or documented behaviour involved."
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "quote": "The only way in is Caddy on port `8080`, which passes `/api/v1/*` requests on to the API.",
+        "text": "Not the only way in: the Caddyfile at stage-1 also proxies `/api/v1/*` to api:8080 on `donhang.local:8443`, and the running lab answers 200 there. The lesson's own point (only Caddy reaches the API) holds; the port is overstated.",
+        "fix": "Replace with: \"The only way in is Caddy, which passes `/api/v1/*` requests on to the API; in this lesson you use its plain-HTTP port, `8080`.\""
+      },
+      {
+        "severity": "minor",
+        "section": "devops.l1.what-is-deploy.q2",
+        "kind": "quiz",
+        "quote": "Many programs connect to the database only when the first request needs it, so starting proves nothing about it.",
+        "text": "Key (c) is correct, but the explanation for (b) is wrong for the API the question names: DonHang.Api runs `context.Database.Migrate()` in Program.cs at startup, so it does reach its database before it starts serving. \"Proves nothing\" is false for this API.",
+        "fix": "Explanation b (en): \"Some programs reach their database only on the first request; and even one that reaches it at startup can still answer nobody if users cannot reach its address.\" Update vi to match."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  }
+}
