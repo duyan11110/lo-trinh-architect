@@ -15,9 +15,9 @@ vocab: [ocp]
 example_tag: stage-0
 versions_used: [dotnet]
 content_version: 1
-status: draft
-approved_by: null
-reviewed_at: null
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-25T12:40:00+07:00"
 ---
 
 ## Before you start
@@ -140,6 +140,6 @@ In `Smells.ShippingVnd`: same-day has to be added inside the method, next to the
 
 1. The Open/Closed Principle says code should be open for extension but closed for modification.
 2. Adding a new case should mean adding new code, not editing code that already works and is tested.
-3. `Smells.ShippingVnd` spreads the kind of shipping across five `express` lines, so a new kind means editing that method and re-checking them.
+3. `Smells.ShippingVnd` spreads the kind of shipping across a `pickUp` check and five `express` returns, so a new kind means editing that method and re-checking them.
 4. `ShippingFee` gives each kind its own class, so same-day is a new class and the old ones stay untouched.
 5. OCP does not freeze code: changing how an existing kind behaves still edits that kind's class.
