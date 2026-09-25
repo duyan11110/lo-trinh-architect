@@ -15,9 +15,9 @@ vocab: [dip]
 example_tag: stage-0
 versions_used: [dotnet]
 content_version: 1
-status: draft
-approved_by: null
-reviewed_at: null
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-25T16:00:00+07:00"
 ---
 
 ## Before you start
@@ -47,7 +47,7 @@ flowchart LR
 
 In the top row, the high-level code points straight at a low-level detail. `PlaceOrderSplit` knows exactly how a customer is told: one console line about an email. Every change to that detail — another channel, other wording — is an edit to the order-placing class.
 
-In the rows below, the high-level code depends only on `INotifier`: "send a message about this order". It does not know whether email, SMS or something newer answers that. The concrete classes depend on `INotifier` too: implementing it means providing every method it declares, so if `Send` changed, `NotifierBase` — and with it `EmailNotifier` and `SmsNotifier` — would have to change too. Before, the arrow ran from the order code to the low-level detail; now the low-level classes have arrows to an abstraction shaped by what the order code needs. That turn in direction is the "inversion": both sides depend on the abstraction, and the high-level code no longer depends on any concrete notifier.
+In the rows below, the high-level code depends only on `INotifier`: "send a message about this order". It does not know whether email, SMS or something newer answers that. The concrete classes depend on `INotifier` too: implementing it means providing every method it declares, so if `Send` changed, `NotifierBase` — and with it `EmailNotifier` and `SmsNotifier` — would have to change too. Before, the arrow ran from the order code to the low-level detail; now the low-level classes have arrows to the abstraction the order code uses. That turn in direction is the "inversion": both sides depend on the abstraction, and the high-level code no longer depends on any concrete notifier.
 
 Using an interface is not enough by itself. If the order code wrote `new EmailNotifier()` inside itself, it would be tied to `EmailNotifier` again, whatever type its variable had — the tight coupling from the coupling lesson. With DIP, the order code receives an `INotifier`, for example as a constructor parameter, and something outside it decides which concrete class to pass. Then it can be given `EmailNotifier`, `SmsNotifier`, or a class written next year, and its own source does not change.
 
@@ -109,6 +109,6 @@ They land in low-level code or in the place that chooses which notifier to pass:
 
 1. The Dependency Inversion Principle says high-level code should depend on an abstraction, not on a concrete low-level class.
 2. `PlaceOrderSplit.Notify` calls `Console.WriteLine` directly, so any change of channel or wording edits the order-placing class.
-3. With DIP, order code depends on `INotifier`, and `EmailNotifier` and `SmsNotifier` point up at that same abstraction.
+3. With DIP, order code depends on `INotifier`, and `EmailNotifier` and `SmsNotifier` depend on that same abstraction.
 4. Writing `new EmailNotifier()` inside the order code ties it to one concrete class again, interface or not.
 5. DIP is about which way the dependency points; how the concrete object is passed in is a separate mechanism.
