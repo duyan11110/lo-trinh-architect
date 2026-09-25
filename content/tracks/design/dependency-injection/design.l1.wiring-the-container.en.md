@@ -15,7 +15,9 @@ vocab: []
 example_tag: stage-1
 versions_used: [dotnet, aspnetcore, efcore]
 content_version: 1
-status: draft
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-26T09:40:00+07:00"
 ---
 
 ## Before you start
@@ -89,7 +91,7 @@ Together these lines connect the layers from the previous module. `OrdersControl
 
 ## Try it (3 minutes)
 
-The team writes `SmsGatewayNotifier`, a new class in `DonHang.Infrastructure` that implements `INotifier` and sends real SMS messages. Like `LoggingNotifier`, its constructor asks only for a logger. They want every order notification to use it instead of `LoggingNotifier`.
+The team writes `SmsGatewayNotifier`, a new class in `DonHang.Infrastructure` that implements `INotifier` and sends real SMS messages. Like `LoggingNotifier`, its constructor asks only for a logger, which the app already provides. They want every order notification to use it instead of `LoggingNotifier`.
 
 1. Which files change, and which line in each?
 2. Which of `OrderService`, `OrdersController` and Program.cs change?
