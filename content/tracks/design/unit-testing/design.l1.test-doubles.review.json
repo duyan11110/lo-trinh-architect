@@ -1,0 +1,238 @@
+{
+  "id": "design.l1.test-doubles",
+  "technical": {
+    "reviewed_at": "2026-09-25T18:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "IOrderRepository declares exactly FindAsync, ListByCustomerAsync, AddAsync, SaveChangesAsync. FakeOrderRepository: `private readonly Dictionary<int, Order> orders = [];` `private int nextId = 1;` `order.Id = nextId++;` `public Task SaveChangesAsync() => Task.CompletedTask;` `public void Seed(Order order) => orders[order.Id] = order;`. Code block lines 8-29 match the tag verbatim.",
+        "source": "examples/don-hang @ stage-1: DonHang.Tests/FakeOrderRepository.cs:8-29; DonHang.Domain/IOrderRepository.cs"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "`public sealed class FakeNotifier : INotifier` / `public List<(int OrderId, string Subject)> Sent { get; } = [];` / `public void Send(int orderId, string subject) => Sent.Add((orderId, subject));` — no logger, no other member. Code block lines 6-11 match the tag verbatim.",
+        "source": "examples/don-hang @ stage-1: DonHang.Tests/FakeNotifier.cs:6-11"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "PlaceOrderAsync: `await repository.AddAsync(order);` `await repository.SaveChangesAsync();` `notifier.Send(order.Id, \"order placed\");`. No other repository method is called there.",
+        "source": "examples/don-hang @ stage-1: DonHang.Domain/OrderService.cs (PlaceOrderAsync)"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "CancelOrderAsync_NewOrder_SetsStatusCancelled: `repository.Seed(new Order { Id = 1, CustomerId = 1, PlacedAt = DateTimeOffset.UtcNow, Status = \"new\" });` then `await service.CancelOrderAsync(1);`. CancelOrderAsync calls `repository.FindAsync(orderId) ?? throw new KeyNotFoundException(...)`, so a found order must be put in place first.",
+        "source": "examples/don-hang @ stage-1: DonHang.Tests/Services/OrderServiceTests.cs; DonHang.Domain/OrderService.cs"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Task.CompletedTask: \"Gets a task that has already completed successfully.\" Remarks: \"This property returns a task whose Status property is set to RanToCompletion. To create a task that returns a value and runs to completion, call the FromResult method.\" Also: \"every call to `Task.FromResult(true)` will return the same already-completed `Task<bool>` object.\"",
+        "source": "https://learn.microsoft.com/dotnet/api/system.threading.tasks.task.completedtask (net-10.0); refs/dotnet-docs/docs/core/compatibility/core-libraries/6.0/task-fromresult-returns-singleton.md:16"
+      },
+      {
+        "n": 6,
+        "verdict": "unverified",
+        "evidence": "Second half supported: .NET docs note \"In classic xUnit and test double literature (for example, Fowler and Meszaros) ... a *fake* is a working alternative implementation.\" The stunt-double origin of the name is not in any permitted source: Grep of refs/dotnet-docs for 'stunt double' returns nothing; Meszaros/Fowler are not docs roots in versions.yaml, so they were not fetched.",
+        "source": "refs/dotnet-docs/docs/core/testing/unit-testing-best-practices.md:57"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Order.Id is `public int Id { get; set; }` (default 0). With `order.Id = nextId++;` removed, AddAsync does `orders[order.Id] = order;` with key 0 for both orders, so the second assignment replaces the first; ListByCustomerAsync filters `orders.Values` and returns a list of one.",
+        "source": "examples/don-hang @ stage-1: DonHang.Domain/Entities.cs (Order); DonHang.Tests/FakeOrderRepository.cs:16-24"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "`public sealed class EfOrderRepository(DonHangDbContext db) : IOrderRepository`; DonHangDbContext is `public sealed class DonHangDbContext(DbContextOptions<DonHangDbContext> options) : DbContext(options)` — a concrete (and sealed) class, not an interface.",
+        "source": "examples/don-hang @ stage-1: DonHang.Infrastructure/EfOrderRepository.cs:7; DonHang.Infrastructure/DonHangDbContext.cs"
+      },
+      {
+        "n": 9,
+        "verdict": "not-needed",
+        "evidence": "Design guidance restating outline item 3 in the lesson's own terms; no documented default or behaviour to check. Consistent with the .NET docs' description of a stub as \"a controllable replacement for an existing dependency\".",
+        "source": "content/tracks/design/track.yaml (design.l1.test-doubles outline[2]); refs/dotnet-docs/docs/core/testing/unit-testing-best-practices.md:63"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Unlisted claim: FakeNotifier is presented as a fake under the lesson's definition ('a real, simplified implementation'), but it delivers nothing and only records calls — in the Fowler/Meszaros sense the lesson adopts, that is not a working alternative implementation. The .NET docs (the pinned docs root) also warn the terms are used inconsistently and define 'fake' as a generic term for a stub or mock, which a junior will meet next.",
+        "quote": "There are several kinds of test double. This course uses one: the **fake**. A fake really works.",
+        "fix": "Keep the definition but scope it: 'This course uses one kind and calls it a fake. Other sources, including the .NET testing docs, use \"fake\" more loosely.' In §5, say FakeNotifier is the simplest case: its only job in a test is to keep what it was asked to send. Add both statements to claims (source: unit-testing-best-practices.md, 'Unit testing terminology')."
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "Unlisted claim: 'the way PostgreSQL would'. In the real path the id comes from an identity column (snapshot: `ValueGeneratedOnAdd()`, `UseIdentityByDefaultColumn`) and is assigned when the row is inserted during SaveChangesAsync, not in AddAsync. The fake assigns it earlier; OrderService happens not to notice because it reads order.Id only after both calls.",
+        "quote": "`AddAsync` gives each order the next id, the way PostgreSQL would, because `OrderService` uses `order.Id` right after saving",
+        "fix": "Rewrite: '`AddAsync` gives each order the next id itself — in the real system PostgreSQL does this when the order is saved — because `OrderService` uses `order.Id` right after saving to send the notification.' Add a claim citing DonHangDbContextModelSnapshot.cs (UseIdentityByDefaultColumn) at stage-1."
+      },
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "accuracy",
+        "text": "Unlisted claim, true for this repo but not in the ledger: the only provider registered is Npgsql (`options.UseNpgsql(connectionString)` in ServiceCollectionExtensions.cs), so an EfOrderRepository does need PostgreSQL. As written it reads as a general rule.",
+        "quote": "Passed an `EfOrderRepository`, `OrderService` needs a running PostgreSQL.",
+        "fix": "Add a claim: 'At stage-1, DonHangDbContext is only ever configured with UseNpgsql (DonHang.Infrastructure/ServiceCollectionExtensions.cs:14).' Optionally write 'In Đơn Hàng, an `EfOrderRepository` needs a running PostgreSQL.'"
+      },
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "accuracy",
+        "text": "Overstated: the two files do share lines beyond signatures, e.g. `using DonHang.Domain;`, and the signature lines `public Task<Order?> FindAsync(int id) =>` and `public Task<List<Order>> ListByCustomerAsync(int customerId) =>` are identical, as is the `OrderBy(o => o.Id)` step. A learner doing the suggested comparison will find this.",
+        "quote": "find no line in common except the method signatures the interface requires",
+        "fix": "Replace with: 'find that what they share is the interface: the same method signatures and the same `Order` type, and no storage code.'"
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "opinion-as-fact",
+        "text": "Absolute wording. A class can tell the difference (type checks, casts); what holds is that OrderService only uses the IOrderRepository members, so it does not need to.",
+        "quote": "so the class under test cannot tell the difference and needs no change",
+        "fix": "Write: 'so the class under test, which only calls the interface's methods, works with it unchanged.'"
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Claim 6 is unverified: the stunt-double origin of the term has no source among the docs roots in versions.yaml (checked refs/dotnet-docs; no match).",
+        "quote": "The name comes from a stunt double",
+        "fix": "Make it an analogy rather than an etymology: 'Think of a stunt double: someone who takes an actor's place for a scene the real actor should not do.' Drop 'named after' from claim 6, or mark it kind opinion."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "fix-required"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-25T19:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation)",
+    "issues": [
+      {
+        "severity": "major",
+        "section": 6,
+        "kind": "term",
+        "text": "'EF Core' is not in known_vocab and not defined here. I know 'ORM' but nothing links the two. Also used in quiz q2's explanation.",
+        "quote": "`FakeOrderRepository` has no EF Core, no `DonHangDbContext` and no SQL",
+        "fix": "Replace 'no EF Core' with 'no ORM', or add 'EF Core, the ORM Đơn Hàng uses' on first mention; same in q2's 'correct' explanation."
+      },
+      {
+        "severity": "major",
+        "section": 6,
+        "kind": "term",
+        "text": "`DonHangDbContext` is a class name never explained. The second misconception's argument depends on it, and quiz q2 option b and q4 option a use it.",
+        "quote": "And `EfOrderRepository(DonHangDbContext db)` asks for a concrete class, so there is no interface for a fake to implement.",
+        "fix": "Add one clause on first use: '`DonHangDbContext`, the class `EfOrderRepository` uses to talk to the database'."
+      },
+      {
+        "severity": "major",
+        "section": 2,
+        "kind": "term",
+        "text": "'PostgreSQL' is a product name not in known_vocab. From the diagram and 'in a dictionary rather than in PostgreSQL' I can guess it is the database, but the lesson never says so.",
+        "quote": "to check `OrderService` without PostgreSQL",
+        "fix": "Write 'without PostgreSQL, the database Đơn Hàng uses,' on first mention."
+      },
+      {
+        "severity": "major",
+        "section": 6,
+        "kind": "term",
+        "text": "'SQL' is not in known_vocab. I know JOIN and index, but the word SQL itself is never introduced. Appears here and in the Try it suggested answer ('like real SQL').",
+        "quote": "no `DonHangDbContext` and no SQL",
+        "fix": "Replace 'no SQL' with 'no database queries', and 'like real SQL' with 'like real database queries'."
+      },
+      {
+        "severity": "major",
+        "section": 2,
+        "kind": "term",
+        "text": "`EfOrderRepository` and `LoggingNotifier` are named as if I know them. The diagram later shows EfOrderRepository implements IOrderRepository, but LoggingNotifier is never said to be the real INotifier, and it is not in the diagram. Quiz q5 option c relies on it.",
+        "quote": "They look nothing like `EfOrderRepository` or `LoggingNotifier`.",
+        "fix": "Write 'They look nothing like the real implementations, `EfOrderRepository` (which uses the database) and `LoggingNotifier` (which writes a log line).'"
+      },
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "diagram",
+        "text": "Section 4's prose talks only about the repository side. The nodes `EfOrderRepository`, `INotifier` and `FakeNotifier: list` are never mentioned there, and the unlabelled arrows from OrderService to the two interfaces are not explained (they mean 'uses', I guess).",
+        "quote": "A **test double** stands where a real dependency would. It implements the same interface, so the class under test cannot tell the difference and needs no change.",
+        "fix": "Add one sentence after the first paragraph: '`OrderService` uses two interfaces; in production `EfOrderRepository` fills one, in a test `FakeOrderRepository` fills it, and `FakeNotifier` fills `INotifier`.'"
+      },
+      {
+        "severity": "major",
+        "section": 7,
+        "kind": "example",
+        "text": "Try it question 1 asks what `PlaceOrderAsync` calls, but I am told to 'Read FakeOrderRepository above', which does not contain PlaceOrderAsync. The lesson only says OrderService uses order.Id 'right after saving' — I cannot tell whether 'saving' means AddAsync, SaveChangesAsync or both, and I am not told which file to open.",
+        "quote": "1. Which of its methods does `OrderService.PlaceOrderAsync` call?",
+        "fix": "Change the instruction to 'Read `FakeOrderRepository` above and `PlaceOrderAsync` in `DonHang.Domain/OrderService.cs`, and answer:'."
+      },
+      {
+        "severity": "major",
+        "section": 6,
+        "kind": "gap",
+        "text": "The second correction jumps from 'EfOrderRepository needs PostgreSQL' to 'there is no interface for a fake to implement'. A fake of what? I cannot reconstruct that this means 'you cannot fake DonHangDbContext to make EfOrderRepository testable either'.",
+        "quote": "so there is no interface for a fake to implement",
+        "fix": "Add between the two sentences: 'You also cannot swap out the database under EfOrderRepository, because' and end with 'so a fake of DonHangDbContext is not possible.'"
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "text": "q1: the correct option is nearly verbatim from Core concepts/section 4 ('really works', 'simplified implementation of its own'); I can pick it by matching words.",
+        "quote": "It really works, with a simpler implementation of its own",
+        "fix": "Paraphrase, e.g. 'Its methods do what the interface says, using something lighter than the real storage'."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "text": "q3: the correct option copies the lesson's sentence 'uses `order.Id` right after saving' and is also the longest option by far.",
+        "quote": "`OrderService` uses `order.Id` right after saving, and the fake stores orders by id",
+        "fix": "Reword to 'The service reads the new order's id to notify, and the dictionary needs a distinct key per order', and lengthen one distractor."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "text": "q4 explanation for c cites `OrderServiceTests` building OrderService with `new`; the lesson never shows OrderServiceTests (only names it in Connections), so this explanation points to something I have not seen.",
+        "quote": "`OrderServiceTests` builds `OrderService` with `new`.",
+        "fix": "End the explanation with 'a test can create `OrderService` with `new` and pass the fakes to its constructor.'"
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "length",
+        "text": "The paragraph after the first code block packs six facts (four methods, dictionary, ids, SaveChanges, Task helpers, Seed); I had to re-read it twice to map each sentence to a line.",
+        "quote": "It implements all four methods of `IOrderRepository`. The orders live in a `Dictionary<int, Order>` keyed by id.",
+        "fix": "Split after the Task sentence: one paragraph for storage and ids, one for SaveChangesAsync, the Task helpers and Seed."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "EF Core",
+        "DonHangDbContext",
+        "PostgreSQL",
+        "SQL",
+        "EfOrderRepository",
+        "LoggingNotifier"
+      ],
+      "skipped_steps": [
+        "Section 6: from 'Passed an EfOrderRepository, OrderService needs a running PostgreSQL' to 'there is no interface for a fake to implement' — what would be faked is not stated.",
+        "Section 7: Try it question 1 needs PlaceOrderAsync's body, which the lesson neither shows nor points to."
+      ],
+      "situation_connects": true,
+      "try_it_feasible": false,
+      "summary_matches": true
+    },
+    "verdict": "fix-required"
+  }
+}

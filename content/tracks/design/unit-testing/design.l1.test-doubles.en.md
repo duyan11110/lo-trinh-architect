@@ -25,7 +25,7 @@ status: draft
 
 ## The situation
 
-The last module ended with a plan: to check `OrderService` without PostgreSQL, pass it a repository that keeps orders in memory and a notifier that only records what it was asked to send. `DonHang.Tests` has exactly two such classes, `FakeOrderRepository` and `FakeNotifier`. They look nothing like `EfOrderRepository` or `LoggingNotifier`. One of them even hands out order ids itself, which you might think only a database does. What are these classes, what do they have to do, and what can they safely leave out?
+The last module ended with a plan: to check `OrderService` without PostgreSQL, the database Đơn Hàng uses, pass it a repository that keeps orders in memory and a notifier that only records what it was asked to send. `DonHang.Tests` has exactly two such classes, `FakeOrderRepository` and `FakeNotifier`. They look nothing like the real implementations the API uses, `EfOrderRepository` and the log-writing `LoggingNotifier`. One of them even hands out order ids itself, a job the database does in the real system. What are these classes, what do they have to do, and what can they safely leave out?
 
 ## Core concepts
 
@@ -44,9 +44,9 @@ flowchart LR
   FN[FakeNotifier: list] -->|implements| N
 ```
 
-A **test double** stands where a real dependency would. It implements the same interface, so the class under test cannot tell the difference and needs no change. The name comes from a stunt double: someone who takes an actor's place for a scene the real actor should not do. Here, the scene is a test, and what the real dependency should not do is reach a database or send a message.
+`OrderService` depends on two interfaces. In the running API, `EfOrderRepository` implements the first; in a test, `FakeOrderRepository` implements it instead, and `FakeNotifier` implements the second. A **test double** stands where a real dependency would. It implements the same interface, so the class under test needs no change to accept it. Think of a stunt double, who takes an actor's place for a scene the actor should not do. Here, the scene is a test, and what the real dependency should not do is reach a database or send a message.
 
-There are several kinds of test double. This course uses one: the **fake**. A fake really works. Its methods do what the interface promises, only in a simpler way: `AddAsync` really keeps the order, and `FindAsync` really finds it again, but in a dictionary rather than in PostgreSQL. Because it behaves like the real thing, the class under test can run its normal steps against it.
+There are several kinds of test double, and this course uses one, which it calls a **fake**; other sources, including the .NET docs, use that word more loosely. A fake in this sense really does its job, only in a simpler way. `FakeOrderRepository.AddAsync` really keeps the order, and `FindAsync` really finds it again, but in a dictionary rather than in PostgreSQL. `FakeNotifier`'s simpler way of sending is to write the call down. Because the fakes behave predictably, the class under test can run its normal steps against them.
 
 A fake does not need everything the real class has. It needs just enough for the class under test to do its job: store what is added, return what is asked for, and behave predictably. It shares no code with the real class; the interface is the only thing they have in common.
 
@@ -79,7 +79,9 @@ public sealed class FakeOrderRepository : IOrderRepository
 }
 ```
 
-It implements all four methods of `IOrderRepository`. The orders live in a `Dictionary<int, Order>` keyed by id. `AddAsync` gives each order the next id, the way PostgreSQL would, because `OrderService` uses `order.Id` right after saving to send the notification. `SaveChangesAsync` does nothing: there is nothing to write. `Task.FromResult` and `Task.CompletedTask` hand back tasks that are already finished, since nothing here waits on anything. `Seed` is not part of the interface; it lets a test put an order in place before acting, which a test of `CancelOrderAsync` needs.
+It implements all four methods of `IOrderRepository`, and the orders live in a `Dictionary<int, Order>` keyed by id. In the real system, PostgreSQL assigns an order's id when `SaveChangesAsync` inserts the row. The fake has no database, so `AddAsync` hands out the next id from its own counter. It has to: `OrderService` uses `order.Id` right after saving, to send the notification.
+
+`SaveChangesAsync` does nothing, because there is nothing to write. `Task.FromResult` and `Task.CompletedTask` hand back tasks that are already finished, since nothing here waits on anything. `Seed` is not part of the interface; it lets a test put an order in place before acting, which a test of cancelling an order needs.
 
 The notifier fake is even smaller:
 
@@ -96,23 +98,23 @@ public sealed class FakeNotifier : INotifier
 
 ## Beginners often think…
 
-- **"A test double is a copy of the real class, with the same code, just renamed."** → Actually a test double shares only the interface with the real class. `FakeOrderRepository` has no EF Core, no `DonHangDbContext` and no SQL; its `FindAsync` is one dictionary lookup. You notice this when you compare the two files and find no line in common except the method signatures the interface requires.
-- **"Any class taking a constructor parameter can already be tested without a test double."** → Actually the constructor parameter only makes room for a double; something still has to fill it. Passed an `EfOrderRepository`, `OrderService` needs a running PostgreSQL. And `EfOrderRepository(DonHangDbContext db)` asks for a concrete class, so there is no interface for a fake to implement. You notice this when you try to build the class in a test and every argument you can pass drags in a database.
+- **"A test double is a copy of the real class, with the same code, just renamed."** → Actually a test double shares only the interface with the real class. `EfOrderRepository` works through EF Core, Đơn Hàng's ORM, and its `DonHangDbContext`; `FakeOrderRepository` has neither, and its `FindAsync` is one dictionary lookup. You notice this when you compare the two files and find that, apart from the method signatures the interface requires, their code has nothing in common.
+- **"Any class taking a constructor parameter can already be tested without a test double."** → Actually the constructor parameter only makes room for a double; something still has to fill it. Passed an `EfOrderRepository`, `OrderService` needs a running PostgreSQL, because that is the only database the repository is set up for. Faking one level lower does not help either: `EfOrderRepository(DonHangDbContext db)` asks for the concrete `DonHangDbContext`, the class that talks to the database, not an interface a fake could implement. You notice this when you try to build the class in a test and every argument you can pass drags in a database.
 
 ## Try it (3 minutes)
 
-Read `FakeOrderRepository` above and answer:
+Open `PlaceOrderAsync` in `DonHang.Domain/OrderService.cs` next to `FakeOrderRepository` above, and answer:
 
-1. Which of its methods does `OrderService.PlaceOrderAsync` call?
+1. Which methods of the repository does `PlaceOrderAsync` call?
 2. Suppose `AddAsync` did not set `order.Id`. A test places two orders for the same customer, then calls `ListByCustomerAsync` for that customer. How many orders come back?
 
-Expected result: 1 — `AddAsync` and `SaveChangesAsync`. 2 — one: both orders keep id `0`, so the second is stored under the same dictionary key and replaces the first.
+Expected result: 1 — `AddAsync`, then `SaveChangesAsync`. 2 — one: both orders keep id `0`, so the second is stored under the same dictionary key and replaces the first.
 
 What does that tell you about which details a fake must copy from the real thing?
 
 <details><summary>Suggested answer</summary>
 
-A fake must copy whatever the class under test, or the test, relies on. Unique ids look like a database detail, but `OrderService` uses `order.Id` after saving, and the fake itself stores orders by id, so a fake without them gives wrong answers. Details nothing relies on, like real SQL, can be left out.
+A fake must copy whatever the class under test, or the test, relies on. Unique ids look like a database detail, but `OrderService` uses `order.Id` after saving, and the fake itself stores orders by id, so a fake without them gives wrong answers. Details nothing relies on, like the real database queries, can be left out.
 
 </details>
 
@@ -124,7 +126,7 @@ A fake must copy whatever the class under test, or the test, relies on. Unique i
 ## Five-line summary
 
 1. A test double stands in for a real dependency in a test, implementing the same interface.
-2. A fake is a test double that really works, in a simpler way: `FakeOrderRepository` keeps orders in a dictionary.
-3. `AddAsync` in the fake hands out ids because `OrderService` uses `order.Id` right after saving.
+2. A fake is a test double that really does its job, in a simpler way: `FakeOrderRepository` keeps orders in a dictionary.
+3. The fake's `AddAsync` hands out ids itself, because there is no database to do it and `OrderService` uses `order.Id`.
 4. `FakeNotifier` records each `Send` in a public `Sent` list for the test to read.
 5. A fake shares only the interface with the real class and copies only the behaviour the test relies on.
