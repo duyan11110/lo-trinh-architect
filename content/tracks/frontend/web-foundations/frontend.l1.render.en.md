@@ -47,11 +47,11 @@ To **render** a page, the browser takes the DOM and the CSS and works through a 
 
 This is not a one-time job. Whenever a script or the developer tools change the DOM or the CSS in a way that affects what is visible, the browser renders again, in one of the gaps between tasks the event loop leaves. It does not have to redo everything each time, though; it redoes the steps the change affects.
 
-That is why changes have different costs. Changing the colour of a heading changes no sizes or positions, so the browser can skip layout and only paint the heading again. Changing the heading's font size makes it taller, which pushes the paragraph and the list below it down: now layout must run again for the elements that moved, and all of them must be painted. A page that changes its DOM in a tight loop, many times a second, makes the browser render again and again, and the more each change moves other elements, the more work each time. Flutter, which the Đơn Hàng app is built with, faces the same trade-off, as the next module shows.
+That is why changes have different costs. Changing the colour of a heading changes no sizes or positions, so after matching the new style, the browser can skip layout and only paint the heading again. Changing the heading's font size makes it taller, which pushes the paragraph and the list below it down: now layout must run again for the elements that moved, and all of them must be painted. A page that changes its DOM task after task, many times a second — on every timer tick or mouse move — makes the browser render again and again, and the more each change moves other elements, the more work each time. Flutter, the toolkit the Đơn Hàng app is built with and the subject of the next module, faces the same trade-off.
 
 ## In the Đơn Hàng system
 
-`www/index.html` has no CSS of its own, so the browser renders it with its default styles: the heading in a large bold font, the paragraph below it, and the list of three links under that. Its layout places each element under the one before, as wide as the window allows. Nothing on the page changes after that first render, because it has no scripts, so the browser has no reason to render again unless the window changes or you change the page yourself.
+`www/index.html` has no CSS of its own, so the browser renders it with its default styles: the heading in a large bold font, the paragraph below it, and the list of three links under that. Its layout places each element under the one before, as wide as the window allows. The page has no scripts, so nothing on it changes by itself after that first render; the browser renders again only when something outside the page's own code changes what is visible, such as resizing the window, selecting text, or your edits in the developer tools.
 
 That makes it a clear page to watch rendering on. Change the heading's colour in the developer tools, and only the heading needs repainting. Change its text to something longer, or its size, and the heading may take more room, so the elements below it move and must be laid out and painted again. The lab page stays small either way, but the difference in work is the same one that matters on a page with hundreds of elements.
 
@@ -64,9 +64,9 @@ That makes it a clear page to watch rendering on. Change the heading's colour in
 
 In Chrome or Edge, with the lab running, open `http://localhost:8080/index.html` and the developer tools.
 
-1. Open the Rendering panel (menu ⋮ → More tools → Rendering) and turn on "Paint flashing". Areas the browser repaints now flash green.
-2. In the Elements tab, select the `h1`. In the Styles pane, add `color: red` to its style, and watch which area flashes.
-3. Now add `font-size: 80px` to the same element, and watch again.
+1. Open the Rendering panel from the developer tools' own ⋮ menu (not the browser's): ⋮ → More tools → Rendering. Turn on "Paint flashing". Areas the browser repaints now flash green.
+2. In the Elements tab, select the `h1`. The Styles pane beside the tree lists its CSS; click inside the empty `element.style { }` block at the top, type `color: red` and press Enter, then watch which area flashes.
+3. In the same block, add `font-size: 80px` the same way, and watch again.
 
 Expected result: in step 2, only the heading flashes. In step 3, the heading grows, the paragraph and list move down, and the flashing covers them too.
 
@@ -89,4 +89,4 @@ A new colour changes no sizes or positions, so only the heading's own pixels had
 2. It happens again whenever a change affects what is visible, in the gaps between JavaScript tasks.
 3. The browser redoes only the steps a change affects, so changes have different costs.
 4. A colour change needs only a repaint; a size change can move other elements and force layout as well.
-5. A page that changes its DOM constantly renders constantly, the same concern Flutter's pipeline has.
+5. A page that changes its DOM task after task renders again and again, each time paying for what the change moves.
