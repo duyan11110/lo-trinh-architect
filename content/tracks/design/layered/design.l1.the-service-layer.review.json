@@ -1,0 +1,96 @@
+{
+  "id": "design.l1.the-service-layer",
+  "technical": {
+    "reviewed_at": "2026-09-26T00:40:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "OrderService.cs:8 `public async Task<Order> PlaceOrderAsync(int customerId, List<OrderItem> items)`; :10 `if (items.Count == 0) throw new ArgumentException(\"an order needs at least one item\");`; :12-18 `new Order { CustomerId = customerId, PlacedAt = DateTimeOffset.UtcNow, Status = \"new\", Items = items }`; :19 `await repository.AddAsync(order);` :20 `await repository.SaveChangesAsync();` :21 `notifier.Send(order.Id, \"order placed\");` :22 `return order;`. Both code blocks match lines 6-23 and 29-38 character-for-character.",
+        "source": "examples/don-hang @ stage-1: DonHang.Domain/OrderService.cs:6-23"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "OrderService.cs:31-32 `var order = await repository.FindAsync(orderId) ?? throw new KeyNotFoundException($\"order {orderId} not found\");` :34 `order.Status = \"cancelled\";` :35 `await repository.SaveChangesAsync();` :36 `notifier.Send(order.Id, \"order cancelled\");` :37 `return order;`.",
+        "source": "examples/don-hang @ stage-1: DonHang.Domain/OrderService.cs:29-38"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "ExceptionHandlingMiddleware.cs: `catch (KeyNotFoundException ex) { ... WriteProblemAsync(context, StatusCodes.Status404NotFound, \"Not found\", ex.Message); }` then `catch (ArgumentException ex) { ... StatusCodes.Status400BadRequest ... }`. Registered first in the pipeline: Program.cs `app.UseMiddleware<ExceptionHandlingMiddleware>();`.",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs:16-24; DonHang.Api/Program.cs"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "OrderServiceTests.cs `PlaceOrderAsync_NoItems_Throws`: `var service = new OrderService(new FakeOrderRepository(), new FakeNotifier()); await Assert.ThrowsAsync<ArgumentException>(() => service.PlaceOrderAsync(customerId: 1, items: []));`. No ASP.NET Core type in the file (usings: DonHang.Domain, Xunit). Note: the test also constructs FakeOrderRepository and FakeNotifier — see issue on section 4.",
+        "source": "examples/don-hang @ stage-1: DonHang.Tests/Services/OrderServiceTests.cs:37-43"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "OrderService.cs has exactly two public methods, PlaceOrderAsync and CancelOrderAsync; its only types are Order, OrderItem, IOrderRepository, INotifier, ArgumentException, KeyNotFoundException, DateTimeOffset. DonHang.Domain.csproj is `Sdk=\"Microsoft.NET.Sdk\"` with no PackageReference/ProjectReference, so no ASP.NET Core or EF Core type is reachable.",
+        "source": "examples/don-hang @ stage-1: DonHang.Domain/OrderService.cs:1-39; DonHang.Domain/DonHang.Domain.csproj"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "OrdersController.cs:21 `int.Parse(User.FindFirstValue(JwtRegisteredClaimNames.Sub)!)`; :58-63 `private static OrderDto ToDto(Order order) => new(...)`. OrderService.cs:10 empty-items throw, :16 `Status = \"new\"`, :21 `notifier.Send(order.Id, \"order placed\")`. Try-it expected answer (1,4 controller; 2,3,5 service) matches.",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/Controllers/OrdersController.cs:17-28,58-63; DonHang.Domain/OrderService.cs:8-23"
+      },
+      {
+        "n": 7,
+        "verdict": "not-needed",
+        "evidence": "Design principle, restating the glossary definition of service-layer (\"taking and returning plain data with no HTTP involved\") that the lesson defines in section 3; not a versioned behaviour. Consistent with the repo: PlaceOrderAsync/CancelOrderAsync take int/List<OrderItem>, return Order, and throw BCL exceptions.",
+        "source": "lesson section 3; examples/don-hang @ stage-1: DonHang.Domain/OrderService.cs"
+      },
+      {
+        "n": 8,
+        "verdict": "not-needed",
+        "evidence": "Follows from the premise: if the parameter were an HTTP request type, every call site must supply one. \"token included\" in section 6 holds because the customer id currently comes from the token's `sub` (OrdersController.cs:21), so a request-taking service would read it from there.",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/Controllers/OrdersController.cs:21"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "major",
+        "section": 1,
+        "kind": "accuracy",
+        "text": "Unlisted claim: the recap states a specific framework behaviour (CreatedAtAction yields 201) that is not in the claims ledger. It is true (refs/aspnetcore-docs/aspnetcore/web-api/action-return-types.md:143: \"A 201 status code is generated by the CreatedAtAction method when a product is created.\"), and quiz q1 explanation d repeats it, but it must be ledgered.",
+        "quote": "shapes the result into `201` with an `OrderDto`",
+        "fix": "Add claim 9 to .meta.json: kind behavior, version_key aspnetcore, text \"OrdersController.Create returns CreatedAtAction(...), which produces 201\", source_hint refs/aspnetcore-docs/aspnetcore/web-api/action-return-types.md + OrdersController.cs:27, section 1. Also add aspnetcore to versions_used. No prose change needed."
+      },
+      {
+        "severity": "major",
+        "section": "design.l1.the-service-layer.q6",
+        "kind": "quiz",
+        "text": "Fill answer set incomplete. Section 5 says \"`OrderService` lives in `DonHang.Domain`, the business layer\", so a learner writing \"domain\" (the project name) for \"the ____ layer\" gives a defensible answer that is currently marked wrong. vi also lacks \"nghiệp vụ\" without the \"tầng\" prefix.",
+        "quote": "\"answer\": [\"service\", \"business\", \"tầng service\", \"tầng nghiệp vụ\"]",
+        "fix": "Add \"domain\", \"tầng domain\", \"nghiệp vụ\" to `answer`. Alternatively reword the stem to \"`OrderService` is part of the ____ layer (the vocab term of this lesson)\" and keep only \"service\" / \"tầng service\"."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Overstated: callers need more than the plain values — they must also supply an IOrderRepository and an INotifier to construct OrderService (the tests build FakeOrderRepository and FakeNotifier). Same overstatement in quiz q1 explanation \"any caller with a customer id and some items can use it\".",
+        "quote": "a service method can be called by anything that has the plain values",
+        "fix": "Replace with \"a service method can be called by anything that can create the service and has the plain values\". In q1 correct explanation, replace \"any caller with a customer id and some items can use it\" with \"any caller that has the service and a customer id and some items can use it\" (en and vi)."
+      },
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "accuracy",
+        "text": "\"no queries\" is loosely true: CancelOrderAsync does look up an order (`repository.FindAsync(orderId)`); what OrderService lacks is query code (SQL/EF Core), not lookups.",
+        "quote": "no JSON, no queries, no logging setup",
+        "fix": "Replace \"no queries\" with \"no SQL or EF Core code\"."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "fix-required"
+  }
+}

@@ -13,7 +13,7 @@ prereqs: [design.l1.the-controller-layer, backend.l1.validating-input]
 related: []
 vocab: [service-layer]
 example_tag: stage-1
-versions_used: [dotnet]
+versions_used: [dotnet, aspnetcore]
 content_version: 1
 status: draft
 approved_by: null
@@ -48,7 +48,7 @@ The service layer is where a business task is decided and carried out. It knows 
 
 That is visible in its method signatures. A service method takes plain input, such as a customer id and a list of items, and returns a plain result, such as an `Order`. When something is wrong, it throws an ordinary exception; it does not pick a status code. Turning the result into JSON, or the exception into a `400`, is someone else's job.
 
-Because nothing in it depends on HTTP, a service method can be called by anything that has the plain values: the controller, a test, or any other program. The tests in the diagram call `OrderService` exactly the way the controller does. This is SRP again: deciding whether an order is valid sits in `OrderService`, and turning it into an HTTP response sits in `OrdersController`, so each changes for its own reason.
+Because nothing in it depends on HTTP, a service method can be called by anything that can create the service and has the plain values: the controller, a test, or any other program. The tests in the diagram call `OrderService` exactly the way the controller does. This is SRP again: deciding whether an order is valid sits in `OrderService`, and turning it into an HTTP response sits in `OrdersController`, so each changes for its own reason.
 
 ## In the Đơn Hàng system
 
@@ -96,7 +96,7 @@ An unknown order is reported with `KeyNotFoundException`, a plain .NET exception
 
 ## Beginners often think…
 
-- **"The service layer is just where you put code that doesn't fit anywhere else."** → Actually it has one clear job: the business rules and steps for its task. `OrderService` holds placing and cancelling orders and nothing else — no JSON, no queries, no logging setup. You notice this when a service class starts collecting unrelated helpers and every change seems to touch it.
+- **"The service layer is just where you put code that doesn't fit anywhere else."** → Actually it has one clear job: the business rules and steps for its task. `OrderService` holds placing and cancelling orders and nothing else — no JSON, no SQL or EF Core code, no logging setup. You notice this when a service class starts collecting unrelated helpers and every change seems to touch it.
 - **"A service method should accept the raw HTTP request object, so it has access to everything it might need."** → Actually taking the request would tie the business rules to HTTP. `PlaceOrderAsync` takes a customer id and a list of items, so the tests can call it with two plain values; with the request as its input, every test would first have to build a stand-in HTTP request, token included. You notice this when calling a rule from anywhere but an endpoint suddenly needs HTTP objects.
 
 ## Try it (3 minutes)
