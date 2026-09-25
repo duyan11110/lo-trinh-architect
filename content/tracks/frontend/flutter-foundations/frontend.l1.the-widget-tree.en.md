@@ -93,7 +93,7 @@ The `Scaffold` holds an `AppBar` with the "Đơn Hàng" title, a `body`, and the
 ## Beginners often think…
 
 - **"A widget is a screen; a whole app has one widget per screen."** → Actually a screen is one widget among many. `ProductListScreen` is a widget, but so are its `Scaffold`, its `AppBar`, each `ListTile`, and each `Text` inside a tile. You notice this when you count the widgets behind one product row and find a `ListTile` and two `Text` widgets.
-- **"Building a new widget tree on every change means Flutter redraws every pixel from scratch every time."** → Actually the widget tree is only a description. Flutter compares the new description with the previous one and applies only the changes between them. You notice this when the products arrive and the list replaces the spinner, while the title bar, which is described the same way both times, is left as it was.
+- **"Building a new widget tree on every change means Flutter redraws every pixel from scratch every time."** → Actually the widget tree is only a description. Flutter compares the new description with the previous one and applies only the changes between them. You notice this when you press the refresh button: the `build` of `_ProductListScreenState` runs again and describes the title bar exactly as before, and the title bar stays as it was while the body changes.
 
 ## Try it (3 minutes)
 
