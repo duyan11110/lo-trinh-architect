@@ -1,0 +1,89 @@
+{
+  "id": "devops.l1.reverse-proxy-and-tls",
+  "technical": {
+    "reviewed_at": "2026-09-26T06:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "git show stage-0:Caddyfile → `donhang.local:8443 { tls internal / root * /srv/www / file_server }`. git show stage-1:Caddyfile lines 62-76 add `handle /api/v1/* { reverse_proxy api:8080 }` and wrap file_server in `handle { }`. The lesson's code block matches stage-1 lines 62-76 character for character.",
+        "source": "examples/don-hang @ stage-0 and stage-1: Caddyfile"
+      },
+      {
+        "n": 2,
+        "verdict": "rephrased",
+        "evidence": "Caddy tls docs: `internal` means to \"use Caddy's internal, locally-trusted CA to produce certificates for this site\"; \"Caddy will attempt to install the root CA certificate to the system trust store, but this may fail when Caddy is running as an unprivileged user, or when running in a Docker container.\" So 'clients do not trust by default' is too general; it holds here because Caddy runs in a container (host curl without -k: exit 60). Served chain: leaf issued by 'Caddy Local Authority - ECC Intermediate'.",
+        "source": "https://caddyserver.com/docs/caddyfile/directives/tls; openssl s_client -connect localhost:8443 -servername donhang.local (lab box)",
+        "suggested_text": "tls internal makes Caddy issue the site's certificate from its own local certificate authority; in the lab Caddy runs in a container, so your laptop does not trust that authority and curl needs -k."
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Caddy reverse_proxy docs: \"By default, connections are made to the upstream over plaintext HTTP. When using the URL form, a scheme can be used to set some transport defaults as a shorthand.\" The upstream is `api:8080` with no scheme. Execution: HTTPS via Caddy returns `Server: Kestrel`, while Kestrel only accepts plain HTTP (see claim 6).",
+        "source": "https://caddyserver.com/docs/caddyfile/directives/reverse_proxy"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "git show stage-1:DonHang.Api/Dockerfile → `ENV ASPNETCORE_URLS=http://+:8080`. Program.cs and appsettings.json at stage-1 contain no Kestrel/HTTPS/certificate configuration (git grep -i 'cert|https|UseHttps' over DonHang.* at stage-1: no hits). refs/aspnetcore-docs kestrel/endpoints.md lists the `ASPNETCORE_URLS` environment variable as an endpoint source. Execution: TLS to api:8080 fails (claim 6).",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/Dockerfile, Program.cs; refs/aspnetcore-docs/aspnetcore/fundamentals/servers/kestrel/endpoints.md"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Ran the exact command on the host (curl 8.9.0, Schannel): `HTTP/1.1 200 OK`, `Server: Kestrel`, `Via: 1.1 Caddy`, body `{\"id\":1,\"name\":\"Bàn phím cơ\",\"priceVnd\":1250000}`. Same command without -k: exit 60 (peer certificate cannot be authenticated). Plain site http://localhost:8080/api/v1/products/1 returns the same Server and Via headers.",
+        "source": "execution against running lab, 2026-09-26"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "From the lab box: `curl -sS https://api:8080/api/v1/products/1` → `curl: (35) TLS connect error: error:0A00010B:SSL routines::wrong version number`, exit 35, no JSON. `curl -s http://api:8080/api/v1/products/1` → `{\"id\":1,\"name\":\"Bàn phím cơ\",\"priceVnd\":1250000}`, exit 0.",
+        "source": "execution via ssh -p 2222 dev@localhost, 2026-09-26"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "curl is not in versions.yaml, so no allowed doc root; settled by execution on the host (no donhang.local entry in the Windows hosts file): without --resolve → exit 6 (could not resolve host); with --resolve donhang.local:8443:127.0.0.1 but no -k → exit 60 (certificate not trusted); with both → 200.",
+        "source": "execution on host, curl 8.9.0"
+      },
+      {
+        "n": 8,
+        "verdict": "not-needed",
+        "evidence": "Conditional design judgement ('acceptable only on the same machine or a private network') plus a definitional consequence of termination (one program holds the certificate). The lesson states the condition; no version-specific behaviour. Consistent with refs/aspnetcore-docs host-and-deploy/proxy-load-balancer.md, which describes HTTPS proxied over HTTP as a normal setup.",
+        "source": "outline items 1-3; refs/aspnetcore-docs/aspnetcore/host-and-deploy/proxy-load-balancer.md"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "accuracy",
+        "quote": "Kestrel cannot tell which kind of connection the client used.",
+        "text": "Unlisted claim, and false as written. Caddy reverse_proxy docs: \"It sets the `X-Forwarded-Proto` header field.\" ASP.NET Core docs (proxy-load-balancer.md:21): \"When HTTPS requests are proxied over HTTP, the original scheme (HTTPS) is lost and must be forwarded in a header.\" Kestrel's own connection is plain in both cases, but every request from the HTTPS site arrives carrying a header that says the client used HTTPS.",
+        "fix": "Replace the sentence with: \"The connection Kestrel receives is plain HTTP in both cases; the encrypted part ended at Caddy.\" If the claim is kept in any form, add it to the claims ledger."
+      },
+      {
+        "severity": "major",
+        "section": 7,
+        "kind": "accuracy",
+        "quote": "`-k` accepts Caddy's self-signed certificate, which your laptop does not trust.",
+        "text": "Unlisted claim that contradicts claim 2 and the lab. `tls internal` certificates are not self-signed: the served chain is leaf issued by 'CN=Caddy Local Authority - ECC Intermediate', itself issued by 'CN=Caddy Local Authority - 2026 ECC Root' (openssl s_client from the lab box). Caddy docs: \"use Caddy's internal, locally-trusted CA\".",
+        "fix": "Replace with: \"`-k` accepts the certificate Caddy signed with its own authority, which your laptop does not trust.\""
+      },
+      {
+        "severity": "major",
+        "section": 6,
+        "kind": "accuracy",
+        "quote": "You notice this when you speak HTTPS straight to Kestrel and it cannot answer at all, because it was only ever listening for plain HTTP.",
+        "text": "Unlisted claim, contradicted by execution. Sending a TLS record to api:8080 (nc from the lab box) gets a plain reply `HTTP/1.1 400 Bad Request ... Server: Kestrel`; curl -v shows 5 bytes received, then 'wrong version number'. Kestrel does answer, in plain HTTP, which curl cannot read as TLS. The quiz q4 explanation ('gets a plain answer back') already says the correct thing, so lesson and quiz disagree.",
+        "fix": "Replace \"it cannot answer at all\" with \"no TLS connection can be set up: Kestrel answers in plain HTTP, which curl cannot read as TLS\"."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "fix-required"
+  }
+}

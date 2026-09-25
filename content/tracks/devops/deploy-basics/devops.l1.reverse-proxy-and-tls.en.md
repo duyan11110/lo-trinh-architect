@@ -71,18 +71,18 @@ donhang.local:8443 {
 
 `donhang.local:8443` is the address this block answers for, and `tls internal` makes Caddy sign a certificate for `donhang.local` with an authority of its own, as in the TLS lesson. The new part in stage 1 is `handle /api/v1/*` with `reverse_proxy api:8080`, the same line as on the plain `:8080` site. So a request to `https://donhang.local:8443/api/v1/products` is decrypted by Caddy and forwarded to Kestrel as plain HTTP. The comment says it directly: TLS ends at Caddy, and the API only ever sees plain HTTP, on the lab's private network.
 
-On the other side, the API is set up for plain HTTP only. Its `Dockerfile` sets `ASPNETCORE_URLS=http://+:8080`, which tells Kestrel to listen for plain HTTP on port `8080`, and nothing in the API loads a certificate. An answer from Kestrel through the HTTPS site carries the same `Server: Kestrel` and `Via: 1.1 Caddy` headers as through the plain one: Kestrel cannot tell which kind of connection the client used.
+On the other side, the API is set up for plain HTTP only. Its `Dockerfile` sets `ASPNETCORE_URLS=http://+:8080`, which tells Kestrel to listen for plain HTTP on port `8080`, and nothing in the API loads a certificate. An answer from Kestrel through the HTTPS site carries the same `Server: Kestrel` and `Via: 1.1 Caddy` headers as through the plain one. The connection Kestrel receives is plain HTTP in both cases; the encrypted part ended at Caddy.
 
 ## Beginners often think…
 
-- **"If TLS is terminated at the proxy, the connection from the proxy to Kestrel is just as encrypted as the original one."** → Actually the encryption ends at Caddy; from there to Kestrel the request travels as plain HTTP. That is acceptable only because the lab's network between them is private. You notice this when you speak HTTPS straight to Kestrel and it cannot answer at all, because it was only ever listening for plain HTTP.
+- **"If TLS is terminated at the proxy, the connection from the proxy to Kestrel is just as encrypted as the original one."** → Actually the encryption ends at Caddy; from there to Kestrel the request travels as plain HTTP. That is acceptable only because the lab's network between them is private. You notice this when you speak HTTPS straight to Kestrel and no TLS connection can be set up: Kestrel answers in plain HTTP, which a TLS client cannot read.
 - **"Every application behind a reverse proxy needs its own TLS certificate, or the setup isn't really secure."** → Actually the certificate proves who answers the client, and the client only ever talks to the proxy. The applications behind it are never shown to the client, so a certificate on them would prove nothing to it. You notice this when a certificate expires: with termination at the proxy, one certificate is replaced in one place, and the API is not touched.
 
 ## Try it (3 minutes)
 
 With the lab running, from the repository root:
 
-1. Run `curl -sk -i --resolve donhang.local:8443:127.0.0.1 https://donhang.local:8443/api/v1/products/1`. `--resolve` points `donhang.local` at your own machine for this one command, and `-k` accepts Caddy's self-signed certificate, which your laptop does not trust.
+1. Run `curl -sk -i --resolve donhang.local:8443:127.0.0.1 https://donhang.local:8443/api/v1/products/1`. `--resolve` points `donhang.local` at your own machine for this one command, and `-k` accepts the certificate Caddy signed with its own authority, which your laptop does not trust.
 2. Run `ssh -p 2222 -i secrets/lab_key dev@localhost 'curl -sS https://api:8080/api/v1/products/1'`, which speaks HTTPS straight to Kestrel from the lab box.
 3. Run `ssh -p 2222 -i secrets/lab_key dev@localhost 'curl -s http://api:8080/api/v1/products/1'`, the same request in plain HTTP.
 
@@ -92,7 +92,7 @@ Step 1 used HTTPS and got Kestrel's answer; step 2 used HTTPS on Kestrel and got
 
 <details><summary>Suggested answer</summary>
 
-It ended at Caddy. In step 2, Kestrel received the start of a TLS conversation where it expected a plain HTTP request, so no connection could be set up. In step 1, Caddy did the TLS part itself, decrypted the request, and forwarded it to Kestrel as plain HTTP, which is exactly what step 3 shows Kestrel can answer. The `Via: 1.1 Caddy` header in step 1 confirms the answer passed through Caddy on the way back.
+It ended at Caddy. In step 2, Kestrel received the start of a TLS conversation where it expected a plain HTTP request and answered in plain HTTP, so no TLS connection could be set up. In step 1, Caddy did the TLS part itself, decrypted the request, and forwarded it to Kestrel as plain HTTP, which is exactly what step 3 shows Kestrel can answer. The `Via: 1.1 Caddy` header in step 1 confirms the answer passed through Caddy on the way back.
 
 </details>
 
