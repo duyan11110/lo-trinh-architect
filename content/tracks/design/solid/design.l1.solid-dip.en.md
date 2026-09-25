@@ -131,7 +131,7 @@ They land in the place that chooses which notifier to pass, or in a new low-leve
 ## Connections
 
 - [[design.l1.solid-isp]] — `INotifier` is small enough that depending on it costs the caller nothing it does not use.
-- [[design.l1.coupling-and-cohesion]] — creating `new EmailNotifier()` inside the high-level class is the tight coupling that lesson measured.
+- [[design.l1.coupling-and-cohesion]] — a high-level class that creates its own `EmailNotifier` is tightly coupled in that lesson's sense: switching the channel forces a change in that class.
 - [[design.l1.solid-srp]] — moving the channel choice out of a class takes one of its reasons to change away from it.
 
 ## Five-line summary
