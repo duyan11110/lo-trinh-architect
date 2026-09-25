@@ -53,7 +53,7 @@ Cohesion looks inside one unit and asks: do these lines belong together? `TotalW
 
 Coupling looks between units and asks: if this one changes, must that one change too? In the diagram, each arrow is a place where one unit relies on another. `Place` calls all four private methods, so it depends on each one's name and parameters, and on the results of `FirstProblemWith` and `TotalWithShippingVnd`. `TotalWithShippingVnd` relies on `NamingAfter.TotalVnd`, a method in another class, and on what that result means — the lines added up with the discount already taken off. `Save` and `Notify` both rely on `Console`, which is where their output goes.
 
-The two measurements can disagree. Each method in `PlaceOrderSplit` does one focused job: high cohesion at the method level. The class as a whole still holds all four jobs, which is low cohesion at the class level, and its `Place` still has an arrow to each of them, which is coupling. Splitting raised the cohesion of each method; it did not reduce what `Place` depends on — `Place` now calls each job by name, and pricing now depends on another class, `NamingAfter`. High cohesion and low coupling usually both make a change cheaper, but you have to check each one separately.
+Cohesion and coupling can disagree. Each method in `PlaceOrderSplit` does one focused job: high cohesion at the method level. The class as a whole still holds all four jobs, which is low cohesion at the class level, and its `Place` still has an arrow to each of them, which is coupling. Splitting raised the cohesion of each method; it did not reduce what `Place` depends on — `Place` now calls each job by name, and pricing now depends on another class, `NamingAfter`. High cohesion and low coupling usually both make a change cheaper, but you have to check each one separately.
 
 ## In the Đơn Hàng system
 
@@ -105,7 +105,7 @@ Read the two code blocks above. For each change, list every method you would hav
 1. The email must include the order total.
 2. The loyalty discount becomes 5% instead of 10%.
 
-Expected result: change 1 edits `Notify` (new parameter, new text) and `Place` (pass `totalVnd` to it), both in `PlaceOrderSplit.cs`. Change 2 edits only the constant `LoyaltyDiscountPercent` in `NamingAfter.cs` — yet for a loyal customer ordering two items at 1,100,000 VND, `PlaceOrderSplit.Place` goes from `order placed, total 2010000` to `order placed, total 2090000`, because the fee stops applying.
+Expected result: change 1 edits `Notify` (new parameter, new text) and `Place` (pass `totalVnd` to it), both in `PlaceOrderSplit.cs`. Change 2 edits only the constant `LoyaltyDiscountPercent` in `NamingAfter.cs` — yet for a loyal customer ordering quantity 2 at 1,100,000 VND each, `PlaceOrderSplit.Place` goes from `order placed, total 2010000` to `order placed, total 2090000`, because the fee stops applying.
 
 Which change shows coupling between methods of one class, and which shows coupling between classes?
 
