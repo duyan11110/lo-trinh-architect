@@ -15,7 +15,9 @@ vocab: []
 example_tag: stage-1
 versions_used: [dotnet, xunit]
 content_version: 1
-status: draft
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-26T14:50:00+07:00"
 ---
 
 ## Before you start
@@ -49,7 +51,7 @@ Each test builds `OrderService` itself with `new`, passing a `FakeOrderRepositor
 
 So when a test calls `PlaceOrderAsync`, the real method runs: the empty-items check, building the `Order`, the calls to add and save, the notification. What runs underneath is the fake. Nothing opens a connection or sends SQL. The test project references only `DonHang.Domain`, which has no EF Core in it, and not `DonHang.Infrastructure`, so EF Core is not even part of the build. That is why the tests take milliseconds and can run on every change.
 
-The same fact limits what the tests prove. They prove only what they assert, about `OrderService` and a repository that behaves as the interface promises: the status, the customer, the one notification, the refusals. No test here asserts that the order was actually added to the repository, so deleting the add and save calls from `PlaceOrderAsync` would leave all five green — a gap a test could close by reading the order back with `FindAsync`. They say nothing about whether `EfOrderRepository` really stores an order in PostgreSQL, because that code never ran. Checking that needs a different kind of test, one that runs against a real database.
+The same fact limits what the tests prove. They prove only what they assert about `OrderService`, given a repository that behaves as the interface promises. Those assertions cover the status, the customer, the one notification and the refusals. No test here asserts that the order was actually added to the repository, so deleting the add and save calls from `PlaceOrderAsync` would leave all five green — even the notification test, since the order's id and the recorded id would both stay `0`. A test could close that gap by reading the order back with the repository's `FindAsync`. They say nothing about whether `EfOrderRepository` really stores an order in PostgreSQL, because that code never ran. Checking that needs a different kind of test, one that runs against a real database.
 
 ## In the Đơn Hàng system
 
@@ -83,7 +85,7 @@ The first two tests in `OrderServiceTests`:
     }
 ```
 
-`[Fact]` marks each method as a test that `dotnet test` runs through xUnit, and `Assert` holds xUnit's checks. Each test arranges with three `new`s, acts with one `await service.PlaceOrderAsync(...)`, and asserts. `OneItem` is a small helper at the top of the class that returns one `OrderItem`. The methods are `async Task`, because `PlaceOrderAsync` is awaited. The second test reads the fake notifier afterwards: `Assert.Single(notifier.Sent)` passes only if exactly one notification was recorded, and returns it so the test can compare its order id with the new order's.
+`[Fact]` marks each method as a test that `dotnet test` runs through xUnit, the testing library `DonHang.Tests` uses, and `Assert` holds xUnit's checks. Each test arranges with three `new`s, acts with one `await service.PlaceOrderAsync(...)`, and asserts. `OneItem` is a small helper at the top of the class that returns one `OrderItem`. The methods are `async Task`, because `PlaceOrderAsync` is awaited. The second test reads the fake notifier afterwards: `Assert.Single(notifier.Sent)` passes only if exactly one notification was recorded, and returns it so the test can compare its order id with the new order's.
 
 The other three tests follow the same pattern. `PlaceOrderAsync_NoItems_Throws` expects an `ArgumentException` for an empty list. The two `CancelOrderAsync` tests first put an order in place with the fake's `Seed`, or leave it out on purpose, then check either the `"cancelled"` status or the `KeyNotFoundException` for an unknown id.
 
@@ -104,7 +106,7 @@ Why no database is possible at all is in the test project file:
 
 ## Try it (3 minutes)
 
-From the root of the example repository, with the lab stopped:
+From the root of the example repository, with the lab — and so PostgreSQL — stopped:
 
 1. Run `dotnet test DonHang.Tests`.
 2. In `DonHang.Infrastructure/EfOrderRepository.cs`, replace the `AddAsync` line with `public Task AddAsync(Order order) => Task.CompletedTask;`, so it no longer calls `db.Orders.AddAsync`. Run the tests again.
