@@ -1,0 +1,246 @@
+{
+  "id": "design.l1.what-makes-a-good-unit-test",
+  "technical": {
+    "reviewed_at": "2026-09-25T22:15:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "OrderService.cs @ stage-1 lines 12-18: `CustomerId = customerId, PlacedAt = DateTimeOffset.UtcNow, Status = \"new\", Items = items,` inside `new Order { ... }` in PlaceOrderAsync(int customerId, List<OrderItem> items).",
+        "source": "examples/don-hang @ stage-1: DonHang.Domain/OrderService.cs:8-18"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "OrderServiceTests.cs @ stage-1: SetsStatusNew asserts `Assert.Equal(\"new\", order.Status); Assert.Equal(1, order.CustomerId);` (lines 20-21). No line in the file passes PlacedAt to any Assert; the only PlacedAt occurrence is the Seed on line 49.",
+        "source": "examples/don-hang @ stage-1: DonHang.Tests/Services/OrderServiceTests.cs"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Lines 48-54: `repository.Seed(new Order { Id = 1, CustomerId = 1, PlacedAt = DateTimeOffset.UtcNow, Status = \"new\" });` ... `Assert.Equal(\"cancelled\", order.Status);` is the only assertion.",
+        "source": "examples/don-hang @ stage-1: DonHang.Tests/Services/OrderServiceTests.cs:45-55"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Every [Fact] builds its own fakes: lines 14-15, 27-28 (`new FakeOrderRepository()`, `new FakeNotifier()`), 40 and 60 (`new OrderService(new FakeOrderRepository(), new FakeNotifier())`), 48+50. No field or static member holds a fake; `OneItem` is an expression-bodied property that returns a new OrderItem per call.",
+        "source": "examples/don-hang @ stage-1: DonHang.Tests/Services/OrderServiceTests.cs"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "xUnit docs: \"xUnit.net creates a new instance of the test class for every test that is run, so any code which is placed into the constructor of the test class will be run for every single test.\" Confirmed by running a probe class (3 [Fact]s, static ctor counter) on a git-archive copy of stage-1 with xunit 2.9.2: instances 1, 2, 3, one per test.",
+        "source": "https://xunit.net/docs/shared-context; dotnet test on scratch copy of stage-1"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Probe on a git-archive copy of stage-1 (xunit 2.9.2): test with `Assert.Equal(1, 2); output.WriteLine(\"PROBE SECOND ASSERT REACHED\"); Assert.Equal(\"x\", \"y\");` reported only `Assert.Equal() Failure: Values differ / Expected: 1 / Actual: 2`; the second line was never written. xunit.assert.xml: XunitException is \"The base assert exception class\". Note: 2.9.2 also ships Assert.Multiple, which \"Runs multiple checks, collecting the exceptions from each one\" (see issue on section 6).",
+        "source": "dotnet test on scratch copy; ~/.nuget/packages/xunit.assert/2.9.2/lib/net6.0/xunit.assert.xml"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "\"Fast: ... Milliseconds.\" \"Isolated: ... no dependencies on any outside factors\" \"Repeatable: ... The test always returns the same result if you don't change anything in between runs.\" \"try to include only one Act task per test\". On time: calls to `DateTime.Now` → \"If the test suite runs on Tuesday, the second test passes, but the first test fails.\" Order: \"the order in which unit tests run should _not_ matter\". Randomness is not named; it follows from Repeatable.",
+        "source": "refs/dotnet-docs/docs/core/testing/unit-testing-best-practices.md:40-42,301,362-405; order-unit-tests.md:11"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "System.Runtime.xml (net10.0): UtcNow \"Gets a DateTimeOffset object whose date and time are set to the current Coordinated Universal Time (UTC) date and time and whose offset is TimeSpan.Zero.\" Date \"Gets a DateTime value that represents the date component of the current DateTimeOffset object.\" Two UtcNow reads straddling 00:00 UTC give different .Date values.",
+        "source": "Microsoft.NETCore.App.Ref/10.0.12/ref/net10.0/System.Runtime.xml (P:System.DateTimeOffset.UtcNow, P:System.DateTimeOffset.Date)"
+      },
+      {
+        "n": 9,
+        "verdict": "rephrased",
+        "evidence": "Opinion; no official source ranks a flaky test against no test. The .NET best-practices page only says a unit test should be Repeatable. The lesson states it as a flat fact in section 4 (\"A flaky test is worse than no test.\").",
+        "source": "refs/dotnet-docs/docs/core/testing/unit-testing-best-practices.md:42",
+        "suggested_text": "A flaky test can do more harm than having no test at all."
+      }
+    ],
+    "issues": [
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "code",
+        "quote": "Across the class, each test has one reason to fail.",
+        "text": "Unlisted claim, and not true of this code. PlaceOrderAsync_ValidItems_SetsStatusNew asserts Status AND CustomerId (lines 20-21): a bug that drops customerId fails a test whose name says only 'SetsStatusNew', contradicting section 4's 'when it fails, its name tells you which rule broke'. SendsOneNotification also has two asserts (Single, then OrderId).",
+        "fix": "Replace with: \"Across the class, each test makes one call and checks only what that call decides. `PlaceOrderAsync_ValidItems_SetsStatusNew` checks two values, `Status` and `CustomerId`, both set when an order is built.\" Add this as a claim in .meta.json."
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "accuracy",
+        "quote": "a broken notification fails `PlaceOrderAsync_ValidItems_SendsOneNotification` and leaves `PlaceOrderAsync_ValidItems_SetsStatusNew` green",
+        "text": "Unlisted claim with a missing condition. notifier.Send runs on line 21 of OrderService.cs before `return order;`; if the notification change throws, PlaceOrderAsync throws and SetsStatusNew fails too. It holds only for breaks such as sending twice, sending none, or the wrong order id.",
+        "fix": "Write: \"so a notification sent twice, or with the wrong order id, fails `PlaceOrderAsync_ValidItems_SendsOneNotification` and leaves `PlaceOrderAsync_ValidItems_SetsStatusNew` green\". Add it to claims (kind behavior, source OrderService.cs:19-22 and OrderServiceTests.cs:24-35)."
+      },
+      {
+        "severity": "major",
+        "section": 6,
+        "kind": "accuracy",
+        "quote": "Five focused tests check the same things",
+        "text": "Unlisted claim, false. The merged test in section 2 checks the placing time and re-checks after cancelling the same order; none of the five tests asserts PlacedAt, and two of the five (NoItems_Throws, UnknownOrder_Throws) check things the merged test does not.",
+        "fix": "Replace with: \"Separate focused tests, like the five in `OrderServiceTests`, each report their own failure under their own name.\""
+      },
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "accuracy",
+        "quote": "xUnit stops a test at its first failing assertion",
+        "text": "True for plain Assert calls (verified by running), but xunit.assert 2.9.2 also has Assert.Multiple, which collects failures instead of stopping. As written, it states a rule about xUnit with no exceptions.",
+        "fix": "Write: \"each failing `Assert` call in xUnit throws and ends the test\". Do not introduce Assert.Multiple."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "quote": "fails for an order placed just before midnight and checked just after",
+        "text": "The code uses DateTimeOffset.UtcNow, so the date changes at midnight UTC (07:00 in Vietnam), not local midnight. The situation's \"one night\" and this sentence suggest local midnight. The Try it section is correct only because it names UtcNow.",
+        "fix": "Write \"just before midnight UTC and checked just after\". In section 2, change \"one night\" to \"one run\", or state that the build server uses UTC."
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "code",
+        "quote": "For each assertion a teammate proposes for `PlaceOrderAsync_ValidItems_SetsStatusNew`",
+        "text": "Assertions 1 and 3 are already in the test at stage-1 (OrderServiceTests.cs lines 20-21); only 2 is new. Calling all three a teammate's proposal misdescribes the code.",
+        "fix": "Write: \"`PlaceOrderAsync_ValidItems_SetsStatusNew` already has assertions 1 and 3; a teammate proposes adding 2. For each, say whether it keeps the test repeatable:\""
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "opinion-as-fact",
+        "quote": "A flaky test is worse than no test.",
+        "text": "A comparison presented as fact (claim 9, kind opinion). No source supports it as a general rule.",
+        "fix": "Replace with: \"A flaky test can do more harm than having no test at all.\" Keep the next sentence as the reason."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "fix-required"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-25T23:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation)",
+    "issues": [
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "term",
+        "quote": "xUnit creates a new instance of the test class for every test",
+        "text": "xUnit is a tool name that is not in known_vocab and is never introduced here or in the prereq summary. The lesson leans on it twice (new instance per test; stops at first failing assertion), and quiz q2, q4 use it. I can guess it runs the tests, but I have to guess.",
+        "fix": "At first mention, add a clause: \"xUnit, the test framework that runs `OrderServiceTests`, creates …\"."
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "term",
+        "quote": "The cancel test shows the same care in the arrange step:",
+        "text": "\"arrange step\" is jargon not in known_vocab and not defined. I do not know which lines of the test are the arrange step or that tests have named steps.",
+        "fix": "Replace with \"in the lines that set up the test, before it calls `CancelOrderAsync`:\"."
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "term",
+        "quote": "leaves `PlaceOrderAsync_ValidItems_SetsStatusNew` green",
+        "text": "\"green\" (and \"a red test\" in section 6) is casual jargon for passing/failing that is not in known_vocab. I infer it from context but it is never said.",
+        "fix": "Write \"leaves … passing (green)\" at first use, and \"a failing (red) test\" in section 6."
+      },
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "gap",
+        "quote": "And shared state makes a test depend on which other tests ran before it",
+        "text": "A flaky test fails with no code change. For shared state to cause that, the set of tests that ran before must differ between runs. The lesson never says test order can change between runs, so I cannot see why a shared repository makes a test flaky rather than always wrong. Quiz q3 option b depends on this.",
+        "fix": "Add one sentence after this one: \"Tests are not guaranteed to run in the same order every time, and running one test alone changes which ran before it.\" (add it to claims)."
+      },
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "gap",
+        "quote": "xUnit creates a new instance of the test class for every test, and each test in `OrderServiceTests` creates its own fakes, so nothing leaks from one test into the next.",
+        "text": "I cannot connect \"new instance of the test class\" to \"nothing leaks\". The missing step is that anything stored in the test class's fields is therefore fresh for each test. Without it the first half of the sentence reads as unrelated trivia.",
+        "fix": "Add between the two halves: \"so values stored in the test class's fields are not shared between tests,\"."
+      },
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "term",
+        "quote": "More assertions in one test method means better coverage",
+        "text": "\"coverage\" is not in known_vocab. Read as plain English (\"checks more\") it works, so it did not stop me, but it may be a technical term I am missing.",
+        "fix": "Replace \"means better coverage\" with \"checks more of the code\"."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "diagram",
+        "quote": "F[fast: no database, no network]",
+        "text": "The diagram node says \"no network\", but the prose only says the test runs the class \"with fakes underneath\"; network is never mentioned in prose.",
+        "fix": "In the prose sentence on \"fast\", add \"with fakes underneath instead of a database or network\"."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "code",
+        "quote": "repository.Seed(new Order { Id = 1, CustomerId = 1, PlacedAt = DateTimeOffset.UtcNow, Status = \"new\" });",
+        "text": "`Seed` is a method of the fake I have not seen explained here or in the prereq summary. I guess it puts an order into the fake before the test, but the prose does not say.",
+        "fix": "Add to the sentence after the block: \"`Seed` puts an order into the fake repository before the call\"."
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "gap",
+        "quote": "Expected result: 1 and 3 are repeatable: the code sets them from fixed values and inputs.",
+        "text": "For assertion 3 I do not know that the test calls PlaceOrderAsync with customer id 1; the test body is not shown, so \"from inputs\" is a step I have to take on trust.",
+        "fix": "Add in the task: \"(the test places the order for customer 1)\"."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "length",
+        "quote": "A test that breaks the third property is a **flaky test**. The usual causes are inputs the test does not control.",
+        "text": "This paragraph packs time, randomness, shared state and xUnit's per-test instances into one block; I re-read it twice to separate the three causes.",
+        "fix": "Split after the random-number sentence so shared state and the xUnit sentence form their own paragraph."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "quote": "Several assertions on one behaviour are fine and do not make a test flaky.",
+        "text": "q1 option d explanation says several assertions are fine, but the lesson never says so; section 6 argues against many assertions in one test. This confused me about the rule.",
+        "fix": "Replace with: \"The number of assertions does not decide flakiness; a flaky test changes result with no code change.\""
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "quote": "xUnit stops a test at its first failing assertion, so later checks never ran until earlier ones passed.",
+        "text": "q4: the correct option is the longest and repeats the lesson's sentence from section 6 almost verbatim, so it can be picked by recognition alone.",
+        "fix": "Reword option a, e.g. \"Each failing check ended the test, so the checks after it were skipped\", and lengthen one distractor."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "xUnit",
+        "arrange step",
+        "green / red (test result)",
+        "coverage"
+      ],
+      "skipped_steps": [
+        "Section 4: why shared state makes a test flaky needs 'test order can change between runs', which is never stated.",
+        "Section 4: link between 'new instance of the test class for every test' and 'nothing leaks' (fields are fresh per test) is missing.",
+        "Section 7: that the test places the order for customer 1, needed for assertion 3."
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "fix-required"
+  }
+}

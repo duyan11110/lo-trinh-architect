@@ -42,11 +42,13 @@ flowchart LR
   R -.->|broken by| X[current time, random numbers, test order]
 ```
 
-A good unit test has three properties. It is fast, because it runs only the class under test with fakes underneath, so it can run on every change. It checks one behaviour, so when it fails, its name tells you which rule broke. And it is repeatable: against the same code, it gives the same answer every time.
+A good unit test has three properties. It is fast, because it runs only the class under test with fakes underneath — no database, no network — so it can run on every change. It checks one behaviour, so when it fails, its name tells you which rule broke. And it is repeatable: against the same code, it gives the same answer every time.
 
-A test that breaks the third property is a **flaky test**. The usual causes are inputs the test does not control. The current time changes between runs, so a test that asserts "placed today" passes all day and fails for an order placed just before midnight and checked just after. A random number changes on every run. And shared state makes a test depend on which other tests ran before it: if all tests used one shared repository, the id a test gets would depend on how many orders earlier tests added. xUnit creates a new instance of the test class for every test, and each test in `OrderServiceTests` creates its own fakes, so nothing leaks from one test into the next.
+A test that breaks the third property is a **flaky test**. The usual causes are inputs the test does not control. The current time changes between runs, so a test that asserts "placed today" passes all day and fails for an order placed just before midnight UTC and checked just after. A random number changes on every run.
 
-A flaky test is worse than no test. When it fails, nobody knows whether the code broke or the clock moved, so people learn to rerun it until it passes, and then they ignore it when it catches a real bug.
+Shared state is the third cause. xUnit, the testing library that runs `OrderServiceTests`, does not promise to run tests in the order they are written. If all tests used one shared repository, the id a test gets would depend on how many orders the tests before it had added, and that can change from one run to the next. xUnit creates a new instance of the test class for every test, so values stored in the class's fields are not shared, and each test in `OrderServiceTests` creates its own fakes. Nothing leaks from one test into the next.
+
+A flaky test can do more harm than having no test at all. When it fails, nobody knows whether the code broke or the clock moved, so people learn to rerun it until it passes, and then they ignore it when it catches a real bug.
 
 ## In the Đơn Hàng system
 
@@ -62,9 +64,9 @@ A flaky test is worse than no test. When it fails, nobody knows whether the code
         };
 ```
 
-`Status` and `CustomerId` depend only on the inputs, so a test can assert them exactly, and `PlaceOrderAsync_ValidItems_SetsStatusNew` does. `PlacedAt` depends on the clock, so no test in `OrderServiceTests` asserts its value. The tests are repeatable because they check only what the code decides, not what the clock says.
+`Status` and `CustomerId` depend only on the inputs, so a test can assert them exactly, and `PlaceOrderAsync_ValidItems_SetsStatusNew` does: for an order placed for customer 1, it checks status `"new"` and customer `1`. `PlacedAt` depends on the clock, so no test in `OrderServiceTests` asserts its value. The tests are repeatable because they check only what the code decides, not what the clock says.
 
-The cancel test shows the same care in the arrange step:
+The cancel test shows the same care in the lines that set it up, before it calls `CancelOrderAsync`:
 
 ```csharp file=DonHang.Tests/Services/OrderServiceTests.cs tag=stage-1 lines=45-55
     [Fact]
@@ -80,16 +82,16 @@ The cancel test shows the same care in the arrange step:
     }
 ```
 
-It uses the current time only to fill in `PlacedAt`, which nothing checks, and asserts the one behaviour its name promises: a new order becomes `"cancelled"`. Across the class, each test has one reason to fail. Placing and notifying are separate tests, so a broken notification fails `PlaceOrderAsync_ValidItems_SendsOneNotification` and leaves `PlaceOrderAsync_ValidItems_SetsStatusNew` green, and the two names together tell you exactly which part broke.
+`Seed`, the fake's method for putting an order in place, gets an order whose `PlacedAt` is the current time, which nothing checks. The test then asserts the one behaviour its name promises: a new order becomes `"cancelled"`. Each test in the class checks one behaviour, sometimes with more than one assertion about it, as `SetsStatusNew` does with status and customer. Placing and notifying are separate tests, so a notification sent twice, or with the wrong order id, fails `PlaceOrderAsync_ValidItems_SendsOneNotification` and leaves `PlaceOrderAsync_ValidItems_SetsStatusNew` passing. The two names together tell you which part broke.
 
 ## Beginners often think…
 
-- **"More assertions in one test method means better coverage, so a test should check as much as possible at once."** → Actually xUnit stops a test at its first failing assertion, so one big test reports only the first problem and hides the rest, and its name cannot describe eight behaviours. Five focused tests check the same things and each failure names its rule. You notice this when a merged test fails and you have to read it line by line, fix one thing, rerun, and find the next.
-- **"A flaky test is still useful, since it catches the bug most of the time."** → Actually a test that sometimes fails for no reason teaches everyone to ignore its failures, including the real ones. The fix is to remove what it does not control, such as asserting on the current time, or to delete the test. You notice this when "just rerun it" becomes the team's answer to a red test.
+- **"More assertions in one test method means better coverage, so a test should check as much as possible at once."** → Actually, in xUnit a failing assertion normally ends the test, so one big test reports only the first problem and hides the rest, and its name cannot describe eight behaviours. Separate tests, one per behaviour, report every broken behaviour in one run, each under its own name. You notice this when a merged test fails and you have to read it line by line, fix one thing, rerun, and find the next.
+- **"A flaky test is still useful, since it catches the bug most of the time."** → Actually a test that sometimes fails for no reason teaches everyone to ignore its failures, including the real ones. The fix is to remove what it does not control, such as asserting on the current time, or to delete the test. You notice this when "just rerun it" becomes the team's answer to a failing test.
 
 ## Try it (3 minutes)
 
-For each assertion a teammate proposes for `PlaceOrderAsync_ValidItems_SetsStatusNew`, say whether it keeps the test repeatable:
+A test places an order for customer 1 with `PlaceOrderAsync`. For each assertion it could make, say whether it keeps the test repeatable:
 
 1. `Assert.Equal("new", order.Status)`
 2. `Assert.Equal(DateTimeOffset.UtcNow.Date, order.PlacedAt.Date)`
@@ -116,4 +118,4 @@ Check something the code decides rather than what the clock says, for example th
 2. A flaky test passes and fails without any code change, usually because of time, randomness or test order.
 3. `OrderServiceTests` never asserts `PlacedAt`, which `PlaceOrderAsync` sets from the clock, and creates fresh fakes in every test.
 4. One behaviour per test means one failure names one broken rule; a merged test hides every failure after its first.
-5. A flaky test teaches people to ignore failures, so it should be fixed or removed, not rerun.
+5. A flaky test teaches people to ignore failures, so fix it or remove it rather than rerunning it.
