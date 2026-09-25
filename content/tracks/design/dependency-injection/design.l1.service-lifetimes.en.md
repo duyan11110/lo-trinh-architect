@@ -15,7 +15,9 @@ vocab: [service-lifetime]
 example_tag: stage-1
 versions_used: [dotnet, aspnetcore, efcore]
 content_version: 1
-status: draft
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-26T08:20:00+07:00"
 ---
 
 ## Before you start
@@ -82,7 +84,7 @@ using (var scope = app.Services.CreateScope())
 }
 ```
 
-`CreateScope` does by hand what a request does automatically. The two middle lines bring the database schema up to date; what matters here is where `context` comes from. It is resolved from `scope.ServiceProvider`, and when the `using` block ends, the scope is disposed, and so is that `DonHangDbContext`.
+`CreateScope` does by hand what a request does automatically. The two middle lines bring the database schema up to date; what matters here is where `context` comes from. It is resolved from `scope.ServiceProvider` (the container, working inside this scope), and when the `using` block ends, the scope is disposed, and so is that `DonHangDbContext`.
 
 ## Beginners often think…
 
@@ -94,7 +96,7 @@ using (var scope = app.Services.CreateScope())
 Using the registrations in this lesson, answer each question with a number.
 
 1. During one `POST /api/v1/orders`, how many `EfOrderRepository` objects does the container build?
-2. How many `DonHangDbContext` objects exist across two requests handled one after the other?
+2. How many `DonHangDbContext` objects does the container build for two requests handled one after the other?
 3. How many `JwtTokenService` objects serve ten logins?
 
 Expected result: 1 — one, shared by the controller and `OrderService`, because it is scoped. 2 — two, one per request. 3 — one, because it is a singleton.
