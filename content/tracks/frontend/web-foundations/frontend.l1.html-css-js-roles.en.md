@@ -15,7 +15,9 @@ vocab: [html, css, javascript]
 example_tag: stage-0
 versions_used: []
 content_version: 1
-status: draft
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-26T18:40:00+07:00"
 ---
 
 ## Before you start
@@ -25,7 +27,7 @@ status: draft
 
 ## The situation
 
-You have opened `http://localhost:8080/index.html` from the lab many times: a heading, a line of text, three links. Clicking a link asks Caddy for another address. Nothing on the page reacts in place: no menu opens, no message appears, nothing updates without a new request. A teammate asks for a small change: "Can the page show a short welcome message when someone clicks the heading, without loading anything new?" Which part of the page would you have to add, and why can the file you have not do it on its own?
+You have opened `http://localhost:8080/index.html` from the lab many times: a heading, a line of text, three links. Clicking a link asks Caddy, the lab's web server, for another address. Nothing on the page reacts in place: no menu opens, no message appears, nothing updates without a new request. A teammate asks for a small change: "Can the page show a short welcome message when someone clicks the heading, without loading anything new?" Which part of the page would you have to add, and why can the file you have not do it on its own?
 
 ## Core concepts
 
@@ -48,7 +50,7 @@ A web page is usually built from three languages, each with one job. **HTML** sa
 
 **CSS** says how that structure looks: the heading is dark blue, paragraphs have more space between lines, the links sit side by side. The same HTML can look completely different with different CSS attached. A page with no CSS of its own is not unstyled, though: browsers apply default styles, which is why a heading is still bigger and bold, and a link is still coloured and underlined.
 
-**JavaScript** is the only one of the three that runs as a program in the browser. Without it, a page can still do what the browser has built in: follow a link to another address, change a colour while the pointer is over something, play an animation its CSS describes. What it cannot do is run your own logic in answer to a click: decide what should happen, fetch data, add a message to the page. That takes JavaScript, and it happens on the page already loaded, without asking the server for a whole new one.
+**JavaScript** is the only one of the three that runs as a program in the browser. Without it, a page can still do what the browser has built in: follow a link to another address, change a colour while the pointer is over something or play an animation, if its CSS says so. What it cannot do is run your own logic in answer to a click: decide what should happen, fetch data, add a message to the page. That takes JavaScript, and it happens on the page already loaded, without asking the server for a whole new one.
 
 ## In the Đơn Hàng system
 
