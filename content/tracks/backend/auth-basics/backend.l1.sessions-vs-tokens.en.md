@@ -51,7 +51,7 @@ With a session, the server writes a record — "this id belongs to customer 1" �
 
 With a token, the server writes nothing. It hands the client a value that already says who the client is, signed so that the server can tell whether it made that value itself. On every later request the server checks the signature and the expiry, and reads who the caller is straight from the value. The value is the proof.
 
-Each choice has a cost. A session store grows with every logged-in client and has to be reachable from every copy of the API that answers requests. A token needs no store, but because the server keeps nothing, it also has nothing to delete: a token stays valid until it expires, even if you would like to end that login sooner.
+Each choice has a cost. A session store grows with every logged-in client, and every copy of the API that might receive a client's request has to reach that client's record. A token needs no store, but because the server keeps nothing, it also has nothing to delete: ending one token before it expires needs something extra on the server, which is exactly the store tokens were avoiding.
 
 ## In the Đơn Hàng system
 
@@ -77,13 +77,13 @@ Read it for what is missing. After `PasswordHasher.Verify` succeeds, nothing is 
 ## Beginners often think…
 
 - **"A cookie always means session-based auth; a token is always sent some other way."** → Actually a cookie is only a way to carry a value back to the server; it can carry a session id or a whole token, and a session id could travel in a header instead. What makes a login session-based is whether the server looks a record up, not how the value travels. You notice this when you meet an app that keeps a token in a cookie and still stores nothing on the server.
-- **"Token-based auth is strictly better than session-based auth, so no real system still uses sessions."** → Actually each gives something up: a session can be ended at once by deleting its record, while a token keeps working until it expires. When ending a login immediately matters more than avoiding a store, sessions are the simpler fit. You notice this the first time someone asks for "log this account out everywhere, right now" in an app like this one, where nothing on the server can do it.
+- **"Token-based auth is strictly better than session-based auth, so no real system still uses sessions."** → Actually each gives something up: a session can be ended at once by deleting its record, while a token keeps working until it expires unless the server adds something to check it against. When ending a login immediately matters more than avoiding a store, sessions are the simpler fit. You notice this the first time someone asks for "log this account out everywhere, right now" in an app like this one, where nothing on the server can do it.
 
 ## Try it (3 minutes)
 
 1. From the Đơn Hàng project's root folder, with the example system running (`scripts/up.sh`), run step 1 of [[backend.l1.creating-a-resource]]'s Try it to log in and copy the token.
 2. Call `curl -sS -o /dev/null -w "%{http_code}\n" http://localhost:8080/api/v1/orders -H "Authorization: Bearer <token>"`.
-3. Restart only the API: `docker compose restart api`. Wait a few seconds, then repeat step 2 with the same token.
+3. Restart only the API: `docker compose restart api`. Wait a few seconds, then repeat step 2 with the same token. If it prints `502`, the API is still starting — wait a few more seconds and run it again.
 
 Expected result: `200` both times — the restarted API accepts the token it issued before the restart.
 
@@ -105,6 +105,6 @@ Most likely `401`. A session record kept in the API's memory disappears when the
 
 1. A session is a record the server keeps; a token is a signed value the client keeps — the question is who holds the proof.
 2. With sessions, every request's id is looked up; with tokens, every request's value is checked by the server itself.
-3. A session store grows with logged-in clients; a token needs no store but stays valid until it expires.
+3. A session store grows with logged-in clients; a token needs no store, but ending one early needs something stored after all.
 4. `AuthController.Login` issues a token and saves nothing, so a restarted API still accepts a token issued before the restart.
 5. A cookie is just a way to carry a value; it can carry a session id or a token.
