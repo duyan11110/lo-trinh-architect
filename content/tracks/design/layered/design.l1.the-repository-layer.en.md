@@ -85,11 +85,11 @@ public sealed class EfOrderRepository(DonHangDbContext db) : IOrderRepository
 }
 ```
 
-Each method is a thin wrapper around one EF Core call. `FindAsync` always brings the items along with `Include`, so no caller can forget them. `ListByCustomerAsync` filters, loads the customer and sorts, all in one query. `OrderService` sees none of this; it sees only the four names in the interface. `OrdersController` also calls `FindAsync` and `ListByCustomerAsync` directly in its `Get` and `List` methods, skipping the service — the next lesson looks at that shortcut.
+Each method is a thin wrapper around one EF Core query or call. `FindAsync` always brings the items along with `Include`, so no caller can forget them. `ListByCustomerAsync` filters, loads the customer and sorts, all in one query. `OrderService` sees none of this; it sees only the four names in the interface. `OrdersController` also calls `FindAsync` and `ListByCustomerAsync` directly in its `Get` and `List` methods, skipping the service — the next lesson looks at that shortcut.
 
 ## Beginners often think…
 
-- **"A repository is just a different name for a DbContext; wrapping it in a class with the same methods changes nothing."** → Actually `IOrderRepository` does not have the same methods: it has four, named for what orders need, while `DonHangDbContext` offers every table and any query. The service cannot write an unexpected query or forget an `Include`, because it cannot reach the `DbContext` at all. You notice this when a tests project can replace the whole data layer with a dictionary.
+- **"A repository is just a different name for a DbContext; wrapping it in a class with the same methods changes nothing."** → Actually `IOrderRepository` does not have the same methods: it has four, named for what orders need, while `DonHangDbContext` exposes a `DbSet` for each of its six tables and accepts any LINQ query over them. The service cannot write an unexpected query or forget an `Include`, because `DonHang.Domain` has no reference to EF Core or to `DonHang.Infrastructure`. You notice this when a tests project can replace the whole data layer with a dictionary.
 - **"Every query the app needs should be written inline wherever it's used, since the repository can't anticipate every query."** → Actually a repository does not have to anticipate them; it grows one named method at a time. `ListByCustomerAsync` was added when the order list endpoint needed it. You notice this when the same query starts appearing, slightly different each time, in several places.
 
 ## Try it (3 minutes)
@@ -106,7 +106,7 @@ One more class would also have to change for the solution to compile. Which one,
 
 <details><summary>Suggested answer</summary>
 
-`FakeOrderRepository` in `DonHang.Tests`: it implements `IOrderRepository` too, and a class must provide every method of the interface it implements. That is the cost of a new repository method — every implementation grows with it — and the reason to keep the interface small.
+`FakeOrderRepository` in `DonHang.Tests`: it implements `IOrderRepository` too, and a class must provide every method its interface declares without a body — as all four here do. That is the cost of a new repository method — every implementation grows with it — and the reason to keep the interface small.
 
 </details>
 

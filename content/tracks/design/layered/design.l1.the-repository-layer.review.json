@@ -1,0 +1,117 @@
+{
+  "id": "design.l1.the-repository-layer",
+  "technical": {
+    "reviewed_at": "2026-09-25T10:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "git show stage-1:DonHang.Domain/IOrderRepository.cs lines 5-11: `public interface IOrderRepository { Task<Order?> FindAsync(int id); Task<List<Order>> ListByCustomerAsync(int customerId); Task AddAsync(Order order); Task SaveChangesAsync(); }`, namespace DonHang.Domain. Code block in section 5 matches character-for-character.",
+        "source": "examples/don-hang @ stage-1: DonHang.Domain/IOrderRepository.cs:5-11"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "git show stage-1:DonHang.Infrastructure/EfOrderRepository.cs lines 7-19: primary constructor `(DonHangDbContext db)`; FindAsync = `db.Orders.Include(o => o.Items).FirstOrDefaultAsync(o => o.Id == id)`; ListByCustomerAsync = `Where(...).Include(o => o.Customer).OrderBy(o => o.Id).ToListAsync()`; AddAsync awaits `db.Orders.AddAsync`; SaveChangesAsync => `db.SaveChangesAsync()`. Code block matches exactly.",
+        "source": "examples/don-hang @ stage-1: DonHang.Infrastructure/EfOrderRepository.cs:7-19"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "OrderService.cs @ stage-1 calls only repository.AddAsync, repository.SaveChangesAsync, repository.FindAsync; no using of Microsoft.EntityFrameworkCore. DonHang.Domain.csproj has no PackageReference and no ProjectReference, so EF Core types are not reachable from the project.",
+        "source": "examples/don-hang @ stage-1: DonHang.Domain/OrderService.cs; DonHang.Domain/DonHang.Domain.csproj"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "FakeOrderRepository.cs: `public sealed class FakeOrderRepository : IOrderRepository { private readonly Dictionary<int, Order> orders = []; ...`. OrderServiceTests.cs: `var repository = new FakeOrderRepository(); ... var service = new OrderService(repository, notifier);` — no DbContext or connection string in the tests.",
+        "source": "examples/don-hang @ stage-1: DonHang.Tests/FakeOrderRepository.cs; DonHang.Tests/Services/OrderServiceTests.cs"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "git log stage-1 -- DonHang.Domain/IOrderRepository.cs: commit 4fca60a \"feat: add Order.Customer navigation + GET /api/v1/orders for N+1 lesson\" adds `Task<List<Order>> ListByCustomerAsync(int customerId);` in the same commit as OrdersController.List (GET /api/v1/orders). EfOrderRepository.cs:12 carries `// lesson: backend.l1.efcore-n-plus-one`.",
+        "source": "examples/don-hang: commit 4fca60a; EfOrderRepository.cs:12; OrdersController.cs:48-56"
+      },
+      {
+        "n": 6,
+        "verdict": "rephrased",
+        "evidence": "interfaces.md: \"A class or struct that implements an interface must provide implementations for all declared members (unless the interface provides a default implementation).\" The ledger keeps the condition; the lesson (section 7) and quiz q3 explanation drop it: \"a class must provide every method of the interface it implements\". C# 14 supports default interface members, so the unconditional form is too strong.",
+        "source": "refs/dotnet-docs/docs/csharp/fundamentals/types/interfaces.md:86",
+        "suggested_text": "`FakeOrderRepository` in `DonHang.Tests`: it implements `IOrderRepository` too, and a class must provide every method its interface declares without a body — as all four here do. That is the cost of a new repository method — every implementation grows with it — and the reason to keep the interface small."
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "single-split-queries.md: \"When working against relational databases, EF loads related entities by introducing JOINs into a single query.\" and \"EF Core uses single query mode by default in the absence of any configuration.\" Repo @ stage-1 has no UseQuerySplittingBehavior/AsSplitQuery (git grep -i split: no EF hits); ServiceCollectionExtensions only calls UseNpgsql(connectionString).",
+        "source": "refs/efcore-docs/entity-framework/core/querying/single-split-queries.md:12,125"
+      },
+      {
+        "n": 8,
+        "verdict": "not-needed",
+        "evidence": "Definitional: restates the glossary/outline definition of repository and describes IOrderRepository as it exists; no behaviour, number or syntax asserted. Stated in the lesson as what a repository does, not as a universal rule.",
+        "source": "track.yaml outline item 1"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "OrderService.cs @ stage-1: `var order = await repository.FindAsync(orderId) ?? throw new KeyNotFoundException($\"order {orderId} not found\");`",
+        "source": "examples/don-hang @ stage-1: DonHang.Domain/OrderService.cs (CancelOrderAsync)"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "OrdersController.cs @ stage-1: ctor `(OrderService orderService, IOrderRepository repository)`; Get: `var order = await repository.FindAsync(id);`; List: `var orders = await repository.ListByCustomerAsync(customerId);` — neither calls orderService. Next lesson's outline item 2 covers \"`Get`/`List` read through the repository without a service\", so the forward reference holds.",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/Controllers/OrdersController.cs; content/tracks/design/track.yaml (design.l1.tracing-a-request-through-layers)"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "major",
+        "section": 2,
+        "kind": "accuracy",
+        "text": "Unlisted claim: that the same OrderService code saves to PostgreSQL when the API runs. True at stage-1 (ServiceCollectionExtensions.cs:14-15 registers DonHangDbContext with UseNpgsql and IOrderRepository -> EfOrderRepository; Program.cs:18-19 calls AddDonHangInfrastructure and AddScoped<OrderService>), but no ledger entry backs it.",
+        "quote": "yet the same service code saves real orders to PostgreSQL when the API runs",
+        "fix": "Add a claim (kind fact, section 2): \"In the API, IOrderRepository is registered as EfOrderRepository and DonHangDbContext uses Npgsql\", source_hint \"examples/don-hang @ stage-1: DonHang.Infrastructure/ServiceCollectionExtensions.cs:14-15; DonHang.Api/Program.cs:18-19\". No text change needed."
+      },
+      {
+        "severity": "major",
+        "section": 6,
+        "kind": "accuracy",
+        "text": "Unlisted claims: (a) the service \"cannot reach the DbContext at all\" — a project-reference fact (DonHang.Domain.csproj has no ProjectReference/PackageReference), not in the ledger; claim 3 only covers OrderService's source. (b) \"offers every table and any query\" is loose: DonHangDbContext exposes six DbSets (Customers, Products, Orders, OrderItems, Payments, Notifications), not literally every table.",
+        "quote": "while `DonHangDbContext` offers every table and any query. The service cannot write an unexpected query or forget an `Include`, because it cannot reach the `DbContext` at all.",
+        "fix": "Rewrite (a)+(b) as: \"while `DonHangDbContext` exposes a `DbSet` for each of its six tables and accepts any LINQ query over them. The service cannot write an unexpected query or forget an `Include`, because `DonHang.Domain` has no reference to EF Core or to `DonHang.Infrastructure`.\" Add a claim citing DonHang.Domain.csproj and DonHangDbContext.cs:9-14 @ stage-1."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "\"one EF Core call\" does not describe FindAsync (Include + FirstOrDefaultAsync) or ListByCustomerAsync (Where + Include + OrderBy + ToListAsync), which are chains of several EF Core/LINQ calls that run as one query.",
+        "quote": "Each method is a thin wrapper around one EF Core call.",
+        "fix": "Replace with: \"Each method is a thin wrapper around one EF Core query or call.\""
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "accuracy",
+        "text": "Claim 6 rephrased: the unconditional rule omits default interface members (C# 14 allows an interface method with a body, which implementers need not provide). The ledger states the condition; the lesson and quiz q3 explanation do not.",
+        "quote": "a class must provide every method of the interface it implements",
+        "fix": "Section 7: use claim 6's suggested_text (\"a class must provide every method its interface declares without a body — as all four here do\"). q3 explanation.en.correct and .vi.correct: same condition, e.g. \"…and a class must provide every method of the interface that has no body.\""
+      },
+      {
+        "severity": "major",
+        "section": "design.l1.the-repository-layer.q6",
+        "kind": "quiz",
+        "text": "Fill answer set incomplete: \"`EfOrderRepository` and `FakeOrderRepository` are two implementations of the same ____ interface, `IOrderRepository`.\" \"order repository\" is an equally valid fill (the interface is named for an order repository) and would be marked wrong; answer is only [\"repository\"].",
+        "quote": "\"answer\": [\"repository\"]",
+        "fix": "Set \"answer\": [\"repository\", \"order repository\"] (matching is already case-insensitive per docs/01)."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "fix-required"
+  }
+}
