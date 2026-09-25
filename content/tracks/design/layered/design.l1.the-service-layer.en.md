@@ -15,9 +15,9 @@ vocab: [service-layer]
 example_tag: stage-1
 versions_used: [dotnet, aspnetcore]
 content_version: 1
-status: draft
-approved_by: null
-reviewed_at: null
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-26T01:00:00+07:00"
 ---
 
 ## Before you start
@@ -46,7 +46,7 @@ flowchart LR
 
 The service layer is where a business task is decided and carried out. It knows the rules — an order needs at least one item — and the steps: check the items, build the order, have it saved, send a notification. It does not know that HTTP exists.
 
-That is visible in its method signatures. A service method takes plain input, such as a customer id and a list of items, and returns a plain result, such as an `Order`. When something is wrong, it throws an ordinary exception; it does not pick a status code. Turning the result into JSON, or the exception into a `400`, is someone else's job.
+That is visible in its method signatures. A service method takes plain input, such as a customer id and a list of items, and returns a plain result, such as an `Order`. When something is wrong, it throws an ordinary exception; it does not pick a status code. Turning the result into JSON, or the exception into a `400`, is the job of the HTTP side: the controller for the result, the exception-handling middleware for the exception.
 
 Because nothing in it depends on HTTP, a service method can be called by anything that can create the service and has the plain values: the controller, a test, or any other program. The tests in the diagram call `OrderService` exactly the way the controller does. This is SRP again: deciding whether an order is valid sits in `OrderService`, and turning it into an HTTP response sits in `OrdersController`, so each changes for its own reason.
 
