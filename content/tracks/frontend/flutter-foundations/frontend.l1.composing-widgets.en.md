@@ -44,7 +44,7 @@ flowchart TD
 
 A widget is a class, so the Single Responsibility Principle applies to it as to any class: it should have one reason to change. A screen whose `build` waits for data, shows progress, handles errors and describes every row has several reasons to change. Each part can be pulled out into its own widget, and the screen then puts those widgets together, as in the diagram: the screen keeps the waiting, errors and title bar, and a separate row widget describes each product with its two `Text` widgets. That is composition.
 
-What an extracted widget needs from its user is written in its constructor. That list of parameters is its contract. A widget still gets its `BuildContext` from where it is placed, and Material widgets such as `ListTile` expect a Material widget like `Scaffold` above them, but everything specific to one use arrives through the constructor. A small contract means the widget can be used on any screen that has those few values, and understood without reading the code around it.
+What an extracted widget needs from its user is written in its constructor. That list of parameters is its contract. A widget still gets its `BuildContext` from where it is placed, and some Material widgets, such as `ListTile`, need a `Material` widget above them, which `Scaffold` provides, but everything specific to one use arrives through the constructor. A small contract means the widget can be used on any screen that has those few values, and understood without reading the code around it.
 
 Small widgets also keep state in the right place. A widget that must remember something keeps only its own state, and the parts that remember nothing stay stateless. For example, the product screen keeps the product list load in its `State`, while a row widget needs no `State` at all. A `setState` in a stateful widget rebuilds only that widget's subtree, so the smaller the widget, the less each change touches.
 
@@ -73,7 +73,7 @@ class DonHangApp extends StatelessWidget {
 
 `DonHangApp` only sets up the `MaterialApp` — its name and colours — and names the first screen. It creates an `ApiClient`, the class that talks to the server, and hands it to that screen. The other screens are separate widgets in their own files too: `ProductListScreen` opens `LoginScreen`, and `LoginScreen` opens `CreateOrderScreen`. Each screen's constructor requires only an `ApiClient`, so each can be read and changed on its own.
 
-Inside the product screen, the rows have not been extracted yet. `ListView.builder` builds the list, calling `itemBuilder` once for each of the `itemCount` products:
+Inside the product screen, the rows have not been extracted yet. `ListView.builder` builds the list, calling `itemBuilder` with an index below `itemCount` each time it needs the row for one product:
 
 ```dart file=DonHang.App/lib/screens/product_list_screen.dart tag=stage-1 lines=56-65
           return ListView.builder(
