@@ -15,7 +15,9 @@ vocab: [buildcontext]
 example_tag: stage-1
 versions_used: [flutter]
 content_version: 1
-status: draft
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-27T02:40:00+07:00"
 ---
 
 ## Before you start
@@ -64,7 +66,7 @@ The login icon on the product screen:
 
 The `context` here belongs to `ProductListScreen`, the `home` of `MaterialApp`, so it sits below the navigator. When the icon is pressed, `Navigator.of(context)` walks up, finds the navigator, and `push` puts a new `LoginScreen`, wrapped in a `MaterialPageRoute`, on top of the stack. "On top of the stack" means in front of the product screen, not above the navigator: in the tree, the new screen sits below the navigator too. The product screen never had to be given the navigator.
 
-The sign-in screen shows the second rule (there, `widget.apiClient` is the `ApiClient` the screen received through its constructor), that a context is only good while its widget is in the tree:
+The sign-in screen shows the second rule, that a context is only good while its widget is in the tree. (There, `widget.apiClient` is the `ApiClient` the screen received through its constructor.)
 
 ```dart file=DonHang.App/lib/screens/login_screen.dart tag=stage-1 lines=29-33
       await widget.apiClient.login(_emailController.text, _passwordController.text);
