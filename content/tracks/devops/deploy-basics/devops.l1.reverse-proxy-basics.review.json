@@ -1,7 +1,7 @@
 {
   "id": "devops.l1.reverse-proxy-basics",
   "technical": {
-    "reviewed_at": "2026-09-26T06:05:00+07:00",
+    "reviewed_at": "2026-09-26T18:30:00+07:00",
     "reviewer": "claude-opus-5-5",
     "claim_verdicts": [
       {
@@ -36,10 +36,9 @@
       },
       {
         "n": 6,
-        "verdict": "rephrased",
-        "evidence": "Ledger claim holds: POST /api/v1/auth/login body `{bad` -> 400 application/problem+json, Server: Kestrel, Via: 1.1 Caddy. But lesson §6 says \"a malformed request\": a malformed HTTP request (`Host localhost` without colon, sent raw to :8080 from the lab box) got `400 Bad Request` text/plain with no Server: Kestrel and no Via — Caddy's own HTTP server rejected it, it never reached the API.",
-        "source": "execution on running lab (curl and raw request via nc)",
-        "suggested_text": "You notice this when a request with a broken JSON body, such as a login with `{bad`, still reaches the API and gets a `400` from it, with `Server: Kestrel`: Caddy passed it on without judging it."
+        "verdict": "verified",
+        "evidence": "Ledger now matches lesson §6 and q2: r1 execution POST /api/v1/auth/login body `{bad` -> 400 application/problem+json, Server: Kestrel, Via: 1.1 Caddy; raw request with header line `Host localhost` (no colon) to :8080 -> 400 text/plain, no Server: Kestrel, no Via (rejected by Caddy). Lesson text now names the broken JSON body case only.",
+        "source": "execution on running lab (r1: curl and raw request via nc)"
       },
       {
         "n": 7,
@@ -52,208 +51,88 @@
         "verdict": "verified",
         "evidence": "RFC 9110 §3.7: a \"proxy\" \"is chosen by the client, usually via local configuration rules\", whereas a gateway (reverse proxy) \"acts as an origin server for the outbound connection\" — so the client needs no setup. docker-compose.yml@stage-1: api publishes no port; only path in from host to the API is Caddy's :8080/:8443.",
         "source": "refs/rfc/rfc9110.txt:898-913; examples/don-hang@stage-1: docker-compose.yml"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "OrdersController.cs@stage-1: `[HttpGet(\"{id:int}\")] public async Task<ActionResult<OrderDto>> Get(int id)` has no [Authorize] (only Create, Cancel, List do); reads repository.FindAsync(id). r1 execution: GET localhost:8080/api/v1/orders/1 -> 200 {\"id\":1,\"customerId\":1,\"status\":\"paid\",...,\"items\":[...]}, Server: Kestrel.",
+        "source": "examples/don-hang@stage-1: DonHang.Api/Controllers/OrdersController.cs; execution on running lab"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Caddy reverse_proxy doc: header_up \"sets, adds (with the + prefix), deletes (with the - prefix), or performs a replacement (by using two arguments, a search and replacement) in a request header going upstream\"; header_down does the same for response headers coming downstream.",
+        "source": "https://caddyserver.com/docs/caddyfile/directives/reverse_proxy (r1 fetch)"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "docker-compose.yml@stage-1 ports: lab 2222, 8080, 8443 (web uses network_mode service:lab); db 5432; app-web 8081; api has no `ports:`. r1 execution on Docker Desktop: host `curl http://api:8080` -> Could not resolve host; curl 172.28.0.13:8080 timed out.",
+        "source": "examples/don-hang@stage-1: docker-compose.yml; execution on host"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "route doc: \"Evaluates a group of directives literally and as a single unit.\" \"Directives contained in a route block will not be reordered internally.\" handle doc: \"only the first matching handle block will be evaluated\". root doc: \"Sets the root path of the site, used by various matchers and directives that access the file system.\" matchers doc: named matcher \"is defined outside of any particular directive, and can be reused.\" Caddyfile@stage-1:33-34 `respond @guest`/`respond @signedIn` under handle /admin.",
+        "source": "https://caddyserver.com/docs/caddyfile/directives/route; .../root; .../handle; .../matchers; Caddyfile@stage-1"
       }
     ],
     "issues": [
       {
-        "severity": "major",
-        "section": 2,
-        "kind": "accuracy",
-        "quote": "In stage 0, `curl http://localhost:8080/api/v1/orders/1` got its answer from a `respond` line typed into `Caddyfile`. Today the same address returns real products from the database",
-        "text": "Unlisted claim, and wrong: at stage-1 GET /api/v1/orders/1 is OrdersController.Get and returns an order (execution: {\"id\":1,\"customerId\":1,\"status\":\"paid\",\"placedAt\":...,\"items\":[...]}), not products.",
-        "fix": "Replace with \"Today the same address returns a real order from the database, computed by the API and served by Kestrel.\" and add a ledger claim: GET /api/v1/orders/1 at stage-1 returns order 1 from the database via Caddy (source: OrdersController.cs, curl on the lab)."
-      },
-      {
-        "severity": "major",
-        "section": 7,
-        "kind": "accuracy",
-        "quote": "Your laptop is outside that network, and the lab publishes only Caddy's ports to it, so from there Caddy is the only way in.",
-        "text": "Unlisted claim, and wrong: docker-compose.yml@stage-1 also publishes 2222 (the lab box's SSH, used in step 3 itself), 5432 (db) and 8081 (app-web). What is true is that the API publishes no port.",
-        "fix": "Replace with \"Your laptop is outside that network, and the lab publishes no port for the API, so from there Caddy is the only way to reach it.\" Covered by existing claim 5; no new claim needed."
-      },
-      {
-        "severity": "major",
-        "section": 6,
-        "kind": "accuracy",
-        "quote": "You notice this when a malformed request still reaches the API and gets a `400` from it, because Caddy passed it on without judging it.",
-        "text": "Wider than claim 6. A request malformed at the HTTP level (tested: header line `Host localhost` with no colon) is rejected by Caddy with 400 text/plain, no Server: Kestrel, no Via; only a well-formed HTTP request with a bad JSON body reaches the API. Same wording in quiz q2 explanation.correct (en and vi).",
-        "fix": "Use claim 6 suggested_text in §6. In q2 explanation.correct: en \"A request with a broken JSON body still passes through Caddy and gets its `400` from the API.\"; vi \"Một request có body JSON hỏng vẫn đi qua Caddy và nhận `400` từ API.\""
-      },
-      {
-        "severity": "major",
-        "section": 4,
-        "kind": "accuracy",
-        "quote": "It can add or change headers on the way through.",
-        "text": "Unlisted claim: a capability statement about reverse proxies (and, in context, Caddy) with no ledger entry. It is supportable: Caddy reverse_proxy doc, header_up \"sets, adds ..., deletes ..., or performs a replacement ... in a request header going upstream\"; header_down does the same for response headers coming downstream.",
-        "fix": "Add a ledger claim (kind behavior, source_hint Caddy docs reverse_proxy header_up/header_down, section 4): \"Caddy's reverse_proxy can set, add or remove request headers going to the upstream and response headers coming back.\" Keep the sentence as is."
-      },
-      {
-        "severity": "minor",
-        "section": 2,
-        "kind": "accuracy",
-        "quote": "computed by Kestrel inside the API",
-        "text": "Kestrel is the web server that receives the request and sends the answer; the order is computed by the API's controller/service code. Same looseness in quiz q1 option a / explanation a (\"Kestrel computes the answer\") — key unaffected.",
-        "fix": "Say \"computed by the API and sent back by Kestrel\"; in q1 option a use \"Kestrel, because it sends the answer\" and explanation a \"Kestrel sends the answer, but `curl` never connects to it...\" (vi to match)."
-      },
-      {
-        "severity": "minor",
-        "section": 6,
-        "kind": "accuracy",
-        "quote": "Actually in the lab it cannot be reached from your laptop at all",
-        "text": "\"at all\" holds on Docker Desktop (tested: 172.28.0.13:8080 timed out) but Docker docs say for Docker Engine: \"Unpublished container ports continue to be directly accessible from the Docker host via the container's IP address.\" Quiz q5 explanation.correct (\"even by address there is no published port to reach\") has the same gap.",
-        "fix": "Drop \"at all\": \"Actually your laptop has no way to name it or a port to reach it: the lab gives the API no port of its own, and `api` is a name only the lab's network knows.\" In q5 explanation.correct drop \"and even by address there is no published port to reach\" in favour of \"and the lab publishes no port for the API\"."
-      },
-      {
         "severity": "minor",
         "section": 5,
-        "kind": "scope",
-        "quote": "Caddy still answers `/redirect`, `/conflict` and `/slow` itself and serves files for other paths, all on one port.",
-        "text": "Outline item 2 names \"`/admin`, `/conflict` and `/slow` still use `respond`\"; the lesson's second excerpt (lines 45-58) and summary line 4 skip lines 25-44, so `/admin` (respond 401/403/200) is neither shown nor mentioned, and \"serves files for other paths\" misdescribes it.",
-        "fix": "In §5 after the second excerpt add: \"Above these, the same `route` also answers `/admin` itself with `respond`.\" Summary line 4: \"Caddy still answers `/admin`, `/redirect`, `/conflict` and `/slow` itself and serves files for the rest, all on one port.\""
-      },
-      {
-        "severity": "minor",
-        "section": "frontmatter",
-        "kind": "version",
-        "quote": "versions_used: [aspnetcore]",
-        "text": "Claims 1-4 and the Try-it depend on Caddy behaviour (reverse_proxy, handle ordering, the `Via: 1.1 Caddy` header, which the reverse_proxy doc page does not describe and was observed on caddy:2.10.0), but `caddy` is not in versions_used, so a Caddy bump would not trigger re-review.",
-        "fix": "Set `versions_used: [aspnetcore, caddy]`."
+        "kind": "accuracy",
+        "quote": "The lab runs Caddy, the API and the database as separate parts on a private network of its own, which the lab box is also on",
+        "text": "docker-compose.yml@stage-1: service web (Caddy) has `network_mode: \"service:lab\"` and no network entry of its own; it shares the lab box's network place (172.28.0.12) rather than being a separate member beside it. The rest of the paragraph (api's 8080 is not the laptop's 8080; laptop reaches Caddy's 8080, not the API's) is correct. Not blocking: nothing the lesson derives from this is wrong.",
+        "fix": "Optional: \"The lab runs the API and the database as separate parts on a private network of its own; the lab box is on it too, and Caddy runs inside the lab box's place on that network.\" Keep the rest of the paragraph."
       }
     ],
     "scope": {
       "outline_covered": true,
       "beyond_scope": []
     },
-    "verdict": "fix-required"
+    "verdict": "pass"
   },
   "junior": {
-    "reviewed_at": "2026-09-26T12:00:00+07:00",
-    "reviewer": "claude-opus-5-5 (junior, prompt 05, round 1)",
+    "reviewed_at": "2026-09-26T20:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior, prompt 05, round 2)",
     "issues": [
       {
-        "severity": "major",
-        "section": 2,
-        "kind": "gap",
-        "quote": "the lab gives the API no port of its own on your laptop",
-        "text": "I know what a port is, but not how a lab can 'give' a program a port 'on my laptop', nor what 'the lab's network' is (§5 'the name the lab gives the API on its own network', §6 'a name only the lab's network knows', §7 'publishes no port'). Who is on that network? Is the lab box? Why does `api` work there and not on my laptop? Misconception 2, Try-it step 3 and quiz q4/q5 all depend on this picture.",
-        "fix": "Add two sentences in §2 or §4: the lab runs Caddy, the API and the lab box as separate machines on a private network of their own, where names like `api` work; the lab chooses which of their ports also open on your laptop, and it opens none for the API."
-      },
-      {
-        "severity": "major",
+        "severity": "minor",
         "section": 5,
-        "kind": "gap",
-        "quote": "`reverse_proxy api:8080` forwards it to port `8080` on `api`",
-        "text": "Caddy already listens on `8080`, and now Kestrel is on `8080` too. I would stop here: how can two programs use the same port? Only quiz q5's explanation ('Kestrel's `8080` is inside the lab') hints at the answer; the lesson body never says it.",
-        "fix": "Add one sentence after this one: `api` is a different machine in the lab, so its port `8080` is not the same port as the `8080` on your laptop that Caddy listens on."
+        "kind": "style",
+        "quote": "and Caddy shares the lab box's place on that network; `api` is the API's name there.",
+        "text": "'lab box' first appears here and is not in my prereq summaries; it is only explained later in Try-it ('the lab box, which is on the lab's network'). 'shares the lab box's place' is hard to picture: is Caddy a program running on the lab box? I can guess yes, which is enough for Try-it step 3 and q4, so not blocking.",
+        "fix": "Replace 'Caddy shares the lab box's place on that network' with 'the lab box, the machine you ssh into in Try-it, is on it too, and Caddy runs on the lab box'."
       },
       {
-        "severity": "major",
-        "section": 4,
-        "kind": "term",
-        "quote": "It routes: one address can serve an API, static files and fixed answers",
-        "text": "'static files' is not in my vocabulary or in Core concepts. It is a diagram node ('static files') and §5's `file_server` fallback depends on it. §5 says it 'serves files from `/srv/www`' but not what kind of files or that no code runs.",
-        "fix": "Add one clause at first use: static files are files stored on disk (here in `/srv/www`) that Caddy sends back as they are, without running any code."
-      },
-      {
-        "severity": "major",
-        "section": 6,
-        "kind": "term",
-        "quote": "\"A reverse proxy is just a firewall that blocks bad requests, not something that forwards good ones.\"",
-        "text": "'firewall' is not in my vocabulary. The misconception is built on it, and quiz q2 option a ('a reverse proxy is a kind of firewall') reuses it. I cannot tell whether I would have believed this, because I do not know what a firewall is.",
-        "fix": "Replace 'a firewall that blocks bad requests' with 'a guard that inspects each request and blocks the bad ones' in §6 and in q2 option a (en and vi)."
-      },
-      {
-        "severity": "major",
+        "severity": "minor",
         "section": 5,
-        "kind": "code",
-        "quote": "@guest header Cookie *role=guest*\n\t@signedIn header Cookie *sid=*",
-        "text": "The first block shows `root * /srv/www`, `@guest ...`, `@signedIn ...` and `route {`, and the prose explains only `handle` and `reverse_proxy`. I do not know what `@guest`/`@signedIn` are or whether they matter for forwarding, nor that `route` is why the `handle` blocks are tried in order ('no earlier `handle`' in the second block).",
-        "fix": "Add one sentence after the first block: the `@guest` and `@signedIn` lines name cookie checks used by other lessons and can be skipped here; `root` sets the folder `file_server` reads from; inside `route` the `handle` blocks are tried top to bottom."
-      },
-      {
-        "severity": "major",
-        "section": 4,
-        "kind": "diagram",
-        "quote": "C[curl or the app] -->|:8080| P[Caddy]",
-        "text": "'the app' is never mentioned in the prose, so I do not know which app sends requests to Caddy. Also, §5 says Caddy itself answers `/redirect` and `/admin`, but the diagram's only 'own answer' arrow is labelled `/conflict, /slow`, so I would guess `/redirect` goes to static files.",
-        "fix": "Either change the node to 'curl' or add a clause in §4 naming which app it is; label the respond arrow '/admin, /redirect, /conflict, /slow' (or add a sentence saying the arrow lists examples only)."
-      },
-      {
-        "severity": "major",
-        "section": 4,
-        "kind": "gap",
-        "quote": "It also sits on the server side: it acts for the application, not for the client, which is why the client can use it without setting anything up.",
-        "text": "'server side' implies there is a client-side kind that a client would have to set up. Nothing before this told me such a thing exists, so I cannot follow 'which is why'.",
-        "fix": "Either delete this sentence, or add before it one sentence saying some proxies are set up by the client on its own machine, and this one is not: the client just uses the server's address."
+        "kind": "length",
+        "quote": "Caddy adds a `Via: 1.1 Caddy` header to the answers it passes back, and Kestrel's `Server: Kestrel` header comes through unchanged.",
+        "text": "The Via/Server sentence is not in its own paragraph: it now closes the new network paragraph, which is about ports and names. Switching topic in the last sentence made me re-read; this is the sentence Try-it tests.",
+        "fix": "Move this sentence to its own one-sentence paragraph right after the network paragraph (or right after the first code block's explanation)."
       },
       {
         "severity": "minor",
         "section": 5,
         "kind": "gap",
         "quote": "`/admin`, just below it in the same file, still answers with `respond` lines of its own.",
-        "text": "`/admin` is in neither excerpt, so I cannot see it, yet summary line 4 lists it next to paths I did see. I have to take it on trust.",
-        "fix": "Say in this sentence that the `/admin` lines sit between the two excerpts and are not shown, or drop `/admin` from summary line 4."
-      },
-      {
-        "severity": "minor",
-        "section": 5,
-        "kind": "length",
-        "quote": "That one line replaced all the `respond` blocks that faked `/api/v1/*` in stage 0. `/admin`, just below it in the same file, still answers with `respond` lines of its own. Caddy adds a `Via: 1.1 Caddy` header",
-        "text": "This paragraph packs five facts (handle, reverse_proxy, replaced respond blocks, /admin, Via and Server headers); I had to re-read it twice. The Via/Server sentence is what Try-it tests and gets lost at the end.",
-        "fix": "Split the paragraph: keep handle/reverse_proxy/replacement in one, move the `Via`/`Server` headers sentence to its own short paragraph."
-      },
-      {
-        "severity": "minor",
-        "section": "quiz",
-        "kind": "quiz",
-        "quote": "The second request went straight to Kestrel; `Via` is added by Caddy on the way through",
-        "text": "q4: the correct option is almost verbatim from §7's suggested answer ('`Via: 1.1 Caddy` is added by Caddy on the way through') and is the longest option, so it can be picked without reasoning.",
-        "fix": "Reword option a in your own terms, e.g. 'The lab box's request skipped Caddy, and only Caddy writes `Via`', and bring another option to similar length."
-      },
-      {
-        "severity": "minor",
-        "section": "quiz",
-        "kind": "quiz",
-        "quote": "The name `api` is known only on the lab's network, and the lab gives the API no port on your laptop",
-        "text": "q5: the correct option is nearly the §6 sentence ('the lab gives the API no port of its own, and `api` is a name only the lab's network knows') and clearly the longest; the three wrong options are short and easy to dismiss.",
-        "fix": "Shorten option b (e.g. 'Only the lab's own network knows `api`, and the API has no port on your laptop') or lengthen one distractor to a similar size."
-      },
-      {
-        "severity": "minor",
-        "section": "quiz",
-        "kind": "quiz",
-        "quote": "Postgres, because the products are in the database",
-        "text": "q1 option c uses 'Postgres', which the lesson never mentions and I do not know. 'the database' lets me guess, so it does not block the answer.",
-        "fix": "Replace 'Postgres' with 'The database' in q1 option c (en and vi)."
-      },
-      {
-        "severity": "minor",
-        "section": "quiz",
-        "kind": "quiz",
-        "quote": "This would hold only when Kestrel wrote `Via` at all, but Kestrel never adds it; Caddy does.",
-        "text": "q4 explanations b, c, d use 'would hold only when ...' / 'would show only when ...'; I had to re-read to see they mean 'only if'. The point is simple but the wording slows me down.",
-        "fix": "Rewrite as a direct statement, e.g. b: 'Kestrel never writes `Via`; only Caddy adds it.' Same pattern for c and d."
+        "text": "Carried over from round 1: `/admin` is in neither excerpt, yet the diagram arrow and summary line 4 list it beside paths I can see. The new `@guest`/`@signedIn` sentence helps a little, but I still take it on trust.",
+        "fix": "Add 'not shown here' to this sentence, e.g. '`/admin`, in lines between the two excerpts (not shown), still answers with `respond` lines of its own.'"
       }
     ],
     "readability": {
       "unknown_terms": [
-        "the lab's network / a port the lab gives on your laptop",
-        "static files",
-        "firewall",
-        "`@guest` / `@signedIn` / `root` / `route` (Caddyfile lines)",
-        "the app (diagram node)",
-        "Postgres (quiz q1)"
+        "lab box (first used in §5 before Try-it explains it)"
       ],
       "skipped_steps": [
-        "the lab gives the API no port of its own on your laptop — no picture of the lab's network or who is on it",
-        "`reverse_proxy api:8080` forwards it to port `8080` on `api` — why two programs can both use 8080",
-        "It also sits on the server side: it acts for the application, not for the client — no client-side counterpart was introduced",
         "`/admin`, just below it in the same file — lines not shown"
       ],
       "situation_connects": true,
       "try_it_feasible": true,
       "summary_matches": true
     },
-    "verdict": "fix-required"
+    "verdict": "pass"
   }
 }
