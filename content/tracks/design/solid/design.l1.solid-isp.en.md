@@ -45,9 +45,9 @@ flowchart LR
   M[SmsNotifier] -->|derives from| B
 ```
 
-The left half of the diagram is the proposal; the right half is what the samples have today. A fat interface hurts on two sides.
+In the diagram, the two arrows into `INotificationChannel` are the proposal; the three arrows around `INotifier` and `NotifierBase` are what the samples have today. A fat interface hurts on two sides.
 
-On the implementing side, C# requires a class to provide every method the interface declares, apart from any the interface gives a body of its own — and none of these four has one. `SmsNotifier` has real behaviour for `SendSms` only, so the other three get filler: an empty body, a made-up result, or an exception. And if someone changes the parameters of `GetDeliveryReport`, every implementing class must change, `SmsNotifier` included, even though nothing it does is about delivery reports.
+On the implementing side, C# requires a class to provide every method the interface declares, apart from any the interface already gives a body to — and none of these four has one. `SmsNotifier` has real behaviour for `SendSms` only, so the other three get filler: an empty body, a made-up result, or an exception. And if someone changes the parameters of `GetDeliveryReport`, every implementing class must change, `SmsNotifier` included, even though nothing it does is about delivery reports.
 
 On the calling side, the order confirmation code uses one method but asks for an `INotificationChannel`, so it can only be given classes that provide all four. A class that can send an SMS and nothing else cannot be handed to it without filler. If that filler throws, the promise from the LSP lesson breaks: code that holds an `INotificationChannel` may call `SendEmail` and has no way to know this one will fail.
 
