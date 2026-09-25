@@ -32,7 +32,7 @@ reviewed_at: null
 ## Core concepts
 
 - **repository** — the layer hiding how data is fetched or saved behind a small set of methods that describe what is needed, not how.
-- data-access code — the code that actually talks to the database: queries, `Include`, `SaveChangesAsync`. The data layer is where this code lives — in Đơn Hàng, `DonHang.Infrastructure`.
+- data-access code — the code that actually talks to the database: queries, `Include`, `SaveChangesAsync`. The data layer is the project meant to hold this code — in Đơn Hàng, `DonHang.Infrastructure`, where `DonHangDbContext` and `EfOrderRepository` live.
 - implementation — a class that provides the methods an interface declares; `EfOrderRepository` and `FakeOrderRepository` are two implementations of `IOrderRepository`.
 
 ## How it works
