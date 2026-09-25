@@ -44,7 +44,7 @@ flowchart TD
 
 A widget is a class, so the Single Responsibility Principle applies to it as to any class: it should have one reason to change. A screen whose `build` waits for data, shows progress, handles errors and describes every row has several reasons to change. Each part can be pulled out into its own widget, and the screen then puts those widgets together, as in the diagram: the screen keeps the waiting, errors and title bar, and a separate row widget describes each product with its two `Text` widgets. That is composition.
 
-What an extracted widget needs from its user is written in its constructor. That list of parameters is its contract. A widget still gets its `BuildContext` from where it is placed, and some Material widgets, such as `ListTile`, need a `Material` widget above them, which `Scaffold` provides, but everything specific to one use arrives through the constructor. A small contract means the widget can be used on any screen that has those few values, and understood without reading the code around it.
+What an extracted widget needs from its user is written in its constructor. That list of parameters is its contract. A widget still gets its `BuildContext` from where it is placed, and some widgets, such as `ListTile`, expect particular widgets above them, which the screen's page layout provides, but everything specific to one use arrives through the constructor. A small contract means the widget can be used on any screen that has those few values, and understood without reading the code around it.
 
 Small widgets also keep state in the right place. A widget that must remember something keeps only its own state, and the parts that remember nothing stay stateless. For example, the product screen keeps the product list load in its `State`, while a row widget needs no `State` at all. A `setState` in a stateful widget rebuilds only that widget's subtree, so the smaller the widget, the less each change touches.
 
@@ -88,7 +88,7 @@ Inside the product screen, the rows have not been extracted yet. `ListView.build
           );
 ```
 
-The `ListTile` for one product is written inline, inside the list, inside the `FutureBuilder`, inside the screen. The only value it uses is `product`, one `Product` with a name and a price. So a `ProductTile` widget pulled out of these lines would need only a `Product` in its constructor. The screen's code would shrink to `return ProductTile(product: product);`, and the "new" label and bold price would be changes to `ProductTile` alone.
+The `ListTile` for one product is written inline, inside the list, inside the code that waits for the product list, inside the screen. The only value it uses is `product`, one `Product` with a name and a price. So a `ProductTile` widget pulled out of these lines would need only a `Product` in its constructor. The screen's code would shrink to `return ProductTile(product: product);`, and the "new" label and bold price would be changes to `ProductTile` alone.
 
 ## Beginners often think…
 
@@ -103,7 +103,7 @@ Plan the extraction of `ProductTile` from the inline `ListTile` above, on paper 
 2. Is it a StatelessWidget or a StatefulWidget?
 3. What does its `build` return, and what does the screen's `itemBuilder` return afterwards?
 
-Expected result: 1 — one field, `final Product product;`, set through its constructor, for example `const ProductTile({super.key, required this.product});`. 2 — a StatelessWidget. 3 — `build` returns the same `ListTile` as the inline code; `itemBuilder` returns `ProductTile(product: product)`.
+Expected result: 1 — one field, `final Product product;`, set through its constructor, for example `const ProductTile({super.key, required this.product});`, where `super.key` is passed on exactly as in `DonHangApp`'s constructor. 2 — a StatelessWidget. 3 — `build` returns the same `ListTile` as the inline code; `itemBuilder` returns `ProductTile(product: product)`.
 
 Why can `ProductTile` be a StatelessWidget, while `ProductListScreen` cannot?
 
