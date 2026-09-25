@@ -1,104 +1,80 @@
 {
   "id": "backend.l1.protecting-an-endpoint",
   "technical": {
-    "reviewed_at": "2026-09-25T09:50:00+07:00",
-    "reviewer": "claude-opus-5-5 (technical round 2)",
+    "reviewed_at": "2026-09-25T10:05:00+07:00",
+    "reviewer": "claude-opus-5-5 (technical round 3)",
     "claim_verdicts": [
       {
         "n": 1,
         "verdict": "verified",
-        "evidence": "Live (round 2), examples/don-hang HEAD = stage-1^{commit} 4fca60a: login as anh.tran@example.com -> {\"token\":\"eyJ...\"}. curl -s -i /api/v1/orders/3 with that Bearer token -> 'HTTP/1.1 200 OK', body {\"id\":3,\"customerId\":2,\"status\":\"paid\",...,\"items\":[{\"productId\":4,...,\"unitPriceVnd\":3200000},...]}. db/seed.sql@stage-1: orders row (3, 2, ...).",
+        "evidence": "Live (round 3), examples/don-hang HEAD = stage-1^{commit} 4fca60a, stack up: login anh.tran@example.com / donhang-dev-password -> token. curl -s -i /api/v1/orders/3 with it -> 'HTTP/1.1 200 OK', body {\"id\":3,\"customerId\":2,\"status\":\"paid\",...}. db/seed.sql@stage-1: orders (3, 2, ...).",
         "source": "curl http://localhost:8080/api/v1/orders/3; git show stage-1:db/seed.sql"
       },
       {
         "n": 2,
         "verdict": "verified",
-        "evidence": "git show stage-1:DonHang.Api/Controllers/OrdersController.cs:30-36: [HttpGet(\"{id:int}\")], no [Authorize]; FindAsync(id); if (order is null) return NotFound(); return Ok(ToDto(order)). Program.cs:43 AddAuthorization() with no fallback policy. Live: GET /api/v1/orders/3 with no Authorization header -> 200.",
-        "source": "examples/don-hang@stage-1 DonHang.Api/Controllers/OrdersController.cs:30-36, DonHang.Api/Program.cs:43"
+        "evidence": "git show stage-1:DonHang.Api/Controllers/OrdersController.cs:30-36: [HttpGet(\"{id:int}\")] only, no [Authorize] (none at class level either, lines 10-12); FindAsync(id); if (order is null) return NotFound(); return Ok(ToDto(order)). Program.cs:43 AddAuthorization() with no fallback policy. Block matches source character-for-character.",
+        "source": "examples/don-hang@stage-1 DonHang.Api/Controllers/OrdersController.cs:10-36; DonHang.Api/Program.cs:43"
       },
       {
         "n": 3,
-        "verdict": "verified",
-        "evidence": "git grep -n -E \"Forbid|403|Status403\" stage-1 -- '*.cs' -> no match (exit 1). The only customer filter is EfOrderRepository.ListByCustomerAsync (Where(o => o.CustomerId == customerId)); nothing compares an order's CustomerId with the caller for a single order.",
-        "source": "examples/don-hang@stage-1 git grep; DonHang.Infrastructure/EfOrderRepository.cs:13-14"
+        "verdict": "rephrased",
+        "evidence": "git grep -E 'forbid|403' stage-1 (case-insensitive): no match in any .cs file; only customer filter is EfOrderRepository.ListByCustomerAsync. But Caddyfile@stage-1:33 does return 403 ('respond @guest \"Forbidden: role=guest may not open /admin\" 403'), so 'No code in the example repository returns 403' is too broad. Lesson text ('nothing in Đơn Hàng checks it' = the ownership check) is accurate; only the ledger wording needs narrowing.",
+        "source": "examples/don-hang@stage-1 git grep; Caddyfile:33; DonHang.Infrastructure/EfOrderRepository.cs:13-14",
+        "suggested_text": "No C# code in DonHang.Api at stage-1 returns 403 or compares a resource's owner with the caller for a single-order request (the only 403 in the repo is Caddy's /admin lab route)."
       },
       {
         "n": 4,
         "verdict": "verified",
-        "evidence": "OrdersController.cs:49-56@stage-1: [Authorize], int.Parse(User.FindFirstValue(JwtRegisteredClaimNames.Sub)!), repository.ListByCustomerAsync(customerId). EfOrderRepository.cs:13-14: db.Orders.Where(o => o.CustomerId == customerId).Include(o => o.Customer).OrderBy(o => o.Id).ToListAsync(). JwtTokenService.cs:20 writes Sub = customerId.ToString(); Program.cs:31 MapInboundClaims = false keeps 'sub'.",
-        "source": "examples/don-hang@stage-1 OrdersController.cs:49-56, EfOrderRepository.cs:13-14, JwtTokenService.cs:20, Program.cs:31"
+        "evidence": "OrdersController.cs@stage-1:49-56: [Authorize], int.Parse(User.FindFirstValue(JwtRegisteredClaimNames.Sub)!), repository.ListByCustomerAsync(customerId). EfOrderRepository.cs:13-14: db.Orders.Where(o => o.CustomerId == customerId). JwtTokenService.cs:20: new Claim(JwtRegisteredClaimNames.Sub, customerId.ToString()) - supports the gloss 'the field in the token that holds the caller's customer id'. Program.cs:31 MapInboundClaims = false keeps 'sub'.",
+        "source": "examples/don-hang@stage-1 OrdersController.cs:49-56; EfOrderRepository.cs:13-14; JwtTokenService.cs:20; Program.cs:31"
       },
       {
         "n": 5,
         "verdict": "verified",
-        "evidence": "Live (round 2): GET /api/v1/orders with customer 1's token -> ids 1,2,10,14,15,16,17,24,25,26,27,28, every entry \"customerName\":\"Trần Minh Anh\"; id 3 absent. Seed: orders 1,2,10 have customer_id 1; 14+ were created by other lessons' scripts as customer 1.",
-        "source": "curl http://localhost:8080/api/v1/orders; db/seed.sql@stage-1"
+        "evidence": "Live (round 3): curl /api/v1/orders with customer 1's token -> 12 entries (ids 1,2,10,14..17,24..28), every one \"customerName\":\"Trần Minh Anh\" (customer 1 in seed.sql); id 3 absent. Extra ids beyond seed come from earlier POSTs by customer 1; the lesson's expected result does not depend on the count.",
+        "source": "curl http://localhost:8080/api/v1/orders; git show stage-1:db/seed.sql"
       },
       {
         "n": 6,
-        "verdict": "rephrased",
-        "evidence": "Ledger text matches RFC 9110 15.5.4: \"If authentication credentials were provided in the request, the server considers them insufficient to grant access. The client SHOULD NOT automatically repeat the request with the same credentials. The client MAY repeat the request with new or different credentials.\" The lesson (sec. 3) says more than the ledger: \"a new token for the same caller changes nothing\" - the RFC allows new credentials to succeed; it holds here only because the refusal is ownership and a new token carries the same sub.",
-        "source": "refs/rfc/rfc9110.txt:7569-7581",
-        "suggested_text": "`403 Forbidden` - the status meaning \"I know who you are, and I won't do this for you\"; unlike `401`, which a fresh login can fix. When the refusal is about ownership, a new token for the same customer carries the same `sub`, so it changes nothing."
+        "verdict": "verified",
+        "evidence": "refs/rfc/rfc9110.txt 15.5.4: 'The 403 (Forbidden) status code indicates that the server understood the request but refuses to fulfill it.' ... 'The client MAY repeat the request with new or different credentials. However, a request might be forbidden for reasons unrelated to the credentials.' 15.5.2: 401 'lacks valid authentication credentials'. JwtTokenService.cs:20 puts customerId in sub, so a new token for the same customer carries the same sub. Lesson's conditioned wording ('When the refusal is about ownership') fits.",
+        "source": "refs/rfc/rfc9110.txt sections 15.5.2, 15.5.4; examples/don-hang@stage-1 DonHang.Api/JwtTokenService.cs:18-22"
       },
       {
         "n": 7,
         "verdict": "verified",
-        "evidence": "aspnetcore security/authorization/resource-based.md: \"Attribute evaluation occurs before data binding and before execution of any method that loads a resource. Declarative authorization with an `[Authorize]` attribute doesn't suffice for resource-based authorization. Instead, the app must invoke a custom authorization method\". security/authentication/index.md: \"Calling `UseAuthentication` registers the middleware that uses the previously registered authentication schemes.\" Program.cs:70 UseAuthentication() before MapControllers.",
+        "evidence": "refs aspnetcore/security/authorization/resource-based.md:16: 'Attribute evaluation occurs before data binding and before execution of any method that loads a resource. Declarative authorization with an [Authorize] attribute doesn't suffice for resource-based authorization. Instead, the app must invoke a custom authorization method'. security/authentication/index.md:44: 'Calling UseAuthentication registers the middleware ... Call UseAuthentication before any middleware that depends on users being authenticated.' Program.cs:70 app.UseAuthentication().",
         "source": "refs/aspnetcore-docs/aspnetcore/security/authorization/resource-based.md:16; refs/aspnetcore-docs/aspnetcore/security/authentication/index.md:44"
       },
       {
         "n": 8,
-        "verdict": "not-needed",
-        "evidence": "Kind opinion, conditioned (\"one way\"); follows directly from claim 4, which is verified in code and live (List never returned order 3).",
-        "source": "follows from claim 4"
+        "verdict": "verified",
+        "evidence": "Conditioned ('one way'). Code supports it: EfOrderRepository.ListByCustomerAsync filters Where(o => o.CustomerId == customerId), so rows of other customers are never loaded; live /api/v1/orders returned only customer 1's orders (claim 5).",
+        "source": "examples/don-hang@stage-1 DonHang.Infrastructure/EfOrderRepository.cs:13-14"
       },
       {
         "n": 9,
         "verdict": "verified",
-        "evidence": "Live (round 2): Bearer abc.def.ghi -> GET /api/v1/orders: 'HTTP/1.1 401 Unauthorized', 'Www-Authenticate: Bearer error=\"invalid_token\"'; same token -> GET /api/v1/orders/3: 200. No token -> /orders 401, /orders/3 200. Docs security/authentication/index.md:116: challenge example \"A JWT bearer scheme returning a 401 result with a `www-authenticate: bearer` header.\"",
-        "source": "curl http://localhost:8080/api/v1/orders[/3]; refs/aspnetcore-docs/aspnetcore/security/authentication/index.md:113-116"
+        "evidence": "Live (round 3): 'Authorization: Bearer abc.def.ghi' -> GET /api/v1/orders = 401, GET /api/v1/orders/3 = 200. No-header GET /api/v1/orders = 401. Matches [Authorize] on List (line 49) and none on Get (line 30). Also supports section 6: customer 1's token -> /orders/1 200 {\"id\":1,\"customerId\":1,...} and /orders/3 200 {\"id\":3,\"customerId\":2,...}. Docs opened this round: refs/rfc/rfc9110.txt, refs/aspnetcore-docs resource-based.md and authentication/index.md.",
+        "source": "curl http://localhost:8080/api/v1/orders[/3|/1]; OrdersController.cs@stage-1:30,49"
       }
     ],
     "issues": [
       {
-        "severity": "major",
-        "section": 3,
-        "kind": "accuracy",
-        "quote": "unlike `401`, which a fresh login can fix, a new token for the same caller changes nothing",
-        "text": "Overstated, and stronger than ledger claim 6 (which says only that re-sending the same credentials will not help). As a definition of 403 it is false in general: RFC 9110 15.5.4 says \"The client MAY repeat the request with new or different credentials\" - e.g. a new token for the same user with more rights can succeed. It is true only for this lesson's ownership refusal, because Đơn Hàng tokens carry just sub and email, so a new token for customer 1 has the same sub.",
-        "fix": "Scope it to ownership: replace with claim 6's suggested_text (\"...unlike `401`, which a fresh login can fix. When the refusal is about ownership, a new token for the same customer carries the same `sub`, so it changes nothing.\"). Extend claim 6 text: \"for an ownership refusal, a new token for the same caller has the same sub and gets the same answer\" (kind behavior, source_hint: RFC 9110 15.5.4; DonHang.Api/JwtTokenService.cs:18-22@stage-1)."
-      },
-      {
         "severity": "minor",
-        "section": 5,
-        "kind": "accuracy",
-        "quote": "An ownership check here would do exactly that comparison after the `NotFound()` line and answer `403` when they differ",
-        "text": "Incomplete for this code: Get has no [Authorize], so an anonymous request has no sub to compare; adding only the comparison (int.Parse(User.FindFirstValue(Sub)!) as in List) would throw for anonymous callers instead of answering 401. The previous sentence names both gaps, but this one describes the fix as the comparison alone. Quiz q4 covers the reverse case ([Authorize] alone), not this one.",
-        "fix": "Append to the sentence: \"— together with `[Authorize]`, so that there is always a caller to compare with.\" No new claim needed beyond claims 2 and 9."
-      },
-      {
-        "severity": "minor",
-        "section": 3,
-        "kind": "accuracy",
-        "quote": "the caller's `sub` — the claim in the token that holds the caller's customer id",
-        "text": "Correct (JwtTokenService.cs:20@stage-1 writes Sub = customerId.ToString(); Program.cs:31 MapInboundClaims = false keeps the name 'sub'), but no ledger claim cites where sub gets the customer id; claim 4 only says List reads it.",
-        "fix": "Extend claim 4's text with \"; JwtTokenService writes the customer's id into sub\" and add \"DonHang.Api/JwtTokenService.cs:20\" to its source_hint. No lesson text change."
-      },
-      {
-        "severity": "minor",
-        "section": "backend.l1.protecting-an-endpoint.q1",
+        "section": "q5",
         "kind": "quiz",
-        "quote": "If the API asked every question it should, what would it answer?",
-        "text": "Key a is correct given the lesson text (sec. 4: \"The right response would be `403`\"), and explanation c now acknowledges RFC 9110 15.5.4 (\"MAY instead respond with a status code of 404\"). Residual ambiguity: the stem asks what the API 'would answer', and 404 is a permitted answer, so a learner who knows the RFC is marked wrong for a valid choice.",
-        "fix": "Tighten the stem to ask for the status that names the failure, e.g. \"...which status says what actually went wrong?\" (vi: \"...status nào nói đúng điều đã thất bại?\"). Keep options and explanations."
+        "text": "q5 option c explanation says the token 'carries `sub` and `email`'; JwtTokenService also sets issuer, audience and expires (iss/aud/exp), so read literally the list is incomplete. Key and all wrong options are correct.",
+        "quote": "The token carries `sub` and `email`, not a list of orders",
+        "fix": "en: \"The token carries claims such as `sub` and `email`, not a list of orders; the filtering happens in the repository query.\" vi: \"Token mang các claim như `sub` và `email`, không mang danh sách order; việc lọc xảy ra trong câu query của repository.\""
       }
     ],
     "scope": {
       "outline_covered": true,
       "beyond_scope": []
     },
-    "verdict": "fix-required"
+    "verdict": "pass"
   },
   "junior": {
     "reviewed_at": "2026-09-25T11:30:00+07:00",
