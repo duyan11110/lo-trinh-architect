@@ -13,7 +13,7 @@ prereqs: [backend.l1.migrations, backend.l1.validating-input]
 related: []
 vocab: [password-hash, authentication]
 example_tag: stage-1
-versions_used: [dotnet, postgresql]
+versions_used: [dotnet, efcore, postgresql]
 content_version: 1
 status: draft
 approved_by: null
@@ -27,7 +27,7 @@ reviewed_at: null
 
 ## The situation
 
-Reviewing the `customers` table, you notice `password_hash` holds values like `100000.O2f9fsgGbhEWCCvJt94ESw==.lGj6tWAPiYl3FebBpbmiwRu8dlVIlOM3rDaGDfs+KNw=` — nothing that looks like a password. `POST /api/v1/auth/login` checks a submitted password against this value through `PasswordHasher.Verify`, and only that comparison decides whether the login succeeds. A teammate asks why the API doesn't just store the password directly, or encrypt it so it could be decrypted back if support ever needed to see it. What does storing this value instead actually buy the API, and what would it cost to give that up?
+Reviewing the `customers` table, you notice `password_hash` holds values like `100000.O2f9fsgGbhEWCCvJt94ESw==.lGj6tWAPiYl3FebBpbmiwRu8dlVIlOM3rDaGDfs+KNw=` — nothing that looks like a password. `POST /api/v1/auth/login` checks a submitted password against this value through `PasswordHasher.Verify`; once the customer's row is found, that comparison is what decides whether the login succeeds. A teammate asks why the API doesn't just store the password directly, or encrypt it so it could be decrypted back if support ever needed to see it. What does storing this value instead actually buy the API, and what would it cost to give that up?
 
 ## Core concepts
 
@@ -49,9 +49,9 @@ flowchart LR
 
 In the situation above, `PasswordHasher.Verify` is what `POST /api/v1/auth/login` calls once the customer's row is found. It never compares the typed password directly against the stored value; instead, it splits the stored string into its iteration count, salt, and hash, then runs `Rfc2898DeriveBytes.Pbkdf2` again on the password just typed, using that same salt and iteration count. The recomputed hash and the stored hash are then compared — matching means the password was right, without either raw password ever sitting side by side, exactly as the diagram's `D` shows.
 
-The comparison itself uses `CryptographicOperations.FixedTimeEquals`, not `==`: a check that takes the same amount of time whether the first byte differs or the last one does, so a login attempt can't be nudged closer to correct by timing how fast a comparison fails.
+The comparison itself uses `CryptographicOperations.FixedTimeEquals`, not `==` — a comparison whose duration depends on the length of the two byte sequences, not on their contents.
 
-Storing this way costs something too: there's no way back from a hash to the password it came from, by design. If a customer forgets their password, the API can only issue a new one — it can never recover and show the old one, because nothing here ever kept it.
+Storing this way costs something too: nothing computes the password back from a hash. The only route back is guessing a password and hashing it again to see if it matches, which the 100,000 iterations make slow, one guess at a time. If a customer forgets their password, the API can only issue a new one — it can never recover and show the old one, because nothing here ever kept it.
 
 ## In the Đơn Hàng system
 
@@ -87,7 +87,7 @@ public static class PasswordHasher
 
 `Hash` generates a fresh random salt with `RandomNumberGenerator.GetBytes` every time it runs, so calling it twice with the identical password produces two different stored strings — the salt, not the password, is what makes them differ. `Verify` is the only one of the two this app's own code ever calls, from `AuthController.Login`; there's no registration endpoint yet that would call `Hash` for a new customer.
 
-`customers.password_hash` exists because of a real migration, not a hand-edited column:
+`customers.password_hash` exists because of a real migration, not a hand-edited column — the first schema change after the baseline `InitialCreate` migration:
 
 ```csharp file=DonHang.Infrastructure/Migrations/20260923154700_AddPasswordHashToCustomers.cs tag=stage-1 lines=11-27
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -113,8 +113,8 @@ This `UPDATE` sets the exact same stored string for all five seeded customers at
 
 ## Beginners often think…
 
-- **"Encrypting a password, so it can be decrypted later, is just as safe as hashing it."** → Actually encryption is reversible by design — whoever holds the key can recover the original password, so a leaked database plus a leaked key means every password is exposed. A hash has no key that reverses it; even the API itself can't recover the password it once hashed. You notice this when asked "can we look up what a customer's password was" — with hashing, the honest answer is no, only a reset is possible.
-- **"Comparing a login attempt's password directly to the stored value, as plain text, is fine as long as the column is hard to guess."** → Actually a hard-to-guess column name doesn't change what's inside it: anyone who reads that column — a leak, a curious admin, a backup file — reads every password directly. A hash never reveals the original password even to someone who reads it.
+- **"Encrypting a password, so it can be decrypted later, is just as safe as hashing it."** → Actually encryption is reversible by design — whoever holds the key can recover the original password, so a leaked database plus a leaked key means every password is exposed. A hash has no key that reverses it; even the API itself can't compute the password back from what it once hashed. You notice this when asked "can we look up what a customer's password was" — with hashing, the honest answer is no, only a reset is possible.
+- **"Comparing a login attempt's password directly to the stored value, as plain text, is fine as long as the column is hard to guess."** → Actually a hard-to-guess column name doesn't change what's inside it: anyone who reads that column — a leak, a curious admin, a backup file — reads every password directly. A hash doesn't hand the original password to whoever reads it; recovering it means guessing, one slow hash at a time.
 
 ## Try it (3 minutes)
 
