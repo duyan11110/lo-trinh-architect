@@ -47,7 +47,7 @@ flowchart TD
 
 The API keeps no record of who has logged in. Each request is checked on its own, so a request that needs a signed-in customer must prove it by itself. Logging in is how the app gets that proof: it sends the email and password once, in the body of a `POST`, and if they match, the API answers `200` with a JWT in a JSON body. The app does not send the password again after that. It keeps the token and adds it to every later request that needs a customer, as an `Authorization: Bearer <token>` header. On the API side, the authentication middleware checks the token's signature and expiry and records who the caller is; an `[Authorize]` endpoint with no caller answers `401`.
 
-A wrong email or password gets `401` from the login endpoint too, with no token. The app must treat that as a failure and tell the user, not carry on as if they were signed in; otherwise the order request would fail later with its own `401`, and the user would not know why.
+A wrong email or password gets `401` from the login endpoint too, with no token. The app must treat that as a failure and say so on the login screen, not carry on as if they were signed in; otherwise the order request would fail later with its own `401`, and the user would not know why.
 
 Where the token is kept matters as much as sending it. It works like a key: anyone who holds it can act as that customer until it expires, with no password needed. In this stage the app keeps it only in memory, in a field of the one `ApiClient` object, and nothing writes it anywhere else. The cost is that the user signs in again whenever the app starts again.
 
@@ -95,7 +95,9 @@ It posts the two fields as JSON, with a `Content-Type` header saying so. Any sta
   }
 ```
 
-`_submit` first sets `_loading` and clears any earlier error; while `_loading` is true, the "Sign in" button is disabled and shows a spinner. If `login` completes, the screen replaces itself with the order screen. The `mounted` check before that makes sure the screen is still in the widget tree after the wait (the user may have left it with Back), since `context` belongs to it. If `login` throws, the `catch` stores the exception's text in `_error`, and `build` shows it in red above the button: for a wrong password, "Exception: login failed (401)". Either way, `finally` turns `_loading` off again. These are the loading and error states from the last lesson, on a screen that sends data instead of fetching it.
+`_emailController` and `_passwordController` hold the text of the two input fields, which start filled in with the lab's demo customer, `anh.tran@example.com`. `_submit` first sets `_loading` and clears any earlier error; while `_loading` is true, the "Sign in" button is disabled and shows a spinner. If `login` completes, `Navigator.of(context).pushReplacement(...)` swaps this screen for `CreateOrderScreen`. It passes along `widget.apiClient`, the same `ApiClient` whose `_token` was just set, which is how the token reaches the order request.
+
+The `mounted` check before that makes sure the screen is still in the widget tree after the wait (the user may have left it with Back), because the `context` of a screen that is gone can no longer be used. If `login` throws, the `catch` stores the exception's text in `_error`, and `build` shows it in red above the button: for a wrong password, "Exception: login failed (401)". Either way, `finally` turns `_loading` off again. These are the loading and error states from the last lesson, on a screen that sends data instead of fetching it.
 
 ## Beginners often think…
 
@@ -104,9 +106,9 @@ It posts the two fields as JSON, with a `Content-Type` header saying so. Any sta
 
 ## Try it (3 minutes)
 
-With the lab running, the app open at `http://localhost:8081`, and the browser's developer tools open on the Network tab:
+Start the lab (`scripts/up.sh` from the repository root) and open the app at `http://localhost:8081`. Open the browser's developer tools (F12 in most browsers) on the Network tab, which lists every request the page sends and lets you open each response:
 
-1. Tap the sign-in icon at the top right of the product screen. On the "Sign in" screen, replace the password with anything else and tap "Sign in".
+1. Tap the sign-in icon at the top right of the product screen. The "Sign in" screen opens with the email and password already filled in. Replace the password with anything else and tap "Sign in".
 2. Type `donhang-dev-password` as the password and tap "Sign in" again. In the Network tab, select the last `login` request, the `POST` with status `200`, and open its response.
 
 Expected result: 1 — red text "Exception: login failed (401)" above the button, and the screen stays where it is. 2 — the order screen opens, and the `login` response is a JSON object with a single `token` field.

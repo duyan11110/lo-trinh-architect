@@ -1,7 +1,7 @@
 {
   "id": "frontend.l1.logging-in-from-the-app",
   "technical": {
-    "reviewed_at": "2026-09-26T04:26:00+07:00",
+    "reviewed_at": "2026-09-26T05:10:00+07:00",
     "reviewer": "claude-opus-5-5",
     "claim_verdicts": [
       {
@@ -48,10 +48,9 @@
       },
       {
         "n": 8,
-        "verdict": "rephrased",
-        "evidence": "Flutter 3.47.2 framework.dart: 'Whether this [State] object is currently in a tree. ... The [State] object remains mounted until the framework calls [dispose]'. Flutter docs guidance: 'After an asynchronous gap, check mounted in a State ... before calling setState, using the context, or doing other work that requires the State to remain in the tree.' mounted means 'still in the tree', not 'still showing' (a State under a covering route is mounted but not visible).",
-        "source": "C:/Flutter/flutter/packages/flutter/lib/src/widgets/framework.dart (State.mounted); refs/flutter-website/.agents/skills/write-flutter/SKILL.md lines 71-74",
-        "suggested_text": "The `mounted` check before that makes sure the screen is still in the widget tree after the wait (the user may have left it with Back), since `context` belongs to it."
+        "verdict": "verified",
+        "evidence": "Flutter 3.47.2 framework.dart State.mounted: 'Whether this [State] object is currently in a tree. ... The [State] object remains mounted until the framework calls [dispose]'. Flutter guidance: 'After an asynchronous gap, check mounted in a State ... before calling setState, using the context, or doing other work that requires the State to remain in the tree.' LoginScreen is pushed from ProductListScreen, so Back pops and disposes it. Lesson §5 now says 'still in the widget tree after the wait (the user may have left it with Back)'.",
+        "source": "C:/Flutter/flutter/packages/flutter/lib/src/widgets/framework.dart (State.mounted); refs/flutter-website/.agents/skills/write-flutter/SKILL.md lines 71-74"
       },
       {
         "n": 9,
@@ -67,47 +66,131 @@
       },
       {
         "n": 11,
-        "verdict": "rephrased",
-        "evidence": "Headless Chrome Network log after Try-it steps 1+2: 'POST .../auth/login 401', 'OPTIONS .../auth/login 204' (preflight, type Other), 'POST .../auth/login 200'; POST 200 body '{\"token\":\"eyJ...' ; sign-in IconButton at x=944,y=8 (top right of AppBar). So after step 2 the list holds at least two POST login entries, one of them the 401 from step 1 whose body is Problem Details, not a token. 'the POST one, if two are listed' is inaccurate.",
-        "source": "headless Chrome 153 (CDP Network domain) against http://localhost:8081; product_list_screen.dart @ stage-1 AppBar actions",
-        "suggested_text": "In the Network tab, select the last `login` request, the `POST` with status `200`, and open its response."
+        "verdict": "verified",
+        "evidence": "Round-1 headless Chrome Network log after Try-it steps 1+2: 'POST .../auth/login 401', 'OPTIONS .../auth/login 204' (preflight), 'POST .../auth/login 200'; the POST 200 body '{\"token\":\"eyJ...\"}' (single field, Dtos.cs 'record LoginResponse(string Token)'); sign-in IconButton at x=944,y=8, top right of AppBar. Lesson §7 step 2 now: 'select the last `login` request, the `POST` with status `200`' - matches.",
+        "source": "headless Chrome 153 (CDP Network) against http://localhost:8081; product_list_screen.dart, Dtos.cs @ stage-1"
       },
       {
         "n": 12,
         "verdict": "not-needed",
         "evidence": "Security principle / design consequence (more copies = more exposure; a 401 must surface to the user), consistent with outline item 3 and misconception 2; no version-dependent behavior asserted. Lesson wording has no 'always/never' beyond what it reasons from.",
         "source": "track.yaml outline entry frontend.l1.logging-in-from-the-app"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "ProductsController.cs @ stage-1: class and both actions ([HttpGet], [HttpGet(\"{id:int}\")]) carry no [Authorize]; Program.cs has plain 'builder.Services.AddAuthorization();' with no fallback policy. Run (lab up): curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/api/v1/products (no Authorization header) -> 200. scripts/backend/auth-and-orders.sh output: 'products (no sign-in needed):' followed by the product JSON.",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/Controllers/ProductsController.cs, Program.cs, outputs/stage-1/scripts/backend/auth-and-orders.txt; curl against lab"
       }
     ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-26T06:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior)",
     "issues": [
       {
         "severity": "major",
-        "section": 7,
-        "kind": "accuracy",
-        "text": "Try-it step 2 says to pick 'the POST one, if two are listed', implying only one POST. After step 1 the Network tab already holds a POST login with 401 (Problem Details body); step 2 adds another POST with 200 (plus an OPTIONS preflight). Verified in headless Chrome: POST 401, OPTIONS 204, POST 200. A learner who opens the first POST sees type/title/status JSON, not the expected single token field.",
-        "quote": "select the `login` request (the `POST` one, if two are listed) and open its response",
-        "fix": "Replace with: \"In the Network tab, select the last `login` request, the `POST` with status `200`, and open its response.\" Update claim 11 accordingly."
+        "section": 5,
+        "kind": "gap",
+        "quote": "The rest of the app never handles the token: `ApiClient` has a `_headers` getter that adds `'Authorization': 'Bearer $_token'` whenever `_token` is set, and the order request in the next lesson sends those headers.",
+        "text": "The situation asks how the token 'ends up on the order request'. I see _token is a field of an ApiClient, but I cannot see why the order screen's request uses that same object. Line 88 passes widget.apiClient to CreateOrderScreen, and section 4 says 'the one ApiClient object', but the prose never connects them, so I don't know the order screen isn't using a fresh ApiClient with an empty _token.",
+        "fix": "Add one sentence after the second code block's prose: `_submit` hands the same `widget.apiClient` to `CreateOrderScreen` (line 88), so the order request is sent by the object that holds `_token`."
       },
       {
         "severity": "major",
         "section": 5,
-        "kind": "accuracy",
-        "text": "Unlisted claim: that the product list endpoint needs no sign-in (also Section 2 'The product list ... works for anyone'). True at stage-1 (ProductsController has no [Authorize]; curl GET /api/v1/products without a header -> 200), but not in the ledger; claim 5 only covers what fetchProducts sends, not what the API requires.",
-        "quote": "The product list request does not, because listing products needs no sign-in.",
-        "fix": "Add a claim to .meta.json: \"GET /api/v1/products has no [Authorize] and answers 200 without an Authorization header (ProductsController.cs @ stage-1)\", kind fact, section 5. No text change needed."
+        "kind": "term",
+        "quote": "Navigator.of(context).pushReplacement(\n        MaterialPageRoute(builder: (_) => CreateOrderScreen(apiClient: widget.apiClient)),",
+        "text": "`Navigator`, `pushReplacement` and `MaterialPageRoute` are names I have not seen. The prose says 'the screen replaces itself with the order screen', which tells me the effect, but not which part of these two lines does it or what a route is.",
+        "fix": "Add one clause to the prose: '`Navigator.of(context).pushReplacement` swaps the current screen for the one `MaterialPageRoute` builds, here `CreateOrderScreen`.'"
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "term",
+        "quote": "await widget.apiClient.login(_emailController.text, _passwordController.text);",
+        "text": "`_emailController` and `_passwordController` are never explained. I guess they hold what the user typed into the two fields, but the lesson does not say so, and I don't know what a 'controller' is here (the only controller I know is an API controller).",
+        "fix": "Add half a sentence to the prose under the second block: '`_emailController.text` and `_passwordController.text` are what the user typed into the two fields.'"
+      },
+      {
+        "severity": "major",
+        "section": 7,
+        "kind": "term",
+        "quote": "and the browser's developer tools open on the Network tab",
+        "text": "'Developer tools' and 'Network tab' are not in what I know. Step 2's check (select the login request, open its response) depends on them, so I can do half of the expected result but not verify the JSON body.",
+        "fix": "Add one sentence: how to open developer tools (e.g. the key to press) and that the Network tab lists every request the page sends, with its status and response."
+      },
+      {
+        "severity": "major",
+        "section": 7,
+        "kind": "term",
+        "quote": "With the lab running,",
+        "text": "'The lab' is not defined anywhere I can see, and neither the lesson nor the prereq summaries say how to start it. I would not know which command to run before opening localhost:8081.",
+        "fix": "Name the command (or the earlier lesson) that starts the lab in this sentence, e.g. 'With the lab running (started as in <lesson>)'."
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "example",
+        "quote": "On the \"Sign in\" screen, replace the password with anything else and tap \"Sign in\".",
+        "text": "'Replace the password' suggests the fields are already filled in, but the lesson never says so, nor which email to use. In step 2 I type the password but still don't know if the email is right.",
+        "fix": "Add one clause to step 1 saying the screen opens with a demo email and password already filled in, and that the email stays as it is."
       },
       {
         "severity": "minor",
         "section": 5,
-        "kind": "accuracy",
-        "text": "State.mounted means the State is still in the tree (until dispose), not that the screen is 'still showing'. A mounted State can be hidden under another route. The code is right; the prose overstates what the check tests.",
-        "quote": "The `mounted` check before that makes sure the screen is still showing after the wait, since `context` belongs to it.",
-        "fix": "Replace with: \"The `mounted` check before that makes sure the screen is still in the widget tree after the wait (the user may have left it with Back), since `context` belongs to it.\""
+        "kind": "gap",
+        "quote": "The `mounted` check before that makes sure the screen is still in the widget tree after the wait (the user may have left it with Back), since `context` belongs to it.",
+        "text": "I understand the screen may be gone, but 'since context belongs to it' skips the consequence: what goes wrong if the code navigates with the context of a screen that is no longer in the tree? I had to re-read this sentence twice.",
+        "fix": "Replace 'since `context` belongs to it' with one short clause saying what would happen without the check (e.g. navigating from a screen that no longer exists)."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "diagram",
+        "quote": "S[LoginScreen] -->|email, password| L[ApiClient.login]",
+        "text": "Section 4's prose says 'the app' and 'tell the user'; it never names LoginScreen or the 'exception: red text' node. I can narrate the diagram only after reading section 5.",
+        "fix": "In the second paragraph of section 4, say that `ApiClient.login` throws an exception on `401` and `LoginScreen` shows it as red text."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "quote": "False, because the API checks each request on its own, so without the header the order gets `401`.",
+        "text": "q2: the correct option is the longest and reuses the lesson's exact phrase 'checks each request on its own', so it can be picked by wording alone; option d is not something anyone would believe.",
+        "fix": "Shorten option c and paraphrase it (e.g. 'False: the order request must carry its own proof'), and replace d with a plausible wrong reason, e.g. 'False, because login must be repeated before every order'."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "quote": "a support engineer copies a token from the log into `curl` to reproduce a bug.",
+        "text": "q4 uses `curl`, a tool this lesson and its prereqs never mention. I can still answer from 'anyone who can read the log', but the scenario and option d lean on a name I don't know.",
+        "fix": "Replace 'into `curl`' with 'into a request of their own' in the context and 'A token copied into `curl`' with 'A token sent from another program' in option d."
       }
     ],
-    "scope": {
-      "outline_covered": true,
-      "beyond_scope": []
+    "readability": {
+      "unknown_terms": [
+        "Navigator / pushReplacement / MaterialPageRoute",
+        "_emailController / _passwordController (controller for a text field)",
+        "developer tools / Network tab",
+        "the lab",
+        "curl (quiz q4)"
+      ],
+      "skipped_steps": [
+        "How the order request uses the same ApiClient that holds _token (widget.apiClient passed to CreateOrderScreen, line 88, not explained)",
+        "Why the `mounted` check matters: 'since `context` belongs to it' does not say what would go wrong",
+        "Try it: fields apparently pre-filled, email to use never stated"
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
     },
     "verdict": "fix-required"
   }
