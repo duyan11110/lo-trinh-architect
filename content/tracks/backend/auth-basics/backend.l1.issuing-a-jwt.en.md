@@ -15,9 +15,9 @@ vocab: [jwt]
 example_tag: stage-1
 versions_used: [aspnetcore, jwt]
 content_version: 1
-status: draft
+status: reviewed
 approved_by: null
-reviewed_at: null
+reviewed_at: "2026-09-26T05:00:00+07:00"
 ---
 
 ## Before you start
