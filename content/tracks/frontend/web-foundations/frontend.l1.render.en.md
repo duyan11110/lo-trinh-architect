@@ -15,7 +15,9 @@ vocab: [render]
 example_tag: stage-0
 versions_used: []
 content_version: 1
-status: draft
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-26T22:30:00+07:00"
 ---
 
 ## Before you start
@@ -47,11 +49,11 @@ To **render** a page, the browser takes the DOM and the CSS and works through a 
 
 This is not a one-time job. Whenever a script or the developer tools change the DOM or the CSS in a way that affects what is visible, the browser renders again, in one of the gaps between tasks the event loop leaves. It does not have to redo everything each time, though; it redoes the steps the change affects.
 
-That is why changes have different costs. Changing the colour of a heading changes no sizes or positions, so after matching the new style, the browser can skip layout and only paint the heading again. Changing the heading's font size makes it taller, which pushes the paragraph and the list below it down: now layout must run again for the elements that moved, and all of them must be painted. A page that changes its DOM task after task, many times a second — on every timer tick or mouse move — makes the browser render again and again, and the more each change moves other elements, the more work each time. Flutter, the toolkit the Đơn Hàng app is built with and the subject of the next module, faces the same trade-off.
+That is why changes have different costs. Changing the colour of a heading changes no sizes or positions, so after matching the new style, the browser can skip layout and only paint the heading again. Changing the heading's font size makes it taller, which pushes the paragraph and the list below it down: now layout must run again for the elements that moved, and all of them must be painted. A page that changes its DOM task after task, many times a second — on every timer tick or mouse move — makes the browser render again and again, and the more each change moves other elements, the more work each time. Flutter, the toolkit the Đơn Hàng app is built with and the subject of the next module, faces the same question: which changes cost more work to draw again.
 
 ## In the Đơn Hàng system
 
-`www/index.html` has no CSS of its own, so the browser renders it with its default styles: the heading in a large bold font, the paragraph below it, and the list of three links under that. Its layout places each element under the one before, as wide as the window allows. The page has no scripts, so nothing on it changes by itself after that first render; the browser renders again only when something outside the page's own code changes what is visible, such as resizing the window, selecting text, or your edits in the developer tools.
+`www/index.html` has no CSS of its own, so the browser renders it with its default styles: the heading in a large bold font, the paragraph below it, and the list of three links under that. Its layout places each element under the one before, as wide as the window allows. The page has no scripts, so nothing on it changes by itself after that first render; the browser renders again only when something outside the page's own code changes what is visible, such as resizing the window, selecting text, or your edits in the developer tools. Changing `index.html` on the server does nothing until the page is loaded again.
 
 That makes it a clear page to watch rendering on. Change the heading's colour in the developer tools, and only the heading needs repainting. Change its text to something longer, or its size, and the heading may take more room, so the elements below it move and must be laid out and painted again. The lab page stays small either way, but the difference in work is the same one that matters on a page with hundreds of elements.
 
