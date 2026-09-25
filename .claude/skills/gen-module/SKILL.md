@@ -16,6 +16,6 @@ Với TỪNG bài trong module có `status: draft` hoặc chưa có file (theo t
 5. Chạy `tools/known-vocab --before $id` và giao cho subagent **review-junior** (phiên độc lập) bài `$id` KÈM danh sách known_vocab đó trong lời giao việc (agent này không có Bash); chờ nó ghi phần `junior`.
 6. Nếu còn `blocker` hoặc `major`: `lesson $id apply-review` và `quiz $id apply-review`, validate, rồi quay lại bước 4 **chỉ cho các claim/mục bị đổi** (nêu rõ trong lời giao việc). Tối đa 3 vòng.
 7. Đặt `status: reviewed` khi không còn blocker, không còn verdict `wrong`, và mọi claim `needs_verification` có verdict. Rồi, nếu đủ điều kiện DECISIONS.md D1 (hai review `pass`, không major, không `unverified` số/cú pháp): đặt `status: approved`, `approved_by: auto`, `reviewed_at`.
-8. Với bài vừa `approved`: chạy skill `translate` (Sonnet — dùng `/model sonnet` trước, `/model opus` sau), rồi `tools/validate --parity $id`.
+8. Với bài vừa `approved`: chạy skill `translate` (Opus 5.5, cùng model phiên chính — không đổi `/model`), rồi `tools/validate --parity $id`.
 
 Kết thúc: in bảng `bài × (validate, technical.verdict, junior.verdict, status, approved_by, vòng)`; bài hết 3 vòng chưa approved giữ `reviewed` và được liệt kê để chủ duyệt lô. `published` chỉ do `tools/build --publish` (DECISIONS.md D12).
