@@ -33,7 +33,7 @@ You log in as customer 1 and call `GET /api/v1/orders/3` with your token. The an
 
 - **authorization** — answering "is this caller, already identified, allowed to do this?"; it is asked after authentication, and the answer can differ per endpoint and per resource.
 - `403 Forbidden` — the status meaning "I know who you are, and I won't do this for you"; unlike `401`, which a fresh login can fix. When the refusal is about ownership, a new token for the same customer still names the same customer, so it changes nothing.
-- ownership check — the simplest form of authorization: compare the resource's owner, such as an order's `customerId`, with the caller's `sub` — the claim in the token that holds the caller's customer id.
+- ownership check — the simplest form of authorization: compare the resource's owner, such as an order's `customerId`, with the caller's `sub` — the field in the token that holds the caller's customer id.
 
 ## How it works
 
@@ -65,7 +65,7 @@ Authentication happens once per request, in the middleware, the same way for eve
     }
 ```
 
-It finds the order by id and returns it. There is no `[Authorize]`, so it does not even require a caller, and nothing compares `order.CustomerId` with the caller's `sub`. An ownership check here would do exactly that comparison after the `NotFound()` line — together with `[Authorize]`, so that there is always a caller to compare with — and answer `403` when they differ — that code does not exist yet, so this describes what should happen, not what happens today.
+It finds the order by id and returns it. There is no `[Authorize]`, so it does not even require a caller, and nothing compares `order.CustomerId` with the caller's `sub`. An ownership check here would need `[Authorize]` first, so that there is always a caller to compare with. Then, after the `NotFound()` line, it would do exactly that comparison and answer `403` when they differ — that code does not exist yet, so this describes what should happen, not what happens today.
 
 `List`, a few lines further down, already answers the question in a different way:
 
@@ -85,7 +85,7 @@ It never looks up an order by an id the client chose. It takes the caller's id f
 ## Beginners often think…
 
 - **"If a request has a valid token, it should be allowed to do anything any logged-in customer can do."** → Actually a valid token only answers who the caller is; whether they may touch a particular order is a separate answer, one per resource. You notice this when customer 1, with a perfectly valid token, reads customer 2's order through `GET /api/v1/orders/3`.
-- **"Authorization is the same check as authentication, just run a second time."** → Actually authentication checks the token and is the same for every endpoint; an ownership check compares the caller with the thing being asked for, so it needs the data and differs per endpoint. You notice this when every endpoint passes authentication with the same token, yet only some of them should return what was asked for.
+- **"Authorization is the same check as authentication, just run a second time."** → Actually authentication checks the token and is the same for every endpoint; an ownership check compares the caller with the thing being asked for, so it needs the data and differs per endpoint. You notice this when customer 1's token passes authentication identically for order 1 and order 3, yet only order 1 should come back.
 
 ## Try it (3 minutes)
 
