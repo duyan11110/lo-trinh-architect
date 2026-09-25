@@ -93,12 +93,12 @@ The second half applies the discount, adds the shipping fee, then "saves" and "n
         return $"order placed, total {totalVnd}";
 ```
 
-The discount line changes `totalVnd` in place, and the very next statement decides the shipping fee from that same `totalVnd`. Nothing in the code says the fee is meant to depend on the discounted total rather than the original one — it just does, because of where the lines sit. The saving line prints `totalVnd` too, so a pricing change reaches it as well; the email line uses only `customerId`, yet it still sits in the same body you have to read. The file's own comment, just above the method, names the problem: "Four reasons to change one place, and no name for any of the four."
+The discount line changes `totalVnd` in place, and the very next statement decides the shipping fee from that same `totalVnd`. Nothing in the code says the fee is meant to depend on the discounted total rather than the original one — it just does, because of where the lines sit. The saving line prints `totalVnd` too, so a pricing change reaches it as well; the email line uses only `customerId`, yet it still sits in the same body you have to read. The file's own comment, just above the class, names the problem: "Four reasons to change one place, and no name for any of the four."
 
 ## Beginners often think…
 
 - **"Code that works and passes its tests doesn't need any more design thought."** → Actually working code can still be expensive to change: `Place` ran exactly as written both before and after the discount edit, and the fee change it caused was still a surprise. Tests check what the code does today; design decides how much you must understand to change it tomorrow. You notice this when a small, correct-looking edit changes a result nobody asked you to touch.
-- **"Design is about making code look elegant, not about how easy it is to change later."** → Actually the point of design is the cost of the next change, not the look of the current code. `Place` is short and readable, yet a one-character pricing edit reached the shipping fee. You notice this when you have to trace a whole method to be sure a one-line change is safe.
+- **"Design is about making code look elegant, not about how easy it is to change later."** → Actually the point of design is the cost of the next change, not the look of the current code. `Place` is readable, yet a one-number pricing edit reached the shipping fee. You notice this when you have to trace a whole method to be sure a one-line change is safe.
 
 ## Try it (3 minutes)
 
