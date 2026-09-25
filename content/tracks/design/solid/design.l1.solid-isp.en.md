@@ -26,7 +26,7 @@ reviewed_at: null
 
 ## The situation
 
-The samples have two notifier interfaces: `INotifier` has one method, `Send`; `IFullNotifier` bundles three: `Send`, `History` and `Retry`. `SmsOnlyNotifier` implements `IFullNotifier`, but it only ever sends: it keeps no history and never resends. So its `History` and `Retry` throw `NotSupportedException`. The class compiles, the interface looks complete, and yet two of its three methods cannot do what they promise. What went wrong?
+The samples have two notifier interfaces: `INotifier` has one method, `Send`; `IFullNotifier` bundles three: `Send`, `History` and `Retry`. `SmsOnlyNotifier` implements `IFullNotifier`, but it only ever sends: it keeps no history and never resends. So its `History` and `Retry` throw `NotSupportedException`, and a support screen that asks any `IFullNotifier` for its `History()` crashes the first time it is handed this one. The class compiles, the interface looks complete, and yet two of its three methods cannot do what they promise. What went wrong?
 
 ## Core concepts
 
@@ -44,9 +44,9 @@ flowchart LR
   M[SmsNotifier] -->|derives from| B
 ```
 
-In the diagram, the arrow into `IFullNotifier` is the fat design; the three arrows around `INotifier` and `NotifierBase` are the small one. Both live in the samples today. A fat interface hurts on two sides.
+In the diagram, the arrow into `IFullNotifier` is the fat design. The other three are the small one: `NotifierBase` implements `INotifier`, and `EmailNotifier` and `SmsNotifier` derive from `NotifierBase`. Both live in the samples today. A fat interface hurts on two sides.
 
-On the implementing side, C# requires a class to provide every method the interface declares, apart from any the interface already gives a body to — and none of these three has one. `SmsOnlyNotifier` has real behaviour for `Send` only, so the other two get filler: here, a `throw`. And if someone changes the parameters of `Retry`, every class that implements `IFullNotifier` must change, `SmsOnlyNotifier` included, even though it never retries anything.
+On the implementing side, C# requires `SmsOnlyNotifier` to provide every method `IFullNotifier` declares — all three. `SmsOnlyNotifier` has real behaviour for `Send` only, so the other two get filler: here, a `throw`. And if someone changes the parameters of `Retry`, every class that implements `IFullNotifier` must change, `SmsOnlyNotifier` included, even though it never retries anything.
 
 On the calling side, code that only needs to send a message but asks for an `IFullNotifier` can only be given classes that provide all three methods. A class that can send and nothing else cannot be handed to it without filler. And that filler breaks the promise from the LSP lesson: code that holds an `IFullNotifier` may call `History` and has no way to know this one will throw.
 
@@ -94,7 +94,7 @@ One method. A class that implements `INotifier` promises to send a message about
 
 ## Beginners often think…
 
-- **"A big interface is fine as long as every class implementing it eventually uses every method somewhere."** → Actually, even when each method is used by some class somewhere, ISP asks about each piece of code that depends on the interface, not about the system as a whole. `History` might matter to some channel, but `SmsOnlyNotifier` still has to carry it, and a caller that only sends still asks for all three. You notice this when a class that does exactly what you need cannot be passed in without filler for methods you never call.
+- **"A big interface is fine as long as each of its methods is used by some class somewhere."** → Actually ISP asks about each piece of code that depends on the interface, not about the system as a whole. `History` might matter to a channel that keeps messages, but `SmsOnlyNotifier` still has to carry it, and a caller that only sends still asks for all three. You notice this when a class that does exactly what you need cannot be passed in without filler for methods you never call.
 - **"ISP is only about how many methods an interface has, not about who is forced to depend on it."** → Actually a small count is a symptom, not the goal. An interface with three methods is fine when every caller and every implementer needs all three; `IFullNotifier` is a problem because `SmsOnlyNotifier` needs one of its three. You notice this when you find yourself writing filler bodies just to make a class compile.
 
 ## Try it (3 minutes)
@@ -127,4 +127,4 @@ With `IFullNotifier`, every implementing class must change, `SmsOnlyNotifier` in
 2. A fat interface makes implementers write filler methods and makes callers depend on methods they never call.
 3. `SmsOnlyNotifier` must implement `History` and `Retry` from `IFullNotifier`, and both just throw `NotSupportedException`.
 4. `INotifier` has one method, `Send`, so `EmailNotifier` and `SmsNotifier` carry only what they really do.
-5. Cut interfaces by what each caller and implementer needs, not by a wish for every channel to look the same.
+5. Cut interfaces by what each caller and implementer needs, not by how many methods they have.
