@@ -13,7 +13,7 @@ prereqs: [devops.l1.reverse-proxy-and-tls]
 related: []
 vocab: []
 example_tag: stage-1
-versions_used: [dotnet]
+versions_used: [dotnet, efcore]
 content_version: 1
 status: draft
 ---
@@ -45,13 +45,13 @@ A manual deploy has two weaknesses, and neither is about the code. The first is 
 
 The second weakness is worse. A manual deploy has no fixed definition of what the target machine needs. Over months, people install a library here, change a setting there, and the server ends up in a state nobody wrote down. The deploy "works" because of that state, not because of anything written down. The next server, or the same server rebuilt, will not have it, and the same steps will fail there.
 
-The fix is to write both down, in a form a program can follow: the list of everything the target needs, and the steps to build and start the code on it. Then the tenth deploy is done exactly like the first, on any machine, by anyone, and a change to the target is a change to that written list, visible to everyone.
+The fix is to write both down, in a form a program can follow: the list of everything the target needs, and the steps to build and start the code on it. Then the tenth deploy follows the same steps as the first, and a change to the target is a change to that written list, visible to everyone. The rest of this track closes the gap one piece at a time: Docker next, then how the API gets its settings, and in a later stage, deploys run by a program instead of a person.
 
 ## In the Đơn Hàng system
 
-The lab already works this way. `scripts/up.sh` is its deploy, written down: it builds the Flutter app, then starts everything and waits until it is ready. You run the same script every time, and every learner's lab ends up the same.
+The lab already works this way. `scripts/up.sh` is its deploy, written down: it builds the Flutter app, then starts everything and waits until it is ready. You run the same script every time, so every learner's lab is built by the same steps.
 
-The list of what the API's target needs is `DonHang.Api/Dockerfile`, the file you met in the last two lessons. It names the exact .NET 10 build tools used to build the API, and the .NET 10 runtime, the part of .NET that runs an already built program, that the API runs on. It also installs one extra system library, `libgssapi-krb5-2`, with a comment explaining why: the database library probes for it at startup, and without it the API logs an alarming but harmless error line. That is exactly the kind of detail a person deploying by hand would install once, on one server, and never write down.
+The list of what the API's target needs is `DonHang.Api/Dockerfile`, the file you met earlier in this module. It names the .NET 10 build tools used to build the API, and the .NET 10 runtime, the part of .NET that runs an already built program, that the API runs on. It also installs one extra system library, `libgssapi-krb5-2`, with a comment explaining why: the comment says the database library probes for it at startup, and that without it the API logs an alarming but harmless error line. That is exactly the kind of detail a person deploying by hand would install once, on one server, and never write down.
 
 The settings the API needs are written down too, in `docker-compose.yml`: the connection string and the signing key, arriving as environment variables. The next module, Docker, is about how the lab turns that `Dockerfile` into something that runs the same way on every machine.
 
@@ -74,7 +74,7 @@ Which item from step 2 is most likely to be missing from your step 3 list, and w
 
 <details><summary>Suggested answer</summary>
 
-`libgssapi-krb5-2`. Nothing in the API's code mentions it; it is needed only because the database library looks for it at startup. The `Dockerfile` comment says what happens without it: the API still runs, but logs a frightening "cannot open shared object" line that sends someone off to investigate a problem that is not there. A written definition keeps that detail; a memory of Friday's deploy does not.
+`libgssapi-krb5-2`. Nothing in the API's code mentions it; the lab installs it because the database library looks for it at startup. The `Dockerfile` comment says what happens without it: the API still runs, but logs a frightening "cannot open shared object" line that sends someone off to investigate a problem that is not there. A written definition keeps that detail; a memory of Friday's deploy does not.
 
 </details>
 
