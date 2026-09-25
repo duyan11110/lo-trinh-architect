@@ -45,11 +45,11 @@ flowchart LR
   Q -->|no| F[403 - nothing checks this yet]
 ```
 
-Two questions stand between a request and the data it asks for, and they are asked in order. The first is authentication: who is this? In the situation, `UseAuthentication` answered it correctly — customer 1, from `sub`. The previous lesson was entirely about this question, and a request that fails it gets `401`.
+Two questions stand between a request and the data it asks for, and they are asked in order. The first is authentication: who is this? In the situation, `UseAuthentication` answered it correctly — customer 1, from `sub`. The previous lesson was entirely about this question: on an endpoint marked `[Authorize]`, a request that fails it gets `401`.
 
 The second question is authorization: now that the API knows who this is, may they have this particular thing? It can only be asked after the first, because it needs the caller's identity as input. For `GET /api/v1/orders/3`, the honest answer is no: order 3 belongs to customer 2. The right response would be `403` — the token is fine, the caller is known, and the refusal is about this order, not about who they are.
 
-Authentication happens once per request, in the middleware, the same way for every endpoint. Authorization cannot be done once: whether customer 1 may read order 3 depends on order 3, so each endpoint that touches someone's data has to ask it for that data. In the diagram, `F` is where `403` belongs — and at stage-1, nothing in Đơn Hàng checks it, so `GET /api/v1/orders/3` goes straight to `200`.
+Authentication happens once per request, in the middleware, the same way for every endpoint. An ownership check cannot be done once: whether customer 1 may read order 3 depends on order 3, so each endpoint that touches someone's data has to ask it for that data. In the diagram, `F` is where `403` belongs — and at stage-1, nothing in Đơn Hàng checks it, so `GET /api/v1/orders/3` goes straight to `200`.
 
 ## In the Đơn Hàng system
 
@@ -85,7 +85,7 @@ It never looks up an order by an id the client chose. It takes the caller's id f
 ## Beginners often think…
 
 - **"If a request has a valid token, it should be allowed to do anything any logged-in customer can do."** → Actually a valid token only answers who the caller is; whether they may touch a particular order is a separate answer, one per resource. You notice this when customer 1, with a perfectly valid token, reads customer 2's order through `GET /api/v1/orders/3`.
-- **"Authorization is the same check as authentication, just run a second time."** → Actually authentication checks the token and is the same for every endpoint; authorization checks the caller against the thing being asked for, so it needs the data and differs per endpoint. You notice this when every endpoint passes authentication with the same token, yet only some of them should return what was asked for.
+- **"Authorization is the same check as authentication, just run a second time."** → Actually authentication checks the token and is the same for every endpoint; an ownership check compares the caller with the thing being asked for, so it needs the data and differs per endpoint. You notice this when every endpoint passes authentication with the same token, yet only some of them should return what was asked for.
 
 ## Try it (3 minutes)
 
@@ -113,6 +113,6 @@ Only `List`. It never let the client pick an order: it read the caller's id from
 
 1. Authentication asks who the caller is; authorization then asks whether that caller may do this particular thing.
 2. `403` means the caller is known and still refused; `401` means the caller is not known at all.
-3. Authorization depends on the data, so each endpoint that touches someone's data has to ask it for that data.
+3. An ownership check depends on the data, so each endpoint that touches someone's data has to make it for that data.
 4. At stage-1, `OrdersController.Get` never compares the order's `customerId` with the caller, so any caller reads any order.
 5. `List` asks the question by construction: it fetches only the caller's own orders, using `sub`.

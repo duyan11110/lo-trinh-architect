@@ -1,0 +1,89 @@
+{
+  "id": "backend.l1.protecting-an-endpoint",
+  "technical": {
+    "reviewed_at": "2026-09-25T09:37:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Live, examples/don-hang at stage-1: login as anh.tran@example.com returned {\"token\":\"eyJ...\"} (payload sub \"1\"). GET /api/v1/orders/3 with that Bearer token -> HTTP 200, body {\"id\":3,\"customerId\":2,\"status\":\"paid\",...,\"items\":[...unitPriceVnd...]}. psql select id, customer_id from orders: row 3 | 2.",
+        "source": "curl http://localhost:8080/api/v1/orders/3; docker exec donhang-db psql -U donhang -d donhang"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "git show stage-1:DonHang.Api/Controllers/OrdersController.cs lines 30-36: [HttpGet(\"{id:int}\")] with no [Authorize]; FindAsync(id); if (order is null) return NotFound(); return Ok(ToDto(order)). Program.cs calls AddAuthorization() with no fallback policy. Live: GET /api/v1/orders/3 with no Authorization header -> HTTP 200.",
+        "source": "examples/don-hang@stage-1 DonHang.Api/Controllers/OrdersController.cs:30-36, DonHang.Api/Program.cs:43"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "git grep -E \"Forbid|403|StatusCodes.Status403\" stage-1 -- '*.cs' -> no output. git grep CustomerId over DonHang.Api and DonHang.Domain -> only ToDto mapping, OrderDto record, entity property, OrderService assignment; no comparison with the caller.",
+        "source": "examples/don-hang@stage-1 git grep"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "OrdersController.cs:49-56 at stage-1: [Authorize], int.Parse(User.FindFirstValue(JwtRegisteredClaimNames.Sub)!), repository.ListByCustomerAsync(customerId). EfOrderRepository.cs:13-14: db.Orders.Where(o => o.CustomerId == customerId).Include(o => o.Customer).OrderBy(o => o.Id).ToListAsync().",
+        "source": "examples/don-hang@stage-1 DonHang.Api/Controllers/OrdersController.cs:49-56, DonHang.Infrastructure/EfOrderRepository.cs:13-14"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Live: GET /api/v1/orders with customer 1's token -> 200, ids 1,2,10,14,15,16,17,24,25,26,27,28, every entry customerName \"Trần Minh Anh\"; no id 3. psql: exactly those ids have customer_id 1. Same call with a malformed token -> 401.",
+        "source": "curl http://localhost:8080/api/v1/orders; psql orders.customer_id"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "RFC 9110 15.5.4: \"The 403 (Forbidden) status code indicates that the server understood the request but refuses to fulfill it.\" \"If authentication credentials were provided in the request, the server considers them insufficient to grant access. The client SHOULD NOT automatically repeat the request with the same credentials.\" (grep refs/rfc/rfc9110.txt:7569-7581)",
+        "source": "refs/rfc/rfc9110.txt section 15.5.4"
+      },
+      {
+        "n": 7,
+        "verdict": "rephrased",
+        "evidence": "resource-based.md: \"Attribute evaluation occurs before data binding and before execution of any method that loads a resource. Declarative authorization with an [Authorize] attribute doesn't suffice for resource-based authorization.\" authentication/index.md: authentication \"is used by authentication middleware\". But introduction.md: \"ASP.NET Core authorization provides a simple declarative role and a rich policy-based model\" - authorization is not always per resource; [Authorize] itself is authorization that needs no data.",
+        "source": "refs/aspnetcore-docs/aspnetcore/security/authorization/resource-based.md; .../authorization/introduction.md; .../authentication/index.md",
+        "suggested_text": "In ASP.NET Core, authentication runs in middleware on every request. Some authorization, like [Authorize], needs only the caller; an ownership check (does this caller own this order?) needs the resource, so it is made per endpoint after the resource is loaded."
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Follows from the code in claim 4: the query is Where(o => o.CustomerId == customerId) with customerId taken from the caller's sub, so rows with another customer_id are never read. Confirmed live (claim 5): order 3 (customer_id 2) absent from customer 1's list.",
+        "source": "examples/don-hang@stage-1 DonHang.Infrastructure/EfOrderRepository.cs:14"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "accuracy",
+        "quote": "The previous lesson was entirely about this question, and a request that fails it gets `401`.",
+        "text": "Unlisted claim, and false for the endpoint this lesson is about. A request that fails authentication gets 401 only from an endpoint marked [Authorize]. Live at stage-1: GET /api/v1/orders/3 with 'Authorization: Bearer abc.def.ghi' -> 200; with no header -> 200; GET /api/v1/orders with the same bad token -> 401. Section 5 itself says Get 'does not even require a caller', so the two sections contradict each other.",
+        "fix": "Replace with: \"The previous lesson was entirely about this question: on an endpoint marked `[Authorize]`, a request that fails it gets `401`.\" Add a claim (kind behavior, source: live curl with a malformed token to /orders/3 -> 200 and /orders -> 401)."
+      },
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "accuracy",
+        "quote": "Authorization cannot be done once: whether customer 1 may read order 3 depends on order 3",
+        "text": "Overgeneralised, repeated in section 6 (\"authorization checks the caller against the thing being asked for, so it needs the data and differs per endpoint\") and summary line 3 (\"Authorization depends on the data\"). ASP.NET Core docs: authorization includes a declarative role/policy model; [Authorize], which this lesson uses, is authorization evaluated before any data is loaded. Only resource-based checks such as ownership need the data (resource-based.md). Section 3 already qualifies correctly (\"can differ per endpoint and per resource\"); these sentences drop the qualifier. See claim 7.",
+        "fix": "Section 4: \"An ownership check cannot be done once: whether customer 1 may read order 3 depends on order 3...\". Section 6: \"...an ownership check compares the caller with the thing being asked for, so it needs the data...\". Summary 3: \"An ownership check depends on the data, so each endpoint that touches someone's data has to make it for that data.\" Replace claim 7 text with its suggested_text."
+      },
+      {
+        "severity": "minor",
+        "section": "backend.l1.protecting-an-endpoint.q1",
+        "kind": "quiz",
+        "quote": "Order 3 does exist, and the lesson frames the right answer as `403`: the refusal is about ownership, not about a missing resource.",
+        "text": "Key a is correct given the lesson text, but option c is not wrong in general: RFC 9110 15.5.4 says \"An origin server that wishes to 'hide' the current existence of a forbidden target resource MAY instead respond with a status code of 404 (Not Found).\" The explanation for c implies 404 would be incorrect.",
+        "fix": "Explanation c (en): \"Order 3 does exist. An API may choose 404 to hide that, but the answer that says what actually failed - ownership, with the caller known - is `403`, as the lesson frames it.\" Mirror in vi."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "fix-required"
+  }
+}
