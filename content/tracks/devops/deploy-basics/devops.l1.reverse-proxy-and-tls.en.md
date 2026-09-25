@@ -69,9 +69,9 @@ donhang.local:8443 {
 }
 ```
 
-`donhang.local:8443` is the address this block answers for, and `tls internal` makes Caddy sign a certificate for `donhang.local` with an authority of its own, as in the TLS lesson. The new part in stage 1 is `handle /api/v1/*` with `reverse_proxy api:8080`, the same line as on the plain `:8080` site. So a request to `https://donhang.local:8443/api/v1/products` is decrypted by Caddy and forwarded to Kestrel as plain HTTP. The comment says it directly: TLS ends at Caddy, and the API only ever sees plain HTTP, on the lab's private network.
+`donhang.local:8443` is the address this block answers for, and `tls internal` makes Caddy sign a certificate for `donhang.local` with an authority of its own, as in the TLS lesson. An authority is a signer that vouches for certificates; your laptop trusts only the authorities on its own list, and Caddy's is not on it. `root` and the last `handle` with `file_server` serve the lab's static files for every other path, as in stage 0. The new part in stage 1 is `handle /api/v1/*` with `reverse_proxy api:8080`, the same forwarding line the plain-HTTP site uses in the previous lesson. So a request to `https://donhang.local:8443/api/v1/products` is decrypted by Caddy and forwarded to Kestrel as plain HTTP. The comment says it directly: TLS ends at Caddy, and the API only ever sees plain HTTP, on the lab's private network.
 
-On the other side, the API is set up for plain HTTP only. Its `Dockerfile` sets `ASPNETCORE_URLS=http://+:8080`, which tells Kestrel to listen for plain HTTP on port `8080`, and nothing in the API loads a certificate. An answer from Kestrel through the HTTPS site carries the same `Server: Kestrel` and `Via: 1.1 Caddy` headers as through the plain one. The connection Kestrel receives is plain HTTP in both cases; the encrypted part ended at Caddy.
+On the other side, the API is set up for plain HTTP only. `DonHang.Api/Dockerfile`, the file listing the steps the lab uses to build and start the API, sets `ASPNETCORE_URLS=http://+:8080`, which tells Kestrel to listen for plain HTTP on port `8080`, and nothing in the API loads a certificate. So whichever site the client used, what reaches Kestrel is plain HTTP; the Try-it shows that Kestrel cannot even set up a TLS connection. An answer through the HTTPS site still carries `Via: 1.1 Caddy`, the header Caddy adds on the way back, just like one through the plain site.
 
 ## Beginners often think…
 
@@ -82,11 +82,11 @@ On the other side, the API is set up for plain HTTP only. Its `Dockerfile` sets 
 
 With the lab running, from the repository root:
 
-1. Run `curl -sk -i --resolve donhang.local:8443:127.0.0.1 https://donhang.local:8443/api/v1/products/1`. `--resolve` points `donhang.local` at your own machine for this one command, and `-k` accepts the certificate Caddy signed with its own authority, which your laptop does not trust.
+1. Run `curl -sk -i --resolve donhang.local:8443:127.0.0.1 https://donhang.local:8443/api/v1/products/1`. `-i` shows the answer's headers, `--resolve` points `donhang.local` at your own machine for this one command, and `-k` accepts the certificate Caddy signed with its own authority, which your laptop does not trust.
 2. Run `ssh -p 2222 -i secrets/lab_key dev@localhost 'curl -sS https://api:8080/api/v1/products/1'`, which speaks HTTPS straight to Kestrel from the lab box.
 3. Run `ssh -p 2222 -i secrets/lab_key dev@localhost 'curl -s http://api:8080/api/v1/products/1'`, the same request in plain HTTP.
 
-Expected result: 1 — `200`, `Server: Kestrel`, `Via: 1.1 Caddy`, and the keyboard as JSON. 2 — an error from `curl` about the TLS connection, such as "wrong version number", and no JSON. 3 — the keyboard as JSON.
+Expected result: 1 — `200`, `Server: Kestrel`, `Via: 1.1 Caddy`, and product 1 as JSON. 2 — an error from `curl` about the TLS connection, such as "wrong version number", and no JSON. 3 — product 1 as JSON.
 
 Step 1 used HTTPS and got Kestrel's answer; step 2 used HTTPS on Kestrel and got nothing. What does that tell you about where the TLS connection in step 1 ended?
 
