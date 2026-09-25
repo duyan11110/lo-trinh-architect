@@ -15,9 +15,9 @@ vocab: [lsp]
 example_tag: stage-0
 versions_used: [dotnet]
 content_version: 1
-status: draft
-approved_by: null
-reviewed_at: null
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-25T13:40:00+07:00"
 ---
 
 ## Before you start
@@ -82,7 +82,7 @@ The array is typed `ShippingFee[]`, and `kinds.Select(kind => kind.ForOrder(2_00
 
 ## Beginners often think…
 
-- **"LSP just means a subclass must implement every method its base type declares."** → Actually the compiler already enforces that for abstract methods; LSP is about keeping the promise — for every input a caller may pass, the caller gets back what the base type said it would. `FreeShippingOnly` implements `ForOrder` and still breaks code written for `ShippingFee`. You notice this when a new subtype compiles cleanly but callers that never changed start failing.
+- **"LSP just means a subclass must implement every method its base type declares."** → Actually the compiler already enforces that for abstract methods; LSP is about keeping the promise — for every input a caller may pass, the caller gets back what the base type said it would. `FreeShippingOnly` implements `ForOrder` and still breaks code written for `ShippingFee`. You notice this when a subtype that implements every method still makes callers fail for some inputs.
 - **"As long as a subclass compiles against its base type, it automatically satisfies LSP."** → Actually compiling proves the override has the right parameters and return type and its body is valid C#, not what it does for each input. Whether `ForOrder` returns a fee or throws for a 500,000 total is behaviour the compiler never checks. You notice this when the failure appears only for certain inputs, far from where the subtype was written.
 
 ## Try it (3 minutes)
