@@ -15,7 +15,9 @@ vocab: [dom]
 example_tag: stage-0
 versions_used: []
 content_version: 1
-status: draft
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-26T19:40:00+07:00"
 ---
 
 ## Before you start
@@ -43,15 +45,15 @@ flowchart LR
   S -.->|view source shows| V[the HTML text]
 ```
 
-When the HTML arrives, the browser reads it and builds the DOM: a tree of objects in its own memory, one node for each element and each piece of text. The tree follows the HTML's nesting, and the browser tidies the HTML as it builds, for example by closing a paragraph the author left open. From then on, the browser draws the page from this tree, not from the text.
+When the HTML arrives, the browser reads it and builds the DOM: a tree of objects in its own memory, one node for each element and each piece of text. The tree follows the HTML's nesting, and the browser tidies the HTML as it builds, for example by adding the closing `</p>` an author forgot to write after a paragraph. From then on, the browser draws the page from this tree, not from the text.
 
 JavaScript works on the same tree. It can find a node, read its text, change it, add new nodes or remove old ones, and what you see follows, without loading a new page. That is the "Add to cart" line: a script created a new node and put it under the button.
 
-The HTML text is not touched. "View page source" shows the HTML as the server sends it, not the tree, so once anything changes the DOM, the two stop matching. Developer tools show the live DOM, and can change it too. Reloading the page throws the tree away and builds a new one from the HTML.
+The HTML text is not touched. "View page source" shows the HTML as the server sends it, not the tree — the dashed arrow in the diagram — so once anything changes the DOM, the two stop matching. Developer tools show the live DOM, and can change it too. Reloading the page throws the tree away and builds a new one from the HTML.
 
 ## In the Đơn Hàng system
 
-The lab — the programs `scripts/up.sh` starts, with Caddy, its web server, answering on `http://localhost:8080` — serves `www/index.html`. That page has no JavaScript. Its DOM has `html` at the top, with the elements `head` and `body` under it. `body` holds nine elements: the `h1` heading, the `p` paragraph, the `ul` list, three `li` list items and three `a` links, one inside each item, plus their text.
+The lab — the programs `scripts/up.sh` starts, with Caddy, its web server, answering on `http://localhost:8080` — serves `www/index.html`. That page has no JavaScript. Its DOM has `html` at the top, with the elements `head` and `body` under it. `head` holds information about the page that is not drawn, and `body` holds what is drawn: the `h1` heading, the `p` paragraph and the `ul` list, whose three `li` list items each hold one `a` link — nine elements in all, plus their text.
 
 With no script on the page, nothing changes this DOM after it is built, so it keeps the shape of the HTML. That makes the page a good place to experiment: any change you see in its DOM, you made yourself, with the developer tools.
 
@@ -64,7 +66,7 @@ A welcome message on this page would work like the shop's "Add to cart" line. A 
 
 ## Try it (3 minutes)
 
-Start the lab with `scripts/up.sh` if it is not running, and open `http://localhost:8080/index.html`:
+From the root of the example repository, start the lab with `scripts/up.sh` (running it again is harmless if it is already up), and open `http://localhost:8080/index.html`:
 
 1. Open the developer tools and choose the Elements or Inspector tab. Expand `body` and find the `h1`.
 2. Double-click the heading's text in that tree, change `Đơn Hàng` to `Xin chào`, and press Enter.
