@@ -422,16 +422,17 @@ levels:
       prereqs: [design.l1.solid-dip, design.l1.the-repository-layer]
       related: []
       vocab: [dependency-injection]
-      example_tag: stage-0
-      example_files: []
+      example_tag: stage-1
+      example_files: [samples/DonHang.Samples/Samples/Design/OrderNotifications.cs, DonHang.Api/Controllers/OrdersController.cs, DonHang.Domain/OrderService.cs]
       outline:
       - "Dependency Injection is a technique: a class receives the objects it depends on as constructor parameters, instead of creating them itself with `new`."
-      - "A class that does `new EmailNotifier()` inside its own constructor is stuck with that one concrete type; a class that takes an `INotifier` parameter can be given any implementation, including one written later."
+      - "`OrderPlacedTightlyCoupled` creates its own `EmailNotifier` with `new()` and is stuck with it; `OrderNotifications` takes an `INotifier` constructor parameter and can be given any implementation, even one written later."
       - "Dependency Injection is how DIP (the principle: depend on abstractions) actually gets carried out in code — the principle says what to depend on, injection is the mechanic that supplies it."
+      - "In the API, `OrdersController` receives `OrderService`, and `OrderService` receives `IOrderRepository` and `INotifier`; neither calls `new` on a dependency, so something outside them must build the objects and pass them in."
       misconceptions:
       - "Dependency Injection and Dependency Inversion are two names for the same thing."
       - "A class 'uses DI' as soon as it takes any constructor parameter, even a plain string or number."
-      depth_notes: "Không nói container hay lifetime — hai bài sau. Chỉ phân biệt DI (kỹ thuật) khỏi DIP (nguyên tắc, đã học ở module solid)."
+      depth_notes: "Không nói container hay lifetime — hai bài sau. Chỉ phân biệt DI (kỹ thuật) khỏi DIP (nguyên tắc, đã học ở module solid). Ai dựng OrderService lúc chạy: chỉ nói 'một thứ bên ngoài', để bài container trả lời."
     - id: design.l1.the-di-container
       title:
         vi: "Container: đăng ký một lần, dựng cả cây phụ thuộc"
@@ -442,16 +443,16 @@ levels:
       prereqs: [design.l1.dependency-injection-intro]
       related: []
       vocab: [di-container]
-      example_tag: stage-0
-      example_files: []
+      example_tag: stage-1
+      example_files: [DonHang.Api/Controllers/OrdersController.cs, DonHang.Domain/OrderService.cs, DonHang.Infrastructure/EfOrderRepository.cs]
       outline:
       - "A DI container is registered once, at startup, with mappings: 'when something needs an `IOrderRepository`, give it an `EfOrderRepository`.'"
-      - "When the container builds an `OrderService`, it looks at what the constructor asks for and resolves each one the same way, recursively, then passes them in."
-      - "Without a container, wiring `OrderService` by hand means writing out every nested `new` at each place one is needed, and updating all of them whenever a dependency changes."
+      - "To build `OrdersController`, the container resolves each constructor parameter; for `OrderService` it looks at what that constructor asks for (`IOrderRepository`, `INotifier`), resolves those the same way, recursively, then passes them in."
+      - "Without a container, building `OrdersController` by hand means writing every nested `new` (`EfOrderRepository` needs a `DonHangDbContext`) wherever one is needed, and updating each of them whenever a dependency changes."
       misconceptions:
       - "The container guesses which implementation to use based on the interface's name."
       - "Every object the app creates goes through the container, including simple data objects like a DTO."
-      depth_notes: "Không đăng ký thật trong Program.cs — bài wiring-the-container sau. Chỉ giải thích container làm gì."
+      depth_notes: "Không trích đăng ký thật trong Program.cs — bài wiring-the-container sau. Chỉ giải thích container làm gì, dựa trên constructor của các class có thật."
     - id: design.l1.service-lifetimes
       title:
         vi: "Singleton, scoped, transient: sống bao lâu"
@@ -462,16 +463,17 @@ levels:
       prereqs: [design.l1.the-di-container, backend.l1.efcore-mapping]
       related: []
       vocab: [service-lifetime]
-      example_tag: stage-0
-      example_files: []
+      example_tag: stage-1
+      example_files: [DonHang.Api/Program.cs, DonHang.Infrastructure/ServiceCollectionExtensions.cs, DonHang.Api/JwtTokenService.cs]
       outline:
       - "A service lifetime decides how long one resolved instance lives: singleton (one instance, ever), scoped (one per request), or transient (a new one every time)."
-      - "`DonHangDbContext` is registered scoped: every part of the same request shares one instance and one connection, and the next request gets a fresh one."
-      - "Registering `DonHangDbContext` as singleton would share one connection and change tracker across every concurrent request — the wrong lifetime for a type not safe to use from more than one request at once."
+      - "`AddDbContext` registers `DonHangDbContext` as scoped, and `EfOrderRepository`, `LoggingNotifier` and `OrderService` are scoped too: every part of the same request shares one `DbContext`, and the next request gets a fresh one."
+      - "Registering `DonHangDbContext` as singleton would share one change tracker across every concurrent request — the wrong lifetime for a type not safe to use from more than one request at once."
+      - "`JwtTokenService` is registered singleton: it keeps no state of its own between calls, so one instance can serve every request; at startup, outside any request, Program.cs creates a scope by hand to get a `DbContext` for migrations."
       misconceptions:
       - "Singleton is the safest default, since there's only ever one object to worry about."
       - "Service lifetime only affects performance, not correctness."
-      depth_notes: "Không nói captive dependency (singleton phụ thuộc scoped) hay lifetime validation của container — ngoài phạm vi GĐ1."
+      depth_notes: "Không nói captive dependency (singleton phụ thuộc scoped) hay lifetime validation của container — ngoài phạm vi GĐ1. Repo không có đăng ký transient nào; chỉ nêu bằng lời."
     - id: design.l1.wiring-the-container
       title:
         vi: "Đăng ký thật: repository, service, DbContext"
@@ -482,36 +484,37 @@ levels:
       prereqs: [design.l1.service-lifetimes, design.l1.the-repository-layer]
       related: []
       vocab: []
-      example_tag: stage-0
-      example_files: []
+      example_tag: stage-1
+      example_files: [DonHang.Infrastructure/ServiceCollectionExtensions.cs, DonHang.Api/Program.cs, DonHang.Api/Controllers/OrdersController.cs]
       outline:
-      - "Program.cs's `builder.Services` calls (`AddScoped<IOrderRepository, EfOrderRepository>()`, `AddDbContext<DonHangDbContext>()`) are exactly the registrations the container lesson described, written for real."
-      - "A minimal API endpoint that takes an `OrderService` parameter gets it resolved by the container automatically; the endpoint never calls `new OrderService(...)` or knows what `OrderService` itself depends on."
-      - "Registering `OrderService` and `IOrderRepository` finally makes the layered split from the previous module runnable: the classes existed before this, but nothing connected them at startup."
+      - "`AddDonHangInfrastructure` registers `DonHangDbContext`, `IOrderRepository` → `EfOrderRepository` and `INotifier` → `LoggingNotifier`; Program.cs calls it, then registers `OrderService` — the container lesson's mappings, for real."
+      - "`OrdersController` lists `OrderService` and `IOrderRepository` in its constructor and gets them from the container on each request; it never calls `new OrderService(...)` or knows what `OrderService` itself depends on."
+      - "The registrations for infrastructure classes live in `DonHang.Infrastructure`, next to the classes they name, so Program.cs never names `EfOrderRepository` or `LoggingNotifier`."
+      - "These registrations are what connect the layers from the previous module at startup: without them the classes still exist, but ASP.NET Core cannot build an `OrdersController`."
       misconceptions:
       - "An interface and its implementation need to be registered separately, once for each place that uses them."
       - "If a registration is missing, the app still runs and just returns null for that dependency."
       depth_notes: "Không nói options pattern hay named/keyed registration — ngoài phạm vi GĐ1."
     - id: design.l1.why-di-helps-testing
       title:
-        vi: "Vì sao DI làm test được: một service, một fake"
-        en: "Why DI makes testing possible: one service, one fake"
+        vi: "Vì sao DI làm test được: một service, một bản thay thế"
+        en: "Why DI makes testing possible: one service, one stand-in"
       main_path: true
       duration_min: 12
       skills: [design.di.testing-payoff]
       prereqs: [design.l1.wiring-the-container]
       related: []
       vocab: []
-      example_tag: stage-0
-      example_files: []
+      example_tag: stage-1
+      example_files: [DonHang.Domain/OrderService.cs, samples/DonHang.Samples/Samples/Design/OrderNotifications.cs, samples/DonHang.Samples/Samples/Oop/NotifierBase.cs]
       outline:
-      - "Because `OrderService` depends on the `IOrderRepository` abstraction, a test can give it a fake repository that never touches a real database, without changing `OrderService`'s own code."
-      - "Without dependency injection, a class that creates its own dependencies with `new` can only ever be tested together with whatever those dependencies actually do."
+      - "Because `OrderService` receives `IOrderRepository` and `INotifier` through its constructor, a test can hand it stand-in versions that keep orders in memory and only record notifications, without changing `OrderService`'s own code."
+      - "`OrderPlacedTightlyCoupled` creates its own `EmailNotifier`, so any check of `Handle` also runs what `EmailNotifier.Send` really does — here, writing to the console; there is no place to swap it without editing the class."
       - "This is why DIP and DI matter beyond tidiness: a class built around abstractions can be tested in isolation, which the next module puts to direct use."
       misconceptions:
       - "Testing is a separate concern from how a class gets its dependencies; DI doesn't change what's testable."
       - "A class needs a testing framework installed before dependency injection is worth doing."
-      depth_notes: "Không viết test thật hay giới thiệu test double bằng tên — module unit-testing ngay sau."
+      depth_notes: "Không trích test thật (DonHang.Tests) hay giới thiệu test double bằng tên — module unit-testing ngay sau. Nói 'bản thay thế' (stand-in), không nói 'fake'."
   - id: unit-testing
     title:
       vi: "Unit test và test double"
