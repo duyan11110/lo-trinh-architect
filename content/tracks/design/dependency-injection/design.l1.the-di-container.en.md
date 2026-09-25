@@ -83,7 +83,7 @@ Now imagine the API without a container. The code handling each request would fi
 
 Using the constructors in this lesson, write down the dependency graph behind one `OrdersController`: everything the container is asked for when ASP.NET Core creates it. Start from the controller and keep going until every branch ends at a class the container can build without asking for anything else you know about.
 
-Expected result: `OrdersController` → `OrderService` and `IOrderRepository`; `OrderService` → `IOrderRepository` and `INotifier`; each `IOrderRepository` → `EfOrderRepository` → `DonHangDbContext`; `INotifier` → `LoggingNotifier` → `ILogger<LoggingNotifier>`.
+Expected result: `OrdersController` → `OrderService` and `IOrderRepository`; `OrderService` → `IOrderRepository` and `INotifier`; each `IOrderRepository` → `EfOrderRepository` → `DonHangDbContext` → its options; `INotifier` → `LoggingNotifier` → `ILogger<LoggingNotifier>`.
 
 Which type appears twice in your graph, and what would you need to know to say whether both places get the same object?
 
