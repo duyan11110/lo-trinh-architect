@@ -32,8 +32,8 @@ You log in as customer 1 and call `GET /api/v1/orders/3` with your token. The an
 ## Core concepts
 
 - **authorization** — answering "is this caller, already identified, allowed to do this?"; it is asked after authentication, and the answer can differ per endpoint and per resource.
-- `403 Forbidden` — the status meaning "I know who you are, and I won't do this for you"; unlike `401`, sending the same caller's token again changes nothing.
-- ownership check — the simplest form of authorization: compare the resource's owner, such as an order's `customerId`, with the caller's `sub`.
+- `403 Forbidden` — the status meaning "I know who you are, and I won't do this for you"; unlike `401`, which a fresh login can fix, a new token for the same caller changes nothing.
+- ownership check — the simplest form of authorization: compare the resource's owner, such as an order's `customerId`, with the caller's `sub` — the claim in the token that holds the caller's customer id.
 
 ## How it works
 
@@ -49,7 +49,7 @@ Two questions stand between a request and the data it asks for, and they are ask
 
 The second question is authorization: now that the API knows who this is, may they have this particular thing? It can only be asked after the first, because it needs the caller's identity as input. For `GET /api/v1/orders/3`, the honest answer is no: order 3 belongs to customer 2. The right response would be `403` — the token is fine, the caller is known, and the refusal is about this order, not about who they are.
 
-Authentication happens once per request, in the middleware, the same way for every endpoint. An ownership check cannot be done once: whether customer 1 may read order 3 depends on order 3, so each endpoint that touches someone's data has to ask it for that data. In the diagram, `F` is where `403` belongs — and at stage-1, nothing in Đơn Hàng checks it, so `GET /api/v1/orders/3` goes straight to `200`.
+Authentication happens once per request, in the middleware, the same way for every endpoint. An ownership check cannot be done once: whether customer 1 may read order 3 depends on order 3, so each endpoint that touches someone's data has to ask it for that data. In the diagram, a match leads to `OK`, `200` with the order; `F` is where `403` belongs — and at stage-1, nothing in Đơn Hàng checks it, so `GET /api/v1/orders/3` goes straight to `200`.
 
 ## In the Đơn Hàng system
 
@@ -90,7 +90,7 @@ It never looks up an order by an id the client chose. It takes the caller's id f
 ## Try it (3 minutes)
 
 1. From the Đơn Hàng project's root folder, with the example system running (`scripts/up.sh`), log in as customer 1: `curl -s -X POST http://localhost:8080/api/v1/auth/login -H "Content-Type: application/json" -d '{"email": "anh.tran@example.com", "password": "donhang-dev-password"}'`. Copy the value of the `token` field.
-2. Call `curl -s http://localhost:8080/api/v1/orders/3 -H "Authorization: Bearer <token>"`, with the copied value in place of `<token>`.
+2. Call `curl -s -i http://localhost:8080/api/v1/orders/3 -H "Authorization: Bearer <token>"`, with the copied value in place of `<token>` (`-i` prints the status line too).
 3. Call `curl -s http://localhost:8080/api/v1/orders -H "Authorization: Bearer <token>"`.
 
 Expected result: step 2 answers `200` with `"customerId":2` — another customer's order. Step 3 lists only customer 1's own orders — every entry carries the same `customerName`, and order 3 is not among them.
