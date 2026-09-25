@@ -15,9 +15,9 @@ vocab: [authorization]
 example_tag: stage-1
 versions_used: [aspnetcore, http]
 content_version: 1
-status: draft
-approved_by: null
-reviewed_at: null
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-26T08:30:00+07:00"
 ---
 
 ## Before you start
