@@ -26,7 +26,7 @@ reviewed_at: null
 
 ## The situation
 
-A teammate wants every notification channel to "look the same", so they propose one interface, `INotificationChannel`, with four methods: `SendEmail`, `SendSms`, `SendPush` and `GetDeliveryReport`. Then they try to make `SmsNotifier` implement it. It can send an SMS, but what should its `SendEmail` do? Its `SendPush`, or its `GetDeliveryReport`, when nothing in the samples tracks delivery at all? And code that sends an order confirmation — not in the samples yet — would call only one of the four, yet depend on all of them. What went wrong with an interface that looked so complete?
+A teammate wants every notification channel to "look the same", so they propose one interface, `INotificationChannel`, with four methods: `SendEmail`, `SendSms`, `SendPush` and `GetDeliveryReport`. Then they try to make `SmsNotifier` implement it. It can send an SMS, but what should its `SendEmail` do? Its `SendPush`, or its `GetDeliveryReport`, when nothing in the samples tracks delivery at all? And code that sends an order confirmation — imagined for this lesson — would call only one of the four, yet depend on all of them. What went wrong with an interface that looked so complete?
 
 ## Core concepts
 
