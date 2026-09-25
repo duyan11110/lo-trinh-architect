@@ -37,17 +37,17 @@ In stage 0, `curl http://localhost:8080/api/v1/orders/1` got its answer from a `
 
 ```mermaid
 flowchart LR
-  C[curl or the app] -->|:8080| P[Caddy]
+  C[client: curl or the app] -->|:8080| P[Caddy]
   P -->|/api/v1/*| K[Kestrel in the API, api:8080]
-  P -->|/conflict, /slow| R[Caddy's own respond]
+  P -->|/admin, /redirect, /conflict, /slow| R[Caddy's own answer]
   P -->|other paths| F[static files]
 ```
 
-A **reverse proxy** is the only server a client can see. The client opens a connection to it and sends its request. The proxy reads the request, decides from its own rules where it should go, and opens a second connection of its own to the application behind it, the upstream. When the upstream answers, the proxy sends that answer back on the first connection. The client never learns the upstream's address and never connects to it.
+A **reverse proxy** is the only server a client, such as `curl` or the Đơn Hàng app, can see. The client opens a connection to it and sends its request. The proxy reads the request, decides from its own rules where it should go, and opens a second connection of its own to the application behind it, the upstream. When the upstream answers, the proxy sends that answer back on the first connection. The client never learns the upstream's address and never connects to it.
 
-That position lets the proxy do jobs the application does not have to know about. It routes: one address can serve an API, static files and fixed answers, each path sent to a different place. It can add or change headers on the way through. It decides what is reachable from outside at all: an application that nobody can connect to directly has one door, the proxy, instead of one door per program.
+That position lets the proxy do jobs the application does not have to know about. It routes: one address can serve an API, static files (files sent back exactly as they are stored, such as HTML pages) and fixed answers, each path sent to a different place. It can add or change headers on the way through. It decides what is reachable from outside at all: an application that nobody can connect to directly has one door, the proxy, instead of one door per program.
 
-A reverse proxy is not a filter that only stops bad requests. Its main job is to pass good ones on. It also sits on the server side: it acts for the application, not for the client, which is why the client can use it without setting anything up. From the client's side, the proxy simply is the server.
+A reverse proxy is not a guard that only stops bad requests. Its main job is to pass good ones on. The client needs no setup to use it either: from the client's side, the proxy simply is the server.
 
 ## In the Đơn Hàng system
 
@@ -70,7 +70,9 @@ The part of `Caddyfile` that serves port `8080`, in stage 1:
 		}
 ```
 
-`handle /api/v1/*` catches every request whose path starts with `/api/v1/`, and `reverse_proxy api:8080` forwards it to port `8080` on `api`, the name the lab gives the API on its own network. That one line replaced all the `respond` blocks that faked `/api/v1/*` in stage 0. `/admin`, just below it in the same file, still answers with `respond` lines of its own. Caddy adds a `Via: 1.1 Caddy` header to the answers it passes back, and Kestrel's `Server: Kestrel` header comes through unchanged.
+`root` sets the folder that files are served from, `@guest` and `@signedIn` name request conditions used further down for `/admin`, and `route` makes Caddy try the `handle` blocks inside it in the order they are written. `handle /api/v1/*` catches every request whose path starts with `/api/v1/`, and `reverse_proxy api:8080` forwards it to port `8080` on `api`. That one line replaced all the `respond` blocks that faked `/api/v1/*` in stage 0. `/admin`, just below it in the same file, still answers with `respond` lines of its own.
+
+The lab runs Caddy, the API and the database as separate parts on a private network of its own, which the lab box is also on; `api` is the API's name on that network. The lab also decides which ports your laptop can reach: Caddy's `8080` is one of them, the API's is not. Because `api` is a different part from Caddy, its port `8080` is not the `8080` you type on your laptop. Caddy adds a `Via: 1.1 Caddy` header to the answers it passes back, and Kestrel's `Server: Kestrel` header comes through unchanged.
 
 The same `route` still answers other paths itself, the way every path was answered in stage 0:
 
@@ -95,7 +97,7 @@ The same `route` still answers other paths itself, the way every path was answer
 
 ## Beginners often think…
 
-- **"A reverse proxy is just a firewall that blocks bad requests, not something that forwards good ones."** → Actually forwarding is the whole job: every request to `/api/v1/*` in the lab goes through Caddy to Kestrel and back. Keeping the API out of direct reach is a side effect of it being the only door, not a check on each request. You notice this when a request with a broken JSON body, such as a login with `{bad`, still reaches the API and gets a `400` from it, with `Server: Kestrel`: Caddy passed it on without judging it.
+- **"A reverse proxy is just a firewall that blocks bad requests, not something that forwards good ones."** → Actually a firewall, a guard that inspects traffic and blocks what it does not allow, is a different job; forwarding is the whole job here: every request to `/api/v1/*` in the lab goes through Caddy to Kestrel and back. Keeping the API out of direct reach is a side effect of it being the only door, not a check on each request. You notice this when a request with a broken JSON body, such as a login with `{bad`, still reaches the API and gets a `400` from it, with `Server: Kestrel`: Caddy passed it on without judging it.
 - **"Kestrel could just as easily be reached directly, so the reverse proxy is only there for convenience."** → Actually in the lab you cannot reach it from your laptop: the lab gives the API no port of its own, and `api` is a name only the lab's network knows. Everything you send to the API has to go through Caddy. You notice this when you try `curl http://api:8080` from your laptop and the name does not even resolve.
 
 ## Try it (3 minutes)
