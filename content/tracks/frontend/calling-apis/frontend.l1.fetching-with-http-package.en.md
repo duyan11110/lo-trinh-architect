@@ -29,7 +29,7 @@ The product screen in the Đơn Hàng app shows real products, with real prices,
 
 ## Core concepts
 
-- `http.get` — the function in Dart's `http` package that sends a GET request and returns a `Future<http.Response>`, an answer that arrives later.
+- `http.get` — the function in Dart's `http` package, a ready-made library listed in the app's `pubspec.yaml`, that sends a GET request and returns a `Future<http.Response>`, an answer that arrives later.
 - `jsonDecode` — the function that turns JSON text into plain Dart values: a `List` for a JSON array, a `Map` for a JSON object.
 - `fromJson` — a constructor, by convention, that builds a typed Dart object from one of those `Map`s.
 
@@ -43,11 +43,11 @@ flowchart LR
   L -->|Product.fromJson each| P[List of Product]
 ```
 
-Fetching data in a Flutter app is three steps. First, `http.get(uri)` sends the GET request. It does not return the answer; it returns a `Future`, a promise that the answer will come. Inside an `async` function, `await` pauses that function until the answer arrives, the same way `await` works in C#. The rest of the app keeps running meanwhile: the browser does the waiting, and the screen can still draw and respond, as in the event-loop lesson.
+Fetching data in a Flutter app is three steps. First, `http.get(uri)` sends the GET request. It does not return the answer; it returns a `Future`, a promise that the answer will come. Inside an `async` function, `await` pauses that function until the answer arrives; if you have used `await` in C#, the idea is the same. The rest of the app keeps running meanwhile. The Đơn Hàng app runs in the browser, so the browser sends the request and tells the app when the answer arrives; until then the screen can still draw and respond, as in the event-loop lesson.
 
 Second, the answer is an `http.Response`, with a `statusCode` and a `body`. The body is just text, the same JSON you saw with `curl`. Before trusting it, the code checks the status: `200` means the body is the list; anything else means it is not.
 
-Third, `jsonDecode` turns the text into Dart values, but untyped ones: a `List` whose items are `Map`s with string keys. To get a typed `Product`, the code reads each key and checks its type, which is exactly what the API did in the other direction when it turned a `Product` into a `ProductDto` and then into JSON. If a key is missing or has a different type, that check fails loudly instead of quietly producing a half-empty product.
+Third, `jsonDecode` turns the text into Dart values, but untyped ones: a `List` whose items are `Map`s with string keys. To get a typed `Product`, the code reads each key and checks its type: the reverse of what the API did when it built a `ProductDto` from a `Product` and turned it into JSON. If a key is missing or has a different type, that check fails loudly instead of quietly producing a half-empty product.
 
 ## In the Đơn Hàng system
 
@@ -64,7 +64,7 @@ Third, `jsonDecode` turns the text into Dart values, but untyped ones: a `List` 
   }
 ```
 
-`baseUrl` is `http://localhost:8080/api/v1`: the app goes through Caddy, like `curl` did. The method is `async` and returns a `Future<List<Product>>`, so whoever calls it also gets an answer that arrives later. It `await`s the response, throws if the status is not `200`, decodes the body as a list, and turns each item into a `Product`:
+`baseUrl` is `http://localhost:8080/api/v1`: the app goes through Caddy, like `curl` did. The method is `async` and returns a `Future<List<Product>>`, so whoever calls it also gets an answer that arrives later. It `await`s the response, throws if the status is not `200`, decodes the body as a list, and turns each item into a `Product`. An exception thrown inside an `async` function does not escape at once: it is stored in the `Future` the function returned, and whoever `await`s that `Future` receives it, as with a failed `Task` in C#.
 
 ```dart file=DonHang.App/lib/models.dart tag=stage-1 lines=3-15
 class Product {
@@ -82,7 +82,7 @@ class Product {
 }
 ```
 
-The keys `id`, `name` and `priceVnd` match the JSON the API sends for its `ProductDto`. Each `as` is a checked cast: if `priceVnd` were missing, `json['priceVnd']` would be `null`, and `null as int` throws. The `Future` returned by `fetchProducts` then completes with an error instead of a list, and the screen can show it. The same happens if a value has the wrong type, such as a price sent as text: the check stops it at the edge of the app.
+`factory` marks a constructor that builds its object in its own way, here from a `Map`. The keys `id`, `name` and `priceVnd` match the JSON the API sends for its `ProductDto`. Each `as` is a checked cast — unlike C#'s `as`, which gives `null`, Dart's `as` throws when the value has the wrong type: if `priceVnd` were missing, `json['priceVnd']` would be `null`, and `null as int` throws. The `Future` returned by `fetchProducts` then completes with an error instead of a list; the next lesson shows how the screen reacts. The same happens if a value has the wrong type, such as a price sent as text: the check stops it at the edge of the app.
 
 ## Beginners often think…
 
@@ -98,11 +98,11 @@ With the lab running:
 
 Expected result: the objects have exactly `id`, `name` and `priceVnd`, the keys `fromJson` reads, with numbers for `id` and `priceVnd` and a string for `name`.
 
-If the API renamed `priceVnd` to `price`, what would the product screen show, and why?
+If the API renamed `priceVnd` to `price`, what would `fetchProducts` produce, and why?
 
 <details><summary>Suggested answer</summary>
 
-An error instead of the list. `json['priceVnd']` would be `null` for every product, `null as int` would throw inside `fromJson`, and the `Future` from `fetchProducts` would complete with that error; the screen's error branch would then show it.
+No list. `json['priceVnd']` would be `null` for every product, `null as int` would throw inside `fromJson`, and the `Future` from `fetchProducts` would complete with that error instead of a list of products; the next lesson shows what the screen does then.
 
 </details>
 
