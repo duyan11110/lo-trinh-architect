@@ -1,0 +1,104 @@
+{
+  "id": "design.l1.solid-dip",
+  "technical": {
+    "reviewed_at": "2026-09-25T21:10:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "\"The direction of dependency within the application should be in the direction of abstraction, not implementation details.\" ... \"implementation details can be written to depend on and implement higher-level abstractions, rather than the other way around.\" Lesson section 3 wording (high-level code depends on an abstraction, not a concrete low-level implementation) matches.",
+        "source": "refs/dotnet-docs/docs/architecture/modern-web-apps-azure/architectural-principles.md (### Dependency inversion, lines 35, 46)"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "git show stage-1:samples/DonHang.Samples/Samples/Design/OrderNotifications.cs lines 9-23: `private readonly EmailNotifier notifier = new();`, `public sealed class OrderNotifications(INotifier notifier)`, both Handle bodies `notifier.Send(orderId, \"order placed\")`. Lesson block matches character-for-character.",
+        "source": "examples/don-hang @ stage-1: samples/DonHang.Samples/Samples/Design/OrderNotifications.cs"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "git show stage-1:DonHang.Domain/OrderService.cs lines 6-23: `OrderService(IOrderRepository repository, INotifier notifier)`, PlaceOrderAsync calls `notifier.Send(order.Id, \"order placed\")`; no concrete notifier type named anywhere in the file. Lesson block matches.",
+        "source": "examples/don-hang @ stage-1: DonHang.Domain/OrderService.cs"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "DonHang.Domain/INotifier.cs: `namespace DonHang.Domain; public interface INotifier { void Send(int orderId, string subject); }`. DonHang.Infrastructure/LoggingNotifier.cs: `public sealed class LoggingNotifier(ILogger<LoggingNotifier> logger) : INotifier` whose Send calls `logger.LogInformation(...)`.",
+        "source": "examples/don-hang @ stage-1: DonHang.Domain/INotifier.cs, DonHang.Infrastructure/LoggingNotifier.cs"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "DonHang.Infrastructure.csproj: `<ProjectReference Include=\"..\\DonHang.Domain\\DonHang.Domain.csproj\" />`. DonHang.Domain.csproj contains only a PropertyGroup: no ProjectReference (and no PackageReference).",
+        "source": "examples/don-hang @ stage-1: DonHang.Domain/DonHang.Domain.csproj, DonHang.Infrastructure/DonHang.Infrastructure.csproj"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "\"Three situations always produce an implicit reference conversion: ... assigning a reference type instance to a variable of an interface the type implements, ...\"",
+        "source": "refs/dotnet-docs/docs/csharp/fundamentals/types/conversions.md line 46"
+      },
+      {
+        "n": 7,
+        "verdict": "rephrased",
+        "evidence": "Docs: \"The class must provide an implementation for every member declared in the interface\" (interfaces.md:35; :86 adds \"unless the interface provides a default implementation\"). So NotifierBase must change: true. But lesson section 4 goes further: \"NotifierBase — and with it EmailNotifier and SmsNotifier — would have to change too\". Test: changed Send to (int, string, bool) in INotifier and NotifierBase only, EmailNotifier/SmsNotifier untouched -> `dotnet build`: 0 Warning(s), 0 Error(s).",
+        "source": "refs/dotnet-docs/docs/csharp/fundamentals/types/interfaces.md lines 35, 86; scratch build of stage-1 Samples/Oop/INotifier.cs + NotifierBase.cs",
+        "suggested_text": "The concrete classes depend on `INotifier` too: implementing it means providing every method it declares, so if `Send` changed, `NotifierBase`, which implements it for `EmailNotifier` and `SmsNotifier`, would have to change too."
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Checked by inspection of the pattern in the lesson's own code: a class containing `new EmailNotifier()` names EmailNotifier in its source, so it cannot compile without that class and must be edited to use another one, whatever the field type. Consistent with docs: \"compile-time dependency flows in the direction of runtime execution\" unless the caller depends only on an abstraction.",
+        "source": "examples/don-hang @ stage-1: OrderNotifications.cs line 11; refs/dotnet-docs/docs/architecture/modern-web-apps-azure/architectural-principles.md line 35"
+      },
+      {
+        "n": 9,
+        "verdict": "wrong",
+        "evidence": "First half is supported: \"The practice of dependency injection is made possible by following the dependency inversion principle\" (architectural-principles.md:46), i.e. DI is a separate practice. But \"next module\" is false: content/path.yaml stage 1 order is design/solid, design/layered, design/dependency-injection; track.yaml also lists module layered between solid and dependency-injection. Injection is two modules later.",
+        "source": "content/path.yaml lines 36-38; content/tracks/design/track.yaml (modules solid, layered, dependency-injection)",
+        "suggested_text": "How the concrete object gets to it — created in one place and passed in — is a separate mechanism, covered later in the dependency-injection module."
+      }
+    ],
+    "issues": [
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "The sentence says EmailNotifier and SmsNotifier would have to change if Send changed. In this code they only override `Format`; `Send` is declared once, in NotifierBase. Changing Send's parameters in INotifier and NotifierBase, with EmailNotifier/SmsNotifier untouched, builds with 0 errors. The lesson measures change as 'editing the source', so this reads as a false claim.",
+        "quote": "so if `Send` changed, `NotifierBase` — and with it `EmailNotifier` and `SmsNotifier` — would have to change too",
+        "fix": "Replace with: \"so if `Send` changed, `NotifierBase`, which implements it for `EmailNotifier` and `SmsNotifier`, would have to change too.\" Keep the next sentence about arrow direction as is."
+      },
+      {
+        "severity": "major",
+        "section": 6,
+        "kind": "accuracy",
+        "text": "\"the subject of the next module\" is wrong: path.yaml and track.yaml order stage 1 as design/solid → design/layered → design/dependency-injection. The next module is layered. (depth_notes' \"ngay sau\" is also inaccurate, but the lesson must follow the real order.)",
+        "quote": "is a separate mechanism, the subject of the next module",
+        "fix": "Change to \"is a separate mechanism, covered later in the dependency-injection module.\" Update claim 9 in .meta.json to match."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "At stage-1 there are two distinct interfaces named INotifier: DonHang.Samples.Oop.INotifier (used by OrderNotifications, implemented by EmailNotifier/SmsNotifier) and DonHang.Domain.INotifier (used by OrderService, implemented by LoggingNotifier). The lesson and summary line 3 speak of 'an INotifier' for both and say OrderService knows 'exactly' what OrderNotifications knows, inviting the reader to think EmailNotifier could be passed to OrderService. It cannot.",
+        "quote": "That `INotifier` is declared in `DonHang.Domain` itself.",
+        "fix": "After that sentence add: \"It is a separate interface from the samples' `INotifier`, with the same single method; `EmailNotifier` and `SmsNotifier` implement the samples one, not this one.\" (Repo note, not for the lesson: DonHang.Domain/INotifier.cs comment says OrderNotifications depends on it, which is false.)"
+      },
+      {
+        "severity": "minor",
+        "section": "design.l1.solid-dip.q6",
+        "kind": "quiz",
+        "text": "Fill answer set is [abstraction, abstractions]. \"interface\" also completes the stem correctly per the lesson (an abstraction is 'an interface or abstract class', and the lesson's example is INotifier) and would be marked wrong.",
+        "quote": "DIP: high-level code should depend on an ____, not on a concrete low-level class.",
+        "fix": "Either add \"interface\" to answer, or reword the stem to \"DIP: high-level code should depend on an ____ (the general term from Core concepts), not on a concrete low-level class.\""
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "fix-required"
+  }
+}

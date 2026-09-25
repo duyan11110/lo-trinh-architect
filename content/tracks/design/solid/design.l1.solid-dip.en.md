@@ -47,7 +47,7 @@ flowchart LR
 
 In the top row, the high-level code points straight at a low-level class. `OrderPlacedTightlyCoupled` knows exactly how a customer is told: by an `EmailNotifier` it creates itself. Every change to that detail — another channel, a stand-in for a test — is an edit to this class.
 
-In the rows below, `OrderNotifications` depends only on `INotifier`: "send a message about this order". It does not know whether email, SMS or something newer answers that. The concrete classes depend on `INotifier` too: implementing it means providing every method it declares, so if `Send` changed, `NotifierBase` — and with it `EmailNotifier` and `SmsNotifier` — would have to change too. Before, the arrow ran from the policy to the concrete class; now the concrete classes have arrows to the abstraction the policy uses. That turn in direction is the "inversion": both sides depend on the abstraction, and the high-level code no longer depends on any concrete notifier.
+In the rows below, `OrderNotifications` depends only on `INotifier`: "send a message about this order". It does not know whether email, SMS or something newer answers that. The concrete classes depend on `INotifier` too: implementing it means providing every method it declares, so if `Send` changed, `NotifierBase`, which implements it for `EmailNotifier` and `SmsNotifier`, would have to change too. Before, the arrow ran from the policy to the concrete class; now the concrete classes have arrows to the abstraction the policy uses. That turn in direction is the "inversion": both sides depend on the abstraction, and the high-level code no longer depends on any concrete notifier.
 
 `OrderNotifications` receives its `INotifier` as a constructor parameter, and something outside it decides which concrete class to pass. Then it can be given `EmailNotifier`, `SmsNotifier`, or a class written next year, and its own source does not change. Merely using an interface is not enough: code that stored `new EmailNotifier()` in an `INotifier` field of its own would still be tied to `EmailNotifier`.
 
@@ -98,12 +98,12 @@ public sealed class OrderService(IOrderRepository repository, INotifier notifier
     }
 ```
 
-`OrderService` asks for an `INotifier` in its constructor and calls `notifier.Send` — it never names a concrete notifier. That `INotifier` is declared in `DonHang.Domain` itself. The concrete class, `LoggingNotifier`, lives in the `DonHang.Infrastructure` project: it implements `INotifier` by writing a log line instead of sending a real message. `DonHang.Infrastructure` references `DonHang.Domain`, not the other way round: the project with the concrete notifier depends on the project that owns the abstraction. `DonHang.Domain` references no other project at all.
+`OrderService` asks for an `INotifier` in its constructor and calls `notifier.Send` — it never names a concrete notifier. That `INotifier` is declared in `DonHang.Domain` itself — a separate interface from the samples' one, with the same single `Send` method — so the samples' `EmailNotifier` cannot be passed to `OrderService`. The concrete class, `LoggingNotifier`, lives in the `DonHang.Infrastructure` project: it implements `INotifier` by writing a log line instead of sending a real message. `DonHang.Infrastructure` references `DonHang.Domain`, not the other way round: the project with the concrete notifier depends on the project that owns the abstraction. `DonHang.Domain` references no other project at all.
 
 ## Beginners often think…
 
 - **"Dependency Inversion just means using interfaces somewhere in the codebase."** → Actually what matters is what the high-level code depends on. The samples contain `INotifier`, yet `OrderPlacedTightlyCoupled` still depends on `EmailNotifier`, so the interface changes nothing for it. You notice this when a project has interfaces for everything but changing a channel still means editing business code.
-- **"Dependency Inversion is just a way of creating objects and handing them to the classes that need them."** → Actually DIP is about direction: the high-level code should know only the abstraction. How the concrete object gets to it — created in one place and passed in — is a separate mechanism, the subject of the next module. You notice this when code receives its notifier from outside but its parameter is typed `EmailNotifier`: the object is handed in, yet the code still depends on one concrete class.
+- **"Dependency Inversion is just a way of creating objects and handing them to the classes that need them."** → Actually DIP is about direction: the high-level code should know only the abstraction. How the concrete object gets to it — created in one place and passed in — is a separate mechanism, covered later in the dependency-injection module. You notice this when code receives its notifier from outside but its parameter is typed `EmailNotifier`: the object is handed in, yet the code still depends on one concrete class.
 
 ## Try it (3 minutes)
 
@@ -133,6 +133,6 @@ They land in the place that chooses which notifier to pass, or in a new low-leve
 
 1. The Dependency Inversion Principle says high-level code should depend on an abstraction, not on a concrete low-level class.
 2. `OrderPlacedTightlyCoupled` creates its own `EmailNotifier`, so any change of channel edits that class.
-3. `OrderNotifications` and the API's `OrderService` receive an `INotifier` and never name a concrete notifier.
+3. `OrderNotifications` and the API's `OrderService` each receive an `INotifier` of their own project and never name a concrete notifier.
 4. In the API, `LoggingNotifier` lives in `DonHang.Infrastructure`, which depends on `DonHang.Domain`, where `INotifier` is declared.
 5. DIP is about which way the dependency points; how the concrete object is passed in is a separate mechanism.
