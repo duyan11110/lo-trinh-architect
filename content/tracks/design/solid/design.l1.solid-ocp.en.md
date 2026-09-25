@@ -48,7 +48,7 @@ OCP is about where a new case goes. In `Smells.ShippingVnd`, the kind of shippin
 
 In `ShippingFee`, each kind is a class that derives from the same abstract class and overrides one method, `ForOrder`. A new kind is a new class beside the others, so adding it is an extension. `StandardShipping`, `ExpressShipping` and `PickUpInStore` are not opened, and the tests that check them do not change.
 
-Code that only calls `ForOrder` through a `ShippingFee` variable does not change either: it never asks which kind it has. Some code still has to create the new kind, but that code sits outside the fee rules; the rules that already work are not edited. That is the goal of OCP: the change you are asked for arrives as new code, and the code you trusted yesterday stays as it was.
+Code that only calls `ForOrder` through a `ShippingFee` variable does not change either: it never asks which kind it has. Some code still has to create the new kind, and that may mean a small edit where the kind is chosen; but it sits outside the fee rules, and the rules that already work are not edited. That is the goal of OCP: the change you are asked for arrives as new code, and the code you trusted yesterday stays as it was.
 
 ## In the Đơn Hàng system
 
@@ -82,7 +82,7 @@ The flag version, from the code smells lesson:
 
 The kind of shipping is spread across the method: `pickUp` is checked at the top, and `express` is checked again in five separate `return` lines. Same-day would need another flag, and it has to go somewhere inside this method, among or ahead of branches that work today. Either way you edit the method, and every `return` next to the edit must be checked again.
 
-The class version:
+The class version — it ignores city and weight, so compare the two only on where a new kind goes:
 
 ```csharp file=samples/DonHang.Samples/Samples/Oop/ShippingFee.cs tag=stage-0 lines=5-23
 public abstract class ShippingFee
