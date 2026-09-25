@@ -75,7 +75,7 @@ public sealed class OrderService(IOrderRepository repository, INotifier notifier
     }
 ```
 
-`PlaceOrderAsync` takes an `int` and a `List<OrderItem>` and returns an `Order`. In between, it runs the steps in order: refuse an empty list, build the `Order` with status `"new"`, have it added and saved through `IOrderRepository`, and send a notification through `INotifier`. The empty-items check from the validation lesson is the first line — here, not in the controller. Nothing in the method mentions a request, a DTO or a status code.
+`PlaceOrderAsync` takes an `int` and a `List<OrderItem>` and returns an `Order`. In between, it runs the steps in order: refuse an empty list, build the `Order` with status `"new"`, have it added and saved through `IOrderRepository`, and send a notification through `INotifier`. The empty-items check from the validation lesson is the first line — here, not in the controller. Nothing in the method mentions a request, a DTO or a status code. In the tests, the two constructor parameters are small classes written just for testing, `FakeOrderRepository` and `FakeNotifier`, which implement `IOrderRepository` and `INotifier` by keeping orders and messages in memory — so no database is involved.
 
 The same class also cancels orders:
 
@@ -92,11 +92,11 @@ The same class also cancels orders:
     }
 ```
 
-An unknown order is reported with `KeyNotFoundException`, a plain .NET exception. The service does not decide that this means `404`; the exception-handling middleware in `DonHang.Api` does that translation, just as it turns `ArgumentException` into `400`.
+It asks `IOrderRepository.FindAsync` for the order; when that returns `null`, `?? throw` throws instead. So an unknown order is reported with `KeyNotFoundException`, a plain .NET exception. The service does not decide that this means `404`; the exception-handling middleware in the API project, `DonHang.Api`, does that translation, just as it turns `ArgumentException` into `400`.
 
 ## Beginners often think…
 
-- **"The service layer is just where you put code that doesn't fit anywhere else."** → Actually it has one clear job: the business rules and steps for its task. `OrderService` holds placing and cancelling orders and nothing else — no JSON, no SQL or EF Core code, no logging setup. You notice this when a service class starts collecting unrelated helpers and every change seems to touch it.
+- **"The service layer is just where you put code that doesn't fit anywhere else."** → Actually it has one clear job: the business rules and steps for its task. `OrderService` holds placing and cancelling orders and nothing else — no JSON, no database code, no logging setup. You notice this when a service class starts collecting unrelated helpers and every change seems to touch it.
 - **"A service method should accept the raw HTTP request object, so it has access to everything it might need."** → Actually taking the request would tie the business rules to HTTP. `PlaceOrderAsync` takes a customer id and a list of items, so the tests can call it with two plain values; with the request as its input, every test would first have to build a stand-in HTTP request, token included. You notice this when calling a rule from anywhere but an endpoint suddenly needs HTTP objects.
 
 ## Try it (3 minutes)
