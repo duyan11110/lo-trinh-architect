@@ -1,0 +1,114 @@
+{
+  "id": "frontend.l1.setstate-and-rebuilding",
+  "technical": {
+    "reviewed_at": "2026-09-26T02:35:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "State.setState doc (SDK 3.47.2): 'The provided callback is immediately called synchronously.' / 'the [setState] method's implementation is trivial: it calls the provided callback synchronously, then calls [Element.markNeedsBuild].' markNeedsBuild doc: 'Marks the element as dirty and adds it to the global list of widgets to rebuild in the next frame.'",
+        "source": "C:/Flutter/flutter/packages/flutter/lib/src/widgets/framework.dart (State.setState L1062-1069, L1134-1135; Element.markNeedsBuild L5345-5346)"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "setState doc: 'If you just change the state directly without calling [setState], the framework might not schedule a [build] and the user interface for this subtree might not be updated to reflect the new state.' Execution (widget test, stage-1 screen with setState removed from _reload): after tap, fetchProducts calls=2, old list still shown, no spinner; new data never shown.",
+        "source": "framework.dart State.setState; scratch widget test on DonHang.App@stage-1 (flutter test, Flutter 3.47.2)"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "setState doc: 'might impact the user interface in this subtree, which causes the framework to schedule a [build] for this [State] object.' perf/best-practices.md: 'When setState() is called on a State object, all descendent widgets rebuild.' / 'The traversal to rebuild all descendents stops when the same instance of the child widget as the previous frame is re-encountered.' markNeedsBuild marks only this element; no ancestor is marked.",
+        "source": "framework.dart State.setState; refs/flutter-website/sites/docs/src/content/perf/best-practices.md L59-67"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "git show stage-1:DonHang.App/lib/screens/product_list_screen.dart L27: 'void _reload() => setState(() => _products = widget.apiClient.fetchProducts());' L68: 'floatingActionButton: FloatingActionButton(onPressed: _reload, child: const Icon(Icons.refresh)),'. The fact is accurate; but see blocker on section 5: this arrow closure returns the Future, which trips setState's debug assertion.",
+        "source": "examples/don-hang@stage-1 DonHang.App/lib/screens/product_list_screen.dart"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "FutureBuilder.didUpdateWidget: 'if (oldWidget.future == widget.future) return; ... _subscribe();' and _subscribe sets the snapshot 'inState(ConnectionState.waiting)'; the stage-1 builder checks 'snapshot.connectionState == ConnectionState.waiting' first, so it shows CircularProgressIndicator. Execution with a block-bodied setState: after tap spinner=1, old=0; after completion NEW shown.",
+        "source": "C:/Flutter/flutter/packages/flutter/lib/src/widgets/async.dart L612-622, L437; scratch widget test"
+      },
+      {
+        "n": 6,
+        "verdict": "rephrased",
+        "evidence": "login_screen.dart@stage-1 L24-29: setState(() { _loading = true; _error = null; }) then 'await widget.apiClient.login(...)'. L57: 'if (_error != null) Text(...)'; L58-60: ElevatedButton(onPressed: _loading ? null : _submit, child: _loading ? const CircularProgressIndicator() : const Text('Sign in')). The button stays; its label becomes the indicator and it is disabled. Lesson text 'the button is replaced by a loading indicator' overstates.",
+        "source": "examples/don-hang@stage-1 DonHang.App/lib/screens/login_screen.dart",
+        "suggested_text": "Two fields change inside one `setState`, so one rebuild shows both: the button's label is replaced by a loading indicator and the button is disabled, and any old error message disappears."
+      },
+      {
+        "n": 7,
+        "verdict": "wrong",
+        "evidence": "Execution: stage-1 screen with setState removed, MaterialApp(home: screen), tap refresh, complete the new load, then tester.view.physicalSize changed twice + pump: output 'case3 after resize: old=1 new=0 spinner=0'. _ProductListScreenState.build does not depend on MediaQuery, and _ModalScopeState caches the page ('child: _page ??= RepaintBoundary(...)'), so a resize does not rebuild this State; the screen never catches up.",
+        "source": "scratch widget test on DonHang.App@stage-1; C:/Flutter/flutter/packages/flutter/lib/src/widgets/routes.dart L1089, L1228",
+        "suggested_text": "3. The version from step 2, and then suppose something else later makes this screen's `build` run again. Expected: at that build the screen catches up and shows the new load."
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "perf/best-practices.md: 'localize the setState() call to the part of the subtree whose UI actually needs to change. Avoid calling setState() high up in the tree if the change is contained to a small part of the tree.' setState doc: 'The _indirect_ cost ... is high: it causes the widget to rebuild, possibly triggering rebuilds for the entire subtree rooted at this widget'. Supports 'rebuilding only the subtree keeps a small change cheap'.",
+        "source": "refs/flutter-website/sites/docs/src/content/perf/best-practices.md L59-64; framework.dart State.setState"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "blocker",
+        "section": 5,
+        "kind": "code",
+        "text": "The repo's `_reload` passes an arrow closure whose body is an assignment, so the closure returns the Future. setState asserts: 'setState() callback argument returned a Future.' In debug mode (flutter run / flutter test) the assert throws after the field changes and before markNeedsBuild, so no rebuild happens: exactly the teammate's bug. Widget test output: after tap 'calls=2 spinner=0 old=1', new list never shown. Section 5, summary 4, Try-it case 1 and q3/q4 describe behaviour true only in release builds.",
+        "quote": "void _reload() => setState(() => _products = widget.apiClient.fetchProducts());",
+        "fix": "Propose a repo change via prompt 08: `void _reload() => setState(() { _products = widget.apiClient.fetchProducts(); });` (verified: spinner then new list). After tagging, re-extract the block. Until then the lesson cannot claim the spinner appears. Also change the §4 example `setState(() => _products = ...)` to the block-bodied form."
+      },
+      {
+        "severity": "blocker",
+        "section": 7,
+        "kind": "accuracy",
+        "text": "Try-it case 3 expected result is false (claim 7 wrong). Resizing the window does not rerun `_ProductListScreenState.build`: the route page is cached and the screen does not depend on MediaQuery. Test output after resize: 'old=1 new=0'. The suggested answer builds its reasoning on this false observation.",
+        "quote": "The version from step 2, and then the user resizes the window, which makes Flutter build the screen for its own reasons.",
+        "fix": "Replace case 3 with a hypothetical that does not name a trigger: 'The version from step 2, and then suppose something else later makes this screen's `build` run again.' Keep expected result 'at that build the screen catches up'. Do not name resize (or hot reload, not in vocab)."
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "Unlisted claim: the screen changes before the request is sent. setState only marks the element dirty; the rebuild runs in the next frame. `_submit` continues synchronously into `widget.apiClient.login(...)`, which calls `http.post` before `_submit` yields at the await, so the request is started before the frame that shows the indicator. Claim 6 says only 'before awaiting', a different statement.",
+        "quote": "The screen changes before the request to the server has even been sent, because `setState` comes first in `_submit`.",
+        "fix": "Replace with: 'The state changes before the request starts, because `setState` comes first in `_submit`; the next frame shows the indicator while the request is in progress.' Add it to claims (kind behavior)."
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "code",
+        "text": "Prose does not describe the code: `ElevatedButton` stays on screen; only its `child` becomes `CircularProgressIndicator` and `onPressed` becomes null (disabled).",
+        "quote": "the button is replaced by a loading indicator",
+        "fix": "Use claim 6 suggested_text: 'the button's label is replaced by a loading indicator and the button is disabled'."
+      },
+      {
+        "severity": "major",
+        "section": "frontend.l1.setstate-and-rebuilding.q5",
+        "kind": "quiz",
+        "text": "The keyed option asserts a false timing: the rebuild happens in the next frame, after `login` has already started the request. The explanation repeats it ('it happens before the `await` sends the request'). Option a is still the best choice, but it states something untrue.",
+        "quote": "So one rebuild shows the loading indicator and clears the old error before the request goes out",
+        "fix": "Option a (en): 'So one rebuild shows the loading indicator and clears the old error while the request is in progress'; vi to match. Explanation correct: 'Both changes happen in one call, so one build shows them together while the request is in progress.'"
+      },
+      {
+        "severity": "minor",
+        "section": "frontend.l1.setstate-and-rebuilding.q3",
+        "kind": "quiz",
+        "text": "Key b,a,d,c holds only if `_reload` actually triggers a build; with the stage-1 code in debug mode step a never happens (see section 5 blocker). q4 explanation c ('the loading indicator and then the list do appear') has the same dependency.",
+        "quote": "`_ProductListScreenState.build` runs again",
+        "fix": "No text change needed once the repo fix for `_reload` lands at the tag; re-verify q3/q4 against the re-extracted code."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "fix-required"
+  }
+}
