@@ -26,13 +26,13 @@ reviewed_at: null
 
 ## The situation
 
-`PlaceOrderSplit` is short, every method does one job, and the code review called it much better. In one sprint, four requests arrive from four different people: product wants orders capped at 20 lines, finance wants free shipping to start at 1,500,000 VND, operations wants orders saved somewhere real instead of printed, and marketing wants an SMS as well as the email. Each request touches a different method — and all four land in `PlaceOrderSplit.cs`. If every method already does one job, why does one class keep collecting everyone's changes?
+`PlaceOrderSplit` is short, every method does one job, and the code review called it much better. In one sprint, four requests arrive from four different people: product wants orders capped at 20 order lines, finance wants free shipping to start at 1,500,000 VND, operations wants orders saved somewhere real instead of printed, and marketing wants an SMS as well as the email. Each request touches a different method — and all four land in `PlaceOrderSplit.cs`. If every method already does one job, why does one class keep collecting everyone's changes?
 
 ## Core concepts
 
-- **SOLID** — a set of five design principles, named by their first letters: SRP, OCP, LSP, ISP and DIP. This lesson covers the first one; the next lessons cover the rest.
+- **SOLID** — a set of five design principles, one per letter. The S is the Single Responsibility Principle, covered here; the next lessons cover the other four.
 - **Single Responsibility Principle (SRP)** — a class should have only one reason to change.
-- reason to change — from the earlier lesson: a rule the business might ask you to change on its own. Here, you can often spot one by asking who would request the change.
+- reason to change — first named in [[design.l1.why-design-matters]]: a rule the business might ask you to change on its own. Here, you can often spot one by asking who would request the change.
 
 ## How it works
 
@@ -48,7 +48,7 @@ Each arrow in the diagram moves one reason to change out of `PlaceOrderSplit` in
 
 Cohesion inside each method was already high; SRP looks one level up, at the class. A class with four reasons to change can end up edited, re-read and re-tested by up to four different people, even when each of them cares about only one part of it.
 
-What SRP asks for is one class per reason: a validator, a pricer, an order saver and a notifier. None of the four needs to know how the others work. The notifier, for example, does not need to know how the total was worked out; today it only needs the customer id. Something still has to run them in order — check, price, save, notify — and that sequence is itself one reason to change, so it can stay in `Place`.
+What SRP asks for is one class per reason: a validator, a pricer, an order saver and a notifier. None of the four needs to know how the others work. The notifier, for example, does not need to know how the total was worked out; today it only needs the customer id. Something still has to run them in order — check, price, save, notify. That can stay in `Place`, which would then be all that is left of `PlaceOrderSplit`; it changes only when the steps themselves change, for example if the customer had to be told before the order is saved.
 
 ## In the Đơn Hàng system
 
@@ -77,7 +77,7 @@ These are the four private methods of `PlaceOrderSplit`:
         Console.WriteLine($"sending an email to customer {customerId}");
 ```
 
-Read them as four answers to "who would ask for this to change?". `FirstProblemWith` holds the checking rules: a cap of 20 lines would be one more `if` here. `TotalWithShippingVnd` holds the shipping fee rule: free shipping from 1,500,000 VND means changing `2_000_000`. `Save` is how an order is saved — for now, a printed line. `Notify` is how the customer is told — for now, a printed line about an email.
+Read them as four answers to "who would ask for this to change?". `FirstProblemWith` holds the checking rules: a cap of 20 order lines would be one more `if` here. `TotalWithShippingVnd` holds the shipping fee rule: free shipping from 1,500,000 VND means changing `2_000_000`. `Save` is how an order is saved — for now, a printed line. `Notify` is how the customer is told — for now, a printed line about an email.
 
 Each method is focused, and the whole file is under 40 lines. By size, this class looks fine. By SRP's question, it has four reasons to change, so all four requests in the situation edit this one file.
 
@@ -88,12 +88,12 @@ Each method is focused, and the whole file is under 40 lines. By size, this clas
 
 ## Try it (3 minutes)
 
-Using the code block above, take each request from the situation and write down which method of `PlaceOrderSplit` it changes, and which of the four classes SRP asks for — validator, pricer, order saver, notifier — would own it after a split.
+Using the code block above, take each of these new requests and write down which method of `PlaceOrderSplit` it changes, and which of the four classes SRP asks for — validator, pricer, order saver, notifier — would own it after a split.
 
-1. An order may have at most 20 lines.
-2. Free shipping starts at 1,500,000 VND.
-3. Orders are saved somewhere real instead of printed.
-4. The customer gets an SMS as well as the email.
+1. A customer id above 1,000,000 is not valid.
+2. Loyal customers never pay shipping.
+3. The saving line must also print the date.
+4. The email text must thank the customer.
 
 Expected result: 1 → `FirstProblemWith`, validator. 2 → `TotalWithShippingVnd`, pricer. 3 → `Save`, order saver. 4 → `Notify`, notifier. Four different methods — all in the one file `PlaceOrderSplit.cs`.
 
@@ -101,7 +101,7 @@ How many classes do these four requests edit today, and how many would they edit
 
 <details><summary>Suggested answer</summary>
 
-Today all four edit one class, `PlaceOrderSplit`, so four people change, review and re-test the same file. After the split, each request edits a different class: the fee change touches only the pricer, and the SMS change touches only the notifier. That is what "one reason to change" buys you.
+Today all four edit one class, `PlaceOrderSplit`, so up to four people change, review and re-test the same file. After the split, each request edits a different class: the shipping change touches only the pricer, and the email text change touches only the notifier. That is what "one reason to change" buys you.
 
 </details>
 
