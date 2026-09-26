@@ -44,7 +44,7 @@ flowchart LR
   T -.accepted by.-> A
 ```
 
-The API checks a token by computing the signature again with its signing key and comparing. It never looks up who logged in. That makes the key all-powerful: anyone who has it can write a token with any `sub`, any expiry they like, sign it, and the API will accept it as if it had issued it. A leaked signing key is therefore not one leaked account but every account, and no password needs to be guessed.
+In the lab the key starts in `scripts/dev-secrets.sh`, which writes a random one into `.env`; Compose hands it to the API as `Jwt__SigningKey`, and the API reads it at startup. From then on, the API checks a token by computing the signature again with its signing key and comparing. It never looks up who logged in. That makes the key all-powerful: anyone who has it can write a token with any `sub`, any expiry they like, sign it, and the API will accept it as if it had issued it. A leaked signing key is therefore not one leaked account but every account, and no password needs to be guessed.
 
 The key must also be hard to guess. HMAC does nothing to hide a weak key: someone who has seen one real token can try candidate keys offline, as fast as their computer allows, until one produces the same signature. A short or memorable key falls quickly; a long random one does not.
 
@@ -67,7 +67,7 @@ fi
 
 If `.env` has no `JWT_SIGNING_KEY` line yet, the script adds one: 48 random bytes from `openssl rand`, written as text with `-base64`. Every learner's lab therefore gets its own long, random key, and a token from one machine's API never verifies on another. The key is in `.env` next to `POSTGRES_PASSWORD`, and `.gitignore` keeps both out of the repository.
 
-Compose passes it to the API as `Jwt__SigningKey`, and `Program.cs` reads it at startup:
+Compose passes it to the API as `Jwt__SigningKey`; the double underscore in a variable name stands for the `:` in a settings name, so the API sees it as `Jwt:SigningKey`. `Program.cs` reads it at startup:
 
 ```csharp file=DonHang.Api/Program.cs tag=stage-1 lines=22-41
 // lesson: backend.l1.validating-a-jwt
@@ -92,11 +92,11 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
 ```
 
-`builder.Configuration["Jwt:SigningKey"]` reads the key like any other setting, and the API throws at startup if the setting is missing altogether. `IssuerSigningKey` is the key every incoming token is checked against, the same key `JwtTokenService` signs new tokens with. Because `Program.cs` copies the key once, at startup, from an environment variable, a changed key takes effect only when the API starts again.
+Only two parts of this block matter here; the rest is the token checking from the validating lesson. `builder.Configuration["Jwt:SigningKey"]` reads the key like any other setting, and the API throws at startup if the setting is missing altogether. `IssuerSigningKey` is the key every incoming token is checked against, the same key `JwtTokenService` signs new tokens with. Because `Program.cs` copies the key once, at startup, from an environment variable, a changed key takes effect only when the API starts again.
 
 ## Beginners often think…
 
-- **"The JWT secret only matters if the API is publicly reachable; inside a private network it can be anything."** → Actually the key decides which tokens the API trusts, wherever the requests come from. Anyone who can send a request, including everyone on that private network, can use a known key to forge a token for any customer. You notice this when a key copied into a test script or a chat message turns out to be the one the real API uses, and anyone who saw it can act as any customer.
+- **"The JWT secret only matters if the API is publicly reachable; inside a private network it can be anything."** → Actually the key decides which tokens the API trusts, wherever the requests come from. Anyone who can send a request, including everyone on that private network, can use a known key to forge a token for any customer; Caddy, the reverse proxy in front, passes tokens on without checking them, so only the API does. You notice this when a key copied into a test script or a chat message turns out to be the one the real API uses, and anyone who saw it can act as any customer.
 - **"A short, memorable JWT secret is fine, since the signature check is what matters, not the secret's own strength."** → Actually the signature check is only as strong as the key: from one real token, a short key can be found by trying candidates until a signature matches. The lab's key is 48 random bytes for that reason. You notice this when a token signed with a guessed key is accepted, because the check cannot tell it from a real one.
 
 ## Try it (3 minutes)
@@ -105,9 +105,9 @@ With the lab running, from the repository root, in a bash terminal on your own m
 
 1. Run `grep -c '^JWT_SIGNING_KEY=' .env` to check the key exists, without printing it.
 2. In the browser, sign in to the app at `http://localhost:8081` and leave the "Place an order" screen open.
-3. Run `JWT_SIGNING_KEY=$(openssl rand -base64 48) docker compose up -d api`. A variable set in the shell takes precedence over `.env`, so this restarts the API with a different key.
+3. Run `JWT_SIGNING_KEY=$(openssl rand -base64 48) docker compose up -d api`. A variable set in the shell takes precedence over `.env`, so this restarts the API with a different key. A variable written in front of a command is set for that one command only.
 4. After about ten seconds, tap "Order 1 keyboard" in the browser. If it shows `(502)`, the API is still starting; wait and tap again.
-5. Run `docker compose up -d api` to put the lab's own key back, then tap "Order 1 keyboard" again.
+5. Run `docker compose up -d api` to put the lab's own key back, wait about ten seconds, then tap "Order 1 keyboard" again.
 
 Expected result: 1 — `1`. 3 — Compose recreates and starts `donhang-api`. 4 — "Failed: Exception: failed to create order (401)". 5 — "Order <n> placed, status new": the token you got in step 2 is accepted again.
 
