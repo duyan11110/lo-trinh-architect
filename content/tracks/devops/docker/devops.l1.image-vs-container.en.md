@@ -66,7 +66,7 @@ RUN apk add --no-cache \
       procps
 ```
 
-`FROM` names an existing image to start from: a small Linux with an SSH server, published by LinuxServer. `RUN apk add ...` installs the tools the lessons use: `openssl`, `git`, the Postgres client and `procps`. An image name has two parts: before the colon, the name; after it, the tag, a label for one version of that image. `docker-compose.yml` tells Compose to build this file into an image named `donhang-lab:stage-0`, and to run one container from it, named `donhang-lab`. That container is the lab box. Every learner builds the image from the same file, on the same base image, named with an exact version in `FROM`, which is the main reason every lesson's script output has matched across machines since stage 0.
+`FROM` names an existing image to start from: a small Linux with an SSH server, published by LinuxServer. `RUN apk add ...` installs the tools the lessons use: `openssl`, `git`, the Postgres client and `procps`. In a name such as `caddy:2.10.0`, the part before the colon is the image's name and the part after it is the tag, a label that usually marks one version of that image. `docker-compose.yml` tells Compose to build this file into an image named `donhang-lab:stage-0`, and to run one container from it, named `donhang-lab`. That container is the lab box. Every learner builds the image from the same file, on the same base image, named with an exact version in `FROM`, which is the main reason every lesson's script output has matched across machines since stage 0.
 
 The two Caddy containers show the other side. Neither has a `Dockerfile` in the repository: both start from `caddy:2.10.0`, an image Caddy publishes ready-made. `donhang-web` is given the `Caddyfile` and the `www/` folder and forwards the API; `donhang-app-web` is given the built Flutter app and a different start command, `caddy file-server`, on port `8081`. Same image, two containers, each set up differently by `docker-compose.yml`.
 
@@ -83,7 +83,7 @@ With the lab running, in a terminal on your own machine (not inside the lab box)
 2. Run `docker ps --format "{{.Names}}  {{.Image}}"` to list each running container and its image.
 3. Run `docker exec donhang-web sh -c "echo hello > /tmp/note.txt"`, which runs a command inside the `donhang-web` container. Then run `docker exec donhang-app-web sh -c "cat /tmp/note.txt"`.
 
-Expected result: 1 — images named `donhang-lab` (tag `stage-0`), `donhang-api` (tag `stage-1`, the API's image, built by the lab from its own `Dockerfile`) and `caddy` (tag `2.10.0`), among others. 2 — five containers: `donhang-lab`, `donhang-db`, `donhang-web`, `donhang-api` and `donhang-app-web`, with `donhang-web` and `donhang-app-web` both on `caddy:2.10.0`. 3 — the second command fails: `cat` cannot open `/tmp/note.txt`, "No such file or directory".
+Expected result: 1 — images named `donhang-lab` (tag `stage-0`), `donhang-api` (tag `stage-1`, the API's image, which `scripts/up.sh` builds from `DonHang.Api/Dockerfile`) and `caddy` (tag `2.10.0`), among others. 2 — five containers: `donhang-lab`, `donhang-db`, `donhang-web`, `donhang-api` and `donhang-app-web`, with `donhang-web` and `donhang-app-web` both on `caddy:2.10.0`. 3 — the second command fails: `cat` cannot open `/tmp/note.txt`, "No such file or directory".
 
 Both containers run the same image. Why is the file you wrote in step 3 missing from the second one?
 
