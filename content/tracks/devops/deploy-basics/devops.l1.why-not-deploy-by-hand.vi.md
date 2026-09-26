@@ -43,7 +43,7 @@ flowchart LR
   D[written definition] -->|built the same way| S3[server, every time]
 ```
 
-Sơ đồ cho thấy cùng các bước chạy được hôm thứ Sáu và hỏng hai tuần sau, trong khi một định nghĩa viết ra dựng server theo cùng một cách mỗi lần. Deploy bằng tay có hai điểm yếu, và cả hai đều không nằm ở code. Điểm yếu thứ nhất là các bước nằm trong đầu một người. Dừng chương trình cũ, chép file, khởi động chương trình mới: mỗi lần một người làm, nó lại ra hơi khác. Một bước bị bỏ, một lệnh được gõ với tùy chọn khác, một file bị chép từ nhầm thư mục. Không có gì ghi lại việc thực sự đã làm, nên khi có gì đó hỏng, không có danh sách nào để so.
+Sơ đồ cho thấy cùng các bước chạy được hôm thứ Sáu và hỏng hai tuần sau, trong khi một định nghĩa viết ra dựng server y như nhau mỗi lần. Deploy bằng tay có hai điểm yếu, và cả hai đều không nằm ở code. Điểm yếu thứ nhất là các bước nằm trong đầu một người. Dừng chương trình cũ, chép file, khởi động chương trình mới: mỗi lần một người làm, nó lại ra hơi khác. Một bước bị bỏ, một lệnh được gõ với tùy chọn khác, một file bị chép từ nhầm thư mục. Không có gì ghi lại việc thực sự đã làm, nên khi có gì đó hỏng, không có danh sách nào để so.
 
 Điểm yếu thứ hai tệ hơn. Deploy bằng tay không có định nghĩa cố định về những gì máy đích cần. Qua nhiều tháng, người ta cài một thư viện chỗ này, đổi một thiết lập chỗ kia, và server rơi vào một trạng thái không ai ghi lại. Lần deploy "chạy được" là nhờ trạng thái đó, không phải nhờ bất cứ thứ gì được viết ra. Server tiếp theo, hoặc chính server đó khi dựng lại, sẽ không có trạng thái đó, và cùng các bước ấy sẽ hỏng ở đó.
 
