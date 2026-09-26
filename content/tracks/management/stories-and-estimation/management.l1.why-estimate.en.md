@@ -25,7 +25,7 @@ status: draft
 
 ## The situation
 
-Your first sprint planning with a Đơn Hàng team that works in sprints. The product owner reads out five stories, and after each one the team says a small number: 3, 3, 2, 2, 1. Nobody has started any of the work, and nobody seems sure how long any of it will take. A junior next to you whispers that these numbers must be deadlines, and asks what happens to whoever guessed wrong. If nobody can know the real size yet, why does the team bother to guess at all?
+Your first sprint planning with a Đơn Hàng team that works in sprints. The product owner reads out five items, and after each one the team says a small number: 3, 3, 2, 2, 1. Nobody has started any of the work, and nobody seems sure how long any of it will take. A junior next to you whispers that these numbers must be deadlines, and asks what happens to whoever guessed wrong. If nobody can know the real size yet, why does the team bother to guess at all?
 
 ## Core concepts
 
@@ -44,24 +44,24 @@ flowchart LR
   L -.-> E
 ```
 
-A team estimates so that it can plan. At sprint planning, the question is how many of the waiting stories fit into the next two weeks. That question cannot be answered without some idea of how big each story is compared with the others. The same holds for larger work: to say whether a feature is a matter of weeks or of months, the team needs a rough size for its parts.
+A team estimates so that it can plan. At sprint planning, the question is how many of the waiting stories fit into the next sprint. That question cannot be answered without some idea of how big each story is compared with the others. The same holds for larger work: to say whether a feature is a matter of weeks or of months, the team needs a rough size for its parts.
 
 An estimate is made before the work starts, so it can only use what the team knows then. The code has not been read closely, the unexpected problem has not appeared yet, and the person who knows the old module may be on holiday. Estimates will therefore sometimes be wrong, in both directions: some work turns out smaller than it looked, and some larger. That is expected, not a sign that the team did something wrong.
 
-What an estimate is not is a promise to someone outside the team. It is the team's own planning tool. A story with no estimate can still be worked on; what the team cannot do without estimates is decide how many stories to take into a sprint. After the work is done, the team can look back and see how its guesses compared with reality, which is how the next estimates get better.
+What an estimate is not is a promise to someone outside the team. It is the team's own planning tool. A story with no estimate can still be worked on; what the team cannot do without some idea of each story's size is decide how many stories to take into a sprint. After the work is done, the team can look back and see how its guesses compared with reality, which is how the next estimates get better.
 
 ## In the Đơn Hàng system
 
-The Sprint 14 backlog, in `docs/team/sprint-example.md`, has a column `Ước lượng`, estimate, with a number for each item: 3 for the cancel endpoint and for the cancel button, 2 for blocking cancellation of a paid order and for stopping notifications for a cancelled order, and 1 for the wrong-total bug. Those numbers let the team decide, at planning, that these five items fit into two weeks.
+The Sprint 14 backlog, in `docs/team/sprint-example.md`, has a column `Ước lượng`, estimate, with a number for each item: 3 for the cancel endpoint and for the cancel button, 2 for blocking cancellation of a paid order and for stopping notifications for a cancelled order, and 1 for the wrong-total bug. Numbers like these are what let a team decide, at planning, how many items fit into the sprint.
 
-The same file shows the other half. One item, stopping notifications for a cancelled order, was estimated at 2 and did not finish; it moved to the next sprint. The review did not treat that as a broken promise: unfinished work is simply not counted as done yet. The estimate helped plan the sprint; it did not decide what happened in it.
+The same file shows the other half. One item, stopping notifications for a cancelled order, was estimated at 2 and did not finish; it moved to the next sprint. The review simply did not count it as done, and the file does not say why it took longer. An estimate helps plan a sprint; it does not decide what happens in it.
 
 The Kanban board in `docs/team/kanban-board-example.md` has no estimate column. That team does not plan a batch of work in advance; it limits what is in progress instead, so it has less need to size each item before it starts.
 
 ## Beginners often think…
 
-- **"The point of estimating is to give management an exact deadline to hold the team to."** → Actually the team estimates for its own planning: to see how much fits into a sprint, or roughly how long larger work will take. A number made before the work starts cannot be exact. You notice this when a team that is held to its estimates starts padding every number, and the estimates stop being useful for planning.
-- **"A good team's estimates are always right; being wrong means the estimate was done badly."** → Actually every estimate uses only what is known before the work starts, so good teams are wrong too, in both directions. What a good team does is learn from the difference. You notice this when an item estimated at 2 turns up a problem nobody could have seen at planning, and takes longer, as happened in Sprint 14.
+- **"The point of estimating is to give management an exact deadline to hold the team to."** → Actually the team estimates for its own planning: to see how much fits into a sprint, or roughly how long larger work will take. A number made before the work starts cannot be exact. You notice this when estimates are turned into deadlines and people start giving larger numbers to protect themselves, so the numbers stop being useful for planning.
+- **"A good team's estimates are always right; being wrong means the estimate was done badly."** → Actually every estimate uses only what is known before the work starts, so good teams are wrong too, in both directions. What a good team does is learn from the difference. You notice this when one item estimated at 2 does not finish in its sprint, as in Sprint 14, while the other four do.
 
 ## Try it (3 minutes)
 
@@ -71,13 +71,13 @@ Open `docs/team/sprint-example.md` from the repository.
 2. Find the item that did not finish, and its estimate.
 3. Write one sentence on what the team could learn from that item at its retrospective, without saying anyone guessed badly.
 
-Expected result: 1 — 11. 2 — `Ngừng gửi thông báo cho đơn đã hủy`, estimated at 2. 3 — for example: "this kind of work touches the notification code we know least; next time, ask the person who knows it before we size it."
+Expected result: 1 — 11. 2 — `Ngừng gửi thông báo cho đơn đã hủy`, estimated at 2. 3 — for example: "this item took longer than we sized it; let's look at why before we size similar work next time."
 
 The unfinished item was estimated at 2 and still did not fit. Does that mean the 2 was a mistake, and should the team stop estimating?
 
 <details><summary>Suggested answer</summary>
 
-No. The 2 was the team's best guess with what it knew at planning; the work turned out bigger than it looked, which estimates are expected to do sometimes. The estimate still did its job: it helped the team choose five items for two weeks. Stopping would leave the team with no way to decide how much fits into a sprint. The better response is to look at why this item grew and use that at the next planning.
+No. The 2 was the team's best guess with what it knew at planning; the item took longer than that, which work sometimes does, and the file does not say why. The estimate still did its job: it helped the team choose five items for two weeks. Stopping would leave the team with no way to decide how much fits into a sprint. The better response is to find out at the retrospective why it took longer and use that at the next planning.
 
 </details>
 
