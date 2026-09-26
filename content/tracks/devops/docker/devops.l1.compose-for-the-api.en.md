@@ -31,7 +31,7 @@ You have an image for the API and a `docker-compose.yml` that already runs the l
 
 - service — one entry under `services:` in `docker-compose.yml`, describing how to get an image and run a container from it.
 - `depends_on` — a service's list of other services that Compose must start first; with `condition: service_healthy`, Compose waits until they report healthy.
-- healthcheck — a command Docker runs inside a container every few seconds; while it succeeds, the container counts as healthy.
+- healthcheck — a command Docker runs inside a container at a set interval (every 3 seconds in the lab); while it succeeds, the container counts as healthy.
 
 ## How it works
 
@@ -45,7 +45,7 @@ flowchart LR
 
 A service in `docker-compose.yml` has the same few parts every time: where its image comes from, how the container is set up, which network it joins, and what it needs first. The `api` service reuses shapes the file already has for other services: a `build` section like the lab box's, the `donhang` network like the database's, and a `depends_on` naming what must run first.
 
-A container can exist and still not be ready. When the `db` container starts, Postgres needs a few seconds before it accepts connections, and on the very first start even longer, while it runs `schema.sql` and `seed.sql`. A plain `depends_on` only makes Compose start `db` before `api`; it does not wait for Postgres to be ready. With `condition: service_healthy`, Compose waits until the `db` healthcheck succeeds, and only then starts `api`.
+A container can exist and still not be ready. When the `db` container starts, Postgres needs a few seconds before it accepts connections. A plain `depends_on` only makes Compose start `db` before `api`; it does not wait for Postgres to be ready. With `condition: service_healthy`, Compose waits until the `db` healthcheck succeeds, and only then starts `api`.
 
 Addresses work differently inside a container. `localhost` inside the API's container means that container itself, where nothing listens on port `5432`. The database is another container on the same network, so the API reaches it by its service name, `db`, which Docker's DNS server resolves.
 
@@ -75,7 +75,7 @@ The `api` service:
         ipv4_address: 172.28.0.13
 ```
 
-`build` tells Compose to build the image from `DonHang.Api/Dockerfile`, with the repository root as the folder the `Dockerfile` copies from (`context: .`). `image` names the result `donhang-api:stage-1`, and `container_name` and `hostname` name the container. The connection string under `environment` says `Host=db`, the service name, not `localhost`; the next module looks at these settings in detail. `depends_on` waits for `db` to be healthy, and `networks` puts `api` on `donhang` at `172.28.0.13`.
+`build` tells Compose how to build the image from `DonHang.Api/Dockerfile`, with the repository root as the folder the `Dockerfile` copies from (`context: .`); Compose builds it when it does not have the image yet, or when asked to, as `scripts/up.sh` does with `--build`. `image` names the result `donhang-api:stage-1`, and `container_name` and `hostname` name the container. The connection string under `environment` says `Host=db`, the service name, not `localhost`; the next module looks at these settings in detail. `depends_on` waits for `db` to be healthy, and `networks` puts `api` on `donhang` at `172.28.0.13`.
 
 The healthcheck it waits for belongs to the `db` service:
 
@@ -87,7 +87,7 @@ The healthcheck it waits for belongs to the `db` service:
       retries: 30
 ```
 
-Every 3 seconds, Docker runs `pg_isready -U donhang -d donhang` inside the database container. That command succeeds only when Postgres accepts connections for that user and database. Each check may take up to 3 seconds, and Docker allows up to 30 failures in a row before it marks the container unhealthy. Until the first success, `db` counts as starting, and `api` waits.
+Every 3 seconds, Docker runs `pg_isready -U donhang -d donhang` inside the database container. That command succeeds when the Postgres server accepts connections. Each check may take up to 3 seconds, and Docker allows up to 30 failures in a row before it marks the container unhealthy. Until the first success, `db` counts as starting, and `api` waits.
 
 ## Beginners often think…
 

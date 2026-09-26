@@ -1,0 +1,107 @@
+{
+  "id": "devops.l1.compose-for-the-api",
+  "technical": {
+    "reviewed_at": "2026-09-26T10:20:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "source": "git -C examples/don-hang show stage-1:docker-compose.yml L81-99; refs/docker-docs/content/reference/compose-file/build.md L56-57",
+        "evidence": "L83-85 `build: context: . dockerfile: DonHang.Api/Dockerfile`, L86 `image: donhang-api:stage-1`, L91 `Host=db;...`, L94-96 `depends_on: db: condition: service_healthy`, L97-99 `donhang: ipv4_address: 172.28.0.13`. Both lesson blocks match L81-99 and L75-79 exactly. stage-1^{commit} == HEAD == 4fca60af. Docs: context is relative to the Compose file's folder; the dockerfile \"is searched relative to the context path\"."
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "source": "refs/docker-docs/_vendor/github.com/moby/buildkit/frontend/dockerfile/docs/reference.md L2943-2967; docker-compose.yml@stage-1 L75-79",
+        "evidence": "\"This status is initially `starting`. Whenever a health check passes, it becomes `healthy` (whatever state it was previously in).\" / \"If a single run of the check takes longer than **timeout** seconds then the check is considered to have failed.\" / \"It takes **retries** consecutive failures of the health check for the container to be considered `unhealthy`.\" Compose file: interval 3s, timeout 3s, retries 30, test `pg_isready -U donhang -d donhang`."
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "source": "refs/docker-docs/content/manuals/compose/how-tos/startup-order.md L20-25, L54",
+        "evidence": "\"On startup, Compose does not wait until a container is \\\"ready\\\", only until it's running.\" / \"`service_healthy`. This specifies that a dependency is expected to be “healthy”, which is defined with `healthcheck`, before starting a dependent service.\" / \"Compose waits for healthchecks to pass on dependencies marked with `service_healthy`.\""
+      },
+      {
+        "n": 4,
+        "verdict": "rephrased",
+        "source": "https://www.postgresql.org/docs/17/app-pg-isready.html (Exit Status); reviewer run, throwaway container rv-pgtest, postgres:17.6-alpine, 2026-09-26",
+        "evidence": "Docs: \"pg_isready returns 0 to the shell if the server is accepting connections normally\" — first half holds. Second half fails as a guarantee: with a 12 s init script, in-container `pg_isready` printed \"/var/run/postgresql:5432 - accepting connections\" from second 2 while the log showed \"running /docker-entrypoint-initdb.d/s.sql\"; \"PostgreSQL init process complete\" came ~12 s later. The healthcheck can pass while schema.sql/seed.sql still run.",
+        "suggested_text": "pg_isready succeeds when the server is accepting connections; after the db container starts, Postgres needs a few seconds before that happens."
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "source": "git -C examples/don-hang show stage-1:DonHang.Api/Program.cs L56-61, L74",
+        "evidence": "L60 `MigrationBaseline.ApplyIfNeeded(context);`, L61 `context.Database.Migrate();` inside a scope created after `builder.Build()`, and `app.Run();` only at L74. The migration step runs before Kestrel starts serving."
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "source": "refs/docker-docs/content/manuals/engine/network/_index.md L286; refs/docker-docs/content/manuals/compose/how-tos/networking.md L41; reviewer run",
+        "evidence": "\"`--dns=127.0.0.1` refers to the container's own loopback address.\" / \"Each container can now look up the service name `web` or `db` and get back the appropriate container's IP address.\" Run: donhang-api:stage-1 on network donhang with Host=localhost -> \"Npgsql.NpgsqlException (0x80004005): Failed to connect to 127.0.0.1:5432 ---> System.Net.Sockets.SocketException (111): Connection refused\"."
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "source": "reviewer run on the lab, Docker Compose v2.33.1-desktop.1, examples/don-hang @ stage-1, 2026-09-26",
+        "evidence": "`docker compose up -d api` printed: donhang-db Created, donhang-api Created, donhang-db Starting, donhang-db Started, donhang-db Waiting, donhang-db Healthy, donhang-api Starting, donhang-api Started. curl right away: 502; after `sleep 5`: 200. `docker inspect -f '{{json .Config.Healthcheck}}' donhang-api` -> null. Caddyfile@stage-1 routes /api/v1/* to api:8080."
+      }
+    ],
+    "issues": [
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "accuracy",
+        "quote": "That command succeeds only when Postgres accepts connections for that user and database.",
+        "text": "Unlisted claim, and wrong. PostgreSQL 17 pg_isready Notes: \"It is not necessary to supply correct user name, password, or database name values to obtain the server status\". Exit 0 means the server is accepting connections at all; `-U donhang -d donhang` does not make it check that user or database.",
+        "fix": "Replace with: \"That command succeeds when the Postgres server accepts connections.\" If the writer wants to explain -U/-d, add only: \"`-U` and `-d` are what it logs in as; the check does not depend on them.\" Add the sentence to claims with version_key postgresql."
+      },
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "accuracy",
+        "quote": "and on the very first start even longer, while it runs `schema.sql` and `seed.sql`.",
+        "text": "Next to \"With `condition: service_healthy`, Compose waits until the `db` healthcheck succeeds\", this implies the wait covers the init scripts. It does not: the image runs them on a temporary server that in-container pg_isready (Unix socket) already reports as \"accepting connections\" (reviewer run, claim 4). On a first start the healthcheck can pass before schema.sql/seed.sql finish.",
+        "fix": "Delete the clause \", and on the very first start even longer, while it runs `schema.sql` and `seed.sql`\" so the sentence ends at \"before it accepts connections.\" Update claim 4 to the suggested_text. Do not add the init-race detail; it is beyond this lesson."
+      },
+      {
+        "severity": "major",
+        "section": "devops.l1.compose-for-the-api.q5",
+        "kind": "quiz",
+        "quote": "Whether Postgres accepts connections for `donhang`",
+        "text": "Key a and its explanation (\"succeeds only when the server is accepting connections for that user and database\") repeat the wrong pg_isready claim. The key is only the least-wrong option: pg_isready tests whether the server accepts connections, not whether it does so for `donhang`.",
+        "fix": "Option a (en): \"Whether the Postgres server accepts connections\"; vi: \"Server Postgres có nhận kết nối không\". Explanation correct (en): \"`pg_isready` succeeds when the Postgres server is accepting connections.\"; vi: \"`pg_isready` thành công khi server Postgres đang nhận kết nối.\""
+      },
+      {
+        "severity": "major",
+        "section": 6,
+        "kind": "accuracy",
+        "quote": "`localhost:5432` works from your laptop only because the lab publishes that port there … makes the API fail at startup with a connection refused error.",
+        "text": "Unlisted claim. Both parts are true (docker-compose.yml@stage-1 L70-71 `\"5432:5432\"`; reviewer run of donhang-api:stage-1 with Host=localhost -> \"Failed to connect to 127.0.0.1:5432 ---> SocketException (111): Connection refused\"), but they are not in the ledger.",
+        "fix": "Add a claim (kind behavior, section 6, version_key docker): \"The db service publishes 5432:5432, so localhost:5432 reaches Postgres from the host; in the api container, Host=localhost fails at startup with Npgsql 'Failed to connect to 127.0.0.1:5432' / 'Connection refused'.\" Source: this review's run. No text change."
+      },
+      {
+        "severity": "minor",
+        "section": 3,
+        "kind": "accuracy",
+        "quote": "healthcheck — a command Docker runs inside a container every few seconds",
+        "text": "The interval is whatever the healthcheck sets; Docker's default `--interval` is `30s` (Dockerfile reference, HEALTHCHECK options). \"Every few seconds\" holds for this lab's `interval: 3s`, not as a definition.",
+        "fix": "Change to: \"healthcheck — a command Docker runs inside a container at a set interval (every 3 seconds in the lab); after it succeeds, the container counts as healthy.\""
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "quote": "`build` tells Compose to build the image from `DonHang.Api/Dockerfile`",
+        "text": "With both `build` and `image` and no `pull_policy`, Compose \"attempts to pull the image first and then builds from source if the image isn't found in the registry or platform cache\" (compose-file/build.md L26-28). In the reviewer's `docker compose up -d api` nothing was built, because donhang-api:stage-1 already existed.",
+        "fix": "Change to: \"`build` tells Compose how to build the image from `DonHang.Api/Dockerfile` when it doesn't have `donhang-api:stage-1` yet, with the repository root as ...\" Keep the rest of the sentence."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "fix-required"
+  }
+}
