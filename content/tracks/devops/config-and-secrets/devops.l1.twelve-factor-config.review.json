@@ -1,0 +1,94 @@
+{
+  "id": "devops.l1.twelve-factor-config",
+  "technical": {
+    "reviewed_at": "2026-09-26T05:02:06+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "12factor.net/config (WebFetch): heading \"III. Config\", \"Store config in the environment\"; \"An app's config is everything that is likely to vary between deploys\"; \"...which requires strict separation of config from code\"; \"A litmus test ... is whether the codebase could be made open source at any moment, without compromising any credentials.\"; \"The twelve-factor app stores config in environment variables\". Index lists twelve factors I-XII. Note: no refs/ copy and 12factor.net is not a docs root in versions.yaml; used on caller's instruction.",
+        "source": "https://12factor.net/config ; https://12factor.net/ (WebFetch 2026-09-26)"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "12factor.net index (WebFetch): \"VI. Processes - Execute the app as one or more stateless processes\"; \"IX. Disposability - Maximize robustness with fast startup and graceful shutdown\". Same source caveat as claim 1 (not in versions.yaml).",
+        "source": "https://12factor.net/ (WebFetch 2026-09-26)"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Live lab run: docker inspect donhang-api --format {{.Image}} → sha256:e29a55ac5d91... before; after JWT_SIGNING_KEY=$(openssl rand -base64 48) docker compose up -d api → container id changed (1e6a64b6→08d5f880), Jwt__SigningKey hash changed, image still sha256:e29a55ac5d91...; after docker compose up -d api → container ac20d362, key hash back to original, image unchanged. Equals docker image inspect donhang-api:stage-1 Id.",
+        "source": "live run in examples/don-hang (HEAD = stage-1^{commit} 4fca60a), 2026-09-26"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "git grep -n \"Host=\" -- DonHang.Api DonHang.Infrastructure DonHang.Domain → one line: DonHang.Infrastructure/DesignTimeDbContextFactory.cs:14 builder.UseNpgsql(\"Host=localhost;Database=donhang;Username=donhang;Password=design-time-only\"). Comment lines 6-8: \"Used only by `dotnet ef migrations add`/`database update` at design time — it never runs when DonHang.Api starts (Program.cs builds the real options).\"",
+        "source": "git show stage-1:DonHang.Infrastructure/DesignTimeDbContextFactory.cs; git grep at stage-1"
+      },
+      {
+        "n": 5,
+        "verdict": "rephrased",
+        "evidence": "appsettings.json at stage-1 holds only Logging, AllowedHosts, Jwt:Issuer, Jwt:Audience. docker-compose.yml api.environment: ConnectionStrings__Default: \"Host=db;Database=donhang;Username=donhang;Password=${POSTGRES_PASSWORD}\", Jwt__SigningKey: \"${JWT_SIGNING_KEY}\", ASPNETCORE_ENVIRONMENT: \"Development\". .gitignore lists .env. So only the connection string's password comes from .env; host, database and user are literal in the committed compose file.",
+        "source": "git show stage-1:DonHang.Api/appsettings.json, docker-compose.yml (api service), .gitignore",
+        "suggested_text": "The connection string, the signing key and the environment's name arrive from docker-compose.yml. The two secrets among them, the database password inside the connection string and the signing key, come from .env, which is never committed."
+      },
+      {
+        "n": 6,
+        "verdict": "rephrased",
+        "evidence": "Second half supported: 12factor.net/build-release-run: \"The release stage takes the build produced by the build stage and combines it with the deploy's current config.\" First half (\"factors are adopted as the app needs them\") is not stated anywhere on 12factor.net pages fetched (index, config, build-release-run); it is this course's approach, but section 6 presents it as a fact about twelve-factor.",
+        "source": "https://12factor.net/build-release-run (WebFetch 2026-09-26)",
+        "suggested_text": "This course takes the factors one at a time, as the lab needs them. Running the same image everywhere depends on config being outside the image."
+      }
+    ],
+    "issues": [
+      {
+        "severity": "major",
+        "section": 2,
+        "kind": "accuracy",
+        "text": "Unlisted claim, and false as written: the image donhang-api:stage-1 does contain a database address and a password. Checked: docker run --rm --entrypoint sh donhang-api:stage-1 → /app/DonHang.Infrastructure.dll contains the UTF-16 strings \"Host=localhost\" and \"Password=design-time-only\" (the compiled DesignTimeDbContextFactory). Same false statement in section 9 line 4: \"the API's image holds no address, password or key\". Section 5 later admits the string is in code, which contradicts \"never\".",
+        "quote": "The API's image never contains a database address, a password or a signing key.",
+        "fix": "Section 2: \"The API's image never contains the database address, password or signing key it actually uses.\" Section 9 line 4: \"The lab follows Config: the API's image holds none of the address, password or key the running API uses, and the secrets live in `.env`.\" Add the corrected sentence to claims (kind fact, source: image contents + Program.cs:16-24)."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "Imprecise: the connection string is not a secret that comes from .env; it is assembled in the committed docker-compose.yml, and only its password is substituted from .env (${POSTGRES_PASSWORD}). Host, database and user name are committed.",
+        "quote": "The two secrets among them come from `.env`, which is never committed.",
+        "fix": "Replace with: \"The two secrets among them, the database password inside the connection string and the signing key, come from `.env`, which is never committed.\" Update claim 5 to match."
+      },
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "opinion-as-fact",
+        "text": "Twelve-factor (12factor.net index, III, V) does not say factors are adopted incrementally; that is the course's stance, stated as a fact about the methodology. \"would have taken an afternoon\" is an unsupported estimate.",
+        "quote": "Actually the factors are practices to adopt as the app needs them, and this course takes them one at a time. ... would have taken an afternoon.",
+        "fix": "\"Actually this course takes the factors one at a time, as the lab needs them, and each one pays off on its own.\" Replace \"would have taken an afternoon\" with \"was the one that mattered first\" or drop the time estimate."
+      },
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "scope",
+        "text": "depth_notes: \"Không liệt kê hay giải thích 11 factor còn lại\". Section 6 characterises the other factors as a group and names \"the build factors\", which neither the outline nor claims cover. (Section 4's mention of stateless processes / fast start-stop follows outline item 3, which conflicts with depth_notes' \"Không nói stateless process hay disposability\"; the outline itself should be reconciled.)",
+        "quote": "The others deal with building, running and scaling the same app. ... which is Config and the build factors working together.",
+        "fix": "Replace the two sentences with: \"The others deal with other parts of running the same app. You notice this when the same image, started with different variables, behaves correctly in each place: one build, different config.\""
+      },
+      {
+        "severity": "minor",
+        "section": 3,
+        "kind": "version",
+        "text": "Claims 1-2 rest on The Twelve-Factor App, which has no entry in content/versions.yaml and no refs/ mirror; per prompt 04 a reviewer may only cite docs roots listed there. Verified here via WebFetch of 12factor.net on the caller's instruction only.",
+        "quote": "a published set of twelve principles for apps that run reliably in many environments",
+        "fix": "Owner decision: add `standards.twelve_factor: { docs: \"https://12factor.net/\" }` to content/versions.yaml (or a refs/ mirror) so this lesson and later ones naming other factors have an allowed source; set version_key on claims 1-2 accordingly."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "fix-required"
+  }
+}

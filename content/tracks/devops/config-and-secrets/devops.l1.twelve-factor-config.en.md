@@ -24,7 +24,7 @@ status: draft
 
 ## The situation
 
-Over this module, the lab has followed one habit without giving it a name. The API's image never contains a database address, a password or a signing key. Each of them arrives from outside when the container starts, and changing one means restarting the API, never rebuilding it. A teammate who joined from another company recognises the pattern at once and calls it "twelve-factor". Is that a rule you have to learn from scratch, or a name for what the lab already does, and what else does it ask for?
+Over this module, the lab has followed one habit without giving it a name. The API's image never contains the database address, password or signing key that the running API actually uses. Each of them arrives from outside when the container starts, and changing one means restarting the API, never rebuilding it. A teammate who joined from another company recognises the pattern at once and calls it "twelve-factor". Is that a rule you have to learn from scratch, or a name for what the lab already does, and what else does it ask for?
 
 ## Core concepts
 
@@ -46,11 +46,11 @@ The **twelve-factor app** is a list of practices for building apps that are depl
 
 The main result of following it is that one build serves every environment. The code is built once into an artifact, here a Docker image, and that same image runs on your laptop, in the lab and on a server. What differs between those places is only the set of environment variables around it. Moving the API to another database means changing a variable and restarting, not editing code and building again, so the thing you tested is the thing that runs.
 
-The other eleven factors cover other parts of running an app, such as keeping processes free of stored state, or starting and stopping them quickly. This module has taught only Config. The others will come up one at a time in later modules, where the lab needs them, not as a checklist to finish in one go.
+The other eleven factors cover other parts of running an app. This module has taught only Config. The others will come up one at a time in later modules, where the lab needs them, not as a checklist to finish in one go.
 
 ## In the Đơn Hàng system
 
-The lab passes the factor's quick check. The API's settings file holds only values that are the same everywhere, and the three values that differ, the connection string, the signing key and the environment's name, arrive from `docker-compose.yml`. The two secrets among them come from `.env`, which is never committed. The password that `scripts/dev-secrets.sh` writes is visible in the repository, but it is deliberately fake and protects only a local lab; a real server would get its own.
+The lab passes the factor's quick check. The API's settings file holds only values that are the same everywhere, and the three values that differ, the connection string, the signing key and the environment's name, arrive from `docker-compose.yml`. The database password inside the connection string and the signing key come from `.env`, which is never committed. The password that `scripts/dev-secrets.sh` writes is visible in the repository, but it is deliberately fake and protects only a local lab; a real server would get its own.
 
 The same image serves every configuration. In the last lesson you started the API with a different signing key and then with the original one again. Compose recreated the container each time, but from the same image, `donhang-api:stage-1`. Nothing was rebuilt; only the environment changed.
 
@@ -58,8 +58,8 @@ There is one connection string written in code, in `DonHang.Infrastructure/Desig
 
 ## Beginners often think…
 
-- **"Twelve-factor is a checklist every app must fully satisfy from day one, or it's being built wrong."** → Actually the factors are practices to adopt as the app needs them, and this course takes them one at a time. The lab follows Config fully today and meets others only as later modules need them. You notice this when a team argues about all twelve factors before its first deploy, while the one that mattered, keeping config out of the image, would have taken an afternoon.
-- **"Config living in environment variables is the whole of twelve-factor, and the other eleven factors are about something else entirely unrelated."** → Actually Config is one factor among twelve, and they support each other: building once and running the same image everywhere is only possible because config is outside it. The others deal with building, running and scaling the same app. You notice this when the same image, started with different variables, behaves correctly in each place, which is Config and the build factors working together.
+- **"Twelve-factor is a checklist every app must fully satisfy from day one, or it's being built wrong."** → Actually this course treats the factors as practices to adopt one at a time, as the app needs them. The lab follows Config fully today and meets others only as later modules need them. You notice this when a team argues about all twelve factors before its first deploy, while the one that mattered most for them, keeping config out of the image, could have been done first on its own.
+- **"Config living in environment variables is the whole of twelve-factor, and the other eleven factors are about something else entirely unrelated."** → Actually Config is one factor among twelve, and it supports the others: building once and running the same image everywhere is only possible because config is outside it. You notice this when the same image, started with different variables, behaves correctly in each place, which is what keeping config outside the image makes possible.
 
 ## Try it (3 minutes)
 
@@ -90,5 +90,5 @@ No. That connection string is used only by the `dotnet ef` tools when a develope
 1. The **twelve-factor app** is a set of twelve practices for apps that run in many environments.
 2. Its Config factor keeps everything that varies between environments in the environment, never in the code.
 3. The code is built once into one image, and only the environment variables around it change.
-4. The lab follows Config: the API's image holds no address, password or key, and the secrets live in `.env`.
+4. The lab follows Config: the image holds none of the settings the running API uses, and its secrets live in `.env`.
 5. The other factors come up one at a time in later modules, not as a checklist to finish at once.
