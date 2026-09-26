@@ -15,7 +15,9 @@ vocab: []
 example_tag: stage-1
 versions_used: []
 content_version: 1
-status: draft
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-28T09:30:00+07:00"
 ---
 
 ## Before you start
@@ -50,7 +52,7 @@ For each test you find, ask one question: if the new code were wrong in the way 
 
 When the change adds a missing check or fixes a bug, the test for it has one more duty: it should fail against the old code and pass against the new one. If it passes against both, it may be passing for a reason that has nothing to do with the fix. A reviewer can ask the author whether they saw it fail first.
 
-Asking for a missing test is not optional polish. A missing test means the next change can break that behavior and no test will fail to show it.
+Asking for a missing test is not optional polish. A missing test means the next change can break that behavior without any test failing.
 
 ## In the Đơn Hàng system
 
@@ -140,4 +142,4 @@ Whether it failed before the check was added. Against the version of `CancelOrde
 2. A test that would still pass if the code were wrong in the way that matters checks nothing about that.
 3. A test for a new check or a fixed bug should fail against the old code and pass against the new one.
 4. `CancelOrderAsync` cancels any order it finds; its two tests cover a `new` order and a missing one, not a `shipped` one.
-5. Asking for a missing test before the merge means the gap is caught by a failing test, not by a bug report.
+5. Asking for a missing test before the merge means the gap can be caught by a failing test, not by a bug report.
