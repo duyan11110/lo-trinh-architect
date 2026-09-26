@@ -1,0 +1,106 @@
+{
+  "id": "devops.l1.multi-stage-builds",
+  "technical": {
+    "reviewed_at": "2026-09-26T21:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "source": "refs/docker-docs/content/manuals/build/building/multi-stage.md L19-22, L58-61, L90-100",
+        "evidence": "\"Each `FROM` instruction can use a different base, and each of them begins a new stage of the build. You can selectively copy artifacts from one stage to another, leaving behind everything you don't want in the final image.\" / \"The Go SDK and any intermediate artifacts are left behind, and not saved in the final image.\" `--target` can stop at another stage, so \"by default the last stage\" is right as the claim words it. The lesson prose drops \"by default\" and adds \"The stages run in order\" (see issues)."
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "source": "git -C examples/don-hang show stage-1:DonHang.Api/Dockerfile",
+        "evidence": "Lines 1-5 and 19-28 at stage-1 match both lesson blocks character for character. stage-1^{commit} == HEAD == 4fca60af. Line 25 is `COPY --from=build /app .`, line 5 is `FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build`."
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "source": "reviewer run (docker images, docker run); refs/dotnet-docs/docs/core/docker/introduction.md L16",
+        "evidence": "`dotnet --list-sdks` in donhang-api:stage-1 prints nothing; `--list-runtimes` prints Microsoft.AspNetCore.App 10.0.12 and Microsoft.NETCore.App 10.0.12. `docker images`: mcr.microsoft.com/dotnet/sdk:10.0 917MB vs donhang-api:stage-1 241MB (~3.8x). Docs: \"There are runtime images ... for production and SDK images ... for building your code\"."
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "source": "refs/docker-docs/_vendor/github.com/moby/buildkit/frontend/dockerfile/docs/reference.md L1238, L2108; refs/aspnetcore-docs/aspnetcore/fundamentals/servers/kestrel/endpoints.md L30-40",
+        "evidence": "\"The `EXPOSE` instruction doesn't actually publish the port. It functions as a type of documentation ...\" / \"An `ENTRYPOINT` allows you to configure a container that will run as an executable.\" / Kestrel, \"Specify endpoints with URLs\": \"`ASPNETCORE_URLS` environment variable\"."
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "source": "reviewer run, Docker 28 / Docker Desktop, 2026-09-26",
+        "evidence": "`docker images donhang-api` -> one row `donhang-api stage-1 e29a55ac5d91 241MB`. list-sdks: empty; list-runtimes: AspNetCore.App 10.0.12, NETCore.App 10.0.12. `ls /src` -> \"ls: cannot access '/src': No such file or directory\"; `ls /app` lists DonHang.Api.dll among 25 files."
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "source": "refs/docker-docs/content/get-started/docker-concepts/building-images/multi-stage-builds.md L22; refs/docker-docs/content/manuals/build/building/best-practices.md L76",
+        "evidence": "\"By separating the build environment from the final runtime environment, you can significantly reduce the image size and attack surface.\" / \"... dependencies can considerably lower the attack surface.\" The claim text is supported; the lesson sentence next to it overreaches (\"pure risk\", \"a package downloader\" while the final image has apt) - see issues."
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "source": "refs/docker-docs/content/manuals/build/cache/invalidation.md L24-27; devops.l1.dockerfile-for-dotnet.review.json technical claim 11 run",
+        "evidence": "\"For the `ADD` and `COPY` instructions ... the builder calculates a cache checksum from file metadata ... cache is invalidated if the file metadata has changed for any of the files\". Recorded run (R3, stage-1): after a code edit `[final 4/4] COPY --from=build /app .` executed while final 2/4 and 3/4 were CACHED. Not re-run here (would require editing examples/don-hang)."
+      }
+    ],
+    "issues": [
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "accuracy",
+        "quote": "The stages run in order, and only the last one becomes the image you tag and run.",
+        "text": "Unlisted claim: \"The stages run in order\" is contradicted for BuildKit (the builder in Docker 28): \"BuildKit only builds the stages that the target stage depends on\" (multi-stage.md L149) and BuildKit can \"Parallelize building independent build stages\" (buildkit/_index.md L14). In this Dockerfile the final stage's FROM/WORKDIR/RUN apt-get do not depend on `build` and may run alongside it; only `COPY --from=build` has to wait.",
+        "fix": "Replace the sentence with: \"Only the last stage becomes the image you tag and run, unless you ask the build for a different one.\" Do not state an execution order. Claim 1 already covers the rest."
+      },
+      {
+        "severity": "minor",
+        "section": 3,
+        "kind": "accuracy",
+        "quote": "each `FROM` starts a new stage, and only the last stage becomes the image.",
+        "text": "\"only the last stage\" is the default, not a rule: `docker build --target <stage>` builds another stage into the image (multi-stage.md L90-100). Claim 1 says \"by default\"; the lesson text (sections 3 and 9 line 1) drops it.",
+        "fix": "In section 3 and summary line 1 write \"and, by default, only the last stage becomes the image.\" Do not introduce `--target` itself (beyond scope)."
+      },
+      {
+        "severity": "minor",
+        "section": 2,
+        "kind": "code",
+        "quote": "copies every source folder into `/src`",
+        "text": "Unlisted and not true of this code: lines 8-16 copy global.json, Directory.Packages.props and three folders (DonHang.Domain, DonHang.Infrastructure, DonHang.Api). Other source folders at stage-1 (DonHang.Tests, DonHang.App, samples) are not copied.",
+        "fix": "Change to \"copies the source of the API and the two projects it uses into `/src`\"."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "opinion-as-fact",
+        "quote": "A compiler, a package downloader and the full source code are all useful while building and pure risk while running.",
+        "text": "\"pure risk\" is rhetoric, not a documented fact. \"a package downloader\" is misleading here: the final image still has apt (the `final` stage itself runs `apt-get install`), so a learner who checks finds a package downloader in the runtime image. The sentence means the SDK/NuGet tooling. Same wording in quiz q5 explanation.correct.",
+        "fix": "Rewrite: \"The compiler, the .NET build tools that download NuGet packages, and the source code are needed while building, but not while running.\" Mirror the change in q5 explanation.correct (en and vi)."
+      },
+      {
+        "severity": "major",
+        "section": "devops.l1.multi-stage-builds.q4",
+        "kind": "quiz",
+        "quote": "moves `EXPOSE`, `ENV` and `ENTRYPOINT` to the end of the build part. The API still starts",
+        "text": "Premise ambiguous and possibly false. If only EXPOSE/ENV/ENTRYPOINT are kept after the build part (WORKDIR /app dropped with the final stage), the working directory is /src and `ENTRYPOINT [\"dotnet\", \"DonHang.Api.dll\"]` finds no DonHang.Api.dll there (it was published to /app), so the API would not start. It only works if `WORKDIR /app` also survives.",
+        "fix": "Rewrite the context (en and vi): \"a teammate deletes just two lines, `FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final` and `COPY --from=build /app .`, and leaves everything else in place.\" Key a unchanged."
+      },
+      {
+        "severity": "minor",
+        "section": "devops.l1.multi-stage-builds.q5",
+        "kind": "quiz",
+        "quote": "The API is already compiled in the `build` stage; nothing is compiled at startup.",
+        "text": "\"nothing is compiled at startup\" is false for .NET: the runtime JIT-compiles the IL in DonHang.Api.dll to machine code while the app runs. Key a is correct; the explanation for option b states a falsehood.",
+        "fix": "Explanation b (en): \"The API is already built into `DonHang.Api.dll` in the `build` stage; the runtime image has no C# compiler and does not need one.\" Mirror in vi."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "fix-required"
+  }
+}

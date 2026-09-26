@@ -24,11 +24,11 @@ status: draft
 
 ## The situation
 
-The build part of `DonHang.Api/Dockerfile` starts from the SDK image, copies every source folder into `/src`, and compiles the API into `/app`. The SDK image alone is several times larger than the finished API needs. Yet when you look for `/src` or the SDK inside the image the lab actually runs, `donhang-api:stage-1`, neither is there: only the runtime and the compiled app. The file never deletes anything. So how does an image built on the SDK end up without it?
+The build part of `DonHang.Api/Dockerfile` starts from the SDK image, copies the API's three source folders into `/src`, and compiles the API into `/app`. The SDK image alone is several times larger than the finished API needs. Yet when you look for `/src` or the SDK inside the image the lab actually runs, `donhang-api:stage-1`, neither is there: only the runtime and the compiled app. The file never deletes anything. So how does an image built on the SDK end up without it?
 
 ## Core concepts
 
-- **multi-stage build** — a `Dockerfile` with more than one `FROM`; each `FROM` starts a new stage, and only the last stage becomes the image.
+- **multi-stage build** — a `Dockerfile` with more than one `FROM`; each `FROM` starts a new stage, and by default only the last stage becomes the image.
 - stage — one part of a multi-stage `Dockerfile`, from its `FROM` to the next; `AS name` gives it a name.
 - `COPY --from=` — a `COPY` that takes files from an earlier stage instead of from your repository.
 
@@ -42,11 +42,11 @@ flowchart LR
   F --> I[the image: donhang-api]
 ```
 
-A **multi-stage build** puts more than one `FROM` in the same `Dockerfile`. Each `FROM` starts a new stage from its own base image, with none of the files from the stage before. The stages run in order, and only the last one becomes the image you tag and run. Everything an earlier stage created stays behind unless a later stage asks for it.
+A **multi-stage build** puts more than one `FROM` in the same `Dockerfile`. Each `FROM` starts a new stage from its own base image, with none of the files from the stage before. By default, only the last stage becomes the image you tag and run. Everything an earlier stage created stays behind unless a later stage asks for it.
 
 A later stage asks with `COPY --from=`. It works like any `COPY`, but instead of copying from your repository, it copies from an earlier stage's files. So the first stage can have every heavy tool it needs to build, the last stage can start from a small base that only runs things, and one `COPY --from=` carries the result across.
 
-The final image is smaller, so there is less to store and to download to every machine that runs it. It also has a smaller attack surface: fewer installed programs that an attacker could misuse, and fewer that need security updates. A compiler, a package downloader and the full source code are all useful while building and pure risk while running.
+The final image is smaller, so there is less to store and to download to every machine that runs it. It also has a smaller attack surface: fewer installed programs that an attacker could misuse, and fewer that need security updates. The SDK's compiler and build tools and the full source code are needed while building, but the running API never uses them, so shipping them only adds size and risk.
 
 ## In the Đơn Hàng system
 
@@ -110,7 +110,7 @@ They stayed in the `build` stage, which is not part of the final image: a multi-
 
 ## Five-line summary
 
-1. A **multi-stage build** has several `FROM`s; each starts a new stage, and only the last becomes the image.
+1. A **multi-stage build** has several `FROM`s; each starts a new stage, and by default the last becomes the image.
 2. `COPY --from=build /app .` copies just the published API from the `build` stage into the `final` stage.
 3. The API's image starts from the runtime image, so it has neither the SDK nor the source code.
 4. A runtime-only image is smaller to download and has fewer installed programs an attacker could misuse.
