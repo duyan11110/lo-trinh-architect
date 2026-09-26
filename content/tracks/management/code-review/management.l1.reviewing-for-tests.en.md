@@ -46,11 +46,11 @@ flowchart TD
 
 Reviewing for tests starts from the change, not from the test file. First list what the new code does: what it returns, what it changes, what it sends, and what it should refuse. Then, for each item, find the test that checks it. A test file in the diff only tells you that some test changed. It does not tell you which behavior is covered.
 
-For each test you find, ask one question: if the new code were wrong in the way that matters, would this test fail? A test that seeds a fake with an order already marked cancelled and then asserts it is cancelled passes whatever the service does. It checks what the fake returns, not what the code under review does. Tests like that are worth asking about before the merge, not after a bug report.
+For each test you find, ask one question: if the new code were wrong in the way that matters, would this test fail? A test that seeds a fake with an order already marked cancelled and then asserts it is cancelled passes even if the service never changes the status. On the status, it checks what the fake already holds, not what the code under review does. Tests like that are worth asking about before the merge, not after a bug report.
 
 When the change adds a missing check or fixes a bug, the test for it has one more duty: it should fail against the old code and pass against the new one. If it passes against both, it may be passing for a reason that has nothing to do with the fix. A reviewer can ask the author whether they saw it fail first.
 
-Asking for a missing test is not optional polish. A missing test means the next change can break that behavior without anyone noticing.
+Asking for a missing test is not optional polish. A missing test means the next change can break that behavior and the build will not show it.
 
 ## In the Đơn Hàng system
 
@@ -106,7 +106,7 @@ A reviewer's comment could be a question: "The story is about unpaid orders; sho
 ## Beginners often think…
 
 - **"A PR that touches a test file has adequate test coverage for what it changed."** → Actually a changed test file says nothing about which behavior is checked; only matching tests to the new behavior does. You notice this in `OrderServiceTests`, where two cancellation tests pass and a `shipped` order can still be cancelled.
-- **"Asking an author to add a test is optional feedback, less important than catching an actual bug."** → Actually a missing test is how a bug gets in later without anyone noticing, because nothing fails when the behavior breaks. You notice this when a later change breaks cancellation and the build stays green, because no test ever checked that part.
+- **"Asking an author to add a test is optional feedback, less important than catching an actual bug."** → Actually a missing test is how a bug can get in later unnoticed, because no test fails when the behavior breaks. You notice this when a later change breaks cancellation and the build stays green, because no test ever checked that part.
 
 ## Try it (3 minutes)
 
@@ -138,4 +138,4 @@ Whether it failed before the check was added. Against the version of `CancelOrde
 2. A test that would still pass if the code were wrong in the way that matters checks nothing about that.
 3. A test for a new check or a fixed bug should fail against the old code and pass against the new one.
 4. `CancelOrderAsync` cancels any order it finds; its two tests cover a `new` order and a missing one, not a `shipped` one.
-5. Asking for a missing test before the merge is cheaper than finding the gap after a bug report.
+5. Asking for a missing test before the merge means the gap can be caught by the build, not by a bug report.
