@@ -15,7 +15,9 @@ vocab: []
 example_tag: stage-1
 versions_used: []
 content_version: 1
-status: draft
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-28T04:00:00+07:00"
 ---
 
 ## Before you start
@@ -44,11 +46,11 @@ flowchart LR
   L -.-> E
 ```
 
-A team estimates so that it can plan. At sprint planning, the question is how many of the waiting stories fit into the next sprint. That question cannot be answered without some idea of how big each story is compared with the others. The numbers in Sprint 14 compare stories with each other; they are not hours or days, and the next lesson shows how they are chosen. The same holds for larger work: to say whether a feature is a matter of weeks or of months, the team needs a rough size for its parts.
+A team estimates so that it can plan. At sprint planning, the question is how many of the waiting stories fit into the next sprint. That question cannot be answered without some idea of how big each story is compared with the others. The numbers in the situation above, from Sprint 14, compare stories with each other; they are not hours or days, and the next lesson shows how they are chosen. The same holds for larger work: to say whether a feature is a matter of weeks or of months, the team needs a rough size for its parts.
 
 An estimate is made before the work starts, so it can only use what the team knows then. The code has not been read closely, the unexpected problem has not appeared yet, and the person who knows the old module may be on holiday. Estimates will therefore sometimes be wrong, in both directions: some work turns out smaller than it looked, and some larger. That is expected, not a sign that the team did something wrong.
 
-What an estimate is not is a promise to someone outside the team. It is the team's own planning tool. A story with no estimate can still be worked on; what the team cannot do without some idea of each story's size is decide how many stories to take into a sprint. After the work is done, the team can look back and see how its guesses compared with reality, which is how the next estimates get better; that is the dashed arrow in the diagram.
+An estimate is not a promise to someone outside the team. It is the team's own planning tool. A story with no estimate can still be worked on; what the team cannot do without some idea of each story's size is decide how many stories to take into a sprint. After the work is done, the team can look back and see how its guesses compared with reality, which is how the next estimates get better; that is the dashed arrow in the diagram.
 
 ## In the Đơn Hàng system
 
