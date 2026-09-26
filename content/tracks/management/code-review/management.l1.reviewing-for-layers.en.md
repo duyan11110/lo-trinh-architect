@@ -13,7 +13,7 @@ prereqs: [management.l1.code-review-basics, design.l1.the-controller-layer]
 related: []
 vocab: []
 example_tag: stage-1
-versions_used: []
+versions_used: [aspnetcore]
 content_version: 1
 status: draft
 ---
@@ -25,7 +25,7 @@ status: draft
 
 ## The situation
 
-Imagine the login endpoint of Đơn Hàng arriving today as a pull request, and you are its reviewer. The tests pass, and when you run the API and sign in with the development account, you get a token back. Then you read the diff and notice that the controller asks the database for the customer itself and checks the password right there, in the same method that answers HTTP. The author says: "It works, and it is ten lines. Why would you comment on it?" Is there anything to say about code that already works?
+Imagine the login endpoint of Đơn Hàng arriving today as a pull request, and you are its reviewer. The tests pass, and when you run the API and sign in as one of the seeded customers with the development password, you get a token back. Then you read the diff and notice that the controller asks the database for the customer itself and checks the password right there, in the same method that answers HTTP. The author says: "It works, and it is ten lines. Why would you comment on it?" Is there anything to say about code that already works?
 
 ## Core concepts
 
@@ -49,7 +49,7 @@ Reviewing for layers asks one question of every new piece of code in a diff: wha
 
 The diagram is the whole check. Take a line of new code, name the kind of work it does, and compare that with the file it sits in. A controller that asks the database for rows, a service that reads the HTTP request to see who is signed in, or a repository method that decides whether an order may be cancelled, all fail the check. Code that works in the wrong place still fails it, because working was never the question.
 
-The reason is the promise the layers make. With the Single Responsibility Principle (SRP), each layer has one reason to change: HTTP details change the controller, a rule change touches the service, a query change touches the repository. Each misplaced line quietly breaks that promise for one more change. No single pull request looks harmful, but after enough of them a rule lives in three places and nobody knows which one is used.
+The reason is the promise the layers make. Layers apply the idea behind the Single Responsibility Principle (SRP) at a larger size: each layer is meant to change for one kind of reason. HTTP details change the controller, a rule change touches the service, a query change touches the repository. Each misplaced line quietly breaks that promise for one more change. No single pull request looks harmful, but after enough of them a rule lives in three places and nobody knows which one is used.
 
 Timing matters too. In review, moving the code is a comment and a few minutes of the author's time. After the merge, other pull requests may start to depend on the code where it is, and moving it means changing theirs as well.
 
@@ -130,4 +130,4 @@ It is a real trade-off, not a wrong answer. With no rule today, going straight t
 2. A database query in a controller, or a rule in a repository, is a violation worth a comment even if it works.
 3. Each misplaced line breaks the one-reason-to-change promise a little, and many of them spread a rule across places.
 4. In review, moving code costs a comment; after merge, other changes may already depend on where it is.
-5. `AuthController.Login` queries the database and checks the password itself; `OrdersController.Create` only calls the service.
+5. `AuthController.Login` queries the database and checks the password itself; `OrdersController.Create` only reads the request, calls the service and answers.
