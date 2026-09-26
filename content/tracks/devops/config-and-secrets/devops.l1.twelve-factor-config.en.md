@@ -15,7 +15,9 @@ vocab: [twelve-factor]
 example_tag: stage-1
 versions_used: [docker]
 content_version: 1
-status: draft
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-28T01:00:00+07:00"
 ---
 
 ## Before you start
@@ -50,7 +52,7 @@ The other eleven factors cover other parts of running an app. This module has ta
 
 ## In the Đơn Hàng system
 
-The lab passes the factor's quick check. The API's settings file, `appsettings.json`, holds only values that are the same everywhere, and the three values that differ, the connection string, the signing key and the environment's name (`ASPNETCORE_ENVIRONMENT`), arrive from `docker-compose.yml`. The database password inside the connection string and the signing key come from `.env`, which is never committed. The fake password that ends up in `.env` is written out in `scripts/dev-secrets.sh`, which is committed, so it is visible in the repository. That is deliberate: it protects only a local lab, and a real server would get its own.
+The lab passes the factor's quick check. The API's settings file, `appsettings.json`, holds only values that are the same everywhere, and the three values that differ, the connection string, the signing key and the environment's name (`ASPNETCORE_ENVIRONMENT`), arrive from `docker-compose.yml`. The database password inside the connection string and the signing key come from `.env`, which is never committed. The fake password that ends up in `.env` is written out in `scripts/dev-secrets.sh`, which is committed, so it is visible in the repository. That is deliberate: it protects only a local lab, so publishing the code would give away nothing that protects a real system, and a real server would get its own.
 
 The same image serves every configuration. In the last lesson you started the API with a different signing key and then with the original one again. Compose recreated the container each time, but from the same image, `donhang-api:stage-1`. Nothing was rebuilt; only the environment changed.
 
@@ -59,7 +61,7 @@ There is one connection string written in code, in `DonHang.Infrastructure/Desig
 ## Beginners often think…
 
 - **"Twelve-factor is a checklist every app must fully satisfy from day one, or it's being built wrong."** → Actually this course treats the factors as practices to adopt one at a time, as the app needs them. The lab follows Config fully today and meets others only as later modules need them. You notice this when a team argues about all twelve factors before its first deploy, while the one that mattered most for them, keeping config out of the image, could have been done first on its own.
-- **"Config living in environment variables is the whole of twelve-factor, and the other eleven factors are about something else entirely unrelated."** → Actually Config is one factor among twelve; the others cover other parts of building and running an app, and later modules take them up. You notice this in later modules, when a problem that has nothing to do with config turns out to be what another factor is about.
+- **"Config living in environment variables is the whole of twelve-factor, and the other eleven factors are about something else entirely unrelated."** → Actually Config is one factor among twelve; the others cover other parts of building and running an app, with the same aim of an app that runs reliably in many environments, and later modules take them up. You notice this in later modules, when a problem that has nothing to do with config turns out to be what another factor is about.
 
 ## Try it (3 minutes)
 
@@ -67,7 +69,7 @@ With the lab running, from the repository root, in a bash terminal on your own m
 
 1. Run `docker inspect donhang-api --format "{{.Image}}"` and note the first few characters after `sha256:`.
 2. Run `JWT_SIGNING_KEY=$(openssl rand -base64 48) docker compose up -d api`, then repeat step 1.
-3. Run `docker compose up -d api` to put the lab's key back, then run `git grep -n "Host=" -- DonHang.Api DonHang.Infrastructure DonHang.Domain`, which searches the API's three projects for `Host=`, the part of a connection string that names the database server.
+3. Run `docker compose up -d api` to put the lab's key back, then run `git grep -n "Host=" -- DonHang.Api DonHang.Infrastructure DonHang.Domain`, which searches the API's three projects for `Host=` (not `docker-compose.yml`, which is the environment the lab provides, not the API's code), the part of a connection string that names the database server.
 
 Expected result: 1 — an id starting with `sha256:`. 2 — Compose recreates `donhang-api`, and the image id is exactly the same. 3 — one match, in `DonHang.Infrastructure/DesignTimeDbContextFactory.cs`.
 
