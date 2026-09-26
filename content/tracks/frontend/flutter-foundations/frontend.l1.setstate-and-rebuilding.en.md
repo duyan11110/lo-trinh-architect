@@ -44,7 +44,7 @@ flowchart LR
 
 A `State` object's fields are ordinary variables. Assigning a new value to one changes the variable and nothing else. Flutter does not watch your fields, so it has no idea anything happened, and the screen keeps showing the last description it was given.
 
-**setState** is how a `State` tells Flutter. You call it with a function that makes the change, such as `setState(() => _products = ...)`. Flutter runs that function straight away, then marks this `State` as needing a new build. Shortly after, before the next frame is drawn, it calls the `State`'s `build` method again. The new description reflects the changed field, and Flutter applies the differences to the screen, as in the widget-tree lesson.
+**setState** is how a `State` tells Flutter. You call it with a function that makes the change, such as `setState(() { _products = ...; })`. The braces matter: the function must not return a `Future`, and a block body returns nothing, while `() => _products = ...` would return the new `Future` and trip a check Flutter makes in debug mode. Flutter runs that function straight away, then marks this `State` as needing a new build. Shortly after, before the next frame is drawn, it calls the `State`'s `build` method again. The new description reflects the changed field, and Flutter applies the differences to the screen, as in the widget-tree lesson.
 
 The rebuild covers this widget's subtree, not the whole app. The `State` that called `setState` builds again, and the widgets it returns are updated below it. Widgets above it, such as `DonHangApp` and `MaterialApp`, are not built again, and neither are parts of the app outside this subtree. That keeps a small change cheap: tapping a button on one screen does not redescribe everything else.
 
@@ -53,10 +53,10 @@ The rebuild covers this widget's subtree, not the whole app. The `State` that ca
 The refresh button on the product screen calls this method:
 
 ```dart file=DonHang.App/lib/screens/product_list_screen.dart tag=stage-1 lines=27-27
-  void _reload() => setState(() => _products = widget.apiClient.fetchProducts());
+  void _reload() => setState(() { _products = widget.apiClient.fetchProducts(); });
 ```
 
-The function passed to `setState` starts a new load and stores it in `_products`. `setState` then schedules `_ProductListScreenState` to build again. In that build, the `FutureBuilder` receives the new `_products`. It is waiting for it, so it shows the loading indicator; when the products arrive, it builds again and shows the list. That is the whole "a new tree describing the current state" idea, triggered this time by a tap.
+The function passed to `setState` starts a new load and stores it in `_products`, inside braces so it returns nothing. `setState` then schedules `_ProductListScreenState` to build again. In that build, the `FutureBuilder` receives the new `_products`. It is waiting for it, so it shows the loading indicator; when the products arrive, it builds again and shows the list. That is the whole "a new tree describing the current state" idea, triggered this time by a tap.
 
 The sign-in screen uses the same call to show that work is in progress:
 
@@ -68,7 +68,7 @@ The sign-in screen uses the same call to show that work is in progress:
     });
 ```
 
-Two fields change inside one `setState`, so one rebuild shows both: the button is replaced by a loading indicator, and any old error message disappears. The screen changes before the request to the server has even been sent, because `setState` comes first in `_submit`.
+Two fields change inside one `setState`, so one rebuild shows both: the button's label is replaced by a loading indicator and the button is disabled, and any old error message disappears. The state changes before the request starts, because `setState` comes first in `_submit`; the next frame shows the indicator while the request is in progress.
 
 ## Beginners often think…
 
@@ -81,9 +81,9 @@ Predict what the product screen does in each case, using `_reload` above as the 
 
 1. `_reload` exactly as it is, and the user presses the refresh button.
 2. `_reload` rewritten as `void _reload() { _products = widget.apiClient.fetchProducts(); }`, without `setState`, and the user presses the button.
-3. The version from step 2, and then the user resizes the window, which makes Flutter build the screen for its own reasons.
+3. The version from step 2, and then suppose something else later makes this screen's `build` run again.
 
-Expected result: 1 — the loading indicator appears, then the refreshed list. 2 — a request goes to the server, but the screen does not change. 3 — at the next build the screen suddenly catches up and shows the new load.
+Expected result: 1 — the loading indicator appears, then the refreshed list. 2 — a request goes to the server, but the screen does not change. 3 — at that build the screen catches up and shows the new load.
 
 What does case 3 tell you about why case 2 looked broken?
 
