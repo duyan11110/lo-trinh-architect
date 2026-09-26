@@ -1,0 +1,112 @@
+{
+  "id": "devops.l1.volumes",
+  "technical": {
+    "reviewed_at": "2026-09-26T08:20:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "storage/_index.md: \"By default all files created inside a container are stored on a writable container layer ... Data written to the container layer doesn't persist when the container is destroyed.\" volumes.md: \"A volume's contents exist outside the lifecycle of a given container. When a container is destroyed, the writable layer is destroyed with it. Using a volume ensures that the data is persisted even if the container using it is removed.\" Confirmed by running the Try-it (claim 6).",
+        "source": "refs/docker-docs/content/manuals/engine/storage/_index.md; refs/docker-docs/content/manuals/engine/storage/volumes.md (A volume's lifecycle)"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "bind-mounts.md: \"When you use a bind mount, a file or directory on the host machine is mounted from the host into a container. By contrast, when you use a volume, a new directory is created within Docker's storage directory on the host machine. Docker creates and maintains this storage location\". volumes.md: \"bind mounts are dependent on the directory structure and OS of the host machine, volumes are completely managed by Docker.\" (The lesson's extra 'and a named volume is not [tied to one machine]' is outside this claim; see issues.)",
+        "source": "refs/docker-docs/content/manuals/engine/storage/bind-mounts.md; volumes.md (When to use volumes)"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "git -C examples/don-hang show stage-1:docker-compose.yml, lines 66-69: '- ./db/schema.sql:/docker-entrypoint-initdb.d/10-schema.sql:ro', '- ./db/seed.sql:/docker-entrypoint-initdb.d/20-seed.sql:ro', '- db-data:/var/lib/postgresql/data'; lines 126-130 top-level 'volumes: db-data: caddy-data: caddy-config: lab-config:'. docker inspect donhang-db Mounts: two entries \"Type\":\"bind\",\"RW\":false and one \"Type\":\"volume\",\"Name\":\"donhang_db-data\",\"Destination\":\"/var/lib/postgresql/data\".",
+        "source": "examples/don-hang@stage-1 docker-compose.yml:56-69,126-130; docker inspect on the running lab"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Execution: after docker compose rm -sf db and up, docker logs donhang-db printed \"PostgreSQL Database directory appears to contain a database; Skipping initialization\". /usr/local/bin/docker-entrypoint.sh in postgres:17.6-alpine: 'if [ -s \"$PGDATA/PG_VERSION\" ]; then DATABASE_ALREADY_EXISTS=true' and 'if [ -z \"$DATABASE_ALREADY_EXISTS\" ]; then ... docker_process_init_files /docker-entrypoint-initdb.d/*'. PGDATA=/var/lib/postgresql/data. (Image behaviour, not PostgreSQL server docs; settled by execution.)",
+        "source": "docker exec donhang-db (entrypoint script, logs), 2026-09-26"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "docker-compose.yml@stage-1 line 3 'name: donhang'; lab volumes line 24 '- ./:/repo:ro'. compose-file/volumes.md: \"instead of attempting to create a volume called `{project_name}_db-data`\"; \"Running `docker compose up` creates the volume if it doesn't already exist.\" docker volume ls on the lab: donhang_caddy-config, donhang_caddy-data, donhang_db-data, donhang_lab-config.",
+        "source": "refs/docker-docs/content/reference/compose-file/volumes.md; docker volume ls, 2026-09-26"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Ran on the lab (Docker 28.0.1, Compose v2.33.1-desktop.1): step 1 -> 25. 'docker compose rm -sf db' -> 'Container donhang-db Stopped / Going to remove donhang-db / Removed'; docker volume ls still lists donhang_db-data. 'docker compose up -d --wait db' -> 'Container donhang-db Created ... Healthy'; step 1 again -> 25. compose rm --help: '-s, --stop Stop the containers, if required, before removing', '-f, --force Don't ask to confirm removal'.",
+        "source": "execution in examples/don-hang, 2026-09-26; docker compose rm --help (v2.33.1)"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "psql --help inside donhang-db (psql 17.6): \"-t, --tuples-only print rows only\", \"-A, --no-align unaligned table output mode\", \"-c, --command=COMMAND run only single command (SQL or internal) and exit\". Output of step 1 was the bare line '25'.",
+        "source": "docker exec donhang-db psql --help, 2026-09-26"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "volumes.md: \"When you create a volume, it's stored within a directory on the Docker host. When you mount the volume into a container, this directory is what's mounted into the container.\" Backup is a separate, explicit procedure (\"Back up, restore, or migrate data volumes ... Pass a command that tars the contents of the `dbdata` volume to a `backup.tar` file\"). Nothing in the lab makes a second copy. Ledger kind 'opinion' is mislabelled; this is behaviour.",
+        "source": "refs/docker-docs/content/manuals/engine/storage/volumes.md (intro; Back up, restore, or migrate data volumes)"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Unlisted claim, contradicted by Docker's docs: the lesson calls bind mounts a kind of volume. storage/_index.md lists 'Volume mounts' and 'Bind mounts' as separate types of storage mount; docker inspect donhang-db shows \"Type\":\"bind\" vs \"Type\":\"volume\"; docker volume ls (used in the Try-it) never lists bind mounts. A junior who reads 'both are volumes' then sees only named volumes in docker volume ls. Outline item 3 ('both are volumes in Docker's sense') carries the same error.",
+        "quote": "Docker offers two common kinds. ... Both are volumes in the sense of this lesson: storage that is not part of the container.",
+        "fix": "Replace with: \"Docker offers two common ways to keep data outside the container. A named volume ... [unchanged]. A bind mount ... [unchanged]. Docker's own documentation calls only the first a volume, which is why `docker volume ls` lists `donhang_db-data` but never `/repo`; both keep data out of the container's own changes.\" Propose to the owner rewording outline item 3 in track.yaml to match."
+      },
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Unlisted claim, wrong as written: a named volume with the default (local) driver is also tied to one machine. volumes.md: \"When you create a volume, it's stored within a directory on the Docker host.\" Sharing across machines needs a volume driver (volumes.md 'Share data between machines'), which depth_notes excludes. The outline only says a named volume is not tied to a specific host path.",
+        "quote": "The difference is that a bind mount is tied to one path on one machine, and a named volume is not.",
+        "fix": "Replace with: \"The difference is that a bind mount is tied to one path you pick on your machine, while a named volume is found by its name and Docker decides where on disk it is kept.\""
+      },
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Unlisted claim, overbroad: not every volume is removed only on purpose. volumes.md: anonymous volumes \"persist even if you remove the container that uses them, except if you use the `--rm` flag ... in which case the anonymous volume associated with the container is destroyed.\" True as written only for named volumes, which is what the lab uses.",
+        "quote": "The volume has its own lifecycle: it is created once, used by whichever container mounts it, and removed only when someone removes it on purpose.",
+        "fix": "Make it about named volumes and add it to the claims ledger: \"A named volume has its own lifecycle: it is created once, used by whichever container mounts it, and removed only when someone removes it on purpose.\" (source: volumes.md, Remove volumes)."
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "Unlisted claim: Compose's volume-creation behaviour is not in the ledger (claim 5 covers only the prefix). It is correct; compose-file/volumes.md: \"Running `docker compose up` creates the volume if it doesn't already exist. Otherwise, the existing volume is used\".",
+        "quote": "Compose creates each one the first time it is needed",
+        "fix": "Add to claim 5 (or a new claim, kind behavior, version_key docker): \"docker compose up creates a declared named volume if it does not already exist and reuses it otherwise\", source_hint Compose file reference: volumes. No text change needed."
+      },
+      {
+        "severity": "minor",
+        "section": 3,
+        "kind": "accuracy",
+        "text": "The definition says a container always sees a volume as a folder, but the lesson counts bind mounts as volumes and its own example bind-mounts single files (schema.sql, seed.sql). storage/_index.md: \"It is exposed as either a directory or an individual file in the container's filesystem.\"",
+        "quote": "a container sees it as a folder, and it stays when the container is removed.",
+        "fix": "If the first major is fixed (volume = named volume only), keep as is. Otherwise change to \"a container sees it as a folder or a file\" here and in summary line 1."
+      },
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "accuracy",
+        "text": "Claim 8 is labelled kind 'opinion' with needs_verification false, but 'removing it loses the data' is behaviour. Verified here, but the ledger kind is wrong.",
+        "quote": "Remove the volume itself, and the data is gone with it.",
+        "fix": "In devops.l1.volumes.meta.json change claim 8 to kind \"behavior\", needs_verification true, version_key \"docker\", source_hint \"Docker docs: volumes (Back up, restore, or migrate data volumes)\"."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "fix-required"
+  }
+}

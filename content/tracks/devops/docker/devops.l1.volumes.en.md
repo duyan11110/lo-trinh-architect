@@ -30,7 +30,7 @@ The lab's database runs in a container, `donhang-db`, and every order you have p
 
 - **volume** — storage that exists independently of any one container; a container sees it as a folder, and it stays when the container is removed.
 - named volume — a volume Docker creates and manages under a name, such as `db-data`; you do not choose where on disk it is kept.
-- bind mount — a folder or file from your own machine shown inside a container at a path you choose, such as the repository at `/repo` in the lab box.
+- bind mount — a separate kind of mount: a folder or file from your own machine shown inside a container at a path you choose, such as the repository at `/repo` in the lab box.
 
 ## How it works
 
@@ -43,9 +43,9 @@ flowchart LR
 
 A container's own changes live with the container. That is fine for temporary files, but not for data that must survive: a database, uploaded files, a certificate a server created for itself. A **volume** is a way to keep such data outside the container. Docker gives the container a folder at a path you choose, and everything written there goes into the volume instead of into the container's own changes.
 
-When the container is removed, the volume stays. Start a new container with the same volume at the same path, and it finds the data exactly where the old one left it. The volume has its own lifecycle: it is created once, used by whichever container mounts it, and removed only when someone removes it on purpose.
+When the container is removed, the volume stays. Start a new container with the same volume at the same path, and it finds the data exactly where the old one left it. A named volume has its own lifecycle: it is created once, used by whichever container mounts it, and stays until someone removes it.
 
-Docker offers two common kinds. A named volume is created and managed by Docker; you refer to it by name and do not care where on disk Docker keeps it. A bind mount shows a folder or file that already exists on your machine inside the container, at a path you choose. Both are volumes in the sense of this lesson: storage that is not part of the container. The difference is that a bind mount is tied to one path on one machine, and a named volume is not.
+Docker also has a second kind of mount, the bind mount, which shows a folder or file that already exists on your machine inside the container, at a path you choose. Docker keeps the word volume for the named kind: a bind mount is a separate type, and `docker volume ls` does not list it. Both keep data outside the container. The difference is that a bind mount points at a path you picked on your machine, while a named volume is found by its name and Docker decides where on disk it is kept.
 
 ## In the Đơn Hàng system
 
@@ -114,7 +114,7 @@ The orders were never in the container: Postgres wrote them to `/var/lib/postgre
 ## Five-line summary
 
 1. A **volume** is storage outside any one container; a container sees it as a folder, and it stays when the container is removed.
-2. A named volume is managed by Docker under a name; a bind mount shows a folder or file from your machine.
+2. A named volume is managed by Docker under a name; a bind mount, a separate kind of mount, shows a folder or file from your machine.
 3. The `db` service mounts `db-data` where Postgres keeps its data, so removing the container keeps every order.
 4. `schema.sql` and `seed.sql` run only when that data folder is empty, which is only on the very first start.
 5. The lab box's `./:/repo:ro` is a bind mount: your repository folder, shown read-only inside the container.
