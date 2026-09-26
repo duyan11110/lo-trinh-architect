@@ -20,7 +20,7 @@ status: draft
 
 ## Before you start
 
-- [[management.l1.kanban-vs-scrum]] — you know Kanban moves each item through board columns as soon as it is ready, and that the support team's board marks two columns `(giới hạn 2)`, limit 2.
+- [[management.l1.kanban-vs-scrum]] — you know Kanban moves each item through board columns as soon as it is ready, and that the team's board marks two columns `(giới hạn 2)`, which this lesson explains.
 
 ## The situation
 
@@ -28,7 +28,7 @@ Dev 4 has just finished a task and, eager to keep busy, reaches for the next ite
 
 ## Core concepts
 
-- **WIP limit** — a cap on how many items can sit in one column at once; WIP stands for work in progress. Once the column is full, nobody starts new work there until something moves out.
+- **WIP limit** — a cap on how many items can sit in one column at once; WIP stands for work in progress. Once the column is full, nobody starts new work there, and no item moves into it from the column before, until something moves out.
 - full column — a column that has reached its limit; the board shows at a glance that the stage is saturated.
 - finishing over starting — the habit a WIP limit builds: when you are free and the column is full, help move an existing item forward instead of opening another.
 
@@ -42,11 +42,11 @@ flowchart LR
   F[free person] -.column full.-> R
 ```
 
-A **WIP limit** belongs to one column; on the lab's board it is the number in brackets after the column name. It says how many items may be in that column at the same time. While the column has room, anyone who is free pulls the next item in. When it is full, the rule is plain: nobody starts another item there until one leaves.
+A **WIP limit** belongs to one column; on the Đơn Hàng team's board it is the number in brackets after the column name. It says how many items may be in that column at the same time. While the column has room, anyone who is free pulls the next item in. When it is full, the rule is plain: nobody starts another item there until one leaves.
 
-The limit changes what a free person does. Instead of opening something new, they look at what is already in progress or waiting and help move it forward: review a pull request that is waiting, test a fix, pair on a stuck item. Work gets finished before more is started, so fewer things sit half-done.
+The limit changes what a free person does. Instead of opening something new, they look at what is already in progress or waiting and help move it forward: review a pull request that is waiting, test a fix, or sit with the person on a stuck item and work on it together. In the diagram, that is the dashed arrow: a free person who finds `In progress` full goes to `Waiting for review` to help there. Work gets finished before more is started, so fewer things sit half-done.
 
-Without a limit, too much work in progress is invisible. Every person can have three things open, each moving slowly, and the board still looks busy and healthy. With a limit, the same problem shows on the board itself: a column that stays full, with items that do not leave it, is a bottleneck you can point at. The limit does not make the team do less; it makes the team finish what it started, and it makes a jam visible when it happens.
+Without a limit, too much work in progress is invisible. Every person can have three things open, each moving slowly, and the board still looks busy and healthy. With a limit, the same problem shows on the board itself: a column that stays full, with items that do not leave it, shows where work is stuck, and you can point at it. The limit does not make the team do less; it makes the team finish what it started, and it makes a jam visible when it happens.
 
 ## In the Đơn Hàng system
 
@@ -75,7 +75,7 @@ Dev 4 has finished a task and wants to take a third item from `Việc cần làm
 ## Beginners often think…
 
 - **"A WIP limit just slows the team down by capping how much work they can do."** → Actually it caps how much is started at once, not how much gets done. When a free person helps finish an item already in progress, that item reaches `Xong` sooner, and the next one can start. You notice this when a team with many items open at once sees each of them take longer to reach `Xong`, because everyone's time is split across all of them.
-- **"WIP limits are a suggestion, not something the board actually enforces by structure."** → Actually the limit is a rule the team keeps, and the board makes breaking it visible: a column is either within its number or over it, for everyone to see. The team lead treats the full `Đang làm` as closed, and that is what keeps the number meaningful. You notice this when a column labelled `limit 2` quietly holds four items and nobody treats that as a problem any more.
+- **"WIP limits are a suggestion, not something the board actually enforces by structure."** → Actually the limit is a rule, not a hint: the team treats a full column as closed, as the team lead does with Dev 4, and the number on the column shows everyone at once when the rule is broken. You notice this when a column labelled `limit 2` quietly holds four items and nobody treats that as a problem any more.
 
 ## Try it (3 minutes)
 
@@ -105,6 +105,6 @@ Dev 4 can now pull the top item from `Việc cần làm` into `Đang làm`, beca
 
 1. A **WIP limit** caps how many items can sit in one column at once; a full column accepts nothing new.
 2. When a column is full, a free person helps finish something already there instead of starting more.
-3. The limit makes too much work in progress visible: a column that stays full is a bottleneck you can see.
+3. The limit makes too much work in progress visible: a column that stays full shows where work is stuck.
 4. The team's board limits `Đang làm` and `Chờ review` to two items each.
-5. A WIP limit is a rule the team keeps, and the board shows at once when a column breaks it.
+5. A WIP limit is a rule the team keeps, and the number on the column shows at once when it is broken.
