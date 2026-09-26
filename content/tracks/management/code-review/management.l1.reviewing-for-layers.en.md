@@ -25,7 +25,7 @@ status: draft
 
 ## The situation
 
-Imagine the login endpoint of Đơn Hàng arriving today as a pull request, and you are its reviewer. The tests pass, and when you run the API and sign in as one of the seeded customers with the development password, you get a token back. Then you read the diff and notice that the controller asks the database for the customer itself and checks the password right there, in the same method that answers HTTP. The author says: "It works, and it is ten lines. Why would you comment on it?" Is there anything to say about code that already works?
+Imagine the login endpoint of Đơn Hàng arriving today as a pull request, and you are its reviewer. The tests pass, and when you run the API and sign in as one of the sample customers the database is filled with, using the password they all share for development, you get a token back. Then you read the diff and notice that the controller asks the database for the customer itself and checks the password right there, in the same method that answers HTTP. The author says: "It works, and it is ten lines. Why would you comment on it?" Is there anything to say about code that already works?
 
 ## Core concepts
 
@@ -43,6 +43,7 @@ flowchart TD
   Q -->|reads or writes data| R[repository]
   C & S & R --> M{is that where it is?}
   M -->|no| X[comment, even if it works]
+  M -->|yes| OK[no layer comment]
 ```
 
 Reviewing for layers asks one question of every new piece of code in a diff: what kind of work does this do, and is it in the layer that owns that work? A controller reads HTTP and shapes the response. The service layer decides business rules. A repository reads and writes data. When the answer to "what does it do" and "where is it" do not match, that is a layer violation, and it is worth a comment even if every test passes.
@@ -74,7 +75,9 @@ public sealed class AuthController(DonHangDbContext db, JwtTokenService tokenSer
     }
 ```
 
-Read it as a reviewer. The constructor takes `DonHangDbContext`, the database context itself, so the controller can query the database. The first line of `Login` does exactly that: it looks up the customer by email. The `if` then decides whether the password is right, using `PasswordHasher.Verify` from `DonHang.Domain`. That is two kinds of work, reading data and deciding a rule, in a class whose job is HTTP. It works, and a reviewer should still comment, for example as a question: "Could the lookup and the password check move below the controller, so the controller only reads the request and answers?"
+Read it as a reviewer. The constructor takes `DonHangDbContext`, the database context itself, so the controller can query the database. The first line of `Login` does exactly that: it looks up the customer by email. The `if` then decides whether this login is allowed.
+
+The password comparison itself is done by `PasswordHasher.Verify`, a helper from `DonHang.Domain`, the project that holds the business layer, and calling a helper is fine. The rule is the decision around it: when there is no such customer, no stored hash, or the password does not match, refuse the login. That decision is made in the controller. So the method does two kinds of work besides HTTP, reading data and deciding a rule, in a class whose job is HTTP. It works, and a reviewer should still comment, for example as a question: "Could the lookup and the login decision move below the controller, so the controller only reads the request and answers?"
 
 Compare the endpoint that places an order, in `DonHang.Api/Controllers/OrdersController.cs`:
 
@@ -108,9 +111,9 @@ Open `DonHang.Api/Controllers/ProductsController.cs` from the repository at stag
 2. For each line in `List` and `Get`, name the kind of work it does: HTTP, a business rule, or reading data.
 3. Decide whether you would leave a comment, and write it in one sentence.
 
-Expected result: step 1 — `DonHangDbContext`. Step 2 — `db.Products...` in both methods reads data; `return Ok(...)` and `return NotFound()` are HTTP; no line decides a business rule. Step 3 — yes, the queries are in the controller; for example: "Could these reads go through a repository, so the controller does not need `DonHangDbContext`?"
+Expected result: step 1 — `DonHangDbContext`. Step 2 — `db.Products...` in both methods reads data; `return Ok(...)` and `if (product is null) return NotFound();` are HTTP, because they only turn "found" or "not found" into a status code; no line decides whether something is allowed, so no line is a business rule. Step 3 — yes, the queries are in the controller; for example: "Could these reads go through a repository, so the controller does not need `DonHangDbContext`?"
 
-The author replies to your `ProductsController` comment: "These are plain reads with no rule, so a service would add nothing." Is that a good enough reason to leave the queries in the controller?
+The author replies to your `ProductsController` comment: "These are plain reads with no rule, so a repository and a service would add nothing." Is that a good enough reason to leave the queries in the controller?
 
 <details><summary>Suggested answer</summary>
 
