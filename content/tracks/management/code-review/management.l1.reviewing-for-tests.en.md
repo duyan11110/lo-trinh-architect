@@ -50,7 +50,7 @@ For each test you find, ask one question: if the new code were wrong in the way 
 
 When the change adds a missing check or fixes a bug, the test for it has one more duty: it should fail against the old code and pass against the new one. If it passes against both, it may be passing for a reason that has nothing to do with the fix. A reviewer can ask the author whether they saw it fail first.
 
-Asking for a missing test is not optional polish. A missing test means the next change can break that behavior and the build will not show it.
+Asking for a missing test is not optional polish. A missing test means the next change can break that behavior and no test will fail to show it.
 
 ## In the Đơn Hàng system
 
@@ -69,7 +69,7 @@ Asking for a missing test is not optional polish. A missing test means the next 
     }
 ```
 
-List the behavior: it looks the order up and throws `KeyNotFoundException` when there is none; it sets `Status` to `"cancelled"`; it saves; it sends a notification. It never looks at the order's current status, so an order that is `shipped`, or `paid`, which the story about unpaid orders also leaves out, is cancelled just like a `new` one.
+List the behavior: it looks the order up and throws `KeyNotFoundException` when there is none; it sets `Status` to `"cancelled"`; it saves; it sends a notification. It never looks at the order's current status, so an order that is `shipped` is cancelled just like a `new` one. The same goes for a `paid` order, although the story is only about orders that are not yet paid.
 
 The cancellation tests in `DonHang.Tests/Services/OrderServiceTests.cs`:
 
@@ -103,11 +103,11 @@ Match them to the list. `CancelOrderAsync_NewOrder_SetsStatusCancelled` checks t
 
 That does not make the first test wrong; it checks what its name says. The gap is a missing test, so the fix is to add one for a `shipped` order, not to change this one.
 
-A reviewer's comment could be a question: "The story is about unpaid orders; should a `shipped` order be refused here? If so, could you add a test that tries one? It should fail against this version first." That test is what turns the gap into something the build catches.
+A reviewer's comment could be a question: "The story is about unpaid orders; should a `shipped` order be refused here? If so, could you add a test that tries one? It should fail against this version first." That test is what turns the gap into a failing test the next time someone breaks it.
 
 ## Beginners often think…
 
-- **"A PR that touches a test file has adequate test coverage for what it changed."** → Actually a changed test file says nothing about which behavior is checked, so it says nothing about coverage, the share of the new behavior that tests check; only matching tests to the new behavior does. You notice this in `OrderServiceTests`, where two cancellation tests pass and a `shipped` order can still be cancelled.
+- **"A PR that touches a test file has adequate test coverage for what it changed."** → Actually a changed test file says nothing about which behavior is checked, so it does not show that each new behavior has a test checking it; only matching tests to the new behavior does. You notice this in `OrderServiceTests`, where two cancellation tests pass and a `shipped` order can still be cancelled.
 - **"Asking an author to add a test is optional feedback, less important than catching an actual bug."** → Actually a missing test is how a bug can get in later unnoticed, because no test fails when the behavior breaks. You notice this when a later change breaks cancellation and every test still passes, because no test ever checked that part.
 
 ## Try it (3 minutes)
@@ -140,4 +140,4 @@ Whether it failed before the check was added. Against the version of `CancelOrde
 2. A test that would still pass if the code were wrong in the way that matters checks nothing about that.
 3. A test for a new check or a fixed bug should fail against the old code and pass against the new one.
 4. `CancelOrderAsync` cancels any order it finds; its two tests cover a `new` order and a missing one, not a `shipped` one.
-5. Asking for a missing test before the merge means the gap can be caught by the build, not by a bug report.
+5. Asking for a missing test before the merge means the gap is caught by a failing test, not by a bug report.
