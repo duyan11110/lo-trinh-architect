@@ -24,7 +24,7 @@ status: draft
 
 ## The situation
 
-Your team's first real server is ready, and a teammate offers to deploy the API the quick way: SSH in, stop the old program, copy the new build over, start it again. It works on Friday. Two weeks later a different teammate deploys the next version the same way, and the API stops at startup on a missing library that nobody remembers installing the first time. Nobody can say exactly what was done to the server on Friday, or in what order. What went wrong, and it was not the code, so what was it?
+Your team's first real server is ready, and a teammate offers to deploy the API the quick way: open a remote shell on the server with SSH, as in the foundation lessons, stop the old program, copy the new build over, start it again. It works on Friday. Two weeks later a different teammate deploys the next version the same way, and the API stops at startup on a missing library that nobody remembers installing the first time. Nobody can say exactly what was done to the server on Friday, or in what order. If the code was not the problem, what was?
 
 ## Core concepts
 
@@ -36,12 +36,12 @@ Your team's first real server is ready, and a teammate offers to deploy the API 
 
 ```mermaid
 flowchart LR
-  P[person] -->|SSH, stop, copy, start| S1[server, Friday]
-  P2[another person] -->|same steps, from memory| S2[server, two weeks later]
+  P[person] -->|SSH, stop, copy, start| S1[server, Friday: works]
+  P2[another person] -->|same steps, from memory| S2[server, two weeks later: fails]
   D[written definition] -->|built the same way| S3[server, every time]
 ```
 
-A manual deploy has two weaknesses, and neither is about the code. The first is that the steps live in someone's head. Stop the old program, copy the files, start the new one: each time a person does it, it comes out slightly differently. A step is skipped, a command is typed with other options, a file is copied from the wrong folder. Nothing records what was actually done, so when something breaks, there is no list to compare against.
+The diagram shows the same steps working on Friday and failing two weeks later, while a written definition gives the same result each time. A manual deploy has two weaknesses, and neither is about the code. The first is that the steps live in someone's head. Stop the old program, copy the files, start the new one: each time a person does it, it comes out slightly differently. A step is skipped, a command is typed with other options, a file is copied from the wrong folder. Nothing records what was actually done, so when something breaks, there is no list to compare against.
 
 The second weakness is worse. A manual deploy has no fixed definition of what the target machine needs. Over months, people install a library here, change a setting there, and the server ends up in a state nobody wrote down. The deploy "works" because of that state, not because of anything written down. The next server, or the same server rebuilt, will not have it, and the same steps will fail there.
 
@@ -51,9 +51,9 @@ The fix is to write both down, in a form a program can follow: the list of every
 
 The lab already works this way. `scripts/up.sh` is its deploy, written down: it builds the Flutter app, then starts everything and waits until it is ready. You run the same script every time, so every learner's lab is built by the same steps.
 
-The list of what the API's target needs is `DonHang.Api/Dockerfile`, the file you met earlier in this module. It names the .NET 10 build tools used to build the API, and the .NET 10 runtime, the part of .NET that runs an already built program, that the API runs on. It also installs one extra system library, `libgssapi-krb5-2`, with a comment explaining why: the comment says the database library probes for it at startup, and that without it the API logs an alarming but harmless error line. That is exactly the kind of detail a person deploying by hand would install once, on one server, and never write down.
+The list of what the API's target needs is `DonHang.Api/Dockerfile`, the file you met earlier in this module. It names the .NET 10 build tools used to build the API. It also names the .NET 10 runtime that the API runs on: the part of .NET that runs a program after it has been built. It also installs one extra system library, `libgssapi-krb5-2`, with a comment explaining why: the comment says the database library probes for it at startup, and that without it the API logs an alarming but harmless error line. That is exactly the kind of detail a person deploying by hand would install once, on one server, and never write down.
 
-The settings the API needs are written down too, in `docker-compose.yml`: the connection string and the signing key, arriving as environment variables. The next module, Docker, is about how the lab turns that `Dockerfile` into something that runs the same way on every machine.
+The settings the API needs are written down too, in `docker-compose.yml`: the connection string, which tells the API where its database is, and the signing key it signs login tokens with, both arriving as environment variables. The next module, Docker, is about how the lab turns that `Dockerfile` into something that runs the same way on every machine. The lab still has one weakness from this lesson: you run `scripts/up.sh` by hand, from your own laptop. It fixes the missing steps and the missing list, but not the question of who runs it and from where; a later stage hands that to a program.
 
 ## Beginners often think…
 
