@@ -25,11 +25,11 @@ status: draft
 
 ## The situation
 
-The API's image is built once and runs unchanged in the lab. On your laptop the database is at `localhost:5432`, in the lab it is `db`, and on a real server it will be somewhere else again. If the address were written into the code, you would need a different build for every place the API runs, and the image you tested would not be the image you deploy. Yet `docker compose` hands the same image a connection string, and the API uses it. What decides which settings the API sees, and why are the database address and password not inside the image?
+The API's image is built once. On your laptop the database is at `localhost:5432`, in the lab it is `db`, and on a real server it will be somewhere else again. If the address were written into the code, you would need a different build for every place the API runs, and the image you tested would not be the image you deploy. In the lab, `docker compose` hands the same image a connection string, the setting that tells the API where its database is and how to log in, and the API uses it. What decides which settings the API sees, and why are the database address and password not inside the image?
 
 ## Core concepts
 
-- **config** — everything about how an app behaves that varies by where it runs, such as a database address or a log level, kept separate from the code, which does not change between those places.
+- **config** — everything about how an app behaves that varies by where it runs, such as a database address or a log level (how much detail the app writes to its log), kept separate from the code, which does not change between those places.
 - configuration source — a place ASP.NET Core reads settings from, such as `appsettings.json` or environment variables; later sources override earlier ones for the same key.
 - `__` in a variable name — a double underscore stands for the `:` in a settings key, so `ConnectionStrings__Default` sets `ConnectionStrings:Default`.
 
@@ -44,7 +44,7 @@ flowchart LR
 
 Code is the same wherever the app runs: the same controllers, the same checks, the same compiled image. **Config** is the part that should differ: which database to talk to, how much to log, which key to sign tokens with. Keeping config out of the code means one build can run anywhere, with only the settings around it changing.
 
-ASP.NET Core does not read settings from one place. It builds them from several configuration sources in a set default order, and when two sources set the same key, the later one wins. `appsettings.json`, shipped inside the image with the code, comes early. Environment variables come later, so an environment variable overrides the same key from the file. A key written with `:` in the file, such as `Logging:LogLevel:Default`, is written with `__` in a variable name, because not every system allows `:` there: `Logging__LogLevel__Default`.
+ASP.NET Core does not read settings from one place. It builds them from several configuration sources in a set default order, and when two sources set the same key, the later one wins. `appsettings.json`, shipped inside the image with the code, comes early. Environment variables come later, so an environment variable overrides the same key from the file. A key written with `:` in the file, such as `Jwt:Issuer`, is written with `__` in a variable name, because not every system allows `:` there: `Jwt__Issuer`. `Program.cs` then reads the combined settings, such as `ConnectionStrings:Default`, without knowing which source each value came from.
 
 This is the same mechanism as in the environment variables lesson, now used by the app: the process gets its variables when it starts, and ASP.NET Core turns them into settings. So the file can hold sensible defaults that are the same everywhere, and each place the API runs can supply its own values without touching the image.
 
@@ -60,20 +60,20 @@ The settings the `api` service gets in `docker-compose.yml`:
       ASPNETCORE_ENVIRONMENT: "Development"
 ```
 
-These three variables are the config Compose gives the API in the lab. `ConnectionStrings__Default` becomes the key `ConnectionStrings:Default`, which `Program.cs` reads for the database, with `Host=db` and a password filled in by Compose. `Jwt__SigningKey` becomes `Jwt:SigningKey`, the key for signing tokens. `ASPNETCORE_ENVIRONMENT` tells ASP.NET Core it is running in `Development`.
+These three variables are the config Compose gives the API in the lab. `ConnectionStrings__Default` becomes the key `ConnectionStrings:Default`, which `Program.cs` reads for the database, with `Host=db` and a password that Compose fills in for `${POSTGRES_PASSWORD}` from the `.env` file `scripts/dev-secrets.sh` wrote; the next lesson looks at that file. `Jwt__SigningKey` becomes `Jwt:SigningKey`, the key for signing tokens. `ASPNETCORE_ENVIRONMENT` gives ASP.NET Core the name of the place it runs in, here `Development`.
 
-`appsettings.json`, inside the image, holds only settings that are the same everywhere: log levels, `AllowedHosts`, and the JWT issuer and audience. It has no connection string and no signing key. So the image carries no database address and no password: the same `donhang-api:stage-1` could run against another database by changing only the lines above.
+`appsettings.json`, inside the image, holds only settings that are the same everywhere: log levels, `AllowedHosts` (which host names the API answers to), and the JWT issuer and audience, the names the API writes into every token. It has no connection string and no signing key. So the image carries no database address and no password: the same `donhang-api:stage-1` could run against another database by changing only the lines above.
 
 ## Beginners often think…
 
 - **"Config belongs in appsettings.json only; environment variables are just for the operating system, not the app."** → Actually ASP.NET Core reads environment variables as one of its configuration sources, and they override the file. The API's connection string comes only from an environment variable; the file does not have one. You notice this when the API works in the lab but, started with no variables, stops at once with "ConnectionStrings:Default is not set".
-- **"The same config values should work unchanged in every environment, or something was set up wrong."** → Actually config exists precisely because the values differ: the database is `localhost:5432` from your laptop and `db` inside the lab. What stays the same is the code and the image. You notice this when a connection string that works from your editor makes the API fail inside Docker.
+- **"The same config values should work unchanged in every environment, or something was set up wrong."** → Actually config exists precisely because the values differ between every place the API runs: the database is `localhost:5432` from your laptop and `db` inside the lab. What stays the same is the code and the image. You notice this when a connection string that works from your editor makes the API fail inside Docker.
 
 ## Try it (3 minutes)
 
 With the lab running, in a terminal on your own machine:
 
-1. Run `docker exec donhang-api sh -c "printenv | grep -E 'ConnectionStrings|ASPNETCORE'"` to list some of the API container's environment variables.
+1. Run `docker exec donhang-api sh -c "printenv | grep -E 'ConnectionStrings|ASPNETCORE'"` to list some of the API container's environment variables (`printenv` prints them, and `grep` keeps only the matching lines).
 2. Run `docker exec donhang-api sh -c "cat /app/appsettings.json"` to see the settings file inside the image.
 3. Run `docker run --rm donhang-api:stage-1`, which starts the same image with none of Compose's settings.
 
