@@ -15,9 +15,9 @@ vocab: []
 example_tag: stage-0
 versions_used: [git]
 content_version: 1
-status: reviewed
-approved_by: null
-reviewed_at: "2026-09-21T20:54:34+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-28T11:00:00+07:00"
 ---
 
 > Skip this if: you already find a breaking change by halving history with a command that answers pass or fail, and you know why that command has to answer the same way twice.
