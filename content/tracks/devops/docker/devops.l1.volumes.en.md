@@ -28,7 +28,7 @@ The lab's database runs in a container, `donhang-db`, and every order you have p
 
 ## Core concepts
 
-- **volume** — storage that exists independently of any one container; a container sees it as a folder, and it stays when the container is removed.
+- **volume** — storage that exists independently of any one container; a container sees it as a folder, and it stays when the container is removed. Making such storage appear at a path inside a container is called mounting it.
 - named volume — a volume Docker creates and manages under a name, such as `db-data`; you do not choose where on disk it is kept.
 - bind mount — a separate kind of mount: a folder or file from your own machine shown inside a container at a path you choose, such as the repository at `/repo` in the lab box.
 
@@ -68,7 +68,7 @@ The `db` service in `docker-compose.yml`:
       - db-data:/var/lib/postgresql/data
 ```
 
-The last line of `volumes:` is the one that keeps your orders: `db-data:/var/lib/postgresql/data` mounts the named volume `db-data` at the folder where Postgres writes its data files. The two lines above it are bind mounts of single files, `db/schema.sql` and `db/seed.sql` from the repository, placed where the `postgres` image looks for scripts to run when it starts with an empty data folder. Because `db-data` already holds data after the first start, those scripts do not run again.
+The last line of `volumes:` is the one that keeps your orders: `db-data:/var/lib/postgresql/data` mounts the named volume `db-data` at the folder where Postgres writes its data files. The two lines above it are read-only (`:ro`) bind mounts of single files, `db/schema.sql` and `db/seed.sql` from the repository, placed where the `postgres` image looks for scripts to run when it starts with an empty data folder. Because `db-data` already holds data after the first start, those scripts do not run again.
 
 Named volumes are declared once at the bottom of the file:
 
@@ -80,7 +80,7 @@ volumes:
   lab-config:
 ```
 
-Compose creates each one the first time it is needed, prefixed with the project name, so `db-data` becomes `donhang_db-data` on your machine. The lab box uses a bind mount instead: `./:/repo:ro` shows the repository folder on your machine at `/repo`, read-only, which is why the lab box sees the same files your editor does.
+Compose creates each one the first time it is needed, prefixed with the name Compose uses for the whole lab, `donhang` (the `name:` at the top of the file), so `db-data` becomes `donhang_db-data` on your machine. The lab box (the `lab` service) uses a bind mount instead: `./:/repo:ro` shows the repository folder on your machine at `/repo`, read-only, which is why the lab box sees the same files your editor does.
 
 ## Beginners often think…
 
