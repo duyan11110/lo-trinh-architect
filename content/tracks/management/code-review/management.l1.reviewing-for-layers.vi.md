@@ -102,7 +102,7 @@ So với endpoint đặt đơn, trong `DonHang.Api/Controllers/OrdersController.
 
 ## Người mới hay nghĩ rằng…
 
-- **"Miễn test của PR qua, code mới nằm ở tầng nào không quan trọng."** → Thực ra test kiểm hành vi, không kiểm vị trí; endpoint đăng nhập ở trên chạy đúng dù câu truy vấn nằm trong controller. Bạn sẽ nhận ra về sau, khi một cách đăng nhập thứ hai cần đúng phép kiểm mật khẩu đó và phải chép lại, vì nó nằm trong một controller thay vì ở chỗ cả hai cùng gọi được.
+- **"Miễn test của PR qua, code mới nằm ở tầng nào không quan trọng."** → Thực ra test kiểm hành vi, không kiểm vị trí; endpoint đăng nhập ở trên chạy đúng dù câu truy vấn nằm trong controller. Bạn sẽ nhận ra về sau, khi một lối đăng nhập thứ hai cần đúng phép kiểm mật khẩu đó và phải chép lại, vì nó nằm trong một controller thay vì ở chỗ cả hai cùng gọi được.
 - **"Chỉ ra vi phạm tầng lúc review là bắt bẻ nếu code vốn đúng."** → Thực ra đó là một trong những chỗ sửa rẻ nhất mà review có thể yêu cầu: một nhận xét bây giờ, thay vì chuyển code mà các thay đổi khác đã phụ thuộc vào. Bạn sẽ nhận ra khi một đội từng để lọt vài dòng đặt sai chỗ phát hiện cùng một quy tắc nằm ở nhiều nơi và phải quyết định bản nào đúng.
 
 ## Thử ngay (3 phút)
