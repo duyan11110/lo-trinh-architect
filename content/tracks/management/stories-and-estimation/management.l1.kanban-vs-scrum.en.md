@@ -15,7 +15,9 @@ vocab: [kanban]
 example_tag: stage-1
 versions_used: [scrum]
 content_version: 1
-status: draft
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-28T02:00:00+07:00"
 ---
 
 ## Before you start
@@ -46,7 +48,7 @@ flowchart LR
 
 Because of that, a Kanban board always shows the present. At any moment you can read off what is waiting, what is being worked on, what waits for review and what is finished. A sprint board answers a narrower question: what the team took on in this sprint. It shows the items the team chose for this sprint, its sprint backlog, which belongs to one sprint, so a new sprint brings a new set of items and the board shows one sprint's slice of the work.
 
-The two are different defaults for when work moves, not rival beliefs. Scrum plans a batch around a sprint goal and keeps that goal fixed for the sprint; Kanban lets each item move on its own. Teams can mix them, for example keeping Scrum's roles and meetings (daily, review, retrospective) while using a Kanban-style board. The Scrum Guide, the short official description of Scrum, does not say how the team's board should look, so that choice is left to the team.
+The two are different defaults for when work moves, not rival beliefs. Scrum plans a batch around a sprint goal and keeps that goal fixed for the sprint; Kanban lets each item move on its own. Teams can mix them, for example keeping Scrum's roles and meetings (such as the daily and the retrospective) while using a Kanban-style board. The Scrum Guide, the short official description of Scrum, does not say how the team's board should look, so that choice is left to the team.
 
 ## In the Đơn Hàng system
 
