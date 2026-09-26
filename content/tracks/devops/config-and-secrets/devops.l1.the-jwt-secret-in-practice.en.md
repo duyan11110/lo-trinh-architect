@@ -48,7 +48,7 @@ The API checks a token by computing the signature again with its signing key and
 
 The key must also be hard to guess. HMAC does nothing to hide a weak key: someone who has seen one real token can try candidate keys offline, as fast as their computer allows, until one produces the same signature. A short or memorable key falls quickly; a long random one does not.
 
-Changing the key has an effect of its own. Every token already handed out was signed with the old key, so once the API runs with the new one, none of them match, and every customer has to sign in again. There is no gradual switch with a single key: the API accepts exactly the tokens its current key would have signed. The same rule works in reverse: put the old key back, and the old tokens match again.
+Changing the key has an effect of its own. Every token already handed out was signed with the old key, so once the API runs with the new one, none of them match, and every customer has to sign in again. There is no gradual switch with a single key: the API accepts only tokens whose signature its current key reproduces (and that still pass the issuer, audience and expiry checks). The same rule works in reverse: put the old key back, and the old tokens match again.
 
 ## In the Đơn Hàng system
 
@@ -92,7 +92,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
 ```
 
-`builder.Configuration["Jwt:SigningKey"]` reads the key like any other setting, and the API refuses to start without it. `IssuerSigningKey` is the key every incoming token is checked against, the same key `JwtTokenService` signs new tokens with. Because it is read once at startup, a changed key takes effect only when the API starts again.
+`builder.Configuration["Jwt:SigningKey"]` reads the key like any other setting, and the API throws at startup if the setting is missing altogether. `IssuerSigningKey` is the key every incoming token is checked against, the same key `JwtTokenService` signs new tokens with. Because `Program.cs` copies the key once, at startup, from an environment variable, a changed key takes effect only when the API starts again.
 
 ## Beginners often think…
 
@@ -106,7 +106,7 @@ With the lab running, from the repository root, in a bash terminal on your own m
 1. Run `grep -c '^JWT_SIGNING_KEY=' .env` to check the key exists, without printing it.
 2. In the browser, sign in to the app at `http://localhost:8081` and leave the "Place an order" screen open.
 3. Run `JWT_SIGNING_KEY=$(openssl rand -base64 48) docker compose up -d api`. A variable set in the shell takes precedence over `.env`, so this restarts the API with a different key.
-4. After a few seconds, tap "Order 1 keyboard" in the browser.
+4. After about ten seconds, tap "Order 1 keyboard" in the browser. If it shows `(502)`, the API is still starting; wait and tap again.
 5. Run `docker compose up -d api` to put the lab's own key back, then tap "Order 1 keyboard" again.
 
 Expected result: 1 — `1`. 3 — Compose recreates and starts `donhang-api`. 4 — "Failed: Exception: failed to create order (401)". 5 — "Order <n> placed, status new": the token you got in step 2 is accepted again.
@@ -115,7 +115,7 @@ Nothing in step 4 touched your browser or your token. Why was the order refused,
 
 <details><summary>Suggested answer</summary>
 
-The token was signed with the lab's key when you signed in. In step 4 the API was checking with a different key, so the signature no longer matched and the request got `401`. In step 5 the API was back on the original key, and the check depends only on the key and the token, so the old signature matched again. With a real key change, the old key would never come back, so every customer would have to sign in again.
+The token was signed with the lab's key when you signed in. In step 4 the API was checking with a different key, so the signature no longer matched and the request got `401`. In step 5 the API was back on the original key, and the signature check depends only on the key and the token, so the old signature matched again; the token was also still within its eight hours. With a real key change, the old key would never come back, so every customer would have to sign in again.
 
 </details>
 
@@ -127,7 +127,7 @@ The token was signed with the lab's key when you signed in. In step 4 the API wa
 
 ## Five-line summary
 
-1. The JWT signing key is a secret: `scripts/dev-secrets.sh` writes 48 random bytes into `.env`, next to `POSTGRES_PASSWORD`.
+1. The JWT signing key is a secret: `scripts/dev-secrets.sh` writes 48 random bytes, as base64 text, into `.env`.
 2. Compose passes it as `Jwt__SigningKey`; `Program.cs` reads it at startup and checks every token against it.
 3. Anyone with the key can forge a token for any customer, so a leaked key exposes every account.
 4. A short key can be guessed from one real token, which is why the lab's key is long and random.
