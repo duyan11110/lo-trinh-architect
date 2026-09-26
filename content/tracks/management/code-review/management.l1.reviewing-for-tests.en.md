@@ -25,7 +25,7 @@ status: draft
 
 ## The situation
 
-A pull request adds order cancellation to Đơn Hàng: a new `CancelOrderAsync` method in `OrderService`, and two new tests in `OrderServiceTests`. The build is green and every test passes. The description says "cancellation added, with tests". A reviewer who counts files sees a test file in the diff and is satisfied. But the story this work belongs to says a customer can cancel an order that has not been paid yet, and some orders have already shipped. Does a green test run tell you that a shipped order cannot be cancelled?
+A pull request adds order cancellation to Đơn Hàng: a new `CancelOrderAsync` method in `OrderService`, and two new tests in `OrderServiceTests`. The build succeeds and every test passes. The description says "cancellation added, with tests". A reviewer who counts files sees a test file among the changed files and is satisfied. But the story this work belongs to says a customer can cancel an order that has not been paid yet, and some orders have already shipped. Do passing tests tell you that a shipped order cannot be cancelled?
 
 ## Core concepts
 
@@ -44,9 +44,9 @@ flowchart TD
   F -->|yes| OK[test covers it]
 ```
 
-Reviewing for tests starts from the change, not from the test file. First list what the new code does: what it returns, what it changes, what it sends, and what it should refuse. Then, for each item, find the test that checks it. A test file in the diff only tells you that some test changed. It does not tell you which behavior is covered.
+Reviewing for tests starts from the change, not from the test file. First list what the new code does: what it returns, what it changes, what it sends, and what it should refuse. Then, for each item, find the test that checks it. A test file in the diff, the list of changed lines, only tells you that some test changed. It does not tell you which behavior is covered.
 
-For each test you find, ask one question: if the new code were wrong in the way that matters, would this test fail? A test that seeds a fake with an order already marked cancelled and then asserts it is cancelled passes even if the service never changes the status. On the status, it checks what the fake already holds, not what the code under review does. Tests like that are worth asking about before the merge, not after a bug report.
+For each test you find, ask one question: if the new code were wrong in the way that matters, would this test fail? A test that seeds a fake with an order already marked cancelled and then asserts it is cancelled passes even if the service never changes the status. It is checking a status the fake already held, not one the code under review set. Tests like that are worth asking about before the merge, not after a bug report.
 
 When the change adds a missing check or fixes a bug, the test for it has one more duty: it should fail against the old code and pass against the new one. If it passes against both, it may be passing for a reason that has nothing to do with the fix. A reviewer can ask the author whether they saw it fail first.
 
@@ -69,7 +69,7 @@ Asking for a missing test is not optional polish. A missing test means the next 
     }
 ```
 
-List the behavior: it looks the order up and throws `KeyNotFoundException` when there is none; it sets `Status` to `"cancelled"`; it saves; it sends a notification. It never looks at the order's current status, so an order that is `shipped` is cancelled just like a `new` one.
+List the behavior: it looks the order up and throws `KeyNotFoundException` when there is none; it sets `Status` to `"cancelled"`; it saves; it sends a notification. It never looks at the order's current status, so an order that is `shipped`, or `paid`, which the story about unpaid orders also leaves out, is cancelled just like a `new` one.
 
 The cancellation tests in `DonHang.Tests/Services/OrderServiceTests.cs`:
 
@@ -99,14 +99,16 @@ The cancellation tests in `DonHang.Tests/Services/OrderServiceTests.cs`:
     // still lets it through — the gap the reading-a-300-line-pr lesson is about.
 ```
 
-Match them to the list. `CancelOrderAsync_NewOrder_SetsStatusCancelled` checks the status change for a `new` order. `CancelOrderAsync_UnknownOrder_Throws` checks the missing order. No test checks that a notification is sent on cancel, and no test tries a `shipped` order. The first test also cannot fail on the most important point: if the method cancelled every order whatever its status, it would still pass. The comment at the end of the file says the same thing: the suite is green, and a `shipped` order still gets through.
+Match them to the list. `CancelOrderAsync_NewOrder_SetsStatusCancelled` checks the status change for a `new` order. `CancelOrderAsync_UnknownOrder_Throws` checks the missing order. No test checks that a notification is sent on cancel, and no test tries a `shipped` order. The first test also cannot fail on the most important point: if the method cancelled every order whatever its status, it would still pass. The comment at the end of the file, which points to a later lesson in this module, says the same thing: all the tests pass, and a `shipped` order still gets through.
+
+That does not make the first test wrong; it checks what its name says. The gap is a missing test, so the fix is to add one for a `shipped` order, not to change this one.
 
 A reviewer's comment could be a question: "The story is about unpaid orders; should a `shipped` order be refused here? If so, could you add a test that tries one? It should fail against this version first." That test is what turns the gap into something the build catches.
 
 ## Beginners often think…
 
-- **"A PR that touches a test file has adequate test coverage for what it changed."** → Actually a changed test file says nothing about which behavior is checked; only matching tests to the new behavior does. You notice this in `OrderServiceTests`, where two cancellation tests pass and a `shipped` order can still be cancelled.
-- **"Asking an author to add a test is optional feedback, less important than catching an actual bug."** → Actually a missing test is how a bug can get in later unnoticed, because no test fails when the behavior breaks. You notice this when a later change breaks cancellation and the build stays green, because no test ever checked that part.
+- **"A PR that touches a test file has adequate test coverage for what it changed."** → Actually a changed test file says nothing about which behavior is checked, so it says nothing about coverage, the share of the new behavior that tests check; only matching tests to the new behavior does. You notice this in `OrderServiceTests`, where two cancellation tests pass and a `shipped` order can still be cancelled.
+- **"Asking an author to add a test is optional feedback, less important than catching an actual bug."** → Actually a missing test is how a bug can get in later unnoticed, because no test fails when the behavior breaks. You notice this when a later change breaks cancellation and every test still passes, because no test ever checked that part.
 
 ## Try it (3 minutes)
 
@@ -116,9 +118,9 @@ Open `docs/team/story-example.md` and `DonHang.Tests/Services/OrderServiceTests.
 2. For each, look for a test in `OrderServiceTests` that checks it.
 3. Read the team's Definition of Done in the story file and write down which line these results break.
 
-Expected result: step 1 — 3: no cancel button for `paid`, `shipped` or `cancelled` orders; 4: cancelling someone else's order returns 403 and changes nothing; 5: cancelling twice returns 409 on the second try. Step 2 — none of the three has a test in `OrderServiceTests`. Step 3 — `Có test tự động cho mọi tiêu chí chấp nhận ở trên`: every acceptance criterion should have an automated test.
+Expected result: step 1 — 3: no cancel button for `paid`, `shipped` or `cancelled` orders; 4: cancelling someone else's order returns 403 and changes nothing; 5: cancelling twice returns 409 on the second try. Step 2 — none of the three has a test in `OrderServiceTests`; 3 is about the button and 4 and 5 about the API's answer, but none of them has a service test that would catch the same rule either. Step 3 — `Có test tự động cho mọi tiêu chí chấp nhận ở trên`: every acceptance criterion should have an automated test.
 
-The author answers your question about `shipped` orders: "I added a test, `CancelOrderAsync_ShippedOrder_IsRefused`, and it passes." What should you ask next?
+The author answers your question about `shipped` orders: "I added a status check to `CancelOrderAsync` and a test, `CancelOrderAsync_ShippedOrder_IsRefused`, and it passes." What should you ask next?
 
 <details><summary>Suggested answer</summary>
 
