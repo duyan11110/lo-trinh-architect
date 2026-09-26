@@ -36,7 +36,7 @@ At planning, the product owner asks how long a new cancel button on the order sc
 
 ```mermaid
 flowchart LR
-  R[reference: small bug fix = 1] --> C{new story: bigger or smaller?}
+  R[reference: small bug fix = 1] --> C{new story: how much bigger?}
   C -->|about the same| A[1]
   C -->|about twice| B[2]
   C -->|about three times| D[3]
@@ -44,7 +44,9 @@ flowchart LR
 
 A **story point** measures how big a story is compared with the team's other stories. It does not stand for a number of hours. A 3-point story is expected to take roughly three times the effort of a 1-point one, whatever "effort" means to that team. Two teams can give the same story different points, and neither is wrong, because each compares it with its own earlier work.
 
-Relative estimates are easier to make than absolute ones. Predicting that a story will take eleven hours means imagining every step, every interruption and every surprise. Deciding that it is bigger than one known story and smaller than another only needs a comparison with things the team has already done. People are usually more consistent at comparing than at predicting durations, so the numbers tend to agree more often from person to person.
+The diagram shows how that comparison works. The team picks a reference story it knows well, here a small bug fix sized at 1, as the smallest step on its scale. For a new story it asks how much bigger than the reference it looks: about the same is 1, about twice is 2, about three times is 3. A new story that looks smaller than the reference simply gets 1, the smallest size.
+
+Relative estimates are easier to make than absolute ones. Predicting that a story will take eleven hours means imagining every step, every interruption and every surprise. Deciding that it is bigger than one known story and smaller than another only needs a comparison with things the team has already done. The comparison also does not depend on who picks the story up, because the whole team compares it with the same known work. People are usually more consistent at comparing than at predicting durations, so the numbers tend to agree more often from person to person.
 
 The points are not required by Scrum. The Scrum Guide says the developers who will do the work are responsible for sizing it, and leaves the technique to the team. Story points are one common choice, not a rule.
 
@@ -62,7 +64,7 @@ Sprint 14's backlog, in `docs/team/sprint-example.md`:
 | Sửa lỗi tổng tiền sai ở đơn nhiều dòng | Dev 4 | 1 | Xong |
 ```
 
-The `Ước lượng` column holds plain numbers: 3, 3, 2, 2, 1. The wrong-total bug is the smallest, at 1; the cancel endpoint and the cancel button are about three times as big, at 3. Nothing in the table says how many hours any of them took; the numbers are sizes, not hours. The same file's retrospective confirms the unit:
+The `Ước lượng` column holds plain numbers: 3, 3, 2, 2, 1. The table calls every row an item (`Việc`), and the bug fix is sized in the same column as the new features. The wrong-total bug is the smallest, at 1; the cancel endpoint and the cancel button are about three times as big, at 3. Nothing in the table says how many hours any of them took; the numbers are sizes, not hours. The same file's retrospective confirms the unit:
 
 ```markdown file=docs/team/sprint-example.md tag=stage-0 lines=39-39
 - Hành động cho sprint sau: mỗi việc lớn hơn 3 điểm phải có hai người đọc code.
@@ -83,7 +85,7 @@ Open `docs/team/sprint-example.md` from the repository.
 2. Take a new story: "As a customer, I want to see my order's status on the order screen." Decide whether it is bigger or smaller than the wrong-total fix (1) and than the cancel button (3), and give it a number.
 3. Write one sentence on why you did not need to know how many hours the cancel button took.
 
-Expected result: 1 — the wrong-total fix (1); then the two items at 2; then the cancel endpoint and the cancel button (3). 2 — any number from 1 to 3 with a comparison as the reason, for example 2: "bigger than the wrong-total fix, smaller than the cancel button". 3 — because you only compared it with items the team already knew.
+Expected result: step 1 — the wrong-total fix (1); then the two items at 2; then the cancel endpoint and the cancel button (3). Step 2 — any number from 1 to 3 with a comparison as the reason, for example 2: "bigger than the wrong-total fix, smaller than the cancel button". Step 3 — because you only compared it with items the team already knew.
 
 Two teammates give the new story a 2 and a 3. How should the team settle it, without talking about hours?
 
