@@ -24,7 +24,7 @@ status: draft
 
 ## The situation
 
-A pull request lands in your review queue: 300 lines across a dozen files. The diff opens at the first file in alphabetical order, and twenty minutes of scrolling later you reach the end. Nothing looked wrong, the build is green, and you are about to write "looks good" and approve. Then a teammate asks what the PR changes about cancelling an order, and you realize you cannot say, although you read every line. Why can you not answer?
+A pull request lands in your review queue: 300 lines across a dozen files. The diff opens at the first file in alphabetical order, and twenty minutes of scrolling later you reach the end. Nothing looked wrong, every test passes, and you are about to write "looks good" and approve. Then a teammate asks what the PR changes about cancelling an order, and you realize you cannot say, although you read every line. Why can you not answer?
 
 ## Core concepts
 
@@ -77,7 +77,7 @@ First the tests, in `DonHang.Tests/Services/OrderServiceTests.cs`:
     }
 ```
 
-The tests say what the author expects: a `new` order becomes `cancelled`, and an unknown order throws. The story behind this work is about unpaid orders, so the first question writes itself: what happens to an order that has already shipped? The tests do not say.
+The tests say what the author expects: a `new` order becomes `cancelled`, and an unknown order throws. The cancellation story in `docs/team/story-example.md` is about orders that are not yet paid, and an order that has shipped is past that point. So the first question writes itself: what happens to an order that has already shipped? The tests do not say.
 
 Then the service, the layer closest to the rule, in `DonHang.Domain/OrderService.cs`:
 
@@ -96,7 +96,9 @@ Then the service, the layer closest to the rule, in `DonHang.Domain/OrderService
 
 Read against the question, the gap is plain: nothing between finding the order and setting its status looks at what the status was. A `shipped` order is cancelled just like a `new` one. That is the missing check, found in the second file you opened.
 
-Last, the controller. `OrdersController.Cancel` takes the id, calls `orderService.CancelOrderAsync(id)` and returns the order as a DTO, so it passes the layers check. Its constructor already takes `OrderService`, so cancellation needs nothing new from it, and the dependencies check has nothing to add. The team's review examples in `docs/team/review-comments-examples.md`, taken from a pull request that adds cancellation, open with a must-fix comment saying the same thing: a `shipped` order also gets moved to `cancelled`. (The service file also has a comment just above `CancelOrderAsync` pointing at this gap; the reading order finds it from the code alone.)
+Last, the controller. `OrdersController.Cancel` takes the id, calls `orderService.CancelOrderAsync(id)` and returns the order as a DTO, so it passes the layers check. Its constructor already takes `OrderService`, so cancellation needs nothing new from it, and the dependencies check has nothing to add. For the tests check, no test calls the controller; its one line of behavior is the service call, which the service tests cover.
+
+The team's review examples in `docs/team/review-comments-examples.md`, taken from a pull request that adds cancellation, open with a must-fix comment saying the same thing: a `shipped` order also gets moved to `cancelled`. The service file also has a comment just above `CancelOrderAsync` about this gap, but the reading order finds it from the code alone.
 
 ## Beginners often think…
 
@@ -105,7 +107,7 @@ Last, the controller. `OrdersController.Cancel` takes the id, calls `orderServic
 
 ## Try it (3 minutes)
 
-Open `DonHang.Api/Controllers/OrdersController.cs`, `DonHang.Domain/OrderService.cs` and `DonHang.Tests/Services/OrderServiceTests.cs` from the repository at stage-1.
+Open `DonHang.Domain/OrderService.cs` and `DonHang.Tests/Services/OrderServiceTests.cs` from the repository at stage-1.
 
 1. Read only the cancellation tests and write down every behavior they expect.
 2. Read `CancelOrderAsync` and write down one thing it does that no test checks.
