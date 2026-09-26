@@ -15,7 +15,9 @@ vocab: []
 example_tag: stage-1
 versions_used: [docker, postgresql]
 content_version: 1
-status: draft
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-27T21:00:00+07:00"
 ---
 
 ## Before you start
