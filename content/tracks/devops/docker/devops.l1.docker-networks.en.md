@@ -15,7 +15,9 @@ vocab: [docker-network]
 example_tag: stage-1
 versions_used: [docker]
 content_version: 1
-status: draft
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-27T18:00:00+07:00"
 ---
 
 ## Before you start
@@ -49,7 +51,7 @@ A **Docker network** works like a small private network inside your machine. Doc
 
 Addresses are hard to remember, so for a network you or Compose create, Docker also runs its own DNS server. Inside every container on such a network, the DNS server the container is told to ask is `127.0.0.11`, Docker's. When `api` looks up `db`, the question goes there, and Docker answers with the address of the container running the `db` service. This is the same lookup you saw in the DNS lesson; only the server answering it is different, and it knows only the containers on its own network.
 
-Everything outside the network is left out. A container on another Docker network, such as the default one plain `docker run` uses, gets no answer for `db` and cannot reach its address either, just as two separate physical networks cannot talk without something connecting them. Your own machine is outside too: on Docker Desktop, the app that runs Docker on Windows and macOS and the one the lab uses, the addresses in the range are not reachable from it, and its DNS server has never heard of `db`. The way in from outside is a published port, which Docker forwards from a port on your machine into one container.
+Everything outside the network is left out. A container on another Docker network, such as the default one plain `docker run` uses, gets no answer for `db` and cannot reach its address either, just as two separate physical networks cannot talk without something connecting them. Your own machine is outside too: on Docker Desktop, the app that runs Docker on Windows and macOS and the one the lab uses, the addresses in the range are not reachable from your machine, and your machine's DNS server has never heard of `db`. The way in from outside is a published port, which Docker forwards from a port on your machine into one container.
 
 ## In the Đơn Hàng system
 
