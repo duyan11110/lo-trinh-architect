@@ -15,7 +15,9 @@ vocab: [image, container]
 example_tag: stage-0
 versions_used: [docker]
 content_version: 1
-status: draft
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-27T15:00:00+07:00"
 ---
 
 ## Before you start
@@ -66,7 +68,9 @@ RUN apk add --no-cache \
       procps
 ```
 
-`FROM` names an existing image to start from: a small Linux with an SSH server, published by LinuxServer. `RUN apk add ...` installs the tools the lessons use: `openssl`, `git`, the Postgres client and `procps`. In a name such as `caddy:2.10.0`, the part before the colon is the image's name and the part after it is the tag, a label that usually marks one version of that image. `docker-compose.yml` tells Compose to build this file into an image named `donhang-lab:stage-0`, and to run one container from it, named `donhang-lab`. That container is the lab box. Every learner builds the image from the same file, on the same base image, named with an exact version in `FROM`, which is the main reason every lesson's script output has matched across machines since stage 0.
+`FROM` names an existing image to start from: a small Linux with an SSH server, published by LinuxServer. `RUN apk add ...` installs the tools the lessons use: `openssl`, `git`, the Postgres client and `procps`.
+
+In a name such as `caddy:2.10.0`, the part before the colon is the image's name and the part after it is the tag, a label that usually marks one version of that image. `docker-compose.yml` tells Compose to build this file into an image named `donhang-lab:stage-0`, and to run one container from it, named `donhang-lab`. That container is the lab box. Every learner builds the image from the same file, on the same base image, named with an exact version in `FROM`, which is the main reason every lesson's script output has matched across machines since stage 0.
 
 The two Caddy containers show the other side. Neither has a `Dockerfile` in the repository: both start from `caddy:2.10.0`, an image Caddy publishes ready-made. `donhang-web` is given the `Caddyfile` and the `www/` folder and forwards the API; `donhang-app-web` is given the built Flutter app and a different start command, `caddy file-server`, on port `8081`. Same image, two containers, each set up differently by `docker-compose.yml`.
 
