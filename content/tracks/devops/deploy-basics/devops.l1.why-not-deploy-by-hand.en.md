@@ -41,7 +41,7 @@ flowchart LR
   D[written definition] -->|built the same way| S3[server, every time]
 ```
 
-The diagram shows the same steps working on Friday and failing two weeks later, while a written definition gives the same result each time. A manual deploy has two weaknesses, and neither is about the code. The first is that the steps live in someone's head. Stop the old program, copy the files, start the new one: each time a person does it, it comes out slightly differently. A step is skipped, a command is typed with other options, a file is copied from the wrong folder. Nothing records what was actually done, so when something breaks, there is no list to compare against.
+The diagram shows the same steps working on Friday and failing two weeks later, while a written definition builds the server the same way each time. A manual deploy has two weaknesses, and neither is about the code. The first is that the steps live in someone's head. Stop the old program, copy the files, start the new one: each time a person does it, it comes out slightly differently. A step is skipped, a command is typed with other options, a file is copied from the wrong folder. Nothing records what was actually done, so when something breaks, there is no list to compare against.
 
 The second weakness is worse. A manual deploy has no fixed definition of what the target machine needs. Over months, people install a library here, change a setting there, and the server ends up in a state nobody wrote down. The deploy "works" because of that state, not because of anything written down. The next server, or the same server rebuilt, will not have it, and the same steps will fail there.
 

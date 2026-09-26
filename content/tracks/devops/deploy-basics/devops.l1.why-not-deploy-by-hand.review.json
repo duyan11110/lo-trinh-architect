@@ -1,7 +1,7 @@
 {
   "id": "devops.l1.why-not-deploy-by-hand",
   "technical": {
-    "reviewed_at": "2026-09-26T06:55:00+07:00",
+    "reviewed_at": "2026-09-26T09:30:00+07:00",
     "reviewer": "claude-opus-5-5",
     "claim_verdicts": [
       {
@@ -13,100 +13,57 @@
       {
         "n": 2,
         "verdict": "verified",
-        "evidence": "Dockerfile @ stage-1: `FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build`, `FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final`, comment \"Npgsql probes for Kerberos/GSSAPI support at startup; without this library present that probe logs a scary but harmless \\\"cannot open shared object\\\" line.\" Npgsql docs: \"since Npgsql 10.0 defaults to Prefer, it will attempt to get GSSAPI credentials, and may generate an error such as ... cannot open shared object file\" / \"falls back ... so the error is harmless.\" Program.cs runs Database.Migrate() on start, so the connection happens at startup.",
+        "evidence": "Dockerfile @ stage-1: `FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build`, `FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final`, comment \"Npgsql probes for Kerberos/GSSAPI support at startup; without this library present that probe logs a scary but harmless \\\"cannot open shared object\\\" line.\" Npgsql docs: \"since Npgsql 10.0 defaults to Prefer, it will attempt to get GSSAPI credentials, and may generate an error such as ... cannot open shared object file\" / \"...the error is harmless.\" R2: version_key efcore (Npgsql 10.0.3 via the EF Core 10 provider).",
         "source": "examples/don-hang @ stage-1: DonHang.Api/Dockerfile lines 5, 19-23; https://www.npgsql.org/doc/security.html"
       },
       {
         "n": 3,
         "verdict": "verified",
-        "evidence": "docker-compose.yml @ stage-1, service api.environment: `ConnectionStrings__Default: \"Host=db;Database=donhang;Username=donhang;Password=${POSTGRES_PASSWORD}\"`, `Jwt__SigningKey: \"${JWT_SIGNING_KEY}\"`. The values themselves come from .env, written by scripts/dev-secrets.sh.",
-        "source": "examples/don-hang @ stage-1: docker-compose.yml (service api)"
+        "evidence": "docker-compose.yml @ stage-1, service api.environment: `ConnectionStrings__Default: \"Host=db;Database=donhang;...\"`, `Jwt__SigningKey: \"${JWT_SIGNING_KEY}\"`. R2 wording \"signs login tokens with\": AuthController `[HttpPost(\"login\")]` returns `tokenService.IssueToken(...)`; JwtTokenService builds `SigningCredentials` from `configuration[\"Jwt:SigningKey\"]`.",
+        "source": "examples/don-hang @ stage-1: docker-compose.yml (service api); DonHang.Api/Controllers/AuthController.cs; DonHang.Api/JwtTokenService.cs lines 15-16"
       },
       {
         "n": 4,
-        "verdict": "rephrased",
-        "evidence": "`git grep -i \"libgssapi\\|gssapi\\|krb5\" stage-1` hits only DonHang.Api/Dockerfile lines 21 and 23: nothing in the API's code mentions it (verified). But \"needed only by the database library\" is too strong: .NET docs list libgssapi-krb5-2 among .NET's own Linux dependencies: \"if you manually install .NET or you publish a self-contained app, you'll need to make sure these libraries are installed: ... libgssapi-krb5-2\".",
-        "source": "refs/dotnet-docs/docs/core/install/linux-debian.md (Dependencies, 13.x/12.x); git grep at stage-1",
-        "suggested_text": "Nothing in the API's code mentions it; the lab installs it because the database library looks for it at startup."
+        "verdict": "verified",
+        "evidence": "Text now matches the R1 suggested_text. `git grep -i -e libgssapi -e gssapi -e krb5 stage-1` hits only DonHang.Api/Dockerfile (install line and comment): nothing in the API's code mentions it. The reason given is attributed to the Dockerfile comment: \"Npgsql probes for Kerberos/GSSAPI support at startup; without this library present that probe logs a scary but harmless ... line.\"",
+        "source": "examples/don-hang @ stage-1: git grep; DonHang.Api/Dockerfile"
       },
       {
         "n": 5,
         "verdict": "not-needed",
         "evidence": "Argument of the lesson restating outline items 1-2 and misconception 2 (track.yaml); not a documented product behaviour, number or syntax. Its over-strong restatement in §4 (\"exactly like the first, on any machine, by anyone\") is raised separately as an issue.",
         "source": "content/tracks/devops/track.yaml (devops.l1.why-not-deploy-by-hand outline, misconceptions)"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "scripts/dev-secrets.sh @ stage-1: \"The key DonHang.Api signs and checks JWTs with — random, so every learner's ...\"; `echo \"JWT_SIGNING_KEY=$(openssl rand -base64 48)\" >> .env`. scripts/up.sh: \"building them needs the Flutter SDK, which runs on the host, not in a container\"; `(cd DonHang.App && flutter build web >/dev/null)`. Lesson says only \"built by the same steps\", consistent.",
+        "source": "examples/don-hang @ stage-1: scripts/dev-secrets.sh lines 17-22; scripts/up.sh lines 9-12"
       }
     ],
     "issues": [
       {
-        "severity": "major",
-        "section": 5,
-        "kind": "accuracy",
-        "text": "Unlisted claim, contradicted by the repo. scripts/dev-secrets.sh @ stage-1 generates a random JWT key per lab (\"random, so every learner's lab has its own, and a token from one machine's api never verifies on another\"), and `flutter build web` uses whatever Flutter SDK is on the learner's host (the up.sh comment: \"runs on the host, not in a container\"). The labs are not the same.",
-        "quote": "You run the same script every time, and every learner's lab ends up the same.",
-        "fix": "Replace with: \"You run the same script every time, so every learner's lab is built by the same steps.\" Do not claim identical results."
-      },
-      {
-        "severity": "major",
+        "severity": "minor",
         "section": 4,
-        "kind": "opinion-as-fact",
-        "text": "Unconditional promise that contradicts the lesson's own §6 correction (\"a script run by hand still depends on who runs it, from which machine, with which files and settings around it\") and quiz q4. Writing steps down does not by itself make a deploy identical \"on any machine, by anyone\".",
-        "quote": "Then the tenth deploy is done exactly like the first, on any machine, by anyone, and a change to the target is a change to that written list, visible to everyone.",
-        "fix": "Replace with: \"Then the tenth deploy follows the same steps as the first, and a change to the target is a change to that written list, visible to everyone.\""
-      },
-      {
-        "severity": "major",
-        "section": 4,
-        "kind": "scope",
-        "text": "Outline item 3 not established: \"The gap between 'built and tested here' and 'running the same way there' is what the rest of this track — Docker, config, and later CI/CD — closes, one piece at a time.\" The lesson only points to the next module (Docker); config and the later automated deploy are never named as the remaining pieces. meta.coverage claims item 3 covered.",
-        "quote": "The next module, Docker, is about how the lab turns that `Dockerfile` into something that runs the same way on every machine.",
-        "fix": "Add after that sentence: \"The rest of this track closes the gap one piece at a time: Docker next, then how the API gets its settings, and in a later stage, deploys run by a program instead of a person.\" (Avoid the term CI/CD: not in known_vocab ∪ vocab.)"
-      },
-      {
-        "severity": "minor",
-        "section": 5,
         "kind": "accuracy",
-        "text": "Unlisted claim. The tags `sdk:10.0` / `aspnet:10.0` are version tags, not an exact build; .NET docs: including a SHA after the tag \"ensures ... that the image is the same as the one you expect\". The Dockerfile pins the major.minor version only.",
-        "quote": "It names the exact .NET 10 build tools used to build the API",
-        "fix": "Drop \"exact\": \"It names the .NET 10 build tools used to build the API\"."
+        "text": "Unlisted claim, and it reintroduces the over-strong promise removed in R1. A written definition gives the same steps, not the same result: the Dockerfile pins only `sdk:10.0`/`aspnet:10.0` (tags, not digests), and §5 itself now says labs are only \"built by the same steps\" (claim 6). Diagram label \"built the same way\" is fine; the prose goes further.",
+        "quote": "while a written definition gives the same result each time",
+        "fix": "Replace with: \"while a written definition builds the server the same way each time.\""
       },
       {
         "severity": "minor",
-        "section": 5,
-        "kind": "accuracy",
-        "text": "Unlisted claim, wrong. The previous two lessons are devops.l1.reverse-proxy-basics (does not mention the Dockerfile) and devops.l1.reverse-proxy-and-tls. The Dockerfile was met in devops.l1.what-is-deploy and devops.l1.reverse-proxy-and-tls.",
-        "quote": "the file you met in the last two lessons",
-        "fix": "Replace with \"the file you met earlier in this module\"."
-      },
-      {
-        "severity": "minor",
-        "section": 5,
-        "kind": "version",
-        "text": "The GSSAPI probe error is Npgsql-10 behaviour (docs: \"since Npgsql 10.0 defaults to Prefer, it will attempt to get GSSAPI credentials\"), while versions.yaml pins key npgsql at \"9\" (samples) and notes the API uses Npgsql 10.0.3 via the EF provider. The lesson names no version and has no claim tied to a version_key; acceptable only because it attributes the behaviour to the Dockerfile comment.",
-        "quote": "the database library probes for it at startup",
-        "fix": "Keep the attribution to the comment explicit (\"the comment says the database library probes for it at startup\") and set claim 2's version_key to efcore (the API's Npgsql comes with the EF Core 10 provider) so an npgsql/efcore bump re-triggers review."
-      },
-      {
-        "severity": "minor",
-        "section": "devops.l1.why-not-deploy-by-hand.q5",
+        "section": "devops.l1.why-not-deploy-by-hand.q2",
         "kind": "quiz",
-        "text": "Key a is vague and partly unsupported: \"only a library needs it\" — .NET docs list libgssapi-krb5-2 as a .NET dependency too; the lesson's reason is that nothing in the API's code mentions it and the database library looks for it.",
-        "quote": "Because only a library needs it, so nobody would remember it",
-        "fix": "Option a: \"Because nothing in the API's code mentions it; the database library looks for it, so a person installs it once and forgets it\" (vi accordingly)."
-      },
-      {
-        "severity": "minor",
-        "section": "devops.l1.why-not-deploy-by-hand.q5",
-        "kind": "quiz",
-        "text": "Explanation c places the signing key in `.env`, but the lesson (§5) says the settings are written down in docker-compose.yml. Both are true in the repo (compose maps ${JWT_SIGNING_KEY} from .env) but the lesson never mentions .env, so the explanation is not grounded in the lesson text.",
-        "quote": "The signing key is a setting in `.env`; this is a system library.",
-        "fix": "Explanation c (en): \"The signing key is a setting passed in through `docker-compose.yml`; this is a system library.\" (vi accordingly)."
+        "text": "Key c is now absolute. The lesson (§6) says \"when that person is away, nobody else knows the steps\", not that no one else can deploy. Key is still the best option, so not ambiguous, but its second half is stronger than the lesson text.",
+        "quote": "False, because even one person varies the steps, and no one else can deploy.",
+        "fix": "Option c en: \"False, because even one person varies the steps, and no one else knows them.\" vi: \"Sai, vì ngay cả một người cũng làm khác đi, và không ai khác biết các bước.\""
       }
     ],
     "scope": {
-      "outline_covered": false,
+      "outline_covered": true,
       "beyond_scope": []
     },
-    "verdict": "fix-required"
+    "verdict": "pass"
   },
   "junior": {
     "reviewed_at": "2026-09-26T08:00:00+07:00",
