@@ -45,7 +45,7 @@ A container's own changes live with the container. That is fine for temporary fi
 
 When the container is removed, the volume stays. Start a new container with the same volume at the same path, and it finds the data exactly where the old one left it. A named volume has its own lifecycle: it is created once, used by whichever container mounts it, and stays until someone removes it.
 
-Docker also has a second kind of mount, the bind mount, which shows a folder or file that already exists on your machine inside the container, at a path you choose. Docker keeps the word volume for the named kind: a bind mount is a separate type, and `docker volume ls` does not list it. Both keep data outside the container. The difference is that a bind mount points at a path you picked on your machine, while a named volume is found by its name and Docker decides where on disk it is kept.
+Docker also has a second kind of mount, the bind mount, which shows a folder or file that already exists on your machine inside the container, at a path you choose. Docker does not call a bind mount a volume: it is a separate type, and `docker volume ls` does not list it. Both keep data outside the container. The difference is that a bind mount points at a path you picked on your machine, while a named volume is found by its name and Docker decides where on disk it is kept.
 
 ## In the Đơn Hàng system
 
