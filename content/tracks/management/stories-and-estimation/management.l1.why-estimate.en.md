@@ -44,7 +44,7 @@ flowchart LR
   L -.-> E
 ```
 
-A team estimates so that it can plan. At sprint planning, the question is how many of the waiting stories fit into the next sprint. That question cannot be answered without some idea of how big each story is compared with the others. The numbers a team gives compare stories with each other; they are not hours or days, and the next lesson shows how they are chosen. The same holds for larger work: to say whether a feature is a matter of weeks or of months, the team needs a rough size for its parts.
+A team estimates so that it can plan. At sprint planning, the question is how many of the waiting stories fit into the next sprint. That question cannot be answered without some idea of how big each story is compared with the others. The numbers in Sprint 14 compare stories with each other; they are not hours or days, and the next lesson shows how they are chosen. The same holds for larger work: to say whether a feature is a matter of weeks or of months, the team needs a rough size for its parts.
 
 An estimate is made before the work starts, so it can only use what the team knows then. The code has not been read closely, the unexpected problem has not appeared yet, and the person who knows the old module may be on holiday. Estimates will therefore sometimes be wrong, in both directions: some work turns out smaller than it looked, and some larger. That is expected, not a sign that the team did something wrong.
 
@@ -77,7 +77,7 @@ The unfinished item was estimated at 2 and still did not fit. Does that mean the
 
 <details><summary>Suggested answer</summary>
 
-No. The 2 was the team's best guess with what it knew at planning; the item took longer than that, which work sometimes does, and the file does not say why. The estimate still did its job: it helped the team choose five items for two weeks. Stopping would leave the team with no way to decide how much fits into a sprint. The better response is to find out at the retrospective why it took longer and use that at the next planning.
+No. The 2 was the team's best guess with what it knew at planning; the item took longer than that, which work sometimes does, and the file does not say why. An estimate like this still does its job: it helps a team judge how many items fit into a sprint. Stopping would leave the team with no way to decide how much fits into a sprint. The better response is to find out at the retrospective why it took longer and use that at the next planning.
 
 </details>
 
@@ -93,4 +93,4 @@ No. The 2 was the team's best guess with what it knew at planning; the item took
 2. An estimate is made before the work starts, with only what is known then.
 3. Estimates are sometimes wrong in both directions, and that is expected, not a failure.
 4. Work can start without an estimate, but a sprint cannot be planned without knowing roughly how big each story is.
-5. Sprint 14's `Ước lượng` column helped the team plan; the item that did not finish did not make its estimate a broken promise.
+5. Sprint 14's `Ước lượng` column is the kind of number a team plans with; the item that did not finish did not make its estimate a broken promise.
