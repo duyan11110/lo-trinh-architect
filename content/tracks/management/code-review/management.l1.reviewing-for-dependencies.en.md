@@ -25,35 +25,37 @@ status: draft
 
 ## The situation
 
-A pull request adds a class that tells a customer their order has shipped. It works, the tests pass, and the code is short. Inside the class, one field is set with `new` to a concrete email sender. Another reviewer has already approved it with "looks good", and you have the diff open and five minutes. You could read every line of the new method, or you could look first at just two places: the class's constructor, and the `using` lines at the top of the file. Why would those two places tell you so much?
+A pull request adds a class that tells a customer their order has shipped. It works, the tests pass, and the code is short. Inside the class, one field is set with `new` to a concrete email sender. Another reviewer has already approved it with "looks good", and you have the diff open and five minutes. You could read every line of the new method, or you could look first at the top of the class: its `using` lines, its constructor and its fields. Why would those few lines tell you so much?
 
 ## Core concepts
 
 - constructor parameter — a value a class asks for when it is created, instead of making it itself; this is how dependency injection hands it what it needs.
-- reaching for a dependency — creating or naming a concrete object directly inside a class, for example with `new`, instead of asking for it.
-- public interface — the part of another project or module that is meant to be used from outside, as opposed to its internal details.
+- reaching for a dependency — creating a concrete object inside the class itself, for example with `new` in a field or a method, instead of asking for it.
+- public contract — the types a project offers for other projects to use, often a C# `interface`, as opposed to the concrete classes it uses for its own work.
 
 ## How it works
 
 ```mermaid
 flowchart TD
-  C[new class in the diff] --> P[read its constructor]
+  C[new class in the diff] --> P[read its constructor and fields]
   C --> U[read its using lines]
-  P --> A{asks for abstractions?}
+  P --> A{asks for what it needs?}
+  A -->|no, creates it with new| X[comment]
+  A -->|yes, but a concrete class| K[worth a question]
   P --> N{how many parameters?}
-  U --> I{uses another project's public interface?}
-  A -->|no, uses new or a concrete class| X[comment]
   N -->|many| X
-  I -->|no, reaches into its details| X
+  P --> I{another project's contract or its details?}
+  U --> I
+  I -->|details| X
 ```
 
-Reviewing for dependencies means reading how a new class gets what it needs. Two places tell you most of it: the constructor, which lists what the class asks for, and the `using` lines, which show which other projects' namespaces the file brings in. The `using` lines are not a complete list: a type from the file's own project needs no `using`, as `JwtTokenService` shows in `AuthController` below, so read the types in the constructor too. You do not need a tool for this; you read both by eye.
+Reviewing for dependencies means reading how a new class gets what it needs, by eye, from the top of the class. The constructor lists what it asks for, the fields show anything it creates itself, and the `using` lines show which other projects' namespaces it brings in. The `using` lines are not a complete list, because a type from the file's own project needs no `using`, so read the constructor's types too.
 
-The first check is whether the class asks or reaches. A class that takes an `INotifier` as a constructor parameter can be given any notifier, including a fake one in a test. A class that creates its own concrete notifier with `new` cannot, and changing the channel means editing that class. That undoes the whole point of dependency injection, and it is worth a comment even if the code works.
+The first check is whether the class asks or reaches. A class that takes an `INotifier` in its constructor can be given any notifier, including a fake in a test. A class that creates its own concrete notifier with `new` cannot, and changing the channel means editing it; that is worth a comment even if the code works. A class that asks for a concrete class is in between: whoever creates it still chooses what to pass, so that is usually worth a question.
 
-The second check is how many constructor parameters there are. There is no rule that says how many is too many. But the Single Responsibility Principle (SRP) predicts that a class which needs many different things probably does many different jobs, and the constructor is where that shows first. A long parameter list is a reason to ask what the class is responsible for, not a style complaint.
+The second check is how many constructor parameters there are. No rule says how many is too many, but the Single Responsibility Principle (SRP) predicts that a class needing many different things probably does many jobs. A long list is a reason to ask what the class is responsible for, not a style complaint.
 
-The third check is where the dependencies come from. A class that uses another project through an interface that project offers stays loosely coupled to it. A class that reaches into another project's details, a concrete class meant for that project's own work, ties the two together more tightly with every such line. Catching it in review stops that coupling before other code copies the pattern.
+The third check is where each dependency comes from: an interface another project offers for others to use, or a concrete class that project uses for its own work. Using another project's contract keeps the two loosely coupled. Reaching into its details ties them together more tightly with every such line, and review can stop that coupling before other code copies it.
 
 ## In the Đơn Hàng system
 
@@ -77,9 +79,9 @@ public sealed class OrderNotifications(INotifier notifier)
 }
 ```
 
-Read the two classes as if they arrived in a diff. `OrderPlacedTightlyCoupled` has no constructor parameters; its field is created with `new()` as an `EmailNotifier`, a concrete class. A reviewer would comment: this class cannot be tested without that email sender, and switching to another channel means editing it. `OrderNotifications` asks for an `INotifier` in its constructor, so whoever creates it chooses the notifier.
+Read the two classes as if they arrived in a diff; the comment in the middle names notifiers from an earlier lesson, and only `INotifier` matters here. `OrderPlacedTightlyCoupled` has no constructor parameters; its field is created with `new()` as an `EmailNotifier`, a concrete class. A reviewer would comment: this class cannot be tested without that email sender, and switching to another channel means editing it. `OrderNotifications` asks for an `INotifier` in its constructor, so whoever creates it chooses the notifier.
 
-The service that places and cancels orders, in `DonHang.Domain/OrderService.cs`, is declared as `OrderService(IOrderRepository repository, INotifier notifier)`: two constructor parameters, both interfaces declared in `DonHang.Domain` itself. Nothing in the file names Entity Framework Core or the `DonHang.Infrastructure` project. It passes all three checks.
+The service that places and cancels orders, in `DonHang.Domain/OrderService.cs`, is declared as `OrderService(IOrderRepository repository, INotifier notifier)`: two constructor parameters, both interfaces declared in `DonHang.Domain` itself. Nothing in the file names a database class or the `DonHang.Infrastructure` project. It passes all three checks.
 
 Now the login controller, in `DonHang.Api/Controllers/AuthController.cs`:
 
@@ -97,7 +99,7 @@ namespace DonHang.Api.Controllers;
 public sealed class AuthController(DonHangDbContext db, JwtTokenService tokenService) : ControllerBase
 ```
 
-The `using DonHang.Infrastructure;` line and the constructor say the same thing: `AuthController` takes `DonHangDbContext`, the concrete database class from the infrastructure project, not an interface. It also takes `JwtTokenService`, a concrete class from the API project itself. A reviewer can ask whether the controller could depend on an interface instead of the infrastructure project's database class, which is the same question the layers review asked from another side.
+The `using DonHang.Infrastructure;` line and the constructor say the same thing: `AuthController` takes `DonHangDbContext`, the concrete database class from the infrastructure project, not an interface. It also takes `JwtTokenService`, a concrete class from the API project itself. In Đơn Hàng the infrastructure project's contract is the interfaces it implements from `DonHang.Domain`, such as `IOrderRepository`; `DonHangDbContext` is its own working detail. A reviewer can ask whether the controller could depend on such an interface instead of the database class, which is the same question the layers review asked from another side.
 
 ## Beginners often think…
 
@@ -118,7 +120,7 @@ A teammate says: "`OrdersController` takes a concrete `OrderService`, so it brea
 
 <details><summary>Suggested answer</summary>
 
-Not quite. `OrdersController` still asks for `OrderService` in its constructor, so whoever creates it chooses which object to pass; in the API, ASP.NET Core creates the controller and the DI container supplies what its constructor asks for. `OrderPlacedTightlyCoupled` creates its own `EmailNotifier` with `new`, so nobody outside can choose. Depending on a concrete class that is passed in is usually a smaller concern than creating one yourself, because the caller can still choose what to pass; the first can be worth a question, the second is worth a clear comment.
+Not quite. `OrdersController` still asks for `OrderService` in its constructor, so whoever creates it chooses which object to pass; in the API, the web framework creates the controller and the DI container supplies what its constructor asks for. `OrderPlacedTightlyCoupled` creates its own `EmailNotifier` with `new`, so nobody outside can choose. Depending on a concrete class that is passed in is usually a smaller concern than creating one yourself, because the caller can still choose what to pass; the first can be worth a question, the second is worth a clear comment.
 
 </details>
 
