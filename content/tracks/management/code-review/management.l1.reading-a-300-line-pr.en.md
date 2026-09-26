@@ -77,7 +77,7 @@ First the tests, in `DonHang.Tests/Services/OrderServiceTests.cs`:
     }
 ```
 
-The tests say what the author expects: a `new` order becomes `cancelled`, and an unknown order throws. The cancellation story in `docs/team/story-example.md` is about orders that are not yet paid, and an order that has shipped is past that point. So the first question writes itself: what happens to an order that has already shipped? The tests do not say.
+The tests say what the author expects: a `new` order becomes `cancelled`, and an unknown order throws. The cancellation story in `docs/team/story-example.md` is about orders that are not yet paid, and its acceptance criterion 3 lists `shipped` among the statuses that get no cancel button. So the first question writes itself: what happens to an order that has already shipped? The tests do not say.
 
 Then the service, the layer closest to the rule, in `DonHang.Domain/OrderService.cs`:
 
@@ -96,7 +96,7 @@ Then the service, the layer closest to the rule, in `DonHang.Domain/OrderService
 
 Read against the question, the gap is plain: nothing between finding the order and setting its status looks at what the status was. A `shipped` order is cancelled just like a `new` one. That is the missing check, found in the second file you opened.
 
-Last, the controller. `OrdersController.Cancel` takes the id, calls `orderService.CancelOrderAsync(id)` and returns the order as a DTO, so it passes the layers check. Its constructor already takes `OrderService`, so cancellation needs nothing new from it, and the dependencies check has nothing to add. For the tests check, no test calls the controller; its one line of behavior is the service call, which the service tests cover.
+Last, the controller. `OrdersController.Cancel` takes the id, calls `orderService.CancelOrderAsync(id)` and returns the order as a DTO, so it passes the layers check. Its constructor already takes `OrderService`, so cancellation needs nothing new from it, and the dependencies check has nothing to add. For the tests check, no test calls the controller. Its main work is the service call, which the service tests cover; the `[Authorize]` on it and the DTO it returns have no test, which is worth a question rather than a must-fix.
 
 The team's review examples in `docs/team/review-comments-examples.md`, taken from a pull request that adds cancellation, open with a must-fix comment saying the same thing: a `shipped` order also gets moved to `cancelled`. The service file also has a comment just above `CancelOrderAsync` about this gap, but the reading order finds it from the code alone.
 
