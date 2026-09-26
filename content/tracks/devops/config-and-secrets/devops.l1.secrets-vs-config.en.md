@@ -15,7 +15,9 @@ vocab: [secret]
 example_tag: stage-1
 versions_used: [docker]
 content_version: 1
-status: draft
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-27T23:00:00+07:00"
 ---
 
 ## Before you start
@@ -44,7 +46,7 @@ flowchart LR
 
 Every **secret** is config, but not all config is secret. A log level can be printed, shared in a chat and committed to the repository without harm. A database password or a signing key cannot: whoever reads it gets the power it protects. So secrets need stricter rules than ordinary config. They are kept out of the repository, shown to as few people and programs as possible, and replaced when they leak.
 
-Keeping a secret out of the repository means the committed files hold only a placeholder, and the real value lives somewhere Git does not track. For a local lab, that is a file on your own machine that `.gitignore` excludes. In the lab, `scripts/dev-secrets.sh` writes that file, Compose reads it and fills its values into the `${...}` placeholders of `docker-compose.yml` as it reads that file, without changing the file, and the API's container receives them as environment variables. So every developer gets a working value without anyone committing one.
+Keeping a secret out of the repository means the committed files hold only a placeholder, and the real value lives somewhere Git does not track. For a local lab, that is a file on your own machine that `.gitignore` excludes. In the lab, `scripts/dev-secrets.sh` writes `.env`, and Compose fills the values from `.env` into the `${...}` placeholders while it reads `docker-compose.yml`, without changing `docker-compose.yml`, and the API's container receives them as environment variables. So every developer gets a working value without anyone committing one.
 
 Committing a secret is hard to undo. Git keeps every version of every file, so a secret committed once stays in the history even after a later commit deletes it, and anyone with a clone, a full copy of the repository with all its history, can find it. Deleting it from your files and committing the deletion is not enough; the secret has to be treated as leaked and replaced.
 
