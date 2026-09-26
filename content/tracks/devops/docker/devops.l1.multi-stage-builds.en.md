@@ -75,14 +75,14 @@ ENV ASPNETCORE_URLS=http://+:8080
 ENTRYPOINT ["dotnet", "DonHang.Api.dll"]
 ```
 
-`FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final` starts the second stage from the ASP.NET Core runtime image, which can run the API but has no SDK. `WORKDIR /app` works in `/app`, and the `RUN apt-get ...` line installs the one extra system library from the deploy lesson. Then `COPY --from=build /app .` takes only the published output from the `build` stage. `EXPOSE 8080` records the port the API uses, `ENV ASPNETCORE_URLS=http://+:8080` tells Kestrel to listen there, and `ENTRYPOINT ["dotnet", "DonHang.Api.dll"]` is the command a container from this image starts with.
+`FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final` starts the second stage from the ASP.NET Core runtime image, which can run the API but has no SDK. `WORKDIR /app` makes `/app` the current folder, so the `.` in the `COPY` below means `/app`. The `RUN apt-get ...` line installs the one extra system library from the deploy lesson; its comment only gives that lesson's reason, and its terms do not matter here. Then `COPY --from=build /app .` takes only the published output from the `build` stage. `EXPOSE 8080` records the port the API uses, `ENV ASPNETCORE_URLS=http://+:8080` tells Kestrel to listen there, and `ENTRYPOINT ["dotnet", "DonHang.Api.dll"]` is the command a container from this image starts with.
 
-This is also why, in the last lesson, the final `COPY --from=build` step ran again after a code change: the published output it copies had changed.
+This is also why, in the last lesson, the final `COPY --from=build` step ran again after a code change: a `COPY` step runs again when the files it copies have changed, and the published output had.
 
 ## Beginners often think…
 
 - **"Every FROM in a Dockerfile has to produce its own separate image; there's no way to combine stages into one final result."** → Actually only the last stage becomes the image; the earlier stage is a step on the way, and `COPY --from=` carries its result across. You notice this when `docker images` lists one `donhang-api` image after the build, not one per `FROM`.
-- **"The SDK image and the runtime image behave identically, so which one the final container runs from doesn't matter."** → Actually the runtime image can run the API but cannot build anything, and the SDK image carries the compiler and build tools on top, which makes it several times larger. Running from the SDK would ship all of that to every machine for nothing. You notice this when `dotnet --list-sdks` inside the API's image prints nothing, because no SDK is there.
+- **"The SDK image and the runtime image behave identically, so which one the final container runs from doesn't matter."** → Actually the runtime image can run the API but cannot build anything, and the SDK image contains the runtime too, plus the compiler and build tools on top, which makes it several times larger. Running from the SDK would ship all of that to every machine for nothing. You notice this when `dotnet --list-sdks` inside the API's image prints nothing, because no SDK is there.
 
 ## Try it (3 minutes)
 
@@ -105,7 +105,7 @@ They stayed in the `build` stage, which is not part of the final image: a multi-
 ## Connections
 
 - [[devops.l1.dockerfile-for-dotnet]] — the `build` stage this lesson's `final` stage copies from.
-- [[devops.l1.compose-for-the-api]] — how Compose builds this image and runs it next to the database.
+- [[devops.l1.compose-for-the-api]] — how the lab builds this image and runs it next to the database.
 - [[devops.l1.why-not-deploy-by-hand]] — the extra system library the `final` stage installs, and why it is written down.
 
 ## Five-line summary
