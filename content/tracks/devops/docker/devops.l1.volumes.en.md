@@ -114,7 +114,7 @@ The orders were never in the container: Postgres wrote them to `/var/lib/postgre
 ## Five-line summary
 
 1. A **volume** is storage outside any one container; a container sees it as a folder, and it stays when the container is removed.
-2. A named volume is managed by Docker under a name; a bind mount, a separate kind of mount, shows a folder or file from your machine.
+2. A named volume is managed by Docker; a bind mount, a separate kind of mount, shows a folder or file from your machine.
 3. The `db` service mounts `db-data` where Postgres keeps its data, so removing the container keeps every order.
 4. `schema.sql` and `seed.sql` run only when that data folder is empty, which is only on the very first start.
 5. The lab box's `./:/repo:ro` is a bind mount: your repository folder, shown read-only inside the container.
