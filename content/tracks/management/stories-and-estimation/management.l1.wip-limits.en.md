@@ -42,7 +42,7 @@ flowchart LR
   F[free person] -.column full.-> R
 ```
 
-A **WIP limit** belongs to one column; on the Đơn Hàng team's board it is the number in brackets after the column name. It says how many items may be in that column at the same time. While the column has room, anyone who is free pulls the next item in. When it is full, the rule is plain: nobody starts another item there until one leaves.
+On the Đơn Hàng team's board, each **WIP limit** belongs to one column: it is the number in brackets after the column name. It says how many items may be in that column at the same time. While the column has room, anyone who is free pulls the next item in. When it is full, the rule is plain: nobody starts another item there until one leaves.
 
 The limit changes what a free person does. Instead of opening something new, they look at what is already in progress or waiting and help move it forward: review a pull request that is waiting, test a fix, or sit with the person on a stuck item and work on it together. In the diagram, that is the dashed arrow: a free person who finds `In progress` full goes to `Waiting for review` to help there. Work gets finished before more is started, so fewer things sit half-done.
 
