@@ -41,7 +41,7 @@ flowchart BT
   R2 --> I[the image = all layers stacked]
 ```
 
-A `Dockerfile` is a list of steps, and Docker runs them in order. `FROM` does not add anything of its own: it brings in the base image, which already is a stack of layers. Each `RUN` or `COPY` after it then adds one **image layer** on top: the files that step added, changed or removed, and nothing else. Some other instructions, such as `EXPOSE` or `ENV`, only record a setting in the image and add no files. The finished image is the whole stack, read from the bottom up, and a container sees it as one set of files.
+A `Dockerfile` is a list of steps, and Docker runs them in order. `FROM` does not add anything of its own: it brings in the base image, which already is a stack of layers. Each `RUN` (run a command inside the image being built) or `COPY` (copy files from your repository into it) after it then adds one **image layer** on top: the files that step added, changed or removed, and nothing else. Some other instructions, such as `EXPOSE` or `ENV`, only record a setting in the image and add no files. The finished image is the whole stack, read from the bottom up, and a container sees it as one set of files.
 
 Docker keeps each layer it builds. On the next build it walks the steps again, and for each one it asks whether it already has a layer made by exactly this instruction, on top of exactly the same layer below, with the same input files for a `COPY`. If so, it reuses that layer instead of running the step. At the first step where the answer is no, it runs the step for real, and from then on it runs every step after it too, because each of those now sits on a different layer below.
 
@@ -63,7 +63,7 @@ RUN apk add --no-cache \
       procps
 ```
 
-Two instructions build the lab box's image. `FROM lscr.io/linuxserver/openssh-server:version-10.3_p1-r1` brings in the base image's layers: a small Linux with an SSH server, already built and published. `RUN apk add --no-cache ...` then adds one layer on top, holding the four tools the lessons use. That is the only layer this file creates; everything below it came from the base image.
+Two instructions build the lab box's image. `FROM lscr.io/linuxserver/openssh-server:version-10.3_p1-r1` brings in the base image's layers: a small Linux that you can log in to over SSH, already built and published. `RUN apk add --no-cache ...` then adds one layer on top, holding the four tools the lessons use. `apk` is the program this Linux uses to install software; its `--no-cache` option only stops `apk` keeping its own download list in the image, and has nothing to do with Docker's layer cache. That is the only layer this file creates; everything below it came from the base image.
 
 On a rebuild, the `FROM` line names the same base image, and the `RUN` line is the same text on top of the same layers, so Docker reuses the layer it already has and prints `CACHED` for that step. If you added `curl` to the `apk add` list, the `RUN` line would change: Docker would reuse the base image and run only that one step again. If you changed the version in `FROM`, every layer above it would be rebuilt, because the bottom of the stack would be different.
 
@@ -76,10 +76,10 @@ On a rebuild, the `FROM` line names the same base image, and the `RUN` line is t
 
 With the lab running, from the repository root, in a terminal on your own machine:
 
-1. Run `docker history donhang-lab:stage-0` and look at the top rows.
+1. Run `docker history donhang-lab:stage-0`, which lists the layers of the lab box's image from the top down, and look at the top rows.
 2. Run `docker compose build lab` and read the lines for the `apk add` step.
 
-Expected result: 1 — the top row is the `RUN /bin/sh -c apk add --no-cache ...` step with a size of a little over 12 MB; the rows below it come from the base image, and some of them have a size of `0B`. 2 — the `[lab 2/2] RUN apk add ...` step is marked `CACHED` (in a terminal: `=> CACHED [lab 2/2] RUN apk add ...`), and the build finishes in a moment.
+Expected result: 1 — the top row is the `RUN /bin/sh -c apk add --no-cache ...` step with a size of a little over 12 MB; the rows below it come from the base image, and some of them have a size of `0B`, because they only recorded a setting, like `EXPOSE`. Docker shows each `RUN` step as `/bin/sh -c` followed by the command, because it runs the command through the image's shell. 2 — the `[lab 2/2] RUN apk add ...` step is marked `CACHED` (in a terminal: `=> CACHED [lab 2/2] RUN apk add ...`), and the build finishes in a moment.
 
 Suppose you added `curl` to the `apk add` list and built again. Which step would Docker reuse, which would it run, and why?
 
