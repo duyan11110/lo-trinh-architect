@@ -57,7 +57,7 @@ In Sprint 14's backlog, in `docs/team/sprint-example.md`, the item `Ngừng gử
 tính, dù đã viết gần hết code.
 ```
 
-The item was not shown at the review, even though almost all of its code was written: not finished means not counted. This matches the Scrum Guide, which says an item that does not meet the **Definition of Done** is not presented at the Sprint Review and goes back to the Product Backlog for later. The team did not call it done to make the sprint match the plan, and it did not change the 2 after the fact.
+The item was not shown at the review, even though almost all of its code was written: not finished means not counted. This matches the Scrum Guide, which says an item that does not meet the Definition of Done is not presented at the Sprint Review and goes back to the Product Backlog for later. The team did not call it done to make the sprint match the plan, and it did not change the 2 after the fact.
 
 The retrospective in the same file:
 
