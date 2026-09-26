@@ -47,11 +47,11 @@ Start with the tests. They say what the author believes the change should do, in
 
 Next, read the layer closest to the behavior the PR describes. For a change to a business rule, that is the service; the controller and the repository only carry the rule in and out. With the tests' list in your head, you can check the service line by line against it: does the code do what the tests expect, and is there something it should do that no test mentions?
 
-Then read everything else, and run the module's checklist over each part: is it in the right layer, how does it get what it needs, and is its behavior tested. The checklist is what turns a pass through the diff into a review. A 300-line PR approved after fifteen minutes with no comments usually means the reviewer skimmed it, not that there was nothing to say.
+Then read everything else, and run the module's checklist over each part: is it in the right layer, how does it get what it needs, and is its behavior tested. The checklist is what turns a pass through the diff into a review. A 300-line PR approved after fifteen minutes with no comments more often means the reviewer skimmed it, not that there was nothing to say.
 
 ## In the Đơn Hàng system
 
-The cancellation change at stage-1 touches three places: a test file, the service and the controller. Read them in the order above.
+At stage-1, cancellation lives mainly in three places: the tests, the service and the controller, plus a small `Seed` helper in the fake repository the tests use. Read them as if they were one pull request, in the order above.
 
 First the tests, in `DonHang.Tests/Services/OrderServiceTests.cs`:
 
@@ -96,12 +96,12 @@ Then the service, the layer closest to the rule, in `DonHang.Domain/OrderService
 
 Read against the question, the gap is plain: nothing between finding the order and setting its status looks at what the status was. A `shipped` order is cancelled just like a `new` one. That is the missing check, found in the second file you opened.
 
-Last, the controller. `OrdersController.Cancel` takes the id, calls `orderService.CancelOrderAsync(id)` and returns the order as a DTO, so it passes the layers check. Its constructor is unchanged, so there is nothing new for the dependencies check. The team's review examples in `docs/team/review-comments-examples.md`, taken from a pull request that adds cancellation, open with a must-fix comment saying the same thing: `đơn shipped cũng bị chuyển sang cancelled`, a `shipped` order also gets moved to `cancelled`.
+Last, the controller. `OrdersController.Cancel` takes the id, calls `orderService.CancelOrderAsync(id)` and returns the order as a DTO, so it passes the layers check. Its constructor already takes `OrderService`, so cancellation needs nothing new from it, and the dependencies check has nothing to add. The team's review examples in `docs/team/review-comments-examples.md`, taken from a pull request that adds cancellation, open with a must-fix comment saying the same thing: a `shipped` order also gets moved to `cancelled`. (The service file also has a comment just above `CancelOrderAsync` pointing at this gap; the reading order finds it from the code alone.)
 
 ## Beginners often think…
 
 - **"A bigger PR just needs more time spent reading top to bottom, in the order the diff shows it."** → Actually the diff's order follows file paths, not meaning; more time in that order is more skimming. You notice this when you finish a long diff and cannot say what it changes, as in the situation above.
-- **"Approving quickly is a sign of trusting the author, and asking questions is a sign of not trusting them."** → Actually questions are how a reviewer checks the change, not the person; a careful author expects them. You notice this in the review examples file, where a must-fix comment ends with a question to the author instead of a verdict.
+- **"Approving quickly is a sign of trusting the author, and asking questions is a sign of not trusting them."** → Actually questions are how a reviewer checks the change, not the person; many authors expect them. You notice this in the review examples file, where a must-fix comment ends with a question to the author instead of a verdict.
 
 ## Try it (3 minutes)
 
@@ -111,13 +111,13 @@ Open `DonHang.Api/Controllers/OrdersController.cs`, `DonHang.Domain/OrderService
 2. Read `CancelOrderAsync` and write down one thing it does that no test checks.
 3. Write one review comment, marked as must-fix, suggestion or question.
 
-Expected result: step 1 — a `new` order becomes `cancelled`; an unknown id throws `KeyNotFoundException`. Step 2 — any of: it sends a notification on cancel; it cancels a `shipped` order; it cancels an order that is already `cancelled`. Step 3 — for example, must-fix: "`CancelOrderAsync` cancels a `shipped` order; the story is about unpaid orders. Should it refuse, and could you add a test that tries a `shipped` order?"
+Expected result: step 1 — a `new` order becomes `cancelled`; an unknown id throws `KeyNotFoundException`. Step 2 — any of: it sends a notification on cancel; it cancels a `shipped` or `paid` order; it cancels an order that is already `cancelled`. Step 3 — for example, must-fix: "`CancelOrderAsync` cancels a `shipped` order; the story is about unpaid orders. Should it refuse, and could you add a test that tries a `shipped` order?"
 
 You found the missing check in the second file. Should you stop reading and send the comment, or finish the PR first?
 
 <details><summary>Suggested answer</summary>
 
-Finish it, then send all comments together. One found problem does not mean it is the only one, and the author gets a clearer picture from one complete review than from comments arriving one at a time. The reading order made the most important problem appear early; the checklist over the remaining files is what makes sure nothing else is missed.
+Finish it, then send all comments together. One found problem does not mean it is the only one, and one complete review is often easier for the author to work through than comments arriving one at a time. The reading order made the most important problem appear early; the checklist over the remaining files is what makes sure nothing else is missed.
 
 </details>
 
@@ -133,4 +133,4 @@ Finish it, then send all comments together. One found problem does not mean it i
 2. Read tests first for the intended behavior, then the layer closest to it, then the rest.
 3. The checklist of layers, dependencies and tests is what turns a pass through the diff into a review.
 4. In the cancellation change, tests first and then `CancelOrderAsync` show the missing `shipped` check in the second file.
-5. A large PR approved quickly with no comments usually means it was skimmed, not that it was perfect.
+5. A large PR approved quickly with no comments more often means it was skimmed than that it was perfect.
