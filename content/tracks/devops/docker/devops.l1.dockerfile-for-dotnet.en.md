@@ -25,7 +25,7 @@ status: draft
 
 ## The situation
 
-On your laptop the API builds because you installed the .NET SDK and ran `dotnet build` in your editor. The API's image is built somewhere else: on a clean Linux inside Docker, where nothing is installed unless the `Dockerfile` brings it. You also change `Program.cs` or a controller many times a day, and each change needs a new image. If every rebuild had to download all of the API's libraries again, every one-line edit would wait for all of those downloads before the lab could restart. How does `DonHang.Api/Dockerfile` get the tools to build, and how does it avoid redoing the slow part?
+On your laptop the API builds because you installed the .NET SDK and ran `dotnet build` in your editor. The API's image is built somewhere else: inside Docker, on an empty Linux system where nothing is installed unless the `Dockerfile` brings it. You also change `Program.cs` or a controller many times a day, and each change needs a new image. If every rebuild had to download all of the API's libraries again, every one-line edit would wait for all of those downloads before the lab could restart. How does `DonHang.Api/Dockerfile` get the tools to build, and how does it avoid redoing the slow part?
 
 ## Core concepts
 
@@ -43,11 +43,11 @@ flowchart TD
   S --> B[RUN dotnet publish: runs after every code change]
 ```
 
-Compiling .NET code needs the SDK, so a `Dockerfile` that builds the API starts `FROM` an image that has it. Microsoft publishes one for each .NET version. Running the finished app needs much less: only the runtime, not the compiler and the build tools. That difference matters, and the next lesson uses it; this one is about the building.
+Compiling .NET code needs the SDK, so a `Dockerfile` that builds the API starts `FROM` an image that has it. Microsoft publishes one for each .NET version. Running the finished app needs much less: only the runtime, the part of .NET that runs an already built program, not the compiler and the build tools. That difference matters, and the next lesson uses it; this one is about the building.
 
-Inside the image, the `Dockerfile` runs the same commands a developer would type: `dotnet restore` to fetch the packages, then `dotnet publish` to compile and collect the output. Nothing about the result is special to Docker: with the same SDK version and the same source files, `dotnet publish` in the image builds the same app from the same commands you would run on your own machine, and the output runs outside a container too. The difference is that the SDK comes from the image, not from whatever is installed on the machine, so every build that uses the same image uses the same SDK.
+Inside the image, the `Dockerfile` runs the same commands a developer would type: `dotnet restore` to fetch the packages, then `dotnet publish` to compile and collect the output. Nothing about the result is special to Docker. With the SDK version and source files you have on your own machine, the image runs the commands you would run there and builds that app, and the output runs outside a container too. The difference is that the SDK comes from the image, not from whatever is installed on the machine, so every build that uses the same image uses the same SDK.
 
-The order of the steps is chosen for the build cache. Restoring packages is slow, but it depends only on the few files copied before it, which change rarely. Source code changes all the time. So the `Dockerfile` copies the project files first, restores, and only then copies the rest of the source. A change to `Program.cs` changes the later copy step, so the steps before it, including the slow restore, are reused from the cache.
+The order of the steps is chosen for Docker's build cache, from the layers lesson: Docker keeps each step's result and reuses it while that step and everything before it are unchanged, and once one step changes, every step after it runs again. Restoring packages is slow, but it depends only on the few files copied before it, which change rarely. Source code changes all the time. So the `Dockerfile` copies the project files first, restores, and only then copies the rest of the source. A change to `Program.cs` changes the later copy step, so the steps before it, including the slow restore, are reused from the cache.
 
 ## In the Đơn Hàng system
 
@@ -69,9 +69,9 @@ COPY DonHang.Api/ DonHang.Api/
 RUN dotnet publish DonHang.Api/DonHang.Api.csproj -c Release -o /app --no-restore
 ```
 
-`FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build` starts from the .NET 10 SDK image; `AS build` gives this part a name, which the rest of the file uses. `WORKDIR /src` makes `/src` the folder the next steps work in. The next four `COPY` lines bring in only what `dotnet restore` needs: `global.json`, which says which SDK versions the repository accepts, `Directory.Packages.props`, which holds every package version, and the three `.csproj` files. `RUN dotnet restore` then downloads the packages for the API and the two projects it uses.
+The steps are the `FROM`, `COPY` and `RUN` instructions you met in the layers lesson. `FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build` starts from the .NET 10 SDK image; `AS build` gives this part a name, which the rest of the file uses. `WORKDIR /src` makes `/src` the folder the next steps work in. The next four `COPY` lines bring in only what `dotnet restore` needs: `global.json`, which says which SDK versions the repository accepts, `Directory.Packages.props`, which holds every package version, and the three `.csproj` files. `RUN dotnet restore` then downloads the packages for the API and the two projects it uses.
 
-Only after that do the three `COPY` lines bring in the source folders, and `RUN dotnet publish` compiles everything: `-c Release` builds the optimised version, `-o /app` puts the output in `/app`, and `--no-restore` skips the restore that has already happened. The file continues below this with a second `FROM`, which the next lesson explains.
+Only after that do the three `COPY` lines bring in the source folders, and `RUN dotnet publish` compiles everything: `-c Release` builds the Release configuration, the optimised one meant for running rather than debugging, `-o /app` puts the output in `/app`, and `--no-restore` skips the restore that has already happened. The file continues below this with a second `FROM`, which the next lesson explains.
 
 ## Beginners often think…
 
@@ -86,7 +86,7 @@ With the lab running, from the repository root, in a terminal on your own machin
 2. Add an empty line at the end of `DonHang.Api/Program.cs` and run `docker compose build api` again.
 3. Undo the change with `git checkout -- DonHang.Api/Program.cs` and run `docker compose build api` once more, so the lab's image matches the repository again.
 
-Expected result: 1 — steps `2/11` to `11/11` are marked `CACHED` (for example `=> CACHED [api build  7/11] RUN dotnet restore ...`); step 1, the `FROM` line, is just reused and is not labelled. 2 — steps up to `9/11`, `COPY DonHang.Infrastructure/ ...`, are `CACHED`, including `dotnet restore`; step `10/11`, `COPY DonHang.Api/ DonHang.Api/`, and step `11/11`, `RUN dotnet publish ...`, run again. 3 — everything is `CACHED` again.
+Expected result: 1 — because `scripts/up.sh` already built this image when the lab started, steps `2/11` to `11/11` are marked `CACHED` (for example `=> CACHED [api build  7/11] RUN dotnet restore ...`); step 1, the `FROM` line, is just reused and is not labelled. Steps of a second part, named `final`, also appear; the next lesson covers them. 2 — steps up to `9/11`, `COPY DonHang.Infrastructure/ ...`, are `CACHED`, including `dotnet restore`; step `10/11`, `COPY DonHang.Api/ DonHang.Api/`, and step `11/11`, `RUN dotnet publish ...`, run again. 3 — everything is `CACHED` again.
 
 Suppose that in step 2 you had added a package to `DonHang.Api/DonHang.Api.csproj` instead. Which steps would have run again, and why?
 
