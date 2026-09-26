@@ -1,0 +1,92 @@
+{
+  "id": "devops.l1.config-and-env",
+  "technical": {
+    "reviewed_at": "2026-09-26T10:40:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "\"Default app configuration is loaded in the following order, from highest to lowest priority: 1. Command-line arguments ... 1. Environment variables not prefixed by ASPNETCORE_ or DOTNET_ ... 1. User secrets when the app runs in the Development environment ... 1. appsettings.{ENVIRONMENT}.json ... 1. appsettings.json\". Also: \"key values read from the environment override values read from appsettings.json, appsettings.{ENVIRONMENT}.json, and user secrets.\"",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/configuration/index.md lines 81-87, 568"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "\"The colon (:) separator doesn't work with environment variable hierarchical keys on all platforms. ... All platforms support the double underscore (__) syntax and automatically replace it with a colon (:).\" Execution: printenv in donhang-api shows ConnectionStrings__Default=Host=db;..., and the API reads it via GetConnectionString(\"Default\") (Program.cs:16) and starts in the lab.",
+        "source": "refs/aspnetcore-docs/aspnetcore/includes/environmentVarableColon.md; configuration/index.md line 276"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "git show stage-1:docker-compose.yml lines 89-93: `environment:` / `# lesson: devops.l1.config-and-env` / `ConnectionStrings__Default: \"Host=db;Database=donhang;Username=donhang;Password=${POSTGRES_PASSWORD}\"` / `Jwt__SigningKey: \"${JWT_SIGNING_KEY}\"` / `ASPNETCORE_ENVIRONMENT: \"Development\"`. Block in lesson matches character-for-character.",
+        "source": "examples/don-hang @ stage-1 (4fca60a): docker-compose.yml:89-93"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "git show stage-1:DonHang.Api/appsettings.json has only Logging.LogLevel (Default, Microsoft.AspNetCore, Microsoft.EntityFrameworkCore), AllowedHosts \"*\", Jwt.Issuer \"donhang-api\", Jwt.Audience \"donhang-app\". Program.cs:16 GetConnectionString(\"Default\") ?? throw ...\"ConnectionStrings:Default is not set\"; :23 Configuration[\"Jwt:SigningKey\"]. /app contains only appsettings.json (no appsettings.Development.json).",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/appsettings.json, DonHang.Api/Program.cs:16-24; docker exec donhang-api ls /app"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Ran step 1: ConnectionStrings__Default=Host=db;Database=donhang;Username=donhang;Password=donhang-dev-password / ASPNETCORE_ENVIRONMENT=Development / ASPNETCORE_HTTP_PORTS=8080 / ASPNETCORE_URLS=http://+:8080. Step 2 printed the stage-1 appsettings.json verbatim. Step 3: \"Unhandled exception. System.InvalidOperationException: ConnectionStrings:Default is not set  at Program.<Main>$(String[] args) in /src/DonHang.Api/Program.cs:line 16\". Running container image id == donhang-api:stage-1 id.",
+        "source": "execution on the running lab, 2026-09-26"
+      },
+      {
+        "n": 6,
+        "verdict": "not-needed",
+        "evidence": "Definitional framing of the term 'config' taken from outline item 1; no version-specific behaviour asserted. The mechanism that makes it possible (env vars override appsettings.json) is covered by claim 1.",
+        "source": "track.yaml devops.l1.config-and-env outline item 1"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "major",
+        "section": "devops.l1.config-and-env.q3",
+        "kind": "quiz",
+        "text": "Option b is marked wrong but also works in this lab. The API runs in a Linux container, where ':' is allowed in variable names and the Environment Variables provider reads such a key directly. Tested: `docker run --rm -e \"ConnectionStrings:Default=Host=nowhere\" donhang-api:stage-1` gets past the connection-string check and stops at \"Jwt:SigningKey is not set\" (Program.cs:23). `docker compose config` accepts `Logging:LogLevel:Default: \"Warning\"` under environment. The lesson itself only says 'not every system allows `:`', so the key is ambiguous.",
+        "quote": "{ \"id\": \"b\", \"en\": \"`Logging:LogLevel:Default: \\\"Warning\\\"`\" } ... \"b\": \"Variable names use `__`, not `:`, for the parts of a key.\"",
+        "fix": "Replace option b with a clearly non-working distractor, e.g. `Logging.LogLevel.Default: \"Warning\"` (vi same), explanation b: \"Settings keys use `:` between parts, and a variable name writes each `:` as `__`; a dot is not a separator, so this sets a different key.\" / vi: \"Key thiết lập dùng `:` giữa các phần, và tên biến viết mỗi `:` thành `__`; dấu chấm không phải dấu phân cách, nên biến này đặt một key khác.\""
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "Unlisted claim: ASPNETCORE_ENVIRONMENT sets the environment name ASP.NET Core runs in. True for WebApplication.CreateBuilder (environments.md: \"ASPNETCORE_ENVIRONMENT when the WebApplication.CreateBuilder method is called ... overrides DOTNET_ENVIRONMENT\"; default is Production when unset), but it is a behaviour claim absent from the ledger (claim 3 only records the compose line).",
+        "quote": "`ASPNETCORE_ENVIRONMENT` tells ASP.NET Core it is running in `Development`.",
+        "fix": "Add a claim to .meta.json: {kind: behavior, version_key: aspnetcore, section: 5, text: \"With WebApplication.CreateBuilder, the ASPNETCORE_ENVIRONMENT variable sets the app's environment name (here Development)\", source_hint: \"ASP.NET Core docs: Use multiple environments\"}. Lesson text can stay."
+      },
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Unlisted claim: the reason given for `__` (\"not every system allows `:` there\") is a platform-behaviour statement not in the ledger; claim 2 records only the mapping. Supported by docs (\"The colon (:) separator doesn't work with environment variable hierarchical keys on all platforms\"), but must be ledgered.",
+        "quote": "is written with `__` in a variable name, because not every system allows `:` there",
+        "fix": "Extend claim 2's text in .meta.json: \"... because the : separator does not work in environment variable names on all platforms; __ works on all platforms.\" Lesson text can stay."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "\"fixed order\" overstates: the docs describe the *default* order; an app can add, remove or reorder providers. For this API (plain WebApplication.CreateBuilder) the default applies.",
+        "quote": "It builds them from several configuration sources in a fixed order",
+        "fix": "Replace with: \"It builds them from several configuration sources in a set default order\"."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "The image does carry some config: the Dockerfile at stage-1 sets `ENV ASPNETCORE_URLS=http://+:8080` and the aspnet base image sets ASPNETCORE_HTTP_PORTS=8080. The learner sees both in Try-it step 1. So 'These three variables are the API's config' and §2's 'why is none of it inside the image?' are too absolute.",
+        "quote": "These three variables are the API's config in the lab.",
+        "fix": "§5: \"These three variables are the config Compose gives the API in the lab.\" §2 last sentence: \"...and why are the database address and password not inside the image?\""
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "fix-required"
+  }
+}

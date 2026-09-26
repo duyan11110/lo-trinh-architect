@@ -25,7 +25,7 @@ status: draft
 
 ## The situation
 
-The API's image is built once and runs unchanged in the lab. On your laptop the database is at `localhost:5432`, in the lab it is `db`, and on a real server it will be somewhere else again. If the address were written into the code, you would need a different build for every place the API runs, and the image you tested would not be the image you deploy. Yet `docker compose` hands the same image a connection string, and the API uses it. What decides which settings the API sees, and why is none of it inside the image?
+The API's image is built once and runs unchanged in the lab. On your laptop the database is at `localhost:5432`, in the lab it is `db`, and on a real server it will be somewhere else again. If the address were written into the code, you would need a different build for every place the API runs, and the image you tested would not be the image you deploy. Yet `docker compose` hands the same image a connection string, and the API uses it. What decides which settings the API sees, and why are the database address and password not inside the image?
 
 ## Core concepts
 
@@ -44,7 +44,7 @@ flowchart LR
 
 Code is the same wherever the app runs: the same controllers, the same checks, the same compiled image. **Config** is the part that should differ: which database to talk to, how much to log, which key to sign tokens with. Keeping config out of the code means one build can run anywhere, with only the settings around it changing.
 
-ASP.NET Core does not read settings from one place. It builds them from several configuration sources in a fixed order, and when two sources set the same key, the later one wins. `appsettings.json`, shipped inside the image with the code, comes early. Environment variables come later, so an environment variable overrides the same key from the file. A key written with `:` in the file, such as `Logging:LogLevel:Default`, is written with `__` in a variable name, because not every system allows `:` there: `Logging__LogLevel__Default`.
+ASP.NET Core does not read settings from one place. It builds them from several configuration sources in a set default order, and when two sources set the same key, the later one wins. `appsettings.json`, shipped inside the image with the code, comes early. Environment variables come later, so an environment variable overrides the same key from the file. A key written with `:` in the file, such as `Logging:LogLevel:Default`, is written with `__` in a variable name, because not every system allows `:` there: `Logging__LogLevel__Default`.
 
 This is the same mechanism as in the environment variables lesson, now used by the app: the process gets its variables when it starts, and ASP.NET Core turns them into settings. So the file can hold sensible defaults that are the same everywhere, and each place the API runs can supply its own values without touching the image.
 
@@ -60,7 +60,7 @@ The settings the `api` service gets in `docker-compose.yml`:
       ASPNETCORE_ENVIRONMENT: "Development"
 ```
 
-These three variables are the API's config in the lab. `ConnectionStrings__Default` becomes the key `ConnectionStrings:Default`, which `Program.cs` reads for the database, with `Host=db` and a password filled in by Compose. `Jwt__SigningKey` becomes `Jwt:SigningKey`, the key for signing tokens. `ASPNETCORE_ENVIRONMENT` tells ASP.NET Core it is running in `Development`.
+These three variables are the config Compose gives the API in the lab. `ConnectionStrings__Default` becomes the key `ConnectionStrings:Default`, which `Program.cs` reads for the database, with `Host=db` and a password filled in by Compose. `Jwt__SigningKey` becomes `Jwt:SigningKey`, the key for signing tokens. `ASPNETCORE_ENVIRONMENT` tells ASP.NET Core it is running in `Development`.
 
 `appsettings.json`, inside the image, holds only settings that are the same everywhere: log levels, `AllowedHosts`, and the JWT issuer and audience. It has no connection string and no signing key. So the image carries no database address and no password: the same `donhang-api:stage-1` could run against another database by changing only the lines above.
 
