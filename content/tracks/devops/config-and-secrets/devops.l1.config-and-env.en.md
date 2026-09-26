@@ -15,7 +15,9 @@ vocab: [config]
 example_tag: stage-1
 versions_used: [aspnetcore, docker]
 content_version: 1
-status: draft
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-27T22:00:00+07:00"
 ---
 
 ## Before you start
@@ -77,7 +79,7 @@ With the lab running, in a terminal on your own machine:
 2. Run `docker exec donhang-api sh -c "cat /app/appsettings.json"` to see the settings file inside the image.
 3. Run `docker run --rm donhang-api:stage-1`, which starts the same image with none of Compose's settings.
 
-Expected result: 1 — `ConnectionStrings__Default=Host=db;Database=donhang;...` (with the lab's fake password), `ASPNETCORE_ENVIRONMENT=Development` and a few more `ASPNETCORE_` lines. 2 — logging levels, `AllowedHosts` and `Jwt` with `Issuer` and `Audience`, but no connection string. 3 — the container stops at once with "Unhandled exception. System.InvalidOperationException: ConnectionStrings:Default is not set".
+Expected result: 1 — `ConnectionStrings__Default=Host=db;Database=donhang;...` (with the password from the lab's `.env` file), `ASPNETCORE_ENVIRONMENT=Development` and a few more `ASPNETCORE_` lines. 2 — logging levels, `AllowedHosts` and `Jwt` with `Issuer` and `Audience`, but no connection string. 3 — the container stops at once with "Unhandled exception. System.InvalidOperationException: ConnectionStrings:Default is not set".
 
 Step 3 ran exactly the image the lab runs. Why does the lab's container work and this one not?
 
