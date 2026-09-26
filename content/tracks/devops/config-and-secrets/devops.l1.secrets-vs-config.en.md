@@ -30,7 +30,7 @@ status: draft
 
 - **secret** — config that must never be readable by anyone who should not have it, such as a database password or a signing key; a stricter kind than ordinary config like a log level.
 - `.env` — a file next to `docker-compose.yml` whose `NAME=value` lines Compose uses to fill in `${NAME}` in the compose file.
-- `.gitignore` — a file listing untracked paths, files Git has never been told to include in commits, that Git should ignore, so `git add` does not pick them up by accident.
+- `.gitignore` — a file listing untracked paths, files that would not be part of your next commit unless you `git add` them, that Git should ignore, so `git add` does not pick them up by accident.
 
 ## How it works
 
@@ -44,7 +44,7 @@ flowchart LR
 
 Every **secret** is config, but not all config is secret. A log level can be printed, shared in a chat and committed to the repository without harm. A database password or a signing key cannot: whoever reads it gets the power it protects. So secrets need stricter rules than ordinary config. They are kept out of the repository, shown to as few people and programs as possible, and replaced when they leak.
 
-Keeping a secret out of the repository means the committed files hold only a placeholder, and the real value lives somewhere Git does not track. For a local lab, that is a file on your own machine that `.gitignore` excludes. In the lab, `scripts/dev-secrets.sh` writes that file, Compose reads it and fills its values into `docker-compose.yml`, and the API's container receives them as environment variables. So every developer gets a working value without anyone committing one.
+Keeping a secret out of the repository means the committed files hold only a placeholder, and the real value lives somewhere Git does not track. For a local lab, that is a file on your own machine that `.gitignore` excludes. In the lab, `scripts/dev-secrets.sh` writes that file, Compose reads it and fills its values into the `${...}` placeholders of `docker-compose.yml` as it reads that file, without changing the file, and the API's container receives them as environment variables. So every developer gets a working value without anyone committing one.
 
 Committing a secret is hard to undo. Git keeps every version of every file, so a secret committed once stays in the history even after a later commit deletes it, and anyone with a clone, a full copy of the repository with all its history, can find it. Deleting it from your files and committing the deletion is not enough; the secret has to be treated as leaked and replaced.
 
