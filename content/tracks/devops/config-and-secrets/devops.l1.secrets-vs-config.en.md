@@ -30,7 +30,7 @@ status: draft
 
 - **secret** — config that must never be readable by anyone who should not have it, such as a database password or a signing key; a stricter kind than ordinary config like a log level.
 - `.env` — a file next to `docker-compose.yml` whose `NAME=value` lines Compose uses to fill in `${NAME}` in the compose file.
-- `.gitignore` — a file listing paths Git must not track, so they are never added to a commit by accident.
+- `.gitignore` — a file listing untracked paths Git should ignore, so `git add` does not pick them up by accident.
 
 ## How it works
 
@@ -44,7 +44,7 @@ flowchart LR
 
 Every **secret** is config, but not all config is secret. A log level can be printed, shared in a chat and committed to the repository without harm. A database password or a signing key cannot: whoever reads it gets the power it protects. So secrets need stricter rules than ordinary config. They are kept out of the repository, shown to as few people and programs as possible, and replaced when they leak.
 
-Keeping a secret out of the repository means the committed files hold only a placeholder, and the real value lives somewhere Git does not track. For a local lab, that is a file on your own machine that `.gitignore` excludes. The program that needs the value reads it from there when it starts, so every developer gets a working value without anyone committing one.
+Keeping a secret out of the repository means the committed files hold only a placeholder, and the real value lives somewhere Git does not track. For a local lab, that is a file on your own machine that `.gitignore` excludes. When the program starts, its value is read from there and handed to it, so every developer gets a working value without anyone committing one.
 
 Committing a secret is hard to undo. Git keeps every version of every file, so a secret committed once stays in the history even after a later commit deletes it, and anyone with a clone can find it. Removing it from the working copy is not enough; the secret has to be treated as leaked and replaced.
 
@@ -57,7 +57,7 @@ The first two lines of `.gitignore`:
 secrets/
 ```
 
-Git never tracks `.env` or anything under `secrets/`. Both are filled by `scripts/dev-secrets.sh`, which `scripts/up.sh` runs first:
+Git ignores `.env` and everything under `secrets/`, so `git add` does not pick them up. Both are filled by `scripts/dev-secrets.sh`, which `scripts/up.sh` runs first:
 
 ```bash file=scripts/dev-secrets.sh tag=stage-1 lines=8-23
 if [ ! -f .env ]; then
@@ -80,19 +80,19 @@ fi
 
 If `.env` does not exist yet, the script writes one with `POSTGRES_PASSWORD`. That value is fixed and deliberately fake, and the comment says so: it is safe only because it protects nothing but your local lab. Then, if `.env` has no `JWT_SIGNING_KEY`, the script adds one made of random bytes from `openssl`, so every learner's lab gets its own key. Further down, the script also creates the SSH key the lab box uses, in `secrets/`.
 
-When Compose reads `docker-compose.yml`, it replaces `${POSTGRES_PASSWORD}` and `${JWT_SIGNING_KEY}` with the values from `.env`. The committed file stays a template with no real value in it, whether it is on your machine or in anyone else's clone.
+When Compose reads `docker-compose.yml`, it replaces `${POSTGRES_PASSWORD}` and `${JWT_SIGNING_KEY}` with the values from `.env` (unless your shell already sets a variable with the same name, which takes precedence). The committed file stays a template with no real value in it, whether it is on your machine or in anyone else's clone.
 
 ## Beginners often think…
 
-- **"A secret that's gitignored locally is safe even if it was committed once, earlier in the repository's history."** → Actually `.gitignore` only stops Git from tracking the file from now on; every commit that ever contained it still does. Anyone who clones the repository can read the old version. You notice this when `git log -- .env` lists commits for a file you thought was ignored, and the password in them still works.
-- **"Ordinary config and secrets can be treated the same way, since both are just environment variables."** → Actually they travel the same way, but a secret must not be printed, shared or committed like a log level can be. Anything that shows config shows secrets with it. You notice this when a command that prints the full config, such as `docker compose config`, puts the database password and the signing key on the screen for anyone watching.
+- **"A secret that's gitignored locally is safe even if it was committed once, earlier in the repository's history."** → Actually `.gitignore` has no effect on a file Git already tracks, and it changes nothing in past commits: every commit that ever contained the file still does, and anyone who clones the repository can read the old version. You notice this when `git log -- .env` lists commits for a file you thought was ignored, and the password in them still works.
+- **"Ordinary config and secrets can be treated the same way, since both are just environment variables."** → Actually they travel the same way, but a secret must not be printed, shared or committed like a log level can be. A command that prints the full resolved config shows the secrets in it too. You notice this when a command that prints the full config, such as `docker compose config`, puts the database password and the signing key on the screen for anyone watching.
 
 ## Try it (3 minutes)
 
 With the lab running, from the repository root, in a terminal on your own machine:
 
 1. Run `git check-ignore -v .env secrets/lab_key`, which tells you which rule in `.gitignore` excludes each path.
-2. Run `git log --oneline -- .env` to list every commit that ever contained `.env`.
+2. Run `git log --oneline -- .env` to list every commit on this branch that added, changed or deleted `.env`.
 3. Run `docker compose config` and find the `api` service's `environment`.
 
 Expected result: 1 — `.gitignore:1:.env` for `.env` and `.gitignore:2:secrets/` for `secrets/lab_key`. 2 — nothing: `.env` has never been committed. 3 — the connection string with the real password in place of `${POSTGRES_PASSWORD}`, and `Jwt__SigningKey` with your lab's random key.
