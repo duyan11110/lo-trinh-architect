@@ -44,17 +44,17 @@ flowchart LR
   L -.-> E
 ```
 
-A team estimates so that it can plan. At sprint planning, the question is how many of the waiting stories fit into the next sprint. That question cannot be answered without some idea of how big each story is compared with the others. The same holds for larger work: to say whether a feature is a matter of weeks or of months, the team needs a rough size for its parts.
+A team estimates so that it can plan. At sprint planning, the question is how many of the waiting stories fit into the next sprint. That question cannot be answered without some idea of how big each story is compared with the others. The numbers a team gives compare stories with each other; they are not hours or days, and the next lesson shows how they are chosen. The same holds for larger work: to say whether a feature is a matter of weeks or of months, the team needs a rough size for its parts.
 
 An estimate is made before the work starts, so it can only use what the team knows then. The code has not been read closely, the unexpected problem has not appeared yet, and the person who knows the old module may be on holiday. Estimates will therefore sometimes be wrong, in both directions: some work turns out smaller than it looked, and some larger. That is expected, not a sign that the team did something wrong.
 
-What an estimate is not is a promise to someone outside the team. It is the team's own planning tool. A story with no estimate can still be worked on; what the team cannot do without some idea of each story's size is decide how many stories to take into a sprint. After the work is done, the team can look back and see how its guesses compared with reality, which is how the next estimates get better.
+What an estimate is not is a promise to someone outside the team. It is the team's own planning tool. A story with no estimate can still be worked on; what the team cannot do without some idea of each story's size is decide how many stories to take into a sprint. After the work is done, the team can look back and see how its guesses compared with reality, which is how the next estimates get better; that is the dashed arrow in the diagram.
 
 ## In the Đơn Hàng system
 
 The Sprint 14 backlog, in `docs/team/sprint-example.md`, has a column `Ước lượng`, estimate, with a number for each item: 3 for the cancel endpoint and for the cancel button, 2 for blocking cancellation of a paid order and for stopping notifications for a cancelled order, and 1 for the wrong-total bug. Numbers like these are what let a team decide, at planning, how many items fit into the sprint.
 
-The same file shows the other half. One item, stopping notifications for a cancelled order, was estimated at 2 and did not finish; it moved to the next sprint. The review simply did not count it as done, and the file does not say why it took longer. An estimate helps plan a sprint; it does not decide what happens in it.
+The same file shows the other half. One item, stopping notifications for a cancelled order, was estimated at 2 and did not finish; it moved to the next sprint. At the sprint review, the meeting at the end of the sprint, the team simply did not count it as done, and the file does not say why it took longer. An estimate helps plan a sprint; it does not decide what happens in it.
 
 The Kanban board in `docs/team/kanban-board-example.md` has no estimate column. That team does not plan a batch of work in advance; it limits what is in progress instead, so it has less need to size each item before it starts.
 
