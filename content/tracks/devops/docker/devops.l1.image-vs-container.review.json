@@ -1,0 +1,125 @@
+{
+  "id": "devops.l1.image-vs-container",
+  "technical": {
+    "reviewed_at": "2026-09-26T07:20:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "\"When you create a new container, you add a new writable layer on top of the underlying layers... All changes made to the running container, such as writing new files... are written to this thin writable container layer.\" / \"When the container is deleted, the writable layer is also deleted. The underlying image remains unchanged.\" / \"each container has its own writable container layer... multiple containers can share access to the same underlying image and yet have their own data state.\"",
+        "source": "refs/docker-docs/content/manuals/engine/storage/drivers/_index.md (lines 79-101)"
+      },
+      {
+        "n": 2,
+        "verdict": "rephrased",
+        "evidence": "docker build: \"Build an image from a Dockerfile\"; docker run: \"Create and run a new container from an image\"; compose up --build: \"Build images before starting containers\". Compose builds only services with a `build` section (lab, api at stage-1); for db, web, app-web \"If the image does not exist on the platform, Compose attempts to pull it\". So compose up does not build every part of the lab; it builds two and pulls/starts the rest.",
+        "source": "refs/docker-docs/data/cli/engine/docker_build.yaml, docker_run.yaml; _vendor/.../compose_up.md; content/reference/compose-file/services.md:1131; examples/don-hang@stage-1 docker-compose.yml, scripts/up.sh",
+        "suggested_text": "`docker build` and `docker run` — the commands that make an image from a `Dockerfile` and start a container from an image; `docker compose up`, which `scripts/up.sh` runs, builds the images that have a `Dockerfile` in the repository, fetches the ready-made ones, and starts a container for every part of the lab."
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "git show stage-0:lab/Dockerfile lines 1-9 identical to the block (FROM lscr.io/linuxserver/openssh-server:version-10.3_p1-r1; RUN apk add --no-cache openssl git postgresql17-client procps); identical at stage-1. stage-1 docker-compose.yml: lab: build: ./lab, image: donhang-lab:stage-0, container_name: donhang-lab.",
+        "source": "examples/don-hang @ stage-0, stage-1: lab/Dockerfile, docker-compose.yml"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "stage-1 docker-compose.yml: web: image caddy:2.10.0, container_name donhang-web, volumes ./Caddyfile:/etc/caddy/Caddyfile:ro, ./www:/srv/www:ro; app-web: image caddy:2.10.0, container_name donhang-app-web, command: caddy file-server --root /srv/app --listen :8081, volumes ./DonHang.App/build/web:/srv/app:ro. Caddyfile: handle /api/v1/* { reverse_proxy api:8080 }.",
+        "source": "examples/don-hang @ stage-1: docker-compose.yml, Caddyfile"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Ran on the live lab (Docker Desktop): docker ps --format -> donhang-api donhang-api:stage-1 / donhang-db postgres:17.6-alpine / donhang-web caddy:2.10.0 / donhang-app-web caddy:2.10.0 / donhang-lab donhang-lab:stage-0. docker exec donhang-web sh -c \"echo hello > /tmp/note.txt\" rc=0; docker exec donhang-app-web sh -c \"cat /tmp/note.txt\" -> cat: can't open '/tmp/note.txt': No such file or directory (rc=1). docker images lists donhang-lab stage-0, donhang-api stage-1, caddy 2.10.0. Test file removed afterwards.",
+        "source": "command run in examples/don-hang lab, 2026-09-26"
+      },
+      {
+        "n": 6,
+        "verdict": "rephrased",
+        "evidence": "The ledger claim is right, but the lesson sentence built on it is not: docker ps --all is described as \"Show all containers (default shows just running)\", so plain `docker ps` does not list a stopped container, and no form of `docker ps` lists a removed one. Lesson text: \"when `docker ps` lists a container that is stopped or removed while `docker images` still lists its image\".",
+        "source": "refs/docker-docs/data/cli/engine/docker_ps.yaml:13",
+        "suggested_text": "You notice this when you remove a container and `docker images` still lists its image, ready to start another."
+      },
+      {
+        "n": 7,
+        "verdict": "rephrased",
+        "evidence": "Repo supports the intent (stage-1 docker-compose.yml comment: \"every lesson sees the same Linux, the same tools and the same output on every machine\"), but the lesson states it as fact: \"Every learner builds the same image from the same file\". lab/Dockerfile pins the base tag but `apk add --no-cache openssl git postgresql17-client procps` has no package versions, so builds on different dates can install different package versions; the image is not guaranteed identical. Same-output also relies on fixed IPs/TZ set in compose.",
+        "source": "examples/don-hang @ stage-0 lab/Dockerfile; @ stage-1 docker-compose.yml",
+        "suggested_text": "Every learner builds the image from the same file, on the same pinned base image, which is the main reason every lesson's script output has matched across machines since stage 0."
+      }
+    ],
+    "issues": [
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Unlisted claim, and false for the lesson's own example pair. `donhang-web` has `network_mode: \"service:lab\"` in docker-compose.yml, so it shares the lab box's network and has no address of its own (docker inspect donhang-web: NetworkMode container:<lab id>, Networks {}). Docs: a container can be attached \"to another container's networking stack directly\". Own network address is the default, not a rule.",
+        "quote": "Each has its own processes, its own name, its own address on the network, and its own changes to files.",
+        "fix": "Replace with: \"Each has its own processes, its own name and its own changes to files.\" (drop the network-address clause) and add no new claim; or, if kept, write \"and, unless it is set up to share another container's network, its own address\" and add it to claims."
+      },
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Unlisted claim that ignores mounted storage, which every lab container uses (web: caddy-data:/data, lab: lab-config:/config, db: db-data). Docs: \"When a container is removed, any changes to its state that aren't stored in persistent storage disappear.\" A fresh `donhang-web` still sees what the old one wrote to /data, so \"exactly as they were built\" is false for this lab. The lesson links to devops.l1.volumes for exactly this.",
+        "quote": "Throw a container away and start a new one from the same image, and you are back to the image's files exactly as they were built.",
+        "fix": "Rewrite as: \"Throw a container away and start a new one from the same image, and you are back to the image's files as they were built, except for folders a container is given from outside, which the volumes lesson covers.\" Add to claims (behavior, docker, source: docker-overview Containers)."
+      },
+      {
+        "severity": "major",
+        "section": 3,
+        "kind": "accuracy",
+        "text": "Unlisted claim with an unsupported quantifier. An image holds files and settings; it holds no kernel, so it is not \"an operating system\", and \"most images\" is a statistic with no source. The docs only say an image is often based on another image, e.g. Ubuntu.",
+        "quote": "It holds a complete set of files, an operating system's worth for most images, plus a few settings",
+        "fix": "Replace with: \"It holds a complete set of files, for the lab's images the files of a small Linux, plus a few settings\". No claim needed beyond claim 3."
+      },
+      {
+        "severity": "major",
+        "section": 3,
+        "kind": "accuracy",
+        "text": "`docker compose up` does not build every part of the lab. Only `lab` and `api` have a `build` section; `db`, `web` and `app-web` use ready-made images that Compose pulls if missing. This contradicts section 5's own \"Neither has a `Dockerfile` in the repository\".",
+        "quote": "`docker compose up`, which `scripts/up.sh` runs, does both for every part of the lab.",
+        "fix": "Use the suggested_text of claim 2: \"...builds the images that have a `Dockerfile` in the repository, fetches the ready-made ones, and starts a container for every part of the lab.\""
+      },
+      {
+        "severity": "major",
+        "section": 6,
+        "kind": "accuracy",
+        "text": "Wrong CLI behaviour. Plain `docker ps` lists only running containers (\"default shows just running\"), and a removed container is listed by no command. The sentence says `docker ps` lists stopped or removed containers.",
+        "quote": "You notice this when `docker ps` lists a container that is stopped or removed while `docker images` still lists its image, ready to start another.",
+        "fix": "Replace with: \"You notice this when you remove a container and `docker images` still lists its image, ready to start another.\""
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "Overstated: \"the same image\" is not guaranteed because `apk add` in lab/Dockerfile installs unpinned package versions; builds on different dates can differ. Ledger lists this as opinion but the lesson states it as fact.",
+        "quote": "Every learner builds the same image from the same file, which is why every lesson's script output has matched across machines since stage 0.",
+        "fix": "Use the suggested_text of claim 7 and change the claim kind to behavior with source examples/don-hang lab/Dockerfile + docker-compose.yml comment."
+      },
+      {
+        "severity": "minor",
+        "section": 2,
+        "kind": "accuracy",
+        "text": "Unlisted repo fact. True (Caddyfile: `handle /api/v1/* { reverse_proxy api:8080 }`; app-web `--listen :8081`), but not in the ledger.",
+        "quote": "one forwards `/api/v1/*` to the API on port `8080` and the other serves the Flutter app on `8081`",
+        "fix": "Extend claim 4 with: \"web's Caddyfile reverse-proxies /api/v1/* to api:8080\" (source: examples/don-hang@stage-1 Caddyfile). No text change."
+      },
+      {
+        "severity": "minor",
+        "section": "devops.l1.image-vs-container.q1",
+        "kind": "quiz",
+        "text": "Key is correct; explanation for option c overstates. Docker docs say you can \"create a new image based on [a container's] current state\", so an image can be made from a container. Option c is still wrong because of \"every hour\", not because images cannot come from containers.",
+        "quote": "An image is built from a `Dockerfile`, not copied from a running container on a timer.",
+        "fix": "Change explanation c (en) to: \"Nothing copies a container's disk on a timer; the lab's images are built from a `Dockerfile` or used ready-made.\" and update vi accordingly."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "fix-required"
+  }
+}
