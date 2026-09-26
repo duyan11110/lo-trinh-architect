@@ -48,7 +48,7 @@ An **image** is built once and never changes afterwards. It holds a complete set
 
 A **container** is what you get when you start the image. Docker gives it the image's files to start from, runs the image's command inside it as one or more processes, and keeps any file the container creates or changes as that container's own. The image underneath stays untouched. This is the same relationship as a class and its objects, or a program and its processes: one template, any number of running copies.
 
-So starting the same image twice gives two containers that begin identical and then go their own way. Each has its own processes, its own name and its own changes to files. Nothing one container writes appears in the other, and nothing either of them writes changes the image. Throw a container away and start a new one from the same image, and you are back to the image's files as they were built, except for any folders given to the container from outside, which the volumes lesson covers.
+So starting the same image twice gives two containers that begin identical and then go their own way. Each has its own processes, its own name and its own changes to files. Nothing one container writes appears in the other, and nothing either of them writes changes the image. Throw a container away and start a new one from the same image, and you are back to the image's files as they were built, except for any folders given to the container from outside, which a later lesson in this module covers.
 
 ## In the Đơn Hàng system
 
