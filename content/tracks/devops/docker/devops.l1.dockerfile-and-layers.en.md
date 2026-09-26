@@ -6,7 +6,7 @@ level: 1
 stage: 1
 module: docker
 main_path: true
-title: "Each Dockerfile line is one image layer"
+title: "Each Dockerfile step that changes files is one image layer"
 duration_min: 13
 skills: [devops.docker.fundamentals]
 prereqs: [devops.l1.image-vs-container]
@@ -79,7 +79,7 @@ With the lab running, from the repository root, in a terminal on your own machin
 1. Run `docker history donhang-lab:stage-0` and look at the top rows.
 2. Run `docker compose build lab` and read the lines for the `apk add` step.
 
-Expected result: 1 — the top row is the `RUN /bin/sh -c apk add --no-cache ...` step with a size of about 12 MB; the rows below it come from the base image, and some of them have a size of `0B`. 2 — the step is shown as `[lab 2/2] RUN apk add ...` followed by `CACHED`, and the build finishes in a moment.
+Expected result: 1 — the top row is the `RUN /bin/sh -c apk add --no-cache ...` step with a size of a little over 12 MB; the rows below it come from the base image, and some of them have a size of `0B`. 2 — the `[lab 2/2] RUN apk add ...` step is marked `CACHED` (in a terminal: `=> CACHED [lab 2/2] RUN apk add ...`), and the build finishes in a moment.
 
 Suppose you added `curl` to the `apk add` list and built again. Which step would Docker reuse, which would it run, and why?
 
