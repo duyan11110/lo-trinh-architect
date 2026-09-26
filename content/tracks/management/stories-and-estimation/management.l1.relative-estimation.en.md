@@ -38,13 +38,13 @@ At planning, the product owner asks how long a new cancel button on the order sc
 flowchart LR
   R[reference: small bug fix = 1] --> C{new story: bigger or smaller?}
   C -->|about the same| A[1]
-  C -->|a bit bigger| B[2]
+  C -->|about twice| B[2]
   C -->|about three times| D[3]
 ```
 
-A **story point** measures how big a story is compared with the team's other stories. It does not stand for a number of hours. A 3-point story is expected to take roughly three times the effort of a 1-point one, whatever "effort" means to that team: time, complexity, risk and unknowns all mixed together. Two teams can give the same story different points, and neither is wrong, because each compares it with its own earlier work.
+A **story point** measures how big a story is compared with the team's other stories. It does not stand for a number of hours. A 3-point story is expected to take roughly three times the effort of a 1-point one, whatever "effort" means to that team. Two teams can give the same story different points, and neither is wrong, because each compares it with its own earlier work.
 
-Relative estimates are easier to make than absolute ones. Predicting that a story will take eleven hours means imagining every step, every interruption and every surprise. Deciding that it is bigger than one known story and smaller than another only needs a comparison with things the team has already done. People are much more consistent at comparing than at predicting durations, so the numbers agree more often and change less from person to person.
+Relative estimates are easier to make than absolute ones. Predicting that a story will take eleven hours means imagining every step, every interruption and every surprise. Deciding that it is bigger than one known story and smaller than another only needs a comparison with things the team has already done. People are usually more consistent at comparing than at predicting durations, so the numbers tend to agree more often from person to person.
 
 The points are not required by Scrum. The Scrum Guide says the developers who will do the work are responsible for sizing it, and leaves the technique to the team. Story points are one common choice, not a rule.
 
@@ -103,6 +103,6 @@ Each explains which known item they compared it with and why it looks bigger or 
 
 1. A **story point** estimates a story's size relative to the team's other stories, not in hours or days.
 2. A 3-point story is expected to take about three times the effort of a 1-point story.
-3. Comparing a story with known ones is easier and more consistent than predicting its hours.
+3. Comparing a story with known ones is usually easier and more consistent than predicting its hours.
 4. Points belong to one team's scale; another team may size the same story differently.
 5. The Scrum Guide leaves sizing to the developers; story points are one common choice, not a rule.
