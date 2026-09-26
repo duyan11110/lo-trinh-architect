@@ -13,7 +13,7 @@ prereqs: [management.l1.relative-estimation]
 related: []
 vocab: []
 example_tag: stage-0
-versions_used: []
+versions_used: [scrum]
 content_version: 1
 status: draft
 ---
@@ -30,22 +30,22 @@ On the last day of a sprint, one item estimated at 2 points is still open. The d
 
 - estimate — the team's best guess at a story's size before the work starts, made with what it knows then.
 - commitment — a promise that something will be done, which others can hold you to.
-- carry over — moving an unfinished item into the next sprint instead of counting it as done.
+- carry over — not counting an unfinished item as done, and picking it up again later; Sprint 14's file calls this `chuyển sprint sau`.
 
 ## How it works
 
 ```mermaid
 flowchart LR
-  P[planning: estimate before starting] --> W[work in the sprint]
-  W --> R[retrospective: compare with reality]
+  P[estimate before starting] --> W[work in the sprint]
+  W --> R[after the work: compare with reality]
   R -.->|learn for next time| P
 ```
 
-An estimate answers one question: how big does this look before anyone starts? It is made at planning, with what the team knows at that moment. A commitment is a different thing: a promise that the work will be done, which someone can hold you to. When a team treats every estimate as a commitment, a number that was only a guess starts to decide whether people have failed.
+An estimate answers one question: how big does this look before anyone starts? It is made before the work starts, with what the team knows at that moment. A commitment is a different thing: a promise that the work will be done, which someone can hold you to. When a team treats every estimate as a commitment, a number that was only a guess starts to decide whether people have failed.
 
-That has a cost. People who are held to their guesses start protecting themselves: they give bigger numbers next time, as the previous lessons showed, or they call work "done" when it is not, so the sprint looks as planned. Either way, the numbers stop describing the work, and planning gets worse, not better.
+That has a cost. People who are held to their guesses start protecting themselves: they give bigger numbers next time, as the lesson on why teams estimate showed, or they call work "done" when it is not, so the sprint looks as planned. Either way, the numbers stop describing the work, and planning tends to get worse, not better.
 
-Only after the work is actually done can anyone see how the guess compared with reality. That is the job of the retrospective, the meeting at the end of the sprint where the team looks at how it worked. An item that did not finish is information for the retrospective, not proof that someone broke a promise.
+Only after the work is actually done can anyone see how the guess compared with reality. The retrospective, the meeting at the end of the sprint where the team looks at how it worked, is one place to talk about why an item took longer than it looked. An item that did not finish is information for the retrospective, not proof that someone broke a promise.
 
 ## In the Đơn Hàng system
 
@@ -57,7 +57,7 @@ In Sprint 14's backlog, in `docs/team/sprint-example.md`, the item `Ngừng gử
 tính, dù đã viết gần hết code.
 ```
 
-The item was not shown at the review, even though almost all of its code was written: not finished means not counted. The team did not call it done to make the sprint match the plan, and it did not change the 2 after the fact.
+The item was not shown at the review, even though almost all of its code was written: not finished means not counted. This matches the Scrum Guide, which says an item that does not meet the **Definition of Done** is not presented at the Sprint Review and goes back to the Product Backlog for later. The team did not call it done to make the sprint match the plan, and it did not change the 2 after the fact.
 
 The retrospective in the same file:
 
@@ -72,7 +72,7 @@ The action, two people reading the code of any item larger than 3 points, sits r
 ## Beginners often think…
 
 - **"An estimate a team gives becomes a deadline they're expected to hit."** → Actually an estimate is a guess about size made before the work starts; the team uses it to plan, not to promise a date. You notice this when a team is held to its numbers and the numbers slowly grow bigger, while the work itself has not changed.
-- **"If an item doesn't finish in the sprint it was estimated for, the original estimate must have been wrong."** → Actually work sometimes takes longer than it looked, often for reasons that were not visible at planning; not finishing is what that looks like. You notice this in Sprint 14, where the unfinished item carried over and the retrospective's action was about who reads the code, not about the estimate.
+- **"If an item doesn't finish in the sprint it was estimated for, the original estimate must have been wrong."** → Actually work sometimes takes longer than it looked, sometimes for reasons that were not visible at planning; not finishing is what that looks like. You notice this in Sprint 14, where the unfinished item carried over and the retrospective's action was about who reads the code, not about the estimate.
 
 ## Try it (3 minutes)
 
@@ -103,5 +103,5 @@ It would make them less useful. If the numbers are chosen to look good instead o
 1. An estimate answers how big a story looks before starting; a commitment is a promise others can hold you to.
 2. An item that does not finish in its sprint does not make its estimate wrong; work sometimes takes longer.
 3. Treating estimates as promises pushes people to distort later numbers or call unfinished work done.
-4. Only the retrospective, after the work, can compare a guess with what really happened.
+4. Only after the work can a team compare a guess with what really happened, for example at the retrospective.
 5. In Sprint 14 the unfinished 2-point item carried over, was not shown, and was not blamed on its estimate.
