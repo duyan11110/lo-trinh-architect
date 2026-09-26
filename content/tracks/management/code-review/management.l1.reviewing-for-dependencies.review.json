@@ -1,0 +1,79 @@
+{
+  "id": "management.l1.reviewing-for-dependencies",
+  "technical": {
+    "reviewed_at": "2026-09-26T14:47:40+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "git show stage-1:samples/DonHang.Samples/Samples/Design/OrderNotifications.cs: line 9 `public sealed class OrderPlacedTightlyCoupled` (no constructor), line 11 `private readonly EmailNotifier notifier = new();`, line 20 `public sealed class OrderNotifications(INotifier notifier)`. Lesson block lines 9-23 matches the file character-for-character.",
+        "source": "examples/don-hang @ stage-1: samples/DonHang.Samples/Samples/Design/OrderNotifications.cs:9-23"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "OrderService.cs @ stage-1 line 6: `public sealed class OrderService(IOrderRepository repository, INotifier notifier)`; file starts with `namespace DonHang.Domain;`, no using lines, no mention of EF Core or DonHang.Infrastructure. DonHang.Domain/INotifier.cs:5 `public interface INotifier`, IOrderRepository.cs:5 `public interface IOrderRepository`, both `namespace DonHang.Domain;`. DonHang.Domain.csproj has no ProjectReference.",
+        "source": "examples/don-hang @ stage-1: DonHang.Domain/OrderService.cs, INotifier.cs, IOrderRepository.cs, DonHang.Domain.csproj"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "AuthController.cs @ stage-1 line 2 `using DonHang.Infrastructure;`, line 11 `public sealed class AuthController(DonHangDbContext db, JwtTokenService tokenService) : ControllerBase`. DonHang.Infrastructure/DonHangDbContext.cs:7 `public sealed class DonHangDbContext(...) : DbContext(options)`; DonHang.Api/JwtTokenService.cs: `namespace DonHang.Api;` `public sealed class JwtTokenService(IConfiguration configuration)`.",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/Controllers/AuthController.cs:1-11; DonHang.Api/JwtTokenService.cs; DonHang.Infrastructure/DonHangDbContext.cs"
+      },
+      {
+        "n": 4,
+        "verdict": "rephrased",
+        "evidence": "Code verified: OrdersController.cs:12 `(OrderService orderService, IOrderRepository repository)`; usings include DonHang.Domain, not DonHang.Infrastructure; Program.cs:19 `AddScoped<OrderService>()`. Docs: \"By default, ASP.NET Core doesn't register controllers as services in the DI container. The runtime uses the DefaultControllerActivator to create controller instances and resolves services from the DI container for constructor parameters\". The container supplies arguments; it does not create the controller.",
+        "source": "https://learn.microsoft.com/en-us/aspnet/core/mvc/controllers/dependency-injection?view=aspnetcore-10.0 (Controllers as services)",
+        "suggested_text": "`OrdersController` still asks for `OrderService` in its constructor, so the object is chosen outside the class; in the API, ASP.NET Core takes each constructor argument from the DI container, where `Program.cs` registers `OrderService`."
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Opinion part follows outline items 1-3 and is conditioned (\"probably\", \"a reason to ask\"). Factual core checked in code: OrderPlacedTightlyCoupled has no constructor and a private readonly field initialised with new(), so no caller can supply another notifier; the sample's own comment (lines 6-8) says \"testing this without sending a real email, means editing OrderPlacedTightlyCoupled itself.\"",
+        "source": "examples/don-hang @ stage-1: samples/DonHang.Samples/Samples/Design/OrderNotifications.cs:5-14; outline entry"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Unlisted claim: the `using` lines \"list which projects and namespaces it reaches into\". Not true in C#: a type can be named fully qualified without a using, global/implicit usings (ImplicitUsings is enabled in DonHang.Api and DonHang.Domain) do not appear in the file, and types in enclosing namespaces need none. The lesson's own AuthController uses `JwtTokenService` (namespace DonHang.Api) with no `using DonHang.Api;`. Docs: \"The global modifier has the same effect as adding the same using directive to every source file in your project.\" Same wording in summary line 1 and q1 explanation.",
+        "quote": "the `using` lines, which list which projects and namespaces it reaches into",
+        "fix": "Section 4: \"and the `using` lines, which show most of the other projects and namespaces it uses (a type can also be written with its full name, or come from the class's own namespace, without a `using` line — `JwtTokenService` below is one).\" Add as a claim (kind behavior, version_key dotnet). In q1 explanation (en+vi) change \"list which projects it reaches into\" to \"show most of the other projects it uses\"."
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "accuracy",
+        "text": "Claim 4 imprecise: ASP.NET Core does not create controllers from the DI container by default; DefaultControllerActivator creates them and resolves constructor parameters from the container (aspnetcore-10.0 docs, \"Controllers as services\").",
+        "quote": "whoever creates it chooses which object to pass; in the API, that is the DI container",
+        "fix": "Replace with claim 4 suggested_text: \"...so the object is chosen outside the class; in the API, ASP.NET Core takes each constructor argument from the DI container, where `Program.cs` registers `OrderService`.\" Update claim 4 text in meta.json to match."
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "opinion-as-fact",
+        "text": "Unlisted claim / unconditioned ranking: \"Depending on a concrete class is a smaller concern than reaching for one\" is stated as fact and is not in the claims ledger.",
+        "quote": "Depending on a concrete class is a smaller concern than reaching for one",
+        "fix": "Condition it on the reason already given: \"Because the caller still chooses the object, depending on a concrete class usually matters less here than reaching for one; ...\" and add it to claim 5 (kind opinion)."
+      },
+      {
+        "severity": "minor",
+        "section": "management.l1.reviewing-for-dependencies.q2",
+        "kind": "quiz",
+        "text": "Explanation of the correct option is stronger than the lesson: \"a long list is the first sign of a class with more than one reason to change\". The lesson says SRP \"predicts ... probably\" and that the constructor is \"where that shows first\", not that a long list is the first sign. Key itself is correct.",
+        "quote": "a long list is the first sign of a class with more than one reason to change",
+        "fix": "Change to \"There is no fixed limit, but a long list often means a class has more than one reason to change, so asking about it is fair.\" and the vi text accordingly (\"danh sách dài thường cho thấy một class có nhiều hơn một lý do để thay đổi\")."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "fix-required"
+  }
+}

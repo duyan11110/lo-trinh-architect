@@ -13,7 +13,7 @@ prereqs: [management.l1.reviewing-for-layers, design.l1.solid-dip]
 related: []
 vocab: []
 example_tag: stage-1
-versions_used: []
+versions_used: [dotnet, aspnetcore]
 content_version: 1
 status: draft
 ---
@@ -47,7 +47,7 @@ flowchart TD
   I -->|no, reaches into its details| X
 ```
 
-Reviewing for dependencies means reading how a new class gets what it needs. Two places tell you most of it: the constructor, which lists what the class asks for, and the `using` lines, which list which projects and namespaces it reaches into. You do not need a tool for this; you read both by eye.
+Reviewing for dependencies means reading how a new class gets what it needs. Two places tell you most of it: the constructor, which lists what the class asks for, and the `using` lines, which show which other projects' namespaces the file brings in. The `using` lines are not a complete list: a type from the file's own project needs no `using`, as `JwtTokenService` shows in `AuthController` below, so read the types in the constructor too. You do not need a tool for this; you read both by eye.
 
 The first check is whether the class asks or reaches. A class that takes an `INotifier` as a constructor parameter can be given any notifier, including a fake one in a test. A class that creates its own concrete notifier with `new` cannot, and changing the channel means editing that class. That undoes the whole point of dependency injection, and it is worth a comment even if the code works.
 
@@ -112,13 +112,13 @@ Open `DonHang.Api/Controllers/OrdersController.cs` from the repository at stage-
 2. Look at the `using` lines and write down which Đơn Hàng projects the controller uses.
 3. Decide whether you would leave a dependency comment, and write it in one sentence if so.
 
-Expected result: step 1 — `OrderService`, a concrete class, and `IOrderRepository`, an interface. Step 2 — `DonHang.Domain` only; there is no `using DonHang.Infrastructure;`. Step 3 — a question is reasonable, for example: "`OrderService` is a concrete class; would an interface make this controller easier to test on its own?" Either answer can be right; the point is that you looked.
+Expected result: step 1 — `OrderService`, a concrete class, and `IOrderRepository`, an interface. Step 2 — `DonHang.Domain` only; there is no `using DonHang.Infrastructure;`, and the controller's own project, `DonHang.Api`, needs no `using`. Step 3 — a question is reasonable, for example: "`OrderService` is a concrete class; would an interface make this controller easier to test on its own?" Either answer can be right; the point is that you looked.
 
 A teammate says: "`OrdersController` takes a concrete `OrderService`, so it breaks the same rule as `OrderPlacedTightlyCoupled`." Is that the same problem?
 
 <details><summary>Suggested answer</summary>
 
-Not quite. `OrdersController` still asks for `OrderService` in its constructor, so whoever creates it chooses which object to pass; in the API, that is the DI container. `OrderPlacedTightlyCoupled` creates its own `EmailNotifier` with `new`, so nobody outside can choose. Depending on a concrete class is a smaller concern than reaching for one; the first can be worth a question, the second is worth a clear comment.
+Not quite. `OrdersController` still asks for `OrderService` in its constructor, so whoever creates it chooses which object to pass; in the API, ASP.NET Core creates the controller and the DI container supplies what its constructor asks for. `OrderPlacedTightlyCoupled` creates its own `EmailNotifier` with `new`, so nobody outside can choose. Depending on a concrete class that is passed in is usually a smaller concern than creating one yourself, because the caller can still choose what to pass; the first can be worth a question, the second is worth a clear comment.
 
 </details>
 
