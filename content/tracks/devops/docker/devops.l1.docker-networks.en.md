@@ -108,7 +108,7 @@ The first container was attached to Docker's default network, which has no Docke
 ## Five-line summary
 
 1. Containers on the same **Docker network**, one you or Compose create, reach each other by address and service name.
-2. Docker runs a DNS server at `127.0.0.11` inside each container, answering with the other containers' addresses.
+2. On such a network, Docker runs a DNS server at `127.0.0.11` inside each container, answering with the other containers' addresses.
 3. The lab's `donhang` network fixes each service's address, so `db` is always `172.28.0.11` and `api` `172.28.0.13`.
 4. A container on another network cannot resolve or reach them; neither can programs on your own machine.
 5. From outside the network, you reach the lab only through published ports such as `8080` and `5432`.
