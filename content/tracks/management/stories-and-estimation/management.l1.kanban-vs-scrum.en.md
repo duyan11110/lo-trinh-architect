@@ -46,7 +46,7 @@ flowchart LR
 
 Because of that, a Kanban board always shows the present. At any moment you can read off what is waiting, what is being worked on, what waits for review and what is finished. A sprint board answers a narrower question: what the team took on in this sprint. It shows the items the team chose for this sprint, its sprint backlog, which belongs to one sprint, so a new sprint brings a new set of items and the board shows one sprint's slice of the work.
 
-The two are different defaults for when work moves, not rival beliefs. Scrum plans a batch around a sprint goal and keeps that goal fixed for the sprint; Kanban lets each item move on its own. Many teams mix them, for example keeping Scrum's roles and meetings (daily, review, retrospective) while using a Kanban-style board. The Scrum Guide, the short official description of Scrum, does not say how the team's board should look, so that choice is left to the team.
+The two are different defaults for when work moves, not rival beliefs. Scrum plans a batch around a sprint goal and keeps that goal fixed for the sprint; Kanban lets each item move on its own. Teams can mix them, for example keeping Scrum's roles and meetings (daily, review, retrospective) while using a Kanban-style board. The Scrum Guide, the short official description of Scrum, does not say how the team's board should look, so that choice is left to the team.
 
 ## In the Đơn Hàng system
 
@@ -85,7 +85,7 @@ Open `docs/team/kanban-board-example.md` and `docs/team/sprint-example.md` from 
 2. In Sprint 14, find the item that did not finish, and what happened to it.
 3. Imagine a customer reports on Wednesday that orders show the wrong total. Write down when each team would start working on it.
 
-Expected result: 1 — `Đang làm`: the slow product page and the double email warning; `Chờ review`: logging failed logins. 2 — `Ngừng gửi thông báo cho đơn đã hủy`, which moved to the next sprint. 3 — the support team as soon as someone can take it, once an item leaves the full `Đang làm` column; the feature team at its next sprint planning.
+Expected result: 1 — `Đang làm`: the slow product page and the double email warning; `Chờ review`: logging failed logins. 2 — `Ngừng gửi thông báo cho đơn đã hủy`, which moved to the next sprint. 3 — the support team as soon as someone can take it, once an item leaves the full `Đang làm` column; the feature team usually at its next sprint planning.
 
 Both files describe the same company. Why is the Kanban board a better fit for the support team's work, and the sprint for the feature team's?
 
@@ -107,4 +107,4 @@ The support team's work arrives unpredictably and some of it cannot wait, so let
 2. Each item moves on as soon as it is ready, so the board always shows the current state of the work on it.
 3. A sprint board shows one sprint's slice and usually starts again with each new sprint.
 4. The Đơn Hàng support team uses Kanban for unpredictable work, while the feature team keeps sprints for planned work.
-5. Scrum and Kanban are different defaults for when work moves, and many teams mix them.
+5. Scrum and Kanban are different defaults for when work moves, and teams can mix them.
