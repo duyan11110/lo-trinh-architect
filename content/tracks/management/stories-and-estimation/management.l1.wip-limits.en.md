@@ -42,7 +42,7 @@ flowchart LR
   F[free person] -.column full.-> R
 ```
 
-A **WIP limit** is written on a column, usually as a number next to its name. It says how many items may be in that column at the same time. While the column has room, anyone who is free pulls the next item in. When it is full, the rule is plain: nobody starts another item there until one leaves.
+A **WIP limit** belongs to one column; on the lab's board it is the number in brackets after the column name. It says how many items may be in that column at the same time. While the column has room, anyone who is free pulls the next item in. When it is full, the rule is plain: nobody starts another item there until one leaves.
 
 The limit changes what a free person does. Instead of opening something new, they look at what is already in progress or waiting and help move it forward: review a pull request that is waiting, test a fix, pair on a stuck item. Work gets finished before more is started, so fewer things sit half-done.
 
@@ -50,7 +50,7 @@ Without a limit, too much work in progress is invisible. Every person can have t
 
 ## In the Đơn Hàng system
 
-The support team's board, in `docs/team/kanban-board-example.md`, limits two columns:
+The team's Kanban board, in `docs/team/kanban-board-example.md`, limits two columns:
 
 ```markdown file=docs/team/kanban-board-example.md tag=stage-1 lines=8-12
 | Việc cần làm | Đang làm (giới hạn 2) | Chờ review (giới hạn 2) | Xong |
@@ -70,11 +70,11 @@ kế bên — thay vì mở việc mới. Một cột đầy là tín hiệu t�
 chỗ trống cho người rảnh.
 ```
 
-Dev 4 has finished a task and wants the third item from `Việc cần làm`, but the team lead stops them: the limit means stop and help an item that is already there, for example by reading the review waiting in the next column, instead of opening something new. The last sentence states the rule: a full column is a signal of a blockage, not an empty seat for whoever is free.
+Dev 4 has finished a task and wants to take a third item from `Việc cần làm` into `Đang làm`, but the team lead stops them: the limit means stop and help an item that is already there, for example by reading the review waiting in the next column, instead of opening something new. The last sentence states the rule: a full column is a signal of a blockage, not an empty seat for whoever is free.
 
 ## Beginners often think…
 
-- **"A WIP limit just slows the team down by capping how much work they can do."** → Actually it caps how much is started at once, not how much gets done. When a free person helps finish an item already in progress, that item reaches `Xong` sooner, and the next one can start. You notice this when a team with many items open at once finishes fewer of them each week than it did with a limit.
+- **"A WIP limit just slows the team down by capping how much work they can do."** → Actually it caps how much is started at once, not how much gets done. When a free person helps finish an item already in progress, that item reaches `Xong` sooner, and the next one can start. You notice this when a team with many items open at once sees each of them take longer to reach `Xong`, because everyone's time is split across all of them.
 - **"WIP limits are a suggestion, not something the board actually enforces by structure."** → Actually the limit is a rule the team keeps, and the board makes breaking it visible: a column is either within its number or over it, for everyone to see. The team lead treats the full `Đang làm` as closed, and that is what keeps the number meaningful. You notice this when a column labelled `limit 2` quietly holds four items and nobody treats that as a problem any more.
 
 ## Try it (3 minutes)
@@ -91,7 +91,7 @@ After step 3, one place is free in `Đang làm`. What should Dev 4 do now, and w
 
 <details><summary>Suggested answer</summary>
 
-Dev 4 can now pull the top item from `Việc cần làm` into `Đang làm`, because the column has room. Waiting was the right call because, while the column was full, starting a third item would only have added to the unfinished work; helping move an existing item forward, such as the review waiting in `Chờ review`, is what frees a place in the first place.
+Dev 4 can now pull the top item from `Việc cần làm` into `Đang làm`, because the column has room. Waiting was the right call because, while the column was full, starting a third item would only have added to the unfinished work. A place frees up only when an existing item moves on, as the product page fix did in step 3, and helping items move on is what Dev 4 was sent to do.
 
 </details>
 
@@ -106,5 +106,5 @@ Dev 4 can now pull the top item from `Việc cần làm` into `Đang làm`, beca
 1. A **WIP limit** caps how many items can sit in one column at once; a full column accepts nothing new.
 2. When a column is full, a free person helps finish something already there instead of starting more.
 3. The limit makes too much work in progress visible: a column that stays full is a bottleneck you can see.
-4. The support team limits `Đang làm` and `Chờ review` to two items each.
+4. The team's board limits `Đang làm` and `Chờ review` to two items each.
 5. A WIP limit is a rule the team keeps, and the board shows at once when a column breaks it.
