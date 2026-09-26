@@ -93,4 +93,4 @@ No. The 2 was the team's best guess with what it knew at planning; the item took
 2. An estimate is made before the work starts, with only what is known then.
 3. Estimates are sometimes wrong in both directions, and that is expected, not a failure.
 4. Work can start without an estimate, but a sprint cannot be planned without knowing roughly how big each story is.
-5. Sprint 14's `Ước lượng` column is the kind of number a team plans with; the item that did not finish did not make its estimate a broken promise.
+5. Sprint 14's `Ước lượng` numbers are for planning; the unfinished item did not make its estimate a broken promise.
