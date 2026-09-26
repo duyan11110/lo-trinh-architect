@@ -1,7 +1,7 @@
 {
   "id": "management.l1.reviewing-for-dependencies",
   "technical": {
-    "reviewed_at": "2026-09-26T14:47:40+07:00",
+    "reviewed_at": "2026-09-26T16:40:00+07:00",
     "reviewer": "claude-opus-5-5",
     "claim_verdicts": [
       {
@@ -24,16 +24,28 @@
       },
       {
         "n": 4,
-        "verdict": "rephrased",
-        "evidence": "Code verified: OrdersController.cs:12 `(OrderService orderService, IOrderRepository repository)`; usings include DonHang.Domain, not DonHang.Infrastructure; Program.cs:19 `AddScoped<OrderService>()`. Docs: \"By default, ASP.NET Core doesn't register controllers as services in the DI container. The runtime uses the DefaultControllerActivator to create controller instances and resolves services from the DI container for constructor parameters\". The container supplies arguments; it does not create the controller.",
-        "source": "https://learn.microsoft.com/en-us/aspnet/core/mvc/controllers/dependency-injection?view=aspnetcore-10.0 (Controllers as services)",
-        "suggested_text": "`OrdersController` still asks for `OrderService` in its constructor, so the object is chosen outside the class; in the API, ASP.NET Core takes each constructor argument from the DI container, where `Program.cs` registers `OrderService`."
+        "verdict": "verified",
+        "evidence": "Code: OrdersController.cs:12 `(OrderService orderService, IOrderRepository repository)`; usings include DonHang.Domain, not DonHang.Infrastructure; Program.cs:19 `AddScoped<OrderService>()`. Docs: \"By default, ASP.NET Core doesn't register controllers as services in the DI container. The runtime uses the DefaultControllerActivator to create controller instances and resolves services from the DI container for constructor parameters\". Lesson now says the framework creates the controller and the container supplies its constructor arguments.",
+        "source": "refs/aspnetcore-docs/aspnetcore/mvc/controllers/dependency-injection.md:76 (aspnetcore 10.0)"
       },
       {
         "n": 5,
         "verdict": "verified",
         "evidence": "Opinion part follows outline items 1-3 and is conditioned (\"probably\", \"a reason to ask\"). Factual core checked in code: OrderPlacedTightlyCoupled has no constructor and a private readonly field initialised with new(), so no caller can supply another notifier; the sample's own comment (lines 6-8) says \"testing this without sending a real email, means editing OrderPlacedTightlyCoupled itself.\"",
         "source": "examples/don-hang @ stage-1: samples/DonHang.Samples/Samples/Design/OrderNotifications.cs:5-14; outline entry"
+      },
+      {
+        "n": 6,
+        "verdict": "rephrased",
+        "evidence": "using-directive.md:22 \"The `global` modifier has the same effect as adding the same `using` directive to every source file in your project.\"; project-sdk/overview.md:135 implicit global usings are added to new C# projects (ImplicitUsings=enable in DonHang.Api). Ledger text is right, but the lesson says a type from the file's own PROJECT needs no using: Program.cs (DonHang.Api project) has `using DonHang.Api;` and `using DonHang.Api.Middleware;`. JwtTokenService works in AuthController because DonHang.Api encloses DonHang.Api.Controllers.",
+        "source": "refs/dotnet-docs/docs/csharp/language-reference/keywords/using-directive.md; core/project-sdk/overview.md; examples/don-hang @ stage-1: DonHang.Api/Program.cs:1-8",
+        "suggested_text": "The `using` lines are not a complete list: a type in the file's own namespace, or in a namespace that contains it, needs no `using`, and a project can add `using` lines for every file at once. So read the constructor's types too."
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "stage-1: EfOrderRepository.cs:7 `public sealed class EfOrderRepository(DonHangDbContext db) : IOrderRepository`; LoggingNotifier.cs:9 `public sealed class LoggingNotifier(...) : INotifier`; DonHangDbContext.cs:7 `public sealed class DonHangDbContext(...) : DbContext(options)`, namespace DonHang.Infrastructure; ServiceCollectionExtensions.cs:14-16 registers DbContext, IOrderRepository->EfOrderRepository, INotifier->LoggingNotifier, comment \"OrderService only ever sees the interfaces\". Framing as the project's whole contract: see minor issue.",
+        "source": "examples/don-hang @ stage-1: DonHang.Infrastructure/EfOrderRepository.cs, LoggingNotifier.cs, DonHangDbContext.cs, ServiceCollectionExtensions.cs"
       }
     ],
     "issues": [
@@ -41,33 +53,41 @@
         "severity": "major",
         "section": 4,
         "kind": "accuracy",
-        "text": "Unlisted claim: the `using` lines \"list which projects and namespaces it reaches into\". Not true in C#: a type can be named fully qualified without a using, global/implicit usings (ImplicitUsings is enabled in DonHang.Api and DonHang.Domain) do not appear in the file, and types in enclosing namespaces need none. The lesson's own AuthController uses `JwtTokenService` (namespace DonHang.Api) with no `using DonHang.Api;`. Docs: \"The global modifier has the same effect as adding the same using directive to every source file in your project.\" Same wording in summary line 1 and q1 explanation.",
-        "quote": "the `using` lines, which list which projects and namespaces it reaches into",
-        "fix": "Section 4: \"and the `using` lines, which show most of the other projects and namespaces it uses (a type can also be written with its full name, or come from the class's own namespace, without a `using` line — `JwtTokenService` below is one).\" Add as a claim (kind behavior, version_key dotnet). In q1 explanation (en+vi) change \"list which projects it reaches into\" to \"show most of the other projects it uses\"."
+        "text": "Claim 6 overgeneralised in the prose. 'A type from the file's own project needs no using' is false: DonHang.Api/Program.cs, in the DonHang.Api project, needs `using DonHang.Api;` and `using DonHang.Api.Middleware;`. What holds is namespace lookup: `JwtTokenService` (namespace DonHang.Api) needs no using in AuthController because DonHang.Api encloses DonHang.Api.Controllers. Global/implicit usings (ImplicitUsings=enable) are a second gap the prose omits.",
+        "quote": "because a type from the file's own project needs no `using`, so read the constructor's types too",
+        "fix": "Replace the sentence with claim 6 suggested_text: \"The `using` lines are not a complete list: a type in the file's own namespace, or in a namespace that contains it, needs no `using`, and a project can add `using` lines for every file at once. So read the constructor's types too.\" In Try it step 2, change \"the controller's own project, `DonHang.Api`, needs no `using`\" to \"types from `DonHang.Api` itself need no `using` here, because the controller's namespace sits inside it\"."
       },
       {
-        "severity": "minor",
-        "section": 7,
+        "severity": "major",
+        "section": 3,
         "kind": "accuracy",
-        "text": "Claim 4 imprecise: ASP.NET Core does not create controllers from the DI container by default; DefaultControllerActivator creates them and resolves constructor parameters from the container (aspnetcore-10.0 docs, \"Controllers as services\").",
-        "quote": "whoever creates it chooses which object to pass; in the API, that is the DI container",
-        "fix": "Replace with claim 4 suggested_text: \"...so the object is chosen outside the class; in the API, ASP.NET Core takes each constructor argument from the DI container, where `Program.cs` registers `OrderService`.\" Update claim 4 text in meta.json to match."
+        "text": "Definition contradicts section 5. 'Reaching' is any concrete object created with `new` in a field or a method, but OrderService.cs:12 does `var order = new Order { ... }` and lines 10/32 `throw new ArgumentException`/`KeyNotFoundException` inside methods, yet the lesson says OrderService 'passes all three checks'. Creating data objects and exceptions is not a dependency; the definition must be limited to collaborators the class calls.",
+        "quote": "creating a concrete object inside the class itself, for example with `new` in a field or a method, instead of asking for it",
+        "fix": "Core concepts: \"reaching for a dependency — creating, inside the class itself, an object it calls to do its work (such as a notifier or a repository), for example with `new` in a field, instead of asking for it. Building data such as a new `Order` is not reaching.\" Mirror in claim 5 of meta.json."
       },
       {
         "severity": "minor",
-        "section": 7,
-        "kind": "opinion-as-fact",
-        "text": "Unlisted claim / unconditioned ranking: \"Depending on a concrete class is a smaller concern than reaching for one\" is stated as fact and is not in the claims ledger.",
-        "quote": "Depending on a concrete class is a smaller concern than reaching for one",
-        "fix": "Condition it on the reason already given: \"Because the caller still chooses the object, depending on a concrete class usually matters less here than reaching for one; ...\" and add it to claim 5 (kind opinion)."
-      },
-      {
-        "severity": "minor",
-        "section": "management.l1.reviewing-for-dependencies.q2",
+        "section": "management.l1.reviewing-for-dependencies.q5",
         "kind": "quiz",
-        "text": "Explanation of the correct option is stronger than the lesson: \"a long list is the first sign of a class with more than one reason to change\". The lesson says SRP \"predicts ... probably\" and that the constructor is \"where that shows first\", not that a long list is the first sign. Key itself is correct.",
-        "quote": "a long list is the first sign of a class with more than one reason to change",
-        "fix": "Change to \"There is no fixed limit, but a long list often means a class has more than one reason to change, so asking about it is fair.\" and the vi text accordingly (\"danh sách dài thường cho thấy một class có nhiều hơn một lý do để thay đổi\")."
+        "text": "Option a overstates: `OrderService` does not receive everything it needs; it builds `new Order` itself (OrderService.cs:12). Key remains the best option, but a careful reader can object.",
+        "quote": "Everything it needs is passed in as a Domain interface",
+        "fix": "Option a en: \"Every service it calls is passed in as a Domain interface\"; vi: \"Mọi service nó gọi đều được truyền vào dưới dạng interface của Domain\"."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "Claim 7 facts hold, but the sentence states as fact that Infrastructure's contract IS the interfaces it implements and that DonHangDbContext is its working detail. The repo declares no such boundary: DonHangDbContext is public, Program.cs:59 resolves it, ProductsController also takes it, and Infrastructure also offers `AddDonHangInfrastructure` to Program.cs.",
+        "quote": "In Đơn Hàng the infrastructure project's contract is the interfaces it implements from `DonHang.Domain`, such as `IOrderRepository`; `DonHangDbContext` is its own working detail.",
+        "fix": "\"In Đơn Hàng, what the infrastructure project offers the rest of the code is mainly its implementations of interfaces from `DonHang.Domain`, such as `IOrderRepository`; `DonHangDbContext` is the class it uses to do that work.\" Mark the framing part of claim 7 kind opinion."
+      },
+      {
+        "severity": "minor",
+        "section": "management.l1.reviewing-for-dependencies.q4",
+        "kind": "quiz",
+        "text": "Context says changing 'how that database class is set up' touches a dozen controllers, and option d's explanation repeats 'set up'. The controllers receive the class through their constructors, so changing its setup (its registration) would not touch them; what touches them is a change to the class's members they call. Key a is still the best answer.",
+        "quote": "Then the team needs to change how that database class is set up.",
+        "fix": "Context en: \"Then the team needs to change what that database class exposes, for example renaming a table it offers.\" (vi to match); explanation d en: \"...but it only changes what the same class exposes.\""
       }
     ],
     "scope": {
@@ -77,99 +97,55 @@
     "verdict": "fix-required"
   },
   "junior": {
-    "reviewed_at": "2026-09-26T15:30:00+07:00",
-    "reviewer": "claude-opus-5-5 (junior simulation)",
+    "reviewed_at": "2026-09-26T17:30:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation, round 2)",
     "issues": [
       {
         "severity": "major",
-        "section": 2,
-        "kind": "gap",
-        "text": "The situation's class sets a field with `new`, and the lesson says to look at the constructor and the `using` lines. But in the sample the `new` is in a field, not in either place, and `EmailNotifier` needs no `using`. I cannot see how those two places would reveal it; the missing step seems to be that an empty constructor on a class that clearly uses something is the signal to look at its fields.",
-        "quote": "Inside the class, one field is set with `new` to a concrete email sender.",
-        "fix": "In section 4, after 'A class that creates its own concrete notifier with `new` cannot', add one sentence: if the constructor asks for nothing but the class uses something, look at its fields for `new`, as in `OrderPlacedTightlyCoupled` below."
-      },
-      {
-        "severity": "major",
         "section": 4,
         "kind": "gap",
-        "text": "I cannot tell what the first check says about a concrete class that IS passed in the constructor. The diagram sends 'uses new or a concrete class' to 'comment', and Core concepts counts 'naming a concrete object' as reaching. Yet Try it says `OrdersController` taking a concrete `OrderService` only merits a question and 'either answer can be right', and the suggested answer calls it a smaller concern. `AuthController` also asks for `DonHangDbContext` in its constructor; is that asking or reaching?",
-        "quote": "reaching for a dependency — creating or naming a concrete object directly inside a class, for example with `new`, instead of asking for it.",
-        "fix": "Add one sentence to the first-check paragraph: creating with `new` is worth a comment; asking for a concrete class in the constructor is still asking, and is worth at most a question. Make the diagram label on the A arrow say 'no, creates with new' to match."
+        "text": "Core concepts defines reaching as creating a concrete object inside the class with `new`, instead of asking for it. The third check then says 'Reaching into its details' for a class that takes another project's concrete class, and section 5 shows `AuthController` taking `DonHangDbContext` in its constructor, which by the definition is asking. Summary line 4 and q4 option a ('Classes reached into another project's concrete details', for controllers that take the class in constructors) use the same second sense. I cannot tell which meaning is right.",
+        "quote": "Reaching into its details ties them together more tightly with every such line",
+        "fix": "Keep 'reaching' only for creating with `new`. In the third check, summary line 4 and q4 option a (en+vi), say 'depending on its details' / 'depended on another project's concrete details' instead of 'reaching into'."
       },
       {
         "severity": "major",
-        "section": 4,
-        "kind": "gap",
-        "text": "The third check depends on telling another project's 'public interface' from its 'details', but the lesson never says how to tell them apart by eye. `DonHangDbContext` is a class from the infrastructure project that other projects use; why is it a detail rather than part of what that project offers? 'Interface' here also collides with the C# `interface` I know, so I read 'uses another project through an interface' two ways.",
-        "quote": "A class that uses another project through an interface that project offers stays loosely coupled to it.",
-        "fix": "Add one sentence to the third-check paragraph giving the rule the reader can apply, e.g. that a C# interface declared for other projects to use is the offered part, and a concrete class like `DonHangDbContext` is that project's own detail; say 'interface' in the C# sense consistently."
-      },
-      {
-        "severity": "major",
-        "section": 5,
-        "kind": "term",
-        "text": "'Entity Framework Core' is not something I know, and the prose uses it as if I do. It also appears as `using Microsoft.EntityFrameworkCore;` in the AuthController block with no word about it. I can guess from ORM that it has to do with the database, but I am guessing.",
-        "quote": "Nothing in the file names Entity Framework Core or the `DonHang.Infrastructure` project.",
-        "fix": "Replace 'Entity Framework Core' with 'the ORM' or add a half-sentence saying it is the ORM `DonHangDbContext` belongs to, and mention that the `Microsoft.EntityFrameworkCore` using line in AuthController is the same thing."
-      },
-      {
-        "severity": "major",
-        "section": 7,
-        "kind": "term",
-        "text": "'ASP.NET Core' is not in what I know (I know Kestrel, controller, DI container). The suggested answer relies on it being the thing that creates controllers.",
-        "quote": "in the API, ASP.NET Core creates the controller and the DI container supplies what its constructor asks for.",
-        "fix": "Replace 'ASP.NET Core' with 'the framework' or 'the API at startup', or add a short parenthetical saying it is the web framework the Đơn Hàng API runs on."
-      },
-      {
-        "severity": "minor",
         "section": 4,
         "kind": "diagram",
-        "text": "The prose says the `using` lines are incomplete and I must also read the constructor's types to find where dependencies come from, but in the diagram the 'uses another project's public interface?' check hangs only off 'read its using lines'.",
-        "quote": "so read the types in the constructor too.",
-        "fix": "Add an arrow from 'read its constructor' to the 'uses another project's public interface?' node."
-      },
-      {
-        "severity": "minor",
-        "section": 4,
-        "kind": "style",
-        "text": "I had to re-read this paragraph: it points forward to `JwtTokenService` in `AuthController` 'below' before I have seen either, so the sentence about the own-project type needing no `using` did not land until section 5.",
-        "quote": "a type from the file's own project needs no `using`, as `JwtTokenService` shows in `AuthController` below",
-        "fix": "Drop the forward reference here and add the JwtTokenService remark only in section 5, where the reader sees the code."
+        "text": "The diagram has separate end nodes 'comment' and 'worth a question', and the first check draws that line carefully. But 'many' parameters goes to 'comment', while the prose says a long list 'is a reason to ask', and summary line 3 says 'worth asking about'. Likewise 'details' goes to 'comment', yet section 5 says for `AuthController` 'A reviewer can ask'. I cannot narrate the diagram and prose the same way.",
+        "quote": "A long list is a reason to ask what the class is responsible for, not a style complaint.",
+        "fix": "Point the 'many' arrow to the 'worth a question' node. For 'details', either point it to 'worth a question' too, or add one sentence to the third check saying it is worth a comment and change section 5's 'can ask' to match."
       },
       {
         "severity": "minor",
         "section": 5,
-        "kind": "term",
-        "text": "The first code block's comment names `SmsNotifier` and `Samples/Oop/NotifierBase.cs`, which I have not seen and the prose does not mention. Not blocking, but I stopped to wonder if I needed them.",
-        "quote": "EmailNotifier and SmsNotifier already implement (Samples/Oop/NotifierBase.cs).",
-        "fix": "Add a few words to the prose after the block: 'SmsNotifier is just another INotifier; you do not need it here.'"
+        "kind": "gap",
+        "text": "The lesson points out `JwtTokenService` is a concrete class from the API project itself but never says what the checks conclude about it. By check 1 it looks like 'worth a question'; by check 3 it is not another project, so no issue. I had to work that out myself and was not sure.",
+        "quote": "It also takes `JwtTokenService`, a concrete class from the API project itself.",
+        "fix": "Add half a sentence after it: by the first check that is at most a question, and the third check does not apply because it is the controller's own project."
       },
       {
         "severity": "minor",
-        "section": "management.l1.reviewing-for-dependencies.q5",
-        "kind": "quiz",
-        "text": "The correct option is almost word for word summary line 5 ('`OrderService` asks for two interfaces from its own project'), so I can match it without understanding the checks.",
-        "quote": "It asks for two interfaces from its own project",
-        "fix": "Rephrase the correct option, e.g. 'Its constructor takes only abstractions declared in `DonHang.Domain`, and it names no other project'."
+        "section": 5,
+        "kind": "gap",
+        "text": "Core concepts says a public contract is the types a project offers. Here the infrastructure project's contract is interfaces declared in `DonHang.Domain`, another project. I re-read this to see how Infrastructure can offer types it did not declare.",
+        "quote": "In Đơn Hàng the infrastructure project's contract is the interfaces it implements from `DonHang.Domain`, such as `IOrderRepository`",
+        "fix": "Add a few words: the interfaces are declared in Domain and Infrastructure offers implementations of them, so other projects use Infrastructure through them without naming its classes."
       },
       {
         "severity": "minor",
-        "section": "management.l1.reviewing-for-dependencies.q4",
-        "kind": "quiz",
-        "text": "Options b, c and d are clearly off-topic, so I can pick a without reasoning. The explanation for b, 'This would matter only when tests forced the change', confused me more: I do not see how tests would force a change.",
-        "quote": "This would matter only when tests forced the change, but the problem is how many classes named the database class.",
-        "fix": "Make one distractor plausible (e.g. 'The controllers had too many constructor parameters') and rewrite b's explanation plainly: 'Having more tests does not make a change touch more controllers.'"
+        "section": 5,
+        "kind": "code",
+        "text": "The AuthController block has `using Microsoft.AspNetCore.Mvc;` and `using Microsoft.EntityFrameworkCore;`, and the prose only discusses `using DonHang.Infrastructure;`. Since the third check is about bringing in other projects, I wondered whether these two lines are also 'details' I should flag.",
+        "quote": "using Microsoft.EntityFrameworkCore;",
+        "fix": "Add one sentence after the block: the two `Microsoft.` lines bring in library namespaces, not Đơn Hàng projects; this lesson's third check looks at Đơn Hàng projects only."
       }
     ],
     "readability": {
-      "unknown_terms": [
-        "Entity Framework Core",
-        "ASP.NET Core"
-      ],
+      "unknown_terms": [],
       "skipped_steps": [
-        "How reading only the constructor and `using` lines reveals a field created with `new` (situation vs section 4).",
-        "Whether a concrete class passed in the constructor fails the first check (diagram and Core concepts say comment; Try it says question).",
-        "How to tell another project's public interface from its details by eye (third check, `DonHangDbContext`)."
+        "Whether 'reaching' means only creating with `new` (Core concepts) or also taking another project's concrete class in the constructor (third check, summary line 4, q4).",
+        "Whether many parameters and depending on details are worth a comment (diagram) or a question (prose, section 5, summary line 3)."
       ],
       "situation_connects": true,
       "try_it_feasible": true,

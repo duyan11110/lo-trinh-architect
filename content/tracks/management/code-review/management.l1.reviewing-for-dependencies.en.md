@@ -30,8 +30,8 @@ A pull request adds a class that tells a customer their order has shipped. It wo
 ## Core concepts
 
 - constructor parameter — a value a class asks for when it is created, instead of making it itself; this is how dependency injection hands it what it needs.
-- reaching for a dependency — creating a concrete object inside the class itself, for example with `new` in a field or a method, instead of asking for it.
-- public contract — the types a project offers for other projects to use, often a C# `interface`, as opposed to the concrete classes it uses for its own work.
+- reaching for a dependency — creating, inside the class itself, an object it calls to do its work, such as a notifier or a repository, instead of asking for it; building data such as a new `Order` does not count.
+- public contract — the types a project is meant to be used through by other projects, often a C# `interface`, as opposed to the concrete classes it uses for its own work.
 
 ## How it works
 
@@ -43,19 +43,19 @@ flowchart TD
   A -->|no, creates it with new| X[comment]
   A -->|yes, but a concrete class| K[worth a question]
   P --> N{how many parameters?}
-  N -->|many| X
+  N -->|many| K
   P --> I{another project's contract or its details?}
   U --> I
-  I -->|details| X
+  I -->|details| K
 ```
 
-Reviewing for dependencies means reading how a new class gets what it needs, by eye, from the top of the class. The constructor lists what it asks for, the fields show anything it creates itself, and the `using` lines show which other projects' namespaces it brings in. The `using` lines are not a complete list, because a type from the file's own project needs no `using`, so read the constructor's types too.
+Reviewing for dependencies means reading how a new class gets what it needs, by eye, from the top of the class. The constructor lists what it asks for, the fields show anything it creates itself, and the `using` lines show which other projects' namespaces it brings in. The `using` lines are not a complete list: a type in the file's own namespace, or in a namespace that contains it, needs no `using`, and a project can add `using` lines for every file at once. So read the constructor's types too.
 
 The first check is whether the class asks or reaches. A class that takes an `INotifier` in its constructor can be given any notifier, including a fake in a test. A class that creates its own concrete notifier with `new` cannot, and changing the channel means editing it; that is worth a comment even if the code works. A class that asks for a concrete class is in between: whoever creates it still chooses what to pass, so that is usually worth a question.
 
 The second check is how many constructor parameters there are. No rule says how many is too many, but the Single Responsibility Principle (SRP) predicts that a class needing many different things probably does many jobs. A long list is a reason to ask what the class is responsible for, not a style complaint.
 
-The third check is where each dependency comes from: an interface another project offers for others to use, or a concrete class that project uses for its own work. Using another project's contract keeps the two loosely coupled. Reaching into its details ties them together more tightly with every such line, and review can stop that coupling before other code copies it.
+The third check is where each dependency comes from: an interface another project offers for others to use, or a concrete class that project uses for its own work. Using another project's contract keeps the two loosely coupled. Depending on its details ties them together more tightly with every such line, and a review question can stop that coupling before other code copies it.
 
 ## In the Đơn Hàng system
 
@@ -99,7 +99,7 @@ namespace DonHang.Api.Controllers;
 public sealed class AuthController(DonHangDbContext db, JwtTokenService tokenService) : ControllerBase
 ```
 
-The `using DonHang.Infrastructure;` line and the constructor say the same thing: `AuthController` takes `DonHangDbContext`, the concrete database class from the infrastructure project, not an interface. It also takes `JwtTokenService`, a concrete class from the API project itself. In Đơn Hàng the infrastructure project's contract is the interfaces it implements from `DonHang.Domain`, such as `IOrderRepository`; `DonHangDbContext` is its own working detail. A reviewer can ask whether the controller could depend on such an interface instead of the database class, which is the same question the layers review asked from another side.
+The `using DonHang.Infrastructure;` line and the constructor say the same thing: `AuthController` takes `DonHangDbContext`, the concrete database class from the infrastructure project, not an interface. It also takes `JwtTokenService`, a concrete class from the API's own namespace, which is why no `using` names it; by the first check that is passed in, so worth a question at most. The two `Microsoft.*` lines bring in the web framework and the database library. In Đơn Hàng, what the infrastructure project offers the business layer is mainly its implementations of interfaces from `DonHang.Domain`, such as `IOrderRepository`; `DonHangDbContext` is the class it uses to do that work. A reviewer can ask whether the controller could depend on such an interface instead of the database class, which is the same question the layers review asked from another side.
 
 ## Beginners often think…
 
@@ -114,7 +114,7 @@ Open `DonHang.Api/Controllers/OrdersController.cs` from the repository at stage-
 2. Look at the `using` lines and write down which Đơn Hàng projects the controller uses.
 3. Decide whether you would leave a dependency comment, and write it in one sentence if so.
 
-Expected result: step 1 — `OrderService`, a concrete class, and `IOrderRepository`, an interface. Step 2 — `DonHang.Domain` only; there is no `using DonHang.Infrastructure;`, and the controller's own project, `DonHang.Api`, needs no `using`. Step 3 — a question is reasonable, for example: "`OrderService` is a concrete class; would an interface make this controller easier to test on its own?" Either answer can be right; the point is that you looked.
+Expected result: step 1 — `OrderService`, a concrete class, and `IOrderRepository`, an interface. Step 2 — `DonHang.Domain` only; there is no `using DonHang.Infrastructure;`, and types from `DonHang.Api`, a namespace that contains the controller's own, need no `using`. Step 3 — a question is reasonable, for example: "`OrderService` is a concrete class; would an interface make this controller easier to test on its own?" Either answer can be right; the point is that you looked.
 
 A teammate says: "`OrdersController` takes a concrete `OrderService`, so it breaks the same rule as `OrderPlacedTightlyCoupled`." Is that the same problem?
 
@@ -135,5 +135,5 @@ Not quite. `OrdersController` still asks for `OrderService` in its constructor, 
 1. Reviewing for dependencies reads a new class's constructor and `using` lines, by eye.
 2. A class that creates its own concrete dependency with `new` cannot be given a fake, and is worth a comment.
 3. Many constructor parameters suggest, by SRP, that a class does several jobs, which is worth asking about.
-4. Reaching into another project's concrete details instead of an interface tightens coupling that review can stop early.
+4. Depending on another project's concrete details instead of an interface tightens coupling that review can stop early.
 5. `OrderService` asks for two interfaces from its own project; `AuthController` takes the infrastructure project's concrete `DonHangDbContext`.
