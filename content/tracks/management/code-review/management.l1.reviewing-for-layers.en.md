@@ -15,7 +15,9 @@ vocab: []
 example_tag: stage-1
 versions_used: [aspnetcore]
 content_version: 1
-status: draft
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-28T07:30:00+07:00"
 ---
 
 ## Before you start
@@ -133,4 +135,4 @@ It is a real trade-off, not a wrong answer. With no rule today, going straight t
 2. A database query in a controller, or a rule in a repository, is a violation worth a comment even if it works.
 3. Each misplaced line breaks the one-reason-to-change promise a little, and many of them spread a rule across places.
 4. In review, moving code costs a comment; after merge, other changes may already depend on where it is.
-5. `AuthController.Login` queries the database and checks the password itself; `OrdersController.Create` only reads the request, calls the service and answers.
+5. `AuthController.Login` queries the database and decides whether the login is allowed itself; `OrdersController.Create` only reads the request, calls the service and answers.
