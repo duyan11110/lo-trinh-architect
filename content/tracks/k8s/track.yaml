@@ -49,6 +49,30 @@ skills:
     vi: "Deploy theo tag, rolling update và rollback"
     en: "Deploying by tag, rolling updates and rollbacks"
   prereqs: [k8s.workloads.replication, devops.release.publishing]
+- id: k8s.config.configmaps-and-secrets
+  title:
+    vi: "ConfigMap và Secret: đưa cấu hình vào Pod"
+    en: "ConfigMaps and Secrets: getting configuration into Pods"
+  prereqs: [k8s.workloads.replication, devops.config.secrets, devops.config.twelve-factor]
+- id: k8s.config.running-the-system
+  title:
+    vi: "Chạy cả hệ thống trên cluster"
+    en: "Running the whole system on a cluster"
+  prereqs:
+  - k8s.config.configmaps-and-secrets
+  - k8s.workloads.services
+  - k8s.workloads.rollouts
+  - devops.cd.db-migrations
+- id: k8s.config.probes
+  title:
+    vi: "Health check và probe"
+    en: "Health checks and probes"
+  prereqs: [k8s.config.running-the-system]
+- id: k8s.config.resources
+  title:
+    vi: "Request và limit tài nguyên"
+    en: "Resource requests and limits"
+  prereqs: [k8s.basics.cluster-architecture, k8s.config.running-the-system]
 levels:
 - level: 1
   title:
@@ -421,3 +445,203 @@ levels:
       - "Rolling back also reverts the manifest file in Git."
       - "A rollback has to rebuild the old image."
       depth_notes: "Không nói --to-revision, progressDeadlineSeconds chi tiết, rollback tự động (devops GĐ4), rollback migration DB, GitOps (devops/gitops GĐ3)."
+  - id: config-and-probes
+    title:
+      vi: "Cấu hình, secret, probe và tài nguyên: chạy Đơn Hàng thật trên cluster"
+      en: "Config, secrets, probes and resources: running Đơn Hàng for real on a cluster"
+    stage: 2
+    summary:
+      vi: "Đưa cấu hình và secret vào Pod bằng ConfigMap và Secret, deploy cả backend Đơn Hàng lên cluster kind, rồi cho Kubernetes biết khi nào api còn sống, khi nào sẵn sàng và cần bao nhiêu tài nguyên."
+      en: "Give Pods their settings and secrets with ConfigMaps and Secrets, deploy the whole Đơn Hàng backend to the kind cluster, then tell Kubernetes when the api is alive, when it is ready and what resources it needs."
+    lessons:
+    - id: k8s.l1.configmaps
+      title:
+        vi: "ConfigMap giữ cấu hình của api bên ngoài image"
+        en: "A ConfigMap keeps the api's settings outside the image"
+      main_path: true
+      duration_min: 13
+      skills: [k8s.config.configmaps-and-secrets]
+      prereqs: [k8s.l1.rolling-updates, devops.l1.config-and-env, devops.l1.twelve-factor-config]
+      related: [k8s.l1.deploying-an-image-tag]
+      vocab: [configmap]
+      example_tag: stage-2
+      example_files: [deploy/k8s/api-configmap.yaml, deploy/k8s/api.yaml, scripts/k8s/configmap.sh]
+      outline:
+      - "A ConfigMap is a Kubernetes object that stores settings that are not secret as key–value pairs under `data`, apart from any Pod or image."
+      - "`deploy/k8s/api-configmap.yaml` holds the api's settings that are not secret, such as where Redis and Keycloak are, under the environment variable names the api already reads in Compose."
+      - "The api Deployment's Pod template turns every key of that ConfigMap into an environment variable with `envFrom`, so the same image runs with the cluster's values."
+      - "Environment variables are fixed when a container starts: after the ConfigMap changes, running api Pods keep the old values until they are replaced, for example by `kubectl rollout restart`."
+      - "Applying a changed ConfigMap does not change the Deployment's Pod template, so on its own it starts no rolling update."
+      misconceptions:
+      - "Once I apply a new ConfigMap, the running api Pods pick up the new values at once."
+      - "A ConfigMap is a file that gets copied into the image when it is built."
+      - "Nobody can read what is in a ConfigMap, so the database password can go there too."
+      depth_notes: "Không nói Secret (bài sau), ConfigMap dạng file (bài configmap-files), ConfigMap immutable, giới hạn kích thước, `kubectl create configmap`, configMapGenerator của Kustomize (GĐ3), cú pháp `$(VAR)` trong env, thứ tự ưu tiên giữa env và envFrom."
+    - id: k8s.l1.secrets
+      title:
+        vi: "Secret của Kubernetes tách mật khẩu ra, nhưng không mã hóa"
+        en: "A Kubernetes Secret keeps passwords apart but does not encrypt them"
+      main_path: true
+      duration_min: 14
+      skills: [k8s.config.configmaps-and-secrets]
+      prereqs: [k8s.l1.configmaps, devops.l1.secrets-vs-config, k8s.l1.control-plane-components]
+      related: []
+      vocab: [k8s-secret]
+      example_tag: stage-2
+      example_files: [scripts/k8s/secrets.sh, deploy/k8s/api.yaml, scripts/dev-secrets.sh]
+      outline:
+      - "A Kubernetes Secret is an object like a ConfigMap meant for secret values; a Pod reads one of its keys as an environment variable with `secretKeyRef`, as the api does for its database connection string."
+      - "Values under a Secret's `data` are base64-encoded: that is an encoding anyone can reverse with `base64 -d`, not encryption."
+      - "By default the API server stores Secrets in etcd without encrypting them; encrypting them at rest is something a cluster administrator has to configure."
+      - "`kubectl describe secret` prints only each key's size, but anyone allowed to read the Secret through the API server can print its values and decode them."
+      - "Đơn Hàng commits no Secret manifest: `scripts/k8s/secrets.sh` creates its Secrets in `donhang` from the gitignored `.env` that `scripts/dev-secrets.sh` writes."
+      misconceptions:
+      - "Secret values are encrypted, since they look like random text in the YAML."
+      - "A Secret manifest is safe to commit to Git because its values are encoded."
+      - "Once a value is in a Secret, nobody with kubectl access can see it."
+      depth_notes: "Không nói RBAC giới hạn quyền đọc Secret, cấu hình encryption at rest (k8s/security-and-policy GĐ3), Vault/SOPS/Sealed Secrets/External Secrets (devops/secrets-backup-dr GĐ3), imagePullSecret, Secret dạng file, `stringData`, type khác `Opaque`, xoay vòng mật khẩu."
+    - id: k8s.l1.configmap-files
+      title:
+        vi: "ConfigMap cũng có thể thành file bên trong container"
+        en: "A ConfigMap can also appear as files inside a container"
+      main_path: true
+      duration_min: 13
+      skills: [k8s.config.configmaps-and-secrets]
+      prereqs: [k8s.l1.secrets, devops.l1.volumes]
+      related: []
+      vocab: []
+      example_tag: stage-2
+      example_files: [deploy/k8s/db.yaml, scripts/k8s/deploy.sh, scripts/k8s/configmap-files.sh]
+      outline:
+      - "In Compose, `db` gets `db/schema.sql` and `db/seed.sql` through a bind mount of your disk; a node has no copy of your repository, so files a container needs must reach it through the API server."
+      - "A ConfigMap listed under a Pod's `volumes` and mounted with `volumeMounts` shows each of its keys as a file named after the key, holding that key's value."
+      - "`scripts/k8s/deploy.sh` builds the ConfigMap `db-init` from `db/schema.sql` and `db/seed.sql`, and the `db` Pod mounts it at `/docker-entrypoint-initdb.d`, where the PostgreSQL image looks for scripts."
+      - "The PostgreSQL image runs those scripts only when its data directory is empty, the same rule that applied to the `db` container in Compose."
+      - "Mounting a ConfigMap on a folder shows only the ConfigMap's files there; whatever the image had in that folder is hidden."
+      misconceptions:
+      - "Kubernetes can mount a folder from my laptop into a Pod, the way Compose does."
+      - "A ConfigMap can only hold short values like an address, not a whole SQL file."
+      - "Mounting a ConfigMap on a folder adds its files next to the ones already there."
+      depth_notes: "Không nói subPath, items/đổi tên file, defaultMode, binaryData, giới hạn kích thước, file được cập nhật khi ConfigMap đổi, PersistentVolume (k8s/state-and-storage GĐ3). emptyDir của db — bài deploying-don-hang."
+    - id: k8s.l1.deploying-don-hang
+      title:
+        vi: "Deploy cả backend Đơn Hàng lên cluster"
+        en: "Deploying the whole Đơn Hàng backend to the cluster"
+      main_path: true
+      duration_min: 15
+      skills: [k8s.config.running-the-system]
+      prereqs: [k8s.l1.configmap-files, k8s.l1.service-and-dns, devops.l2.migrations-in-the-pipeline]
+      related: [k8s.l1.deploying-an-image-tag]
+      vocab: []
+      example_tag: stage-2
+      example_files:
+      - scripts/k8s/deploy.sh
+      - deploy/k8s/migrate/migrate-pod.yaml
+      - deploy/k8s/db.yaml
+      - scripts/k8s/smoke-test.sh
+      outline:
+      - "`scripts/k8s/deploy.sh` brings up the backend in `donhang` in order: namespace, Secrets from `.env`, ConfigMaps, PostgreSQL, Redis, Keycloak and Mailpit with their Services, the migration, then the api."
+      - "PostgreSQL, Redis, Keycloak and Mailpit run from the images Compose uses, each as a Deployment with one replica and a Service whose name, such as `db`, is the host the api already uses."
+      - "The schema is migrated once per deploy by a Pod with `restartPolicy: Never` that runs the migration bundle from `donhang-migrate` at the api's tag; the script applies the api only after it succeeds."
+      - "PostgreSQL keeps its data in an `emptyDir` volume, which survives a container restart but is deleted with its Pod; a replacement `db` Pod starts empty and runs the init scripts again."
+      - "Nothing outside the cluster reaches the api yet: `scripts/k8s/smoke-test.sh` calls `GET /api/v1/products` through the `api` Service from a temporary Pod inside the cluster."
+      misconceptions:
+      - "Running PostgreSQL as a Deployment keeps its data safe, since the Deployment brings the Pod back."
+      - "Each api replica should apply the migrations when it starts."
+      - "Once every Pod shows Running, the app is reachable from my browser."
+      depth_notes: "Không nói StatefulSet, PersistentVolume (k8s/state-and-storage GĐ3), Job (GĐ3), Ingress và truy cập từ ngoài cluster (k8s/ingress-helm GĐ3), Prometheus/Loki trong cluster, Keycloak production mode, deploy từ pipeline (GĐ3). Probe, request/limit trong api.yaml — các bài sau."
+    - id: k8s.l1.health-endpoints
+      title:
+        vi: "Health endpoint: api tự báo trạng thái của mình qua HTTP"
+        en: "Health endpoints let the api report its own state over HTTP"
+      main_path: true
+      duration_min: 13
+      skills: [k8s.config.probes]
+      prereqs: [k8s.l1.deploying-don-hang, backend.l1.middleware-pipeline, backend.l2.cache-aside]
+      related: [devops.l1.compose-for-the-api]
+      vocab: [health-check]
+      example_tag: stage-2
+      example_files: [DonHang.Api/Program.cs, scripts/k8s/health.sh]
+      outline:
+      - "At stage-2, `Program.cs` registers health checks with `AddHealthChecks()` and maps two endpoints with `MapHealthChecks`: `/health/live` and `/health/ready`."
+      - "A health check endpoint answers `200` with the text `Healthy` when every check it runs passes, and `503` with `Unhealthy` when one fails."
+      - "`/health/ready` runs the check that `AddDbContextCheck<DonHangDbContext>()` adds, which asks EF Core whether it can connect to PostgreSQL."
+      - "Redis is left out of `/health/ready` because the api still answers from PostgreSQL when Redis fails."
+      - "`/health/live` runs no checks, so it answers `Healthy` whenever the process can still handle HTTP requests; a database outage does not change its answer."
+      - "Nothing publishes these endpoints outside the cluster; `scripts/k8s/health.sh` calls both from a temporary Pod through the `api` Service."
+      misconceptions:
+      - "If the api process is running, it can serve requests."
+      - "A health endpoint should check everything the api talks to, Redis included."
+      - "`/health/live` should also check the database, to be safe."
+      depth_notes: "Không nói probe của Kubernetes (hai bài sau), trạng thái Degraded, ResponseWriter/JSON, health check tự viết (IHealthCheck), gói AspNetCore.HealthChecks.* bên thứ ba, bảo vệ endpoint bằng xác thực, lọc log/metric cho request health."
+    - id: k8s.l1.liveness-probes
+      title:
+        vi: "Liveness probe hỏng thì container bị khởi động lại"
+        en: "A failing liveness probe gets the container restarted"
+      main_path: true
+      duration_min: 13
+      skills: [k8s.config.probes]
+      prereqs: [k8s.l1.health-endpoints, k8s.l1.replicasets]
+      related: []
+      vocab: [probe, liveness-probe]
+      example_tag: stage-2
+      example_files: [deploy/k8s/lessons/web-liveness-pod.yaml, scripts/k8s/liveness.sh, deploy/k8s/api.yaml]
+      outline:
+      - "When a container exits, the kubelet by default starts it again in the same Pod, with the same name and IP address, and the Pod's `RESTARTS` count goes up."
+      - "A container that keeps crashing shows `CrashLoopBackOff`: the kubelet waits longer before each new restart instead of retrying at once."
+      - "A probe is a check the kubelet runs against a container on a schedule; an `httpGet` probe counts any status code from 200 to 399 as success."
+      - "A liveness probe catches a process that runs but no longer works: after `failureThreshold` failures in a row, 3 by default, the kubelet kills the container and it is restarted."
+      - "`deploy/k8s/lessons/web-liveness-pod.yaml` points a liveness probe at a path Caddy answers with `404`, so `kubectl get pod` shows the restart count climbing."
+      - "The api's liveness probe calls `/health/live`, which ignores PostgreSQL: a database outage would otherwise restart every api container without fixing anything."
+      misconceptions:
+      - "A failing liveness probe makes Kubernetes create a new Pod, maybe on another node."
+      - "Without a liveness probe, Kubernetes never restarts a crashed container."
+      - "The liveness probe should fail whenever the database is down."
+      depth_notes: "Không nói startup probe, probe exec/tcpSocket/grpc, initialDelaySeconds/periodSeconds/timeoutSeconds chi tiết, thời gian back-off cụ thể, restartPolicy khác Always, terminationGracePeriodSeconds. Readiness — bài sau."
+    - id: k8s.l1.readiness-probes
+      title:
+        vi: "Readiness probe hỏng thì Pod bị rút khỏi Service"
+        en: "A failing readiness probe takes a Pod out of its Service"
+      main_path: true
+      duration_min: 14
+      skills: [k8s.config.probes]
+      prereqs: [k8s.l1.liveness-probes, k8s.l1.services, k8s.l1.rolling-updates]
+      related: [k8s.l1.rollbacks]
+      vocab: [readiness-probe]
+      example_tag: stage-2
+      example_files: [deploy/k8s/api.yaml, deploy/k8s/lessons/api-unready.yaml, scripts/k8s/readiness.sh]
+      outline:
+      - "A readiness probe decides whether a Pod may receive traffic: while it fails, the Pod shows `0/1` under `READY` and its Service sends it no connections, but its container is not restarted."
+      - "A container with no readiness probe counts as ready as soon as it runs, which is why the rolling update in k8s/workloads moved on before the new api could serve."
+      - "The api's readiness probe calls `/health/ready`, so an api Pod that cannot reach PostgreSQL stops getting requests while its liveness probe keeps passing."
+      - "`deploy/k8s/lessons/api-unready.yaml` gives the api a database host that does not exist: its new Pod keeps running, never becomes ready, and its restart count stays at 0."
+      - "During a rolling update a new Pod counts as available only once it is ready, so the update with that manifest never finishes and both old api Pods keep serving."
+      misconceptions:
+      - "A failing readiness probe restarts the container, just like a liveness probe."
+      - "A Pod whose container is running is ready to receive requests."
+      - "Liveness and readiness probes should call the same endpoint."
+      depth_notes: "Không nói EndpointSlice, minReadySeconds, readiness gate, startup probe, graceful shutdown/preStop, probe exec của `db` (chỉ có trong manifest), rollback tự động (devops GĐ4)."
+    - id: k8s.l1.requests-and-limits
+      title:
+        vi: "Request quyết định Pod đặt ở đâu, limit chặn mức container được dùng"
+        en: "Requests decide where a Pod fits; limits cap what it may use"
+      main_path: true
+      duration_min: 14
+      skills: [k8s.config.resources]
+      prereqs: [k8s.l1.readiness-probes, k8s.l1.control-plane-components, foundation.l1.memory-stack-heap]
+      related: []
+      vocab: [resource-request, resource-limit]
+      example_tag: stage-2
+      example_files: [deploy/k8s/api.yaml, deploy/k8s/lessons/oversized-pod.yaml, scripts/k8s/resources.sh]
+      outline:
+      - "A resource request is the CPU and memory a container asks for: kube-scheduler puts a Pod only on a node whose unreserved capacity covers the requests of all its containers."
+      - "CPU is counted in cores, so `250m` is a quarter of a core; memory is counted in bytes, so `256Mi` is 256 mebibytes."
+      - "`deploy/k8s/lessons/oversized-pod.yaml` requests more CPU than any node of the kind cluster has, so the Pod stays `Pending` and its events say that no node fits."
+      - "A request is a reservation, not a measurement: a container may use less than it requested, or more as long as it stays under its limit."
+      - "A resource limit is the most a container may use: above its CPU limit it is slowed down; above its memory limit a process in it can be killed, shown as `OOMKilled`."
+      - "`deploy/k8s/api.yaml` sets requests and limits for the api container, so the scheduler reserves room for each api Pod and none can take all of a node's memory."
+      misconceptions:
+      - "The request is the most a container is allowed to use."
+      - "A container that uses more CPU than its limit gets killed."
+      - "A Pod stuck in `Pending` means its image could not be pulled."
+      depth_notes: "Không nói QoS class, eviction khi node thiếu tài nguyên, LimitRange/ResourceQuota (k8s/security-and-policy GĐ3), autoscaling và đo usage bằng metrics-server (GĐ3), tranh luận có nên đặt CPU limit, cách .NET GC đọc memory limit, resources cấp Pod."
