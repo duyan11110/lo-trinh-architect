@@ -138,6 +138,21 @@ skills:
     vi: "Phân quyền theo role và theo thuộc tính"
     en: "Role-based and attribute-based authorization"
   prereqs: [backend.auth.authorization, backend.auth.oidc]
+- id: backend.cache.redis
+  title:
+    vi: "Redis làm kho key-value dùng chung"
+    en: "Redis as a shared key-value store"
+  prereqs: [foundation.http.caching]
+- id: backend.cache.cache-aside
+  title:
+    vi: "Cache-aside trong ứng dụng"
+    en: "Cache-aside in the application"
+  prereqs: [backend.cache.redis, backend.ef.querying]
+- id: backend.cache.invalidation
+  title:
+    vi: "Giữ cache khớp với database"
+    en: "Keeping a cache in line with the database"
+  prereqs: [backend.cache.cache-aside]
 levels:
 - level: 1
   title:
@@ -1063,3 +1078,113 @@ levels:
       - "Giving each customer their own role is a fine way to control who reads which order."
       - "An `[Authorize]` attribute with a role can also check who owns the order."
       depth_notes: "Không nói trả 404 thay 403 để giấu đơn tồn tại, policy engine bên ngoài hay phân quyền theo tenant — GĐ3–4. Chỉ một quy tắc: chủ đơn hoặc staff."
+  - id: caching
+    title:
+      vi: "Caching trong ứng dụng với Redis"
+      en: "Application caching with Redis"
+    stage: 2
+    summary:
+      vi: "Đặt Redis trước PostgreSQL cho danh mục sản phẩm của Đơn Hàng: đọc theo cache-aside, xóa bản sao khi giá đổi, và giải thích được vì sao cache vẫn có thể trả dữ liệu cũ hay dồn truy vấn vào database."
+      en: "Put Redis in front of PostgreSQL for Đơn Hàng's product catalogue: read with cache-aside, delete the copy when a price changes, and explain why a cache can still serve stale data or pile queries onto the database."
+    lessons:
+    - id: backend.l2.redis-key-value-store
+      title:
+        vi: "Redis: giá trị cất theo khóa, nằm trong bộ nhớ, có hạn dùng"
+        en: "Redis: values stored under keys, in memory, with an expiry"
+      main_path: true
+      duration_min: 12
+      skills: [backend.cache.redis]
+      prereqs:
+      - foundation.l1.http-caching
+      - foundation.l1.collections-in-practice
+      - devops.l1.compose-for-the-api
+      related: []
+      vocab: [redis, key-value-store, ttl]
+      example_tag: stage-2
+      example_files: [docker-compose.yml, scripts/backend/redis-basics.sh]
+      outline:
+      - "Redis is a key-value store: a server that keeps values under keys, like a hash map living in its own process, so every program connected to it reads the same data and the data outlives a restart of the API."
+      - "In Đơn Hàng, Redis runs as the `redis` service in Compose, and the API reaches it over the Compose network by the name `redis`, the same way it reaches `db`."
+      - "`SET product:3 <value> EX 60` stores a value that Redis removes by itself after 60 seconds; `TTL product:3` shows the seconds left, and once they run out `GET product:3` finds nothing."
+      - "Redis keeps its data in memory, which is what makes reads fast; Đơn Hàng treats everything in Redis as a copy that can be rebuilt from PostgreSQL, never as the only place a fact is stored."
+      misconceptions:
+      - "Redis is just a faster database, so the products table could move into it."
+      - "A `Dictionary` inside the API does the same job as Redis, only without an extra container."
+      depth_notes: "Chỉ kiểu chuỗi với SET/GET/EX/TTL qua redis-cli; không nói hash, list, sorted set, pub/sub, persistence (RDB/AOF), eviction khi đầy bộ nhớ hay replication — ngoài phạm vi GĐ2. Không nói cách API gọi Redis — bài cache-aside."
+    - id: backend.l2.cache-aside
+      title:
+        vi: "Cache-aside: hỏi Redis trước, thiếu thì đọc PostgreSQL"
+        en: "Cache-aside: ask Redis first, fall back to PostgreSQL"
+      main_path: true
+      duration_min: 15
+      skills: [backend.cache.cache-aside]
+      prereqs:
+      - backend.l2.redis-key-value-store
+      - backend.l1.get-and-status-codes
+      - design.l1.service-lifetimes
+      related: [foundation.l1.http-caching]
+      vocab: [cache-aside, cache-hit, cache-miss]
+      example_tag: stage-2
+      example_files:
+      - DonHang.Infrastructure/ProductCache.cs
+      - DonHang.Api/Controllers/ProductsController.cs
+      - DonHang.Infrastructure/ServiceCollectionExtensions.cs
+      - scripts/backend/cache-aside.sh
+      outline:
+      - "With cache-aside the application does the work, not Redis: it looks for the key in Redis first, and only on a miss reads PostgreSQL and stores the answer in Redis with a TTL."
+      - "At stage-2, `GET /api/v1/products/{id}` reads through `ProductCache`: the first request for product 3 is a cache miss that queries PostgreSQL, and a repeat within the TTL is a cache hit that does not."
+      - "The value under `product:3` is the product serialized as JSON, so a hit deserializes it instead of running an EF Core query."
+      - "The API registers one `ConnectionMultiplexer` as a singleton, because StackExchange.Redis is designed to share one connection object across all requests."
+      - "`ProductCache` treats a Redis error like a miss and reads PostgreSQL, so Redis being down makes product reads slower, not broken."
+      misconceptions:
+      - "Redis loads the product from PostgreSQL by itself when the key is missing."
+      - "If Redis is down, the product endpoint has to fail as well."
+      - "Every endpoint should go through the cache, since a cache only makes things faster."
+      depth_notes: "Chỉ `GET /api/v1/products/{id}`; không cache danh sách có phân trang/lọc, không cache đơn hàng. Đổi giá — bài cache-invalidation; nhiều request cùng miss — bài cache-stampede. Không dạy IDistributedCache, HybridCache, read-through/write-through — ngoài GĐ2."
+    - id: backend.l2.cache-invalidation
+      title:
+        vi: "Giá vừa đổi: xóa bản sao trong cache, đừng chờ TTL"
+        en: "A price changed: delete the cached copy, do not wait for the TTL"
+      main_path: true
+      duration_min: 14
+      skills: [backend.cache.invalidation]
+      prereqs: [backend.l2.cache-aside, backend.l2.role-based-access]
+      related: []
+      vocab: [cache-invalidation]
+      example_tag: stage-2
+      example_files:
+      - DonHang.Api/Controllers/ProductsController.cs
+      - DonHang.Infrastructure/ProductCache.cs
+      - scripts/backend/cache-invalidation.sh
+      outline:
+      - "When staff change a product's price in PostgreSQL, the copy in Redis keeps the old price until its TTL runs out, so customers can see the old price for up to that long."
+      - "Stage-2 adds staff-only `PATCH /api/v1/products/{id}`, which saves the new price and then deletes `product:{id}` from Redis, so the next read is a miss that loads the new price."
+      - "The key is deleted after the database save succeeds, not before: deleting first leaves a moment in which a read can put the old price back into Redis."
+      - "A read that loaded the old price just before the update can still write it to Redis just after the delete, so Đơn Hàng keeps the TTL as the upper limit on how long a stale copy can live."
+      misconceptions:
+      - "Once PostgreSQL has the new price, every customer sees it."
+      - "With the key deleted on every update, the TTL is no longer needed."
+      - "It is safer to delete the cached copy first and update the database afterwards."
+      depth_notes: "Chỉ xóa key sau khi lưu; không so sánh với ghi đè giá trị mới vào cache, không nói phát sự kiện invalidation giữa các service hay khóa phân tán — messaging GĐ3. Không dạy lại policy StaffOnly — đã có ở backend.l2.role-based-access."
+    - id: backend.l2.cache-stampede
+      title:
+        vi: "Khi một key hot hết hạn: truy vấn dồn cùng lúc vào PostgreSQL"
+        en: "When a popular key expires: a rush of queries to PostgreSQL"
+      main_path: true
+      duration_min: 14
+      skills: [backend.cache.cache-aside]
+      prereqs: [backend.l2.cache-aside, foundation.l1.threads-and-async-intro]
+      related: []
+      vocab: [cache-stampede]
+      example_tag: stage-2
+      example_files: [DonHang.Infrastructure/ProductCache.cs, scripts/backend/cache-stampede.sh]
+      outline:
+      - "When a key that many requests read expires, every request that arrives before it is refilled is a miss, and each sends the same query to PostgreSQL at once: a cache stampede."
+      - "The stampede reaches the database exactly when the cache stops shielding it, and its size grows with the traffic on that key, not with the amount of data."
+      - "`ProductCache` lets only one request per key query PostgreSQL at a time with a `SemaphoreSlim`; the other requests for that key wait, then read the value the first one stored."
+      - "After it is let through, a request checks Redis again before querying, because another request may have filled the key while it waited."
+      - "This waiting happens inside one API process, so with several API instances each can still send one query for the same key, which is still far fewer than one per request."
+      misconceptions:
+      - "A cache can only take load off the database, never add to it."
+      - "A longer TTL fixes a stampede."
+      depth_notes: "Không nói khóa phân tán qua Redis, làm mới trước khi hết hạn (refresh-ahead) hay TTL ngẫu nhiên hóa — ngoài phạm vi GĐ2. Không dạy HybridCache. Không nói đo tải/benchmark thật — chỉ đếm truy vấn trong log của script."
