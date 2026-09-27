@@ -158,6 +158,21 @@ skills:
     vi: "Đưa quy tắc nghiệp vụ vào entity"
     en: "Putting business rules into the entity"
   prereqs: [design.domain.anemic-vs-rich, design.architecture.dependency-rule]
+- id: design.testing.integration
+  title:
+    vi: "Integration test với database thật"
+    en: "Integration tests against a real database"
+  prereqs: [design.testing.quality]
+- id: design.testing.api
+  title:
+    vi: "Test cả API ngay trong process test"
+    en: "Testing the whole API inside the test process"
+  prereqs: [design.testing.integration]
+- id: design.testing.strategy
+  title:
+    vi: "Chọn mức test cho từng rủi ro"
+    en: "Choosing the test level for each risk"
+  prereqs: [design.testing.api]
 levels:
 - level: 1
   title:
@@ -1289,3 +1304,222 @@ levels:
       - "Checking whether the caller is staff is a business rule, so it belongs in `Order`."
       - "Once there is a domain model, every class in `DonHang.Domain`, including `Product` and `Payment`, must get methods too."
       depth_notes: "Không nói aggregate, domain service hay domain event — design/ddd-tactical GĐ3; không nói chia module hay bounded context — GĐ3. Không nhắc lại composition root hay RBAC/ABAC — các bài trước."
+  - id: integration-testing
+    title:
+      vi: "Integration test với Testcontainers"
+      en: "Integration testing with Testcontainers"
+    stage: 2
+    summary:
+      vi: "Viết được integration test cho repository và cho API của Đơn Hàng trên PostgreSQL thật do Testcontainers dựng, giữ các test độc lập với nhau, test phân quyền không cần Keycloak, và chọn đúng mức test cho từng rủi ro."
+      en: "Write integration tests for Đơn Hàng's repository and API against a real PostgreSQL started by Testcontainers, keep those tests independent, test authorization without Keycloak, and pick the right test level for each risk."
+    lessons:
+    - id: design.l2.integration-test-first-look
+      title:
+        vi: "Điều fake không kiểm được: integration test"
+        en: "What a fake cannot check: the integration test"
+      main_path: true
+      duration_min: 12
+      skills: [design.testing.integration]
+      prereqs:
+      - design.l2.testing-the-entity
+      - backend.l1.efcore-n-plus-one
+      - backend.l1.efcore-relationships-and-keys
+      related: [design.l1.testing-with-a-fake-repository]
+      vocab: [integration-test]
+      example_tag: stage-1
+      example_files:
+      - DonHang.Infrastructure/EfOrderRepository.cs
+      - DonHang.Tests/FakeOrderRepository.cs
+      - DonHang.Infrastructure/Migrations/20260924092625_AddOrderCustomerNavigation.cs
+      outline:
+      - "An integration test runs code together with a real dependency it talks to, such as `EfOrderRepository` against a real PostgreSQL database, instead of a test double."
+      - "`FakeOrderRepository.FindAsync` hands back the same object the test stored, items included; `EfOrderRepository.FindAsync` returns items only because its query calls `Include(o => o.Items)`."
+      - "No test that uses the fake runs that query, so a missing `Include`, a wrong column name or a broken migration passes every `OrderServiceTests` test."
+      - "PostgreSQL refuses an order whose `customer_id` names no customer, because of the foreign key the migration adds; `FakeOrderRepository` stores such an order without complaint."
+      - "An integration test needs a running database and is slower than a unit test, so it is worth writing for what only the real dependency can show, not to repeat rules a unit test already checks."
+      misconceptions:
+      - "An integration test is just a unit test that happens to run slowly."
+      - "Once there are integration tests, the unit tests with fakes are no longer needed."
+      - "Running the API by hand and trying a few requests does the same job as an integration test."
+      depth_notes: "Không viết integration test ở bài này, không nói Testcontainers hay xUnit fixture — các bài sau. Không nhắc lại test double và fake — design.l1.test-doubles; không nói test pyramid — design.l2.test-pyramid."
+    - id: design.l2.testcontainers-postgresql
+      title:
+        vi: "Testcontainers: một PostgreSQL dùng xong bỏ cho mỗi lần chạy test"
+        en: "Testcontainers: a throwaway PostgreSQL for each test run"
+      main_path: true
+      duration_min: 14
+      skills: [design.testing.integration]
+      prereqs: [design.l2.integration-test-first-look, devops.l1.image-vs-container, backend.l1.migrations]
+      related: [design.l2.builder-pattern]
+      vocab: [testcontainers]
+      example_tag: stage-2
+      example_files:
+      - DonHang.Tests/Integration/PostgresFixture.cs
+      - DonHang.Tests/DonHang.Tests.csproj
+      - docker-compose.yml
+      outline:
+      - "Testcontainers is a library that starts a Docker container from test code and removes it when the test code disposes of it; only Docker has to be running, not the lab."
+      - "At stage-2, `PostgresFixture` builds a PostgreSQL container from the same image as the `db` service in `docker-compose.yml`, so tests run on the PostgreSQL version the lab runs."
+      - "The test container is not the lab's `db`: Testcontainers maps its port to a free port on the host and it starts with an empty database, so tests never touch the lab's data."
+      - "Before any test runs, `PostgresFixture` applies Đơn Hàng's EF Core migrations to that empty database, so tests see the schema the migrations really produce."
+      - "EF Core's in-memory provider is not PostgreSQL and runs no SQL, so a test using it cannot show what the real database does with a query or a foreign key."
+      misconceptions:
+      - "Integration tests should use the lab database that `up.sh` starts, since it already has data."
+      - "Testcontainers is a fake PostgreSQL written for tests."
+      - "EF Core's in-memory provider tests the repository just as well, without Docker."
+      depth_notes: "Không nói xUnit dùng chung fixture thế nào — design.l2.class-fixtures; không viết test repository — design.l2.testing-the-real-repository. Không nói Redis container — design.l2.webapplicationfactory. Không nói CI chạy Docker — devops/ci-cd."
+    - id: design.l2.class-fixtures
+      title:
+        vi: "Một container cho cả class test: class fixture của xUnit"
+        en: "One container for a whole test class: xUnit class fixtures"
+      main_path: true
+      duration_min: 12
+      skills: [design.testing.integration]
+      prereqs: [design.l2.testcontainers-postgresql, design.l1.writing-a-unit-test]
+      related: []
+      vocab: [test-fixture]
+      example_tag: stage-2
+      example_files:
+      - DonHang.Tests/Integration/PostgresFixture.cs
+      - DonHang.Tests/Integration/EfOrderRepositoryTests.cs
+      outline:
+      - "xUnit creates a new instance of the test class for every test method, so a container started in the constructor would be started again for every test."
+      - "A test fixture is setup that several tests share; `EfOrderRepositoryTests` implements `IClassFixture<PostgresFixture>`, and xUnit creates one `PostgresFixture` for all tests in that class."
+      - "`PostgresFixture` implements `IAsyncLifetime`, so xUnit awaits its `InitializeAsync` before the class's first test and its `DisposeAsync` after the last one, where the container starts and stops."
+      - "Starting a container takes far longer than one repository test, so one container per class keeps the suite quick enough to run often."
+      - "Because the tests share the fixture, they also share one database: rows saved by one test are still there when the next test runs."
+      misconceptions:
+      - "The test class constructor runs once per class, so it is the right place to start the container."
+      - "A class fixture is shared by every test class in the project."
+      depth_notes: "Không nói collection fixture hay assembly fixture — ngoài GĐ2. Cách dọn dữ liệu giữa các test — design.l2.resetting-data-between-tests. Không nhắc lại [Fact] — design.l1.writing-a-unit-test."
+    - id: design.l2.testing-the-real-repository
+      title:
+        vi: "Test EfOrderRepository: đọc lại qua một DbContext mới"
+        en: "Testing EfOrderRepository: read it back through a new DbContext"
+      main_path: true
+      duration_min: 14
+      skills: [design.testing.integration]
+      prereqs: [design.l2.class-fixtures, backend.l2.no-tracking-queries]
+      related: [backend.l2.optimistic-concurrency]
+      vocab: []
+      example_tag: stage-2
+      example_files:
+      - DonHang.Tests/Integration/EfOrderRepositoryTests.cs
+      - DonHang.Tests/Integration/PostgresFixture.cs
+      - DonHang.Infrastructure/EfOrderRepository.cs
+      outline:
+      - "At stage-2, `EfOrderRepositoryTests` saves an order with two items through one `DonHangDbContext`, then reads it back through a second, new `DonHangDbContext` before asserting."
+      - "Reading through the same context would let the change tracker hand back the object still in memory, items included, so the test would pass even if `FindAsync` lost its `Include`."
+      - "The test first inserts a customer for the order to point to, because the foreign key on `orders.customer_id` refuses an order for a customer that does not exist."
+      - "An assertion on what comes back from PostgreSQL checks the mapping, the migration and the query together, which no test using `FakeOrderRepository` touches."
+      misconceptions:
+      - "If a test saves an order and then finds it again, the repository's query must be right."
+      - "A repository test should replace `DonHangDbContext` with a test double, so that no database is needed."
+      depth_notes: "Không dạy lại change tracker — backend.l2.no-tracking-queries; không test hai lần lưu tranh nhau — backend.l2.optimistic-concurrency. Dữ liệu còn lại giữa các test — bài sau."
+    - id: design.l2.resetting-data-between-tests
+      title:
+        vi: "Mỗi test bắt đầu từ bảng rỗng, dù test nào chạy trước"
+        en: "Every test starts from empty tables, whatever ran before it"
+      main_path: true
+      duration_min: 12
+      skills: [design.testing.integration]
+      prereqs: [design.l2.testing-the-real-repository, design.l1.what-makes-a-good-unit-test]
+      related: []
+      vocab: []
+      example_tag: stage-2
+      example_files:
+      - DonHang.Tests/Integration/PostgresFixture.cs
+      - DonHang.Tests/Integration/EfOrderRepositoryTests.cs
+      outline:
+      - "Tests in one class share the fixture's database, so a test that counts orders can see orders another test saved and fail only when that test ran first: a flaky test."
+      - "xUnit does not promise to run a class's tests in the order they are written, so no test may rely on data an earlier test saved."
+      - "At stage-2, each integration test class implements `IAsyncLifetime` and calls `PostgresFixture.ResetAsync` before every test, which empties Đơn Hàng's tables with `TRUNCATE ... CASCADE`."
+      - "Resetting before each test, not after it, means a test that stopped halfway cannot leave rows behind for the next one."
+      - "The reset keeps the id sequences running, so a test uses the ids its own inserts returned instead of assuming the first order is `1`."
+      misconceptions:
+      - "Each test gets a fresh database, because the tests run in a container."
+      - "Tests in a class run from top to bottom, so a later test can use the order an earlier test created."
+      depth_notes: "Không dạy thư viện dọn dữ liệu (Respawn), transaction rollback mỗi test hay chạy song song trong một class — ngoài GĐ2. Không nhắc lại flaky test — design.l1.what-makes-a-good-unit-test."
+    - id: design.l2.webapplicationfactory
+      title:
+        vi: "WebApplicationFactory: chạy cả API ngay trong process test"
+        en: "WebApplicationFactory: the whole API inside the test process"
+      main_path: true
+      duration_min: 15
+      skills: [design.testing.api]
+      prereqs:
+      - design.l2.resetting-data-between-tests
+      - backend.l1.hosting-and-program-cs
+      - backend.l2.redis-key-value-store
+      - design.l2.adapter-pattern
+      related: [backend.l1.middleware-pipeline]
+      vocab: []
+      example_tag: stage-2
+      example_files:
+      - DonHang.Tests/Integration/ApiFactory.cs
+      - DonHang.Tests/Integration/OrdersApiTests.cs
+      - DonHang.Api/Program.cs
+      outline:
+      - "`WebApplicationFactory<Program>` starts `DonHang.Api` inside the test process with the same `Program.cs`; `CreateClient()` returns an `HttpClient` whose requests reach it without Kestrel or a network port."
+      - "At stage-2, `ApiFactory` starts a PostgreSQL and a Redis container and gives their connection strings to the app as configuration, so the API under test uses real stores."
+      - "`Program.cs` applies migrations when the app starts, so the API's own startup creates the schema in the test container."
+      - "`ConfigureTestServices` runs after the app's own registrations, so `ApiFactory` replaces only `IEmailSender` with a fake and keeps every other registration as the app wrote it."
+      - "An API test sends a request and asserts what a client would see: `POST /api/v1/orders` answers `201` with a `Location` header, through the same middleware, routing and controller."
+      misconceptions:
+      - "Testing a controller means creating it with `new` and calling its method."
+      - "`WebApplicationFactory` needs the API already running in Docker, the way `curl` does."
+      - "An API test should replace every dependency with a fake, including the database."
+      depth_notes: "Không nói xác thực trong test — design.l2.testing-protected-endpoints. Không test cache hay email job — backend/caching, backend/background-jobs. Không nói test qua trình duyệt hay contract test — ngoài GĐ2."
+    - id: design.l2.testing-protected-endpoints
+      title:
+        vi: "Test ai được gọi endpoint nào mà không cần Keycloak"
+        en: "Testing who may call an endpoint, without Keycloak"
+      main_path: true
+      duration_min: 14
+      skills: [design.testing.api]
+      prereqs:
+      - design.l2.webapplicationfactory
+      - backend.l2.resource-based-authorization
+      - backend.l2.validating-provider-tokens
+      related: [backend.l2.role-based-access]
+      vocab: []
+      example_tag: stage-2
+      example_files:
+      - DonHang.Tests/Integration/TestAuthHandler.cs
+      - DonHang.Tests/Integration/ApiFactory.cs
+      - DonHang.Tests/Integration/OrdersApiTests.cs
+      outline:
+      - "API tests do not start Keycloak: `ApiFactory`, which exists only in `DonHang.Tests`, makes `TestAuthHandler` the default authentication scheme; it builds the caller from `X-Test-Subject` and `X-Test-Roles`."
+      - "A request without those headers gets no identity, so a protected endpoint still answers `401`, and the `staff` policy and `OrderOwnerHandler` run unchanged on the test caller."
+      - "The test inserts a customer whose `identity_subject` equals the header's subject, the same link the API makes from a Keycloak `sub`."
+      - "Tests can then check who may do what: another customer's `GET /api/v1/orders/{id}` answers `403`, and a customer calling the ship endpoint answers `403`."
+      - "These tests do not check the token itself (signature, issuer, audience, expiry); that stays with `AddJwtBearer` and is seen only when the API runs against Keycloak."
+      misconceptions:
+      - "Replacing authentication in tests means the tests no longer check authorization."
+      - "To test a protected endpoint you must first get a real token from Keycloak."
+      - "`TestAuthHandler` is also a way to skip login in the running lab."
+      depth_notes: "Không chạy Keycloak bằng Testcontainers hay tự ký token trong test — ngoài GĐ2. Không dạy lại policy, RBAC hay ABAC — backend.l2.role-based-access, backend.l2.resource-based-authorization."
+    - id: design.l2.test-pyramid
+      title:
+        vi: "Unit hay integration test: mức nào kiểm rủi ro nào"
+        en: "Unit or integration test: which level checks which risk"
+      main_path: true
+      duration_min: 13
+      skills: [design.testing.strategy]
+      prereqs: [design.l2.testing-protected-endpoints, design.l2.testing-the-entity]
+      related: [management.l1.reviewing-for-tests]
+      vocab: [test-pyramid]
+      example_tag: stage-2
+      example_files:
+      - DonHang.Tests/Domain/OrderTests.cs
+      - DonHang.Tests/Integration/OrdersApiTests.cs
+      - DonHang.Tests/Integration/EfOrderRepositoryTests.cs
+      outline:
+      - "The test pyramid pictures a suite with many fast unit tests at the bottom, fewer integration tests above them, and very few tests of the whole running system at the top."
+      - "In Đơn Hàng every status rule is checked in `OrderTests`; `OrdersApiTests` checks once that such a refusal reaches the client as `409` with its problem `type`, not every rule again over HTTP."
+      - "An integration test pays for its cost where the risk sits where parts meet (a query, a mapping, a foreign key, the HTTP contract, who may call); a unit test where the risk sits in a rule."
+      - "When an application mostly moves data between HTTP and the database with few rules, putting most tests at the integration level is a reasonable choice; the pyramid fits where rules live in code."
+      misconceptions:
+      - "Integration tests check the real thing, so every unit test should become one."
+      - "The pyramid sets fixed percentages that each level of tests must meet."
+      depth_notes: "Không nói code coverage, test qua trình duyệt hay contract test — ngoài GĐ2. Không nói CI chạy test ở bước nào — devops/ci-cd. Không nhắc lại cách viết từng loại test — các bài trước."
