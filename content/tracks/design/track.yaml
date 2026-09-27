@@ -148,6 +148,16 @@ skills:
     vi: "Unit of work và DbContext của EF Core"
     en: "The unit of work and EF Core's DbContext"
   prereqs: [design.architecture.hexagonal, design.layers.repository]
+- id: design.domain.anemic-vs-rich
+  title:
+    vi: "Transaction script, anemic model hay domain model"
+    en: "Transaction script, anemic model or domain model"
+  prereqs: [design.architecture.clean, design.layers.service]
+- id: design.domain.entity-behaviour
+  title:
+    vi: "Đưa quy tắc nghiệp vụ vào entity"
+    en: "Putting business rules into the entity"
+  prereqs: [design.domain.anemic-vs-rich, design.architecture.dependency-rule]
 levels:
 - level: 1
   title:
@@ -1068,3 +1078,214 @@ levels:
       - "Unit tests can only check behaviour, so structure needs a separate tool."
       - "If the architecture test passes, the design is clean."
       depth_notes: "Không dạy thư viện kiểm kiến trúc (NetArchTest, ArchUnitNET) hay kiểm ranh giới giữa các module — design/modular-monolith GĐ3; fitness function — GĐ4. Không nói CI chạy test — devops/ci-cd."
+  - id: domain-model
+    title:
+      vi: "Domain model hay anemic model"
+      en: "Domain model versus anemic model"
+    stage: 2
+    summary:
+      vi: "Nhận ra transaction script và anemic model trong Đơn Hàng stage-1, chuyển quy tắc trạng thái đơn vào chính Order mà EF Core vẫn đọc ghi được, test quy tắc đó không cần fake, và chọn đúng chỗ cho từng quy tắc."
+      en: "Recognise the transaction script and anemic model in stage-1 Đơn Hàng, move the order status rules into Order itself while EF Core still loads it, test them with no fake, and place each rule where it belongs."
+    lessons:
+    - id: design.l2.transaction-script
+      title:
+        vi: "Transaction script: một method chạy trọn một thao tác nghiệp vụ"
+        en: "Transaction script: one method runs the whole business operation"
+      main_path: true
+      duration_min: 12
+      skills: [design.domain.anemic-vs-rich]
+      prereqs: [design.l1.the-service-layer, design.l2.clean-architecture]
+      related: [foundation.l1.transaction-intro]
+      vocab: [transaction-script]
+      example_tag: stage-1
+      example_files: [DonHang.Domain/OrderService.cs, DonHang.Domain/Entities.cs]
+      outline:
+      - "A transaction script puts one business operation in one procedure that runs its steps in order: check the input, load or build the data, change it, save it, report it."
+      - "`PlaceOrderAsync` and `CancelOrderAsync` in `OrderService` are transaction scripts: each method holds its whole use case, while `Order` only carries the values the method reads and writes."
+      - "The name means one business operation handled by one procedure; it does not mean the method runs inside a database transaction."
+      - "A transaction script is easy to follow while an operation has few rules, because every step sits in one method you can read from top to bottom."
+      - "When several scripts change the same data, each needs its own copy of the checks on that data, and nothing forces a new script to repeat them."
+      misconceptions:
+      - "A transaction script is a method that wraps its work in a database transaction."
+      - "Putting all the logic in service methods is simply bad design, whatever the application does."
+      depth_notes: "Không gọi tên anemic model — design.l2.anemic-domain-model; không đưa hành vi vào Order — design.l2.domain-model. Không nhắc lại service layer — design.l1.the-service-layer. Tên sách Patterns of Enterprise Application Architecture chỉ là tham chiếu trần (history), không nêu tác giả."
+    - id: design.l2.anemic-domain-model
+      title:
+        vi: "Anemic model: Order có dữ liệu mà không có quy tắc nào"
+        en: "An anemic model: Order holds the data but none of the rules"
+      main_path: true
+      duration_min: 13
+      skills: [design.domain.anemic-vs-rich]
+      prereqs: [design.l2.transaction-script, foundation.l1.oop-encapsulation]
+      related: [management.l1.reviewing-for-tests, backend.l1.efcore-mapping]
+      vocab: [anemic-domain-model]
+      example_tag: stage-1
+      example_files:
+      - DonHang.Domain/Entities.cs
+      - DonHang.Domain/OrderService.cs
+      - samples/DonHang.Samples/Samples/Oop/OrderExposed.cs
+      outline:
+      - "An anemic domain model has classes named after business things, such as `Order`, whose data any code can change, while every rule about that data lives in other classes."
+      - "At stage-1, `Order` has a public getter and setter for every property and no methods, and the comment at the top of `Entities.cs` says its classes hold nothing beyond what a row is."
+      - "Because `Status` has a public setter, any class holding an `Order` can assign it any string; a rule about which status may follow which exists only where a script remembered to check it."
+      - "`CancelOrderAsync` shows the cost: it cancels a `shipped` order, and nothing in `Order` can refuse, because the class has no place where that rule could live."
+      - "A DTO is meant to carry data with no rules across a boundary; an anemic domain model is a class that stands for a business thing yet holds none of that thing's rules."
+      - "An anemic domain model is a reasonable choice when the data really has no rules; it becomes a cost once rules about that data appear and get repeated across scripts."
+      misconceptions:
+      - "`Order` uses properties, not public fields, so it is already encapsulated."
+      - "An anemic domain model is just another name for a DTO."
+      - "An anemic domain model is always a mistake, even for data that has no rules."
+      depth_notes: "Không sửa Order ở bài này — cách sửa ở design.l2.domain-model. Không dạy lại đóng gói — foundation.l1.oop-encapsulation; không nói EF Core có cần setter public không — design.l2.ef-core-and-private-setters."
+    - id: design.l2.domain-model
+      title:
+        vi: "Domain model: Order tự quyết có được hủy hay không"
+        en: "A domain model: Order itself decides whether it can be cancelled"
+      main_path: true
+      duration_min: 15
+      skills: [design.domain.entity-behaviour]
+      prereqs: [design.l2.anemic-domain-model, backend.l2.problem-types, design.l2.dependency-rule]
+      related: [design.l3.aggregates-and-invariants]
+      vocab: [domain-model]
+      example_tag: stage-2
+      example_files:
+      - DonHang.Domain/Entities.cs
+      - DonHang.Domain/OrderService.cs
+      - DonHang.Domain/OrderStatusException.cs
+      - DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs
+      outline:
+      - "A domain model puts each business rule in the class whose data the rule is about, so that class's methods become the way to change the data."
+      - "At stage-2, `Order.Cancel()` throws `OrderStatusException` for an order that is already `cancelled` or `shipped`, and otherwise sets `Status` to `cancelled`."
+      - "`CancelOrderAsync` now finds the order, calls `order.Cancel()`, saves and notifies: `OrderService` still runs the use case, while `Order` decides what is allowed."
+      - "`OrderStatusException` lives in `DonHang.Domain` and names no HTTP status; `ExceptionHandlingMiddleware` turns it into `409` with one problem `type` per case, so the dependency rule still holds."
+      - "Moving a rule into `Order` pays off when several use cases change the same data; for data with no rules it only adds methods that set a value."
+      misconceptions:
+      - "In a domain model the service disappears, because all logic moves into the entities."
+      - "`Order` should throw an exception that already carries status `409`, since the API returns `409` anyway."
+      - "A domain model means each entity saves itself to the database."
+      depth_notes: "Không nói aggregate, invariant, domain event hay value object — design/ddd-tactical GĐ3 (design.l3.aggregates-and-invariants). Không dạy lại problem type — backend.l2.problem-types. Ship và setter private — bài sau."
+    - id: design.l2.status-changes-through-methods
+      title:
+        vi: "Chỉ method của Order được đổi trạng thái đơn"
+        en: "Only Order's own methods can change an order's status"
+      main_path: true
+      duration_min: 13
+      skills: [design.domain.entity-behaviour]
+      prereqs: [design.l2.domain-model, backend.l2.role-based-access]
+      related: [backend.l2.optimistic-concurrency]
+      vocab: []
+      example_tag: stage-2
+      example_files:
+      - DonHang.Domain/Entities.cs
+      - DonHang.Domain/OrderService.cs
+      - DonHang.Api/Controllers/OrdersController.cs
+      outline:
+      - "At stage-2, `Status` has a private setter: code outside `Order` can read it but not assign it, so `order.Status = \"shipped\"` written in `OrderService` would not compile."
+      - "Each allowed change is its own method that checks the status it starts from: `MarkPaid()` from `new`, `Ship()` from `paid`, `Cancel()` from `new` or `paid`."
+      - "`PATCH /api/v1/orders/{id}/ship` calls `OrderService.ShipOrderAsync`, which calls `order.Ship()`: the endpoint's policy decides who may ship, and `Order` decides whether this order can be shipped."
+      - "Reading `Order` alone now lists every status change Đơn Hàng allows, named in business words instead of spread across assignments in several scripts."
+      misconceptions:
+      - "Turning `Status` into an enum would already stop an order going from `cancelled` to `shipped`."
+      - "The ship endpoint requires the `staff` role, so a cancelled order cannot be shipped."
+      - "A private setter alone protects the status; `Order` does not also need methods that check anything."
+      depth_notes: "Không nói enum, value object hay thư viện state machine cho trạng thái — GĐ3; không dạy lại policy/role — backend.l2.role-based-access; hai request cùng đổi một đơn — backend.l2.optimistic-concurrency. Constructor — bài sau."
+    - id: design.l2.valid-from-construction
+      title:
+        vi: "Constructor từ chối tạo một đơn không có hàng"
+        en: "A constructor that refuses to create an order with no items"
+      main_path: true
+      duration_min: 12
+      skills: [design.domain.entity-behaviour]
+      prereqs: [design.l2.status-changes-through-methods, backend.l1.validating-input]
+      related: [design.l2.builder-pattern]
+      vocab: []
+      example_tag: stage-2
+      example_files:
+      - DonHang.Domain/Entities.cs
+      - DonHang.Domain/OrderService.cs
+      - DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs
+      outline:
+      - "At stage-2, `Order`'s public constructor takes the customer id, the items and the time placed, throws `ArgumentException` when there are no items, and sets `Status` to `new` itself."
+      - "`PlaceOrderAsync` calls that constructor instead of an object initializer, so the empty-items check moves from `OrderService` into `Order`, and no code can create an order without items."
+      - "The API still answers `400` for an order with no items, because `ExceptionHandlingMiddleware` already maps `ArgumentException` to `400`: moving the check did not change the contract."
+      - "A constructor that checks its inputs means every `Order` the code creates starts in an allowed state, so later methods need not ask whether it was built correctly."
+      misconceptions:
+      - "A constructor should only copy its parameters into properties; checks belong in methods."
+      - "Moving the empty-items check into `Order` makes the API answer `500` for an empty order."
+      depth_notes: "Không nói static factory method hay builder cho entity — design.l2.factory, design.l2.builder-pattern; không nói EF Core tạo Order bằng constructor nào khi đọc — design.l2.ef-core-and-private-setters."
+    - id: design.l2.ef-core-and-private-setters
+      title:
+        vi: "EF Core vẫn đọc được Order dù setter đã private"
+        en: "EF Core still loads Order after its setters turn private"
+      main_path: true
+      duration_min: 13
+      skills: [design.domain.entity-behaviour]
+      prereqs: [design.l2.valid-from-construction, backend.l1.efcore-relationships-and-keys]
+      related: [backend.l1.efcore-mapping]
+      vocab: []
+      example_tag: stage-2
+      example_files:
+      - DonHang.Domain/Entities.cs
+      - DonHang.Infrastructure/DonHangDbContext.cs
+      - DonHang.Tests/FakeOrderRepository.cs
+      outline:
+      - "EF Core maps a property whose setter is private and sets it when it loads a row, so `Status` can be closed to other code and still be read from and saved to the `orders` table."
+      - "EF Core cannot pass a navigation such as `Items` to a constructor, so it cannot use `Order`'s public constructor; at stage-2 `Order` has a private parameterless constructor for EF Core."
+      - "Loading an order does not run the public constructor's checks: those checks guard orders the code creates, not rows already stored in the table."
+      - "`Id` keeps a public setter, because the database generates it on insert and `FakeOrderRepository.AddAsync` assigns it the same way; an id is not a business rule."
+      misconceptions:
+      - "A class mapped by EF Core must keep public setters, or EF Core cannot fill it."
+      - "When EF Core loads an order it calls the public constructor, so a stored order with no items would throw."
+      depth_notes: "Không nói backing field, owned type, value converter hay lazy-loading proxy — ngoài GĐ2. Không nhắc lại mapping cột hay navigation — backend.l1.efcore-mapping, backend.l1.efcore-relationships-and-keys."
+    - id: design.l2.testing-the-entity
+      title:
+        vi: "Test quy tắc của Order không cần fake nào"
+        en: "Testing Order's rules needs no fake at all"
+      main_path: true
+      duration_min: 13
+      skills: [design.domain.entity-behaviour]
+      prereqs: [design.l2.valid-from-construction, design.l1.testing-with-a-fake-repository]
+      related: [management.l1.reviewing-for-tests]
+      vocab: []
+      example_tag: stage-2
+      example_files:
+      - DonHang.Tests/Domain/OrderTests.cs
+      - DonHang.Domain/Entities.cs
+      - DonHang.Tests/Services/OrderServiceTests.cs
+      outline:
+      - "At stage-2, `OrderTests` builds an `Order` with its constructor and calls its methods directly: no repository, no notifier, no fake and no `await`."
+      - "`OrderTests` covers the case the stage-1 suite never had: an order that was paid and then shipped throws `OrderStatusException` when `Cancel()` is called."
+      - "`OrderServiceTests` keeps only what needs the fakes, such as a cancelled order being saved and notified; checking each status rule there again would repeat `OrderTests`."
+      - "A rule inside the entity is cheaper to test than the same rule inside a service, because the test creates only the object under test instead of wiring its dependencies."
+      misconceptions:
+      - "Every unit test needs a fake for something."
+      - "Rules must be tested through `OrderService`, because that is what the controller calls."
+      depth_notes: "Không nói test theo bảng dữ liệu hay property-based testing — ngoài GĐ2. Không nhắc lại fake và test double — design.l1.test-doubles; test với database thật — design/integration-testing."
+    - id: design.l2.where-a-rule-belongs
+      title:
+        vi: "Entity, service hay controller: mỗi quy tắc Đơn Hàng nằm ở đâu"
+        en: "Entity, service or controller: where each Đơn Hàng rule goes"
+      main_path: true
+      duration_min: 14
+      skills: [design.domain.anemic-vs-rich]
+      prereqs:
+      - design.l2.testing-the-entity
+      - backend.l2.resource-based-authorization
+      - design.l2.composition-root
+      related: [design.l3.aggregates-and-invariants]
+      vocab: []
+      example_tag: stage-2
+      example_files:
+      - DonHang.Domain/Entities.cs
+      - DonHang.Domain/OrderService.cs
+      - DonHang.Api/Controllers/OrdersController.cs
+      - DonHang.Api/Authorization/OrderOwnerHandler.cs
+      outline:
+      - "A rule that needs only one order's own data, such as which status may follow which or that an order has items, belongs in `Order`."
+      - "Steps that reach outside the order, such as loading it, saving it and sending a notification, stay in `OrderService`, which runs the use case and asks `Order` for each decision."
+      - "Who may act is decided in `DonHang.Api`: the ship endpoint's `staff` policy and `OrderOwnerHandler` run there, before `OrderService` changes anything."
+      - "Turning HTTP into a call and the result back into HTTP stays in `OrdersController`; a controller that starts deciding status changes has taken a rule out of `Order`."
+      - "A domain model is worth its extra methods where rules exist; an operation with no rule, such as listing products, stays simpler as a direct query or a short script."
+      misconceptions:
+      - "Checking whether the caller is staff is a business rule, so it belongs in `Order`."
+      - "Once there is a domain model, every class in `DonHang.Domain`, including `Product` and `Payment`, must get methods too."
+      depth_notes: "Không nói aggregate, domain service hay domain event — design/ddd-tactical GĐ3; không nói chia module hay bounded context — GĐ3. Không nhắc lại composition root hay RBAC/ABAC — các bài trước."
