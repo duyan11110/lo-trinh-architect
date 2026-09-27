@@ -1,371 +1,248 @@
 {
   "id": "foundation.l1.files-and-permissions",
   "technical": {
-    "reviewed_at": "2026-09-07T07:50:00+07:00",
-    "reviewer": "claude-opus-5 (independent full pass, prompt 04). Lesson read before .meta.json. Evidence: refs/dotnet-docs mirror, learn.microsoft.com API pages at defaultMoniker net-10.0, git-scm.com/docs/gitattributes, dotnet 10.0.300 on the host, and execution in the running stage-0 lab box (donhang-lab, Alpine, bash 5.3.9, GNU coreutils 9.11).",
+    "reviewed_at": "2026-09-27T14:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (prompt 04, round 2, current text; lesson read before .meta.json). Evidence: refs/dotnet-docs, learn.microsoft.com API pages net-10.0, git-scm.com gitattributes, dotnet SDK 10.0.300 on host, execution in donhang-lab and donhang-api.",
     "claim_verdicts": [
       {
         "n": 1,
         "verdict": "verified",
-        "evidence": "Execution in donhang-lab: standing in /tmp/demo, `cat app.conf` printed \"port=8080\"; after `cd /` the same `cat app.conf` printed \"cat: app.conf: No such file or directory\" with nothing having touched the file. Path.GetFullPath doc (net-10.0): \"This method uses the current directory and current volume information to fully qualify path. If you specify a file name only in path, GetFullPath returns the fully qualified path of the current directory.\"",
-        "source": "docker exec donhang-lab bash /repo/scripts/computer/permissions.sh; https://learn.microsoft.com/dotnet/api/system.io.path.getfullpath (Remarks, net-10.0)"
+        "evidence": "file-path-formats.md l.27: \"Otherwise, the path is relative to the current directory.\" Execution of permissions.sh: from /tmp/demo `cat app.conf` -> \"port=8080\"; after `cd /` -> \"cat: app.conf: No such file or directory\".",
+        "source": "refs/dotnet-docs/docs/standard/io/file-path-formats.md l.27; execution: donhang-lab (Alpine, GNU bash 5.3.9, coreutils 9.11)"
       },
       {
         "n": 2,
         "verdict": "verified",
-        "evidence": "Execution: on the same run whose working directory was `/`, where the bare name `app.conf` had just failed, `cat /tmp/demo/app.conf` printed \"port=8080\". Symlink and mount cases are excluded by depth_notes and were not probed.",
-        "source": "docker exec donhang-lab bash /repo/scripts/computer/permissions.sh (last two output lines)"
+        "evidence": "file-path-formats.md l.41: a fully qualified path \"is independent of the current directory and doesn't change when the current directory changes\". Execution: from `/`, `cat /tmp/demo/app.conf` -> \"port=8080\".",
+        "source": "refs/dotnet-docs/docs/standard/io/file-path-formats.md l.41; execution: donhang-lab (Alpine, GNU bash 5.3.9, coreutils 9.11)"
       },
       {
         "n": 3,
         "verdict": "verified",
-        "evidence": "Execution, one bash process: `cd /tmp; pwd` -> /tmp, then `cd /; pwd` -> / in the same shell. The lesson's own script shows the same thing: \"working directory: /tmp/demo\" then \"working directory: /\". .NET doc, file-path-formats.md: \"the current directory is a per-process setting. Any thread can change the current directory at any time.\"",
-        "source": "docker exec donhang-lab bash -c (cd/pwd probe, bash 5.3.9); refs/dotnet-docs/docs/standard/io/file-path-formats.md"
+        "evidence": "GetFullPath(String) Remarks: \"The current drive and current directory can change at any time as an application executes.\" Execution: permissions.sh prints \"working directory: /tmp/demo\" then, after `cd /`, \"working directory: /\" in one run.",
+        "source": "learn.microsoft.com/dotnet/api/system.io.path.getfullpath?view=net-10.0; execution: donhang-lab (Alpine, GNU bash 5.3.9, coreutils 9.11)"
       },
       {
         "n": 4,
         "verdict": "verified",
-        "evidence": "Execution on SDK 10.0.300. From examples/don-hang: \"working directory: F:\\...\\examples\\don-hang\" and \"this program lives in: F:\\...\\examples\\don-hang\\samples\\DonHang.Samples\\bin\\Debug\\net10.0\\\". From samples/DonHang.Samples with --project .: the first line became the project folder, the second was byte-identical to the first run. The two values differed in both runs.",
-        "source": "dotnet run -- read-config-file launched from two folders (dotnet --version -> 10.0.300)"
+        "evidence": "Execution (dotnet 10, host): \"working directory: ...\\examples\\don-hang\" vs \"this program lives in: ...\\samples\\DonHang.Samples\\bin\\Debug\\net10.0\\\"; on Linux (donhang-api): \"/tmp\" vs \"/tmp/samp/\". GetCurrentDirectory Remarks: \"The current directory is distinct from the original directory, which is the one from which the process was started.\"",
+        "source": "learn.microsoft.com/dotnet/api/system.io.directory.getcurrentdirectory?view=net-10.0; execution"
       },
       {
         "n": 5,
         "verdict": "verified",
-        "evidence": "Execution (coreutils 9.11): `stat -c '%A %U:%G %n'` on a root-created file printed \"---------- root:root s.txt\" at mode 000, so an owning user and an owning group are recorded. Enforcement of the three sets separately: at mode 600, `su nobody -s /bin/sh -c 'cat /tmp/rv/s.txt'` -> \"Permission denied\", exit 1; at mode 604 (others r) the same read printed \"secret\", exit 0.",
-        "source": "docker exec donhang-lab: stat plus mode 600 vs 604 read as user nobody"
+        "evidence": "Execution: `stat -c '%A %U:%G %n' app.conf` -> \"-rw-r--r-- root:root app.conf\"; stat --help: \"%U user name of owner\", \"%G group name of owner\", \"%A permission bits and file type in human readable form\". Three rwx triplets for owner/group/others.",
+        "source": "execution: donhang-lab (Alpine, GNU bash 5.3.9, coreutils 9.11)"
       },
       {
         "n": 6,
         "verdict": "verified",
-        "evidence": "Execution. Normal case: `su nobody -s /bin/sh -c 'id -un; cat /tmp/rv/s.txt'` printed \"nobody\" then \"Permission denied\", exit 1 — the run acted as the invoking user and was refused. Exception case: /opt/sx/cat, a copy of cat at mode 4755 (stat -> \"-rwsr-xr-x root:root\"), read the same mode-600 root-owned file as user nobody and printed \"secret\", exit 0. Neither program chose its user. No file used by this lesson carries the s bit.",
-        "source": "docker exec donhang-lab: setuid copy of cat read as user nobody (coreutils 9.11)"
+        "evidence": "Execution: the same DonHang.Samples.dll started via `docker exec` as root reads a mode-000 file; started via `docker exec -u 65534` (nobody) it prints \"found, but not allowed to read: Access to the path '/tmp/q/app.conf' is denied.\" The starter chose the user, not the program; \"normally\" covers set-user-ID programs.",
+        "source": "execution: donhang-api container (Linux, .NET 10 runtime)"
       },
       {
         "n": 7,
         "verdict": "verified",
-        "evidence": "gitattributes (git 2.46): \"CRLF is the line ending used by Windows tools.\" and \"If text is set but neither of those variables is, the default is eol=crlf on Windows and eol=lf on all other platforms.\" The \"stays attached to the last word\" half by execution: a CRLF file `echo hi\\r\\necho second\\r\\n` run under bash 5.3.9 produced output whose `od -c` was \"h i \\r \\n s e c o n d \\r \\n\" — the extra byte stayed glued to the last word.",
-        "source": "https://git-scm.com/docs/gitattributes; docker exec donhang-lab: od -c of a CRLF script's output"
+        "evidence": "gitattributes: \"the default is eol=crlf on Windows and eol=lf on all other platforms\"; \"When a matching file is added to the index, the file's line endings are normalized to LF in the index.\" The lesson now conditions the carry-over on \"a copy that moves the file as it is\" / \"a plain copy\", matching the Git exception.",
+        "source": "https://git-scm.com/docs/gitattributes"
       },
       {
         "n": 8,
         "verdict": "verified",
-        "evidence": "API page, defaultMoniker net-10.0, Definition: \"Gets the current working directory of the application.\" Returns: \"A string that contains the absolute path of the current working directory, and does not end with a backslash (\\).\" Execution agrees: the first printed line was the folder the launching shell stood in, and it changed with that folder.",
-        "source": "https://learn.microsoft.com/dotnet/api/system.io.directory.getcurrentdirectory (net-10.0); dotnet run -- read-config-file from two folders"
+        "evidence": "Directory.GetCurrentDirectory: \"Gets the current working directory of the application.\" Returns \"A string that contains the absolute path of the current working directory\".",
+        "source": "learn.microsoft.com/dotnet/api/system.io.directory.getcurrentdirectory?view=net-10.0"
       },
       {
         "n": 9,
         "verdict": "verified",
-        "evidence": "API page, defaultMoniker net-10.0: \"Gets the file path of the base directory of the application.\" Property Value: \"The file path of the base directory of the application.\" Remarks add only the AppDomain.BaseDirectory correspondence and the bundled-assembly case. The sample-specific half by execution: the value was \"...\\samples\\DonHang.Samples\\bin\\Debug\\net10.0\\\" in both runs and differed from the working directory in both.",
-        "source": "https://learn.microsoft.com/dotnet/api/system.appcontext.basedirectory (net-10.0); two runs of read-config-file"
+        "evidence": "AppContext.BaseDirectory: \"Gets the file path of the base directory of the application.\" Execution prints \"this program lives in: ...\\samples\\DonHang.Samples\\bin\\Debug\\net10.0\\\" from both folders while the working directory differs.",
+        "source": "learn.microsoft.com/dotnet/api/system.appcontext.basedirectory?view=net-10.0; execution on host"
       },
       {
         "n": 10,
         "verdict": "verified",
-        "evidence": "API page, GetFullPath(String), net-10.0: \"Returns the absolute path for the specified path string.\" Remarks: \"This method uses the current directory and current volume information to fully qualify path.\" and \"If path is a relative path, this overload returns a fully qualified path that can be based on the current drive and current directory.\" Execution: the same 'app.conf' printed as '...\\don-hang\\app.conf' from the repo root and '...\\DonHang.Samples\\app.conf' from the project folder.",
-        "source": "https://learn.microsoft.com/dotnet/api/system.io.path.getfullpath (net-10.0); dotnet run -- read-config-file from two folders"
+        "evidence": "GetFullPath(String) Remarks: \"This method uses the current directory and current volume information to fully qualify path.\" Returns \"The fully qualified location of path\". Execution: \"'app.conf' therefore means '...\\examples\\don-hang\\app.conf'\".",
+        "source": "learn.microsoft.com/dotnet/api/system.io.path.getfullpath?view=net-10.0"
       },
       {
         "n": 11,
         "verdict": "verified",
-        "evidence": "API page File.ReadAllText(String), Exceptions, net-10.0, two rows quoted: \"FileNotFoundException — The file specified in path was not found.\" and \"UnauthorizedAccessException — This operation is not supported on the current platform. -or- path specified a directory. -or- The caller does not have the required permission.\" The claim names one trigger from each row. Execution: two runs entered the FileNotFoundException catch; the refusal branch was not run (no .NET in the lab box), the doc row carries it.",
-        "source": "https://learn.microsoft.com/dotnet/api/system.io.file.readalltext (Exceptions, net-10.0); dotnet run -- read-config-file from two folders"
+        "evidence": "File.ReadAllText(String) Exceptions: FileNotFoundException \"The file specified in path was not found.\"; UnauthorizedAccessException \"... -or- The caller does not have the required permission.\" Execution as uid 65534 on a mode-000 file: \"found, but not allowed to read: Access to the path '/tmp/q/app.conf' is denied.\"",
+        "source": "learn.microsoft.com/dotnet/api/system.io.file.readalltext?view=net-10.0; execution in donhang-api"
       },
       {
         "n": 13,
         "verdict": "verified",
-        "evidence": "Execution on SDK 10.0.300: from examples/don-hang the catch printed \"not found: F:\\SourceCode\\lo-trinh-architect\\examples\\don-hang\\app.conf\"; from samples/DonHang.Samples, \"not found: F:\\...\\samples\\DonHang.Samples\\app.conf\". FileName held the fully resolved path in both, never the string \"app.conf\" passed in. Note: the API page documents only \"Gets the name of the file that cannot be found\", so the \"fully resolved\" half rests on execution (Windows host) alone.",
-        "source": "dotnet run -- read-config-file from two folders; https://learn.microsoft.com/dotnet/api/system.io.filenotfoundexception.filename (net-10.0)"
+        "evidence": "FileName docs only say \"Gets the name of the file that cannot be found.\" Execution settles the full-path part: relative \"app.conf\" handed in, sample prints \"not found: F:\\...\\examples\\don-hang\\app.conf\" (Windows host) and \"not found: /tmp/app.conf\" (Linux, working directory /tmp).",
+        "source": "learn.microsoft.com/dotnet/api/system.io.filenotfoundexception.filename?view=net-10.0; execution host + donhang-api"
       },
       {
         "n": 14,
         "verdict": "verified",
-        "evidence": "`stat --help` in donhang-lab, stat (GNU coreutils) 9.11: \"%A permission bits and file type in human readable form\", \"%U user name of owner\", \"%G group name of owner\", \"%n file name\". A live run of the script produced \"-rw-r--r-- root:root app.conf\", matching the order the format asks for.",
-        "source": "docker exec donhang-lab: stat --help / stat --version (GNU coreutils 9.11)"
+        "evidence": "stat --help in lab box: \"%A permission bits and file type in human readable form\", \"%U user name of owner\", \"%G group name of owner\", \"%n file name\". Output \"-rw-r--r-- root:root app.conf\" shows that order.",
+        "source": "execution: donhang-lab (Alpine, GNU bash 5.3.9, coreutils 9.11)"
       },
       {
         "n": 16,
         "verdict": "verified",
-        "evidence": "Live run of scripts/computer/permissions.sh: after `printf 'port=8080\\n' > app.conf`, stat gave \"-rw-r--r--\"; after `chmod 600 app.conf`, stat gave \"-rw-------\". Owner keeps r and w; group and others lose everything. Cross-checked by access: a mode-600 root-owned file was refused to user nobody (exit 1), a mode-604 one was not (exit 0).",
-        "source": "docker exec donhang-lab bash /repo/scripts/computer/permissions.sh; mode 600 vs 604 read as nobody"
+        "evidence": "Execution: before `chmod 600` \"-rw-r--r-- root:root app.conf\", after \"-rw------- root:root app.conf\".",
+        "source": "execution: donhang-lab (Alpine, GNU bash 5.3.9, coreutils 9.11)"
       },
       {
         "n": 17,
         "verdict": "verified",
-        "evidence": "Live run: the script printed \"working directory: /tmp/demo\" from `pwd` after `cd /tmp/demo`, then \"working directory: /\" from the same `pwd` after `cd /`, with the relative `cat app.conf` succeeding before and failing after. Reproduced standalone in one bash process: `cd /tmp; pwd` -> /tmp; `cd /; pwd` -> /.",
-        "source": "docker exec donhang-lab bash /repo/scripts/computer/permissions.sh and a cd/pwd probe (bash 5.3.9)"
+        "evidence": "Execution: `cd /tmp; (cd /; pwd); pwd` -> \"/\" then \"/tmp\"; permissions.sh prints \"working directory: /tmp/demo\" then \"working directory: /\" around `cd /`.",
+        "source": "execution: donhang-lab (Alpine, GNU bash 5.3.9, coreutils 9.11)"
       },
       {
         "n": 18,
         "verdict": "verified",
-        "evidence": "The script source at tag stage-0 (tools/extract-code scripts/computer/permissions.sh --tag stage-0) matches the lesson's block at lines 7-26 character for character, and a run today reproduced the lesson's output block line for line, including \"who is this process running as: root\", \"-rw-r--r-- root:root app.conf\" and \"-rw------- root:root app.conf\".",
-        "source": "tools/extract-code at tag stage-0; docker exec donhang-lab bash /repo/scripts/computer/permissions.sh"
+        "evidence": "permissions.sh l.5 at stage-0: `[ -f /.dockerenv ] || exec \"$(dirname \"$0\")/../lab-run.sh\" \"$0\" \"$@\"`; lab-run.sh execs `docker compose exec -T lab bash ...`. Run from the host today prints \"who is this process running as: root\" and \"-rw-r--r-- root:root app.conf\", identical to the lesson output block.",
+        "source": "examples/don-hang stage-0:scripts/computer/permissions.sh, scripts/lab-run.sh; execution"
       },
       {
         "n": 19,
-        "verdict": "wrong",
-        "evidence": "Execution contradicts two predictions, bash 5.3.9. (1) `printf 'whoami\\r\\necho second-line-ran\\r\\n' > c1.sh; bash c1.sh` printed \"c1.sh: line 1: $'whoami\\r': command not found\" and then \"second-line-ran\", exit 0 — it does not stop. (2) The name reported is `$'whoami\\r'`, the byte spelled out, not \"one character longer than the one you typed\". Also `echo hi\\r` gave no error at all: the CR sticks to the last word, so the failure needs the command name to be that word.",
-        "source": "docker exec donhang-lab: three CRLF script probes (bash 5.3.9)",
-        "suggested_text": "A bash script whose lines end with carriage return plus line feed fails on Linux on any line whose command name is also the last word on that line: the carriage return stays part of that word, so the shell reports it as a command not found and prints the name with the extra byte spelled out on its end. The lines after it still run."
+        "verdict": "verified",
+        "evidence": "Execution in lab box: CRLF script \"echo one / ls / echo two\" run with bash -> \"one\", \"/tmp/crlf.sh: line 2: $'ls\\r': command not found\", \"two\", rc=0. Even a CRLF `set -e` line only fails (\"set: -: invalid option\") and later lines still run.",
+        "source": "execution: donhang-lab (Alpine, GNU bash 5.3.9, coreutils 9.11)"
       },
       {
         "n": 20,
         "verdict": "verified",
-        "evidence": "Execution: the same built program, started from two different shell folders, printed \"working directory: F:\\...\\examples\\don-hang\" and \"working directory: F:\\...\\samples\\DonHang.Samples\", while \"this program lives in\" was byte-identical in both. The value came from the launching shell, not from the executable. Checked that samples/DonHang.Samples has no Properties/launchSettings.json at stage-0, so no launch profile sets a working directory.",
-        "source": "dotnet run -- read-config-file from two folders (SDK 10.0.300); tools/extract-code (launchSettings.json absent at stage-0)"
+        "evidence": "Execution: `dotnet run --project samples/DonHang.Samples -- read-config-file` from repo top prints \"working directory: ...\\examples\\don-hang\"; `dotnet run --project . -- read-config-file` from samples/DonHang.Samples prints \"working directory: ...\\samples\\DonHang.Samples\".",
+        "source": "execution on host (SDK 10.0.300)"
       },
       {
         "n": 21,
         "verdict": "verified",
-        "evidence": "Execution. Run from examples/don-hang: \"'app.conf' therefore means 'F:\\...\\examples\\don-hang\\app.conf'\" then \"not found: F:\\...\\examples\\don-hang\\app.conf\". Run from samples/DonHang.Samples: both lines carried '...\\samples\\DonHang.Samples\\app.conf'. The GetFullPath string and the FileNotFoundException.FileName string were character-identical in each run.",
-        "source": "dotnet run -- read-config-file from two folders; https://learn.microsoft.com/dotnet/api/system.io.path.getfullpath (Remarks, net-10.0)"
+        "evidence": "Execution: third line \"'app.conf' therefore means '...\\don-hang\\app.conf'\" and fourth \"not found: ...\\don-hang\\app.conf\" name the same path; on Linux \"/tmp/q/app.conf\" appears in both the third line and the access-denied message.",
+        "source": "execution host + donhang-api"
       },
       {
         "n": 22,
-        "verdict": "rephrased",
-        "evidence": "The reading half holds: as uid 0 in donhang-lab, `chmod 000 s.txt; cat s.txt` printed \"secret\", exit 0, while `su nobody -s /bin/sh -c 'cat /tmp/rv/s.txt'` gave \"Permission denied\", exit 1. \"every permission\" does not: `chmod 000 p.sh; ./p.sh` as root gave \"sh: ./p.sh: Permission denied\", exit 126, so root is stopped from executing a file with no x bit. Only what the paragraph uses (reading) is true as written.",
-        "source": "docker exec donhang-lab: mode-000 read and execute as root, read as user nobody (coreutils 9.11)",
-        "suggested_text": "On the stage-0 lab machine the script runs on, the run acts as the user root, whose reads that machine does not stop at file permissions, so the file's permissions do not stop this run from reading the file; the refusal happens to a run acting as an ordinary user."
+        "verdict": "verified",
+        "evidence": "Execution: root reads a mode-000 file (\"x\" printed) in donhang-api; in lab box `su tuser -c \"cat /tmp/p/f\"` on \"-rw------- root:root\" -> \"cat: /tmp/p/f: Permission denied\"; permissions.sh as root reads app.conf after chmod 600 (\"port=8080\").",
+        "source": "execution donhang-lab + donhang-api"
       },
       {
         "n": 23,
         "verdict": "verified",
-        "evidence": "`--help` in donhang-lab, GNU coreutils 9.11. rm: \"Remove (unlink) the FILE(s).\" with \"-r, -R, --recursive\" and \"-f, --force\". mkdir: \"Create the DIRECTORY(ies), if they do not already exist.\" with \"-p, --parents\". whoami: \"Print the user name associated with the current effective user ID.\" cat: \"Concatenate FILE(s) to standard output.\" `printf ... > app.conf` writing the file is shown by the script's own \"port=8080\" line.",
-        "source": "docker exec donhang-lab: rm/mkdir/whoami/cat --help (coreutils 9.11); live run of permissions.sh"
+        "evidence": "Lab box help: whoami \"Print the user name associated with the current effective user ID.\"; mkdir \"-p, --parents\"; rm \"-r, -R, --recursive\", \"-f, --force\". permissions.sh output: printf > app.conf then `cat app.conf` -> \"port=8080\"; $(whoami) inserted into the echo line (\"... running as: root\").",
+        "source": "execution: donhang-lab (Alpine, GNU bash 5.3.9, coreutils 9.11)"
       },
       {
         "n": 24,
         "verdict": "verified",
-        "evidence": "Execution, bash 5.3.9. `out=$(cat /tmp/nope 2>&1 || echo note-added)` captured both \"cat: /tmp/nope: No such file or directory\" and \"note-added\", while `$(cat /tmp/nope 2>/dev/null)` captured nothing — the error text reaches standard output only because of the redirection. For `||`: `true || echo X` printed nothing; `false || echo Y` printed Y.",
-        "source": "docker exec donhang-lab bash -c (redirection and || probes, bash 5.3.9)"
+        "evidence": "Execution: `ls /nope 2>&1 >/dev/null | cat` shows the error on stdout; `false || echo ran` -> \"ran\", `true || echo notran` prints nothing. permissions.sh: \"cat: app.conf: No such file or directory\" then \"the same relative path now finds nothing\".",
+        "source": "execution: donhang-lab (Alpine, GNU bash 5.3.9, coreutils 9.11)"
       },
       {
         "n": 25,
         "verdict": "verified",
-        "evidence": "dotnet-run doc, --project option: \"Specifies the path of the project file to run (folder name or full path). If not specified, it defaults to the current directory.\" Execution on SDK 10.0.300: from examples/don-hang the command ran the sample; issued unchanged from samples/DonHang.Samples it failed with \"The provided file path does not exist: samples/DonHang.Samples.\"; `dotnet run --project . -- read-config-file` there ran it. Program.cs at stage-0 registers [\"read-config-file\"].",
-        "source": "refs/dotnet-docs/docs/core/tools/dotnet-run.md; three dotnet run invocations; tools/extract-code samples/DonHang.Samples/Program.cs --tag stage-0"
+        "evidence": "dotnet-run.md l.264: \"--project <PATH> Specifies the path of the project file to run (folder name or full path).\"; l.188: \"The -- separator marks every following token as an application argument\". stage-0 Program.cs: `[\"read-config-file\"] = Sync(ReadConfigFile.Run)`. Execution from the project folder with `--project .` succeeded.",
+        "source": "refs/dotnet-docs/docs/core/tools/dotnet-run.md; examples/don-hang stage-0:samples/DonHang.Samples/Program.cs"
       },
       {
         "n": 26,
         "verdict": "verified",
-        "evidence": "Execution, `stat -c '%A %n'`, coreutils 9.11: chmod 000 -> \"----------\"; 754 -> \"-rwxr-xr--\"; 640 -> \"-rw-r-----\"; 007 -> \"-------rwx\". A directory printed \"drwxr-xr-x\" and a symbolic link \"lrwxrwxrwx\". The first character carries the file type; the nine that follow are three groups of read, write, execute for owner, group and others, with '-' where the permission is absent.",
-        "source": "docker exec donhang-lab: stat -c '%A %n' over four modes, a directory and a symlink"
+        "evidence": "stat --help: %A \"permission bits and file type in human readable form\". Output \"-rw-r--r--\" for a regular file created by printf, \"-rw-------\" after chmod 600: leading \"-\" = regular file, then owner/group/others triplets.",
+        "source": "execution: donhang-lab (Alpine, GNU bash 5.3.9, coreutils 9.11)"
       },
       {
         "n": 27,
         "verdict": "verified",
-        "evidence": "Execution on SDK 10.0.300 from examples/don-hang, four lines in this order: \"working directory: F:\\SourceCode\\lo-trinh-architect\\examples\\don-hang\"; \"this program lives in: F:\\...\\examples\\don-hang\\samples\\DonHang.Samples\\bin\\Debug\\net10.0\\\"; \"'app.conf' therefore means 'F:\\...\\examples\\don-hang\\app.conf'\"; \"not found: F:\\...\\examples\\don-hang\\app.conf\". The joined path on the third and fourth lines is character-identical.",
-        "source": "dotnet run --project samples/DonHang.Samples -- read-config-file, from examples/don-hang"
+        "evidence": "Execution from repo top: \"working directory: F:\\...\\examples\\don-hang\" / \"this program lives in: ...\\bin\\Debug\\net10.0\\\" / \"'app.conf' therefore means '...\\don-hang\\app.conf'\" / \"not found: ...\\don-hang\\app.conf\". No app.conf in the tree at stage-0 (git ls-tree).",
+        "source": "execution on host (SDK 10.0.300); git ls-tree stage-0"
       }
     ],
     "issues": [
       {
-        "severity": "blocker",
-        "section": 6,
-        "kind": "accuracy",
-        "text": "The symptom the reader is told to recognise does not happen. Executed in the stage-0 lab box (bash 5.3.9): a CRLF script does not stop — `whoami\\r` fails and the next line still runs, exit 0. The name printed is `$'whoami\\r'`, the byte spelled out, not \"one character longer than the one you typed\", so a reader counting characters will not match the screen. And `echo hi\\r` gives no error at all: the carriage return sticks to the last word, so the failure needs the command name to be that word. Claim 19 carries the same errors.",
-        "quote": "stops on a line whose first word it treats as the name of a program to run: the extra byte is glued to that word, so the name it reports is one character longer than the one you typed",
-        "fix": "Replace the second half with what bash prints: \"...reports that it cannot find a program on a line whose first word is also its last: the extra byte is glued to that word, so the name in the message is the one you typed with that byte spelled out on its end, and the lines after it still run.\" Rewrite claim 19 to its suggested_text, and update quiz q5's stem so it no longer says the script stops."
-      },
-      {
-        "severity": "major",
-        "section": 5,
-        "kind": "scope",
-        "text": "The lesson teaches what depth_notes excludes: \"Không đi vào symlink, mount, quyền chi tiết của Linux (chmod bits)\". Section 5 names `chmod`, glosses the numeric mode (\"`600` asking for reading and writing for the owner and nothing for anyone else\") and decodes the mode string into file type plus three rwx triples. The letters half is arguably forced by outline item 2 (\"an owner and read/write/execute permissions\") and by the script's own output; the numeric mode is not — nothing in the lesson or the quiz needs the reader to know what 600 encodes.",
-        "quote": "`chmod` changes what a file allows — `600` asking for reading and writing for the owner and nothing for anyone else",
-        "fix": "Drop the numeric gloss and let the two stat lines carry it: \"...and `chmod` changes what a file allows, which is why the second `stat` line differs from the first.\" Keep the mode-string decoding, which outline item 2 needs. If the owner wants the numeric mode kept, amend depth_notes in content/tracks/foundation/track.yaml first — the lesson may not overrule it by itself."
-      },
-      {
-        "severity": "major",
-        "section": "foundation.l1.files-and-permissions.q5",
-        "kind": "quiz",
-        "text": "The key (a) is correct, but the stem asserts behaviour that execution contradicts, in the same two ways as section 6: \"It stops\" (a CRLF script keeps running after the failed line — exit 0 in the lab box) and \"naming a command you can see is spelled correctly\" (bash quotes it as `$'whoami\\r'`, which is visibly not what you typed). A reader who has met the real message will find no option describing it, and one who has not is being taught the wrong thing to look for.",
-        "quote": "It stops, naming a command you can see is spelled correctly.",
-        "fix": "Restate the stem from the observed message: \"It reports that it cannot find a command whose name you can see is spelled correctly in your file, and carries on to the next line.\" Leave the options and the key unchanged."
-      },
-      {
         "severity": "minor",
         "section": 5,
         "kind": "accuracy",
-        "text": "Understated, and understated against the lesson's own point. Executed from samples/DonHang.Samples with `--project .`: the first line changes, and so do the third (\"'app.conf' therefore means '...\\samples\\DonHang.Samples\\app.conf'\") and the fourth (\"not found: ...\\samples\\DonHang.Samples\\app.conf\"). The only line that does not change is the second. Told that just the first line changes, the reader has no reason to expect the resolved path to follow the working directory — which is what claim 21 and section 4 are teaching.",
-        "quote": "`dotnet run --project . -- read-config-file` runs the sample there and changes the first line",
-        "fix": "\"...runs the sample there and changes the first line, and with it the last two; only the second, the folder the program file sits in, stays the same.\" Extend claim 25 or 27 with that consequence."
+        "quote": "which is where each `-rw-r--r-- root:root app.conf` line comes from",
+        "text": "Only one output line is `-rw-r--r-- root:root app.conf`; the other stat line is `-rw------- root:root app.conf`. \"each\" plus that literal string misdescribes the output block shown below it.",
+        "fix": "Replace with \"which is where both lines beginning `-rw` and ending `root:root app.conf` come from\"."
       },
       {
         "severity": "minor",
         "section": 5,
-        "kind": "accuracy",
-        "text": "The order is not something `stat` does; it is what `-c '%A %U:%G %n'` asks for. `stat app.conf` with no format prints a multi-line block with different content in a different order; the four directives the script names appear in this order only because the format string puts them there. As written, the sentence hands the reader a fact about the command that their first bare `stat` will contradict, and it sits immediately before the sentence decoding the mode string, so it reads as part of the same explanation.",
-        "quote": "`stat` prints what the file records — the permissions, the owner, the group and the name, in that order",
-        "fix": "Attribute the order to the format: \"`stat` prints what the file records, and the `-c '%A %U:%G %n'` in the line below asks it for four of those things in that order — the permissions, the owner, the group and the name — which is where each `-rw-r--r-- root:root app.conf` line comes from.\""
-      },
-      {
-        "severity": "minor",
-        "section": 5,
-        "kind": "accuracy",
-        "text": "\"every permission\" is more than that machine gives root, and the lesson does not need it. Executed as uid 0 in the stage-0 lab box: a mode-000 file was read without error (exit 0), but `./p.sh` on a mode-000 script gave \"sh: ./p.sh: Permission denied\", exit 126. The next sentence is already conditioned and correct (\"Those permissions do not stop this run from reading the file\"); only the gloss on root overreaches. Claim 22 carries the same wording and is marked `rephrased` for it.",
-        "quote": "the run acts as `root`, the user a Linux machine gives every permission to",
-        "fix": "Bound it to what the paragraph uses: \"the run acts as `root`, the user whose reads a Linux machine does not stop at file permissions\". Update claim 22 to its suggested_text."
-      },
-      {
-        "severity": "minor",
-        "section": 5,
-        "kind": "scope",
-        "text": "`2>&1` and `||` are taught here, ahead of where the outline puts them: foundation.l1.pipes-and-filters owns \"Every program has standard input, standard output and standard error\". The gloss is short and the line cannot be read without it, so this is a note rather than a demand to cut — but it is content this lesson's outline does not carry, and the reader is given two shell operators with no place to practise them.",
-        "quote": "`2>&1` puts the failure message into the same output as everything else, and `||` adds the note only when `cat` fails",
-        "fix": "Shorten to what the output needs and leave the mechanism to the later lesson: \"the rest of that line makes the failure message appear in the same output and adds the note only when `cat` fails; both are the subject of a later lesson.\" Alternatively record the overlap in the outline's depth_notes so the pipes lesson knows it is a second pass."
-      },
-      {
-        "severity": "minor",
-        "section": "foundation.l1.files-and-permissions.q3",
-        "kind": "quiz",
-        "text": "Option d and its explanation both say the sample prints three lines. Executed, the sample prints four in the case the lesson describes (working directory, program location, resolved path, then `not found:`), and section 5 itself lists four. The key (a) is unaffected, but the explanation for d tells the reader that \"Three lines really are printed every time, so that half is right\", which is a wrong count coming from the answer key.",
-        "quote": "False, because the program did not change, so the three lines it prints are the same on every run",
-        "fix": "Say four in the option and in its explanation: \"...so the four lines it prints are the same on every run\" and \"Four lines really are printed in this case, so that half is right; but the first, third and fourth report the working directory and what the bare name comes to, so they differ between the two runs.\""
-      },
-      {
-        "severity": "minor",
-        "section": 1,
         "kind": "version",
-        "text": "Carried forward unresolved from earlier rounds. Claims 14, 16, 17, 19, 22, 23, 24 and 26 are bash, coreutils and Linux behaviour; none carries a version_key, and content/versions.yaml pins no bash, coreutils or distribution. The only evidence obtainable for them is execution inside the stage-0 lab image (Alpine, bash 5.3.9, GNU coreutils 9.11), which the frontmatter names nowhere: versions_used lists only `dotnet`, though half the lesson is shell behaviour. Nothing found is wrong today; the lesson simply has no pinned source to be re-checked against when the image moves.",
-        "quote": "versions_used: [dotnet]",
-        "fix": "Add a `lab` entry (or `bash` plus `coreutils`) to content/versions.yaml pinning what the stage-0 lab image contains, with `check` commands, give claims 14, 16, 17, 19, 22, 23, 24 and 26 that version_key, and list it in this lesson's versions_used. Owner decision, not a lesson edit; it is already recorded in .meta.json open_questions."
+        "quote": "`stat` prints what the file records",
+        "text": "Carried from rounds 1-2, owner decision pending: claims 14, 16, 17, 19, 22, 23, 24, 26 rest on the lab image (Alpine, GNU bash 5.3.9, coreutils 9.11), which has no entry in content/versions.yaml, so they carry no version_key.",
+        "fix": "Owner: add a `lab` entry (Alpine image, bash 5.3.9, coreutils 9.11) to content/versions.yaml, then put its key on those claims and in versions_used. No lesson text change needed."
       }
     ],
     "scope": {
       "outline_covered": true,
-      "beyond_scope": [
-        "Section 5: `chmod` and the meaning of the numeric mode `600`, which depth_notes excludes (\"quyền chi tiết của Linux (chmod bits)\").",
-        "Section 5: decoding the ten-character mode string into file type plus owner/group/other rwx triples — needed for outline item 2, but the same depth_notes clause names it.",
-        "Section 5: `2>&1` and `||`, which belong to foundation.l1.pipes-and-filters (\"Every program has standard input, standard output and standard error\")."
-      ]
+      "beyond_scope": []
     },
-    "verdict": "fix-required"
+    "verdict": "pass"
   },
   "junior": {
-    "reviewed_at": "2026-09-07T23:30:00+07:00",
-    "reviewer": "claude-opus-5 (junior reader simulation, prompt 05)",
+    "reviewed_at": "2026-09-27T15:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior reader simulation, prompt 05, round 2, current text)",
     "issues": [
       {
-        "severity": "major",
-        "section": "How it works",
-        "kind": "term",
-        "text": "I am told a run inherits the working directory of whatever started it, and the example given is a terminal. Nobody told me what a terminal is or, more importantly, that a terminal is itself standing in a folder. Connections points at a terminal lesson I have not read. Quiz q2 asks me to pick exactly this idea, so I have to guess it rather than recall it.",
-        "quote": "a program launched from a terminal begins where that terminal stood",
-        "fix": "In the 'working directory' bullet of Core concepts, add one clause: 'a terminal is itself standing in a folder, and hands that folder to every program started from it'; or move this lesson after foundation.l1.terminal-basics."
-      },
-      {
-        "severity": "major",
-        "section": "In the Đơn Hàng system",
-        "kind": "term",
-        "text": "The prose says the --project argument is a relative path, then shows `.` as the value to use from inside the project folder. Nothing in Core concepts or the prose says that `.` is a name for the folder the run is standing in, so I cannot see why the second command works from there while the first does not, and I could not construct such a command myself.",
-        "quote": "from `samples/DonHang.Samples`, `dotnet run --project . -- read-config-file` runs the sample there",
-        "fix": "After 'The `--project` argument is itself a relative path', add: 'and the name `.` means the folder the run is standing in'."
-      },
-      {
-        "severity": "major",
-        "section": "In the Đơn Hàng system",
+        "severity": "minor",
+        "section": 5,
         "kind": "gap",
-        "text": "I am told what `-` means in the permission string but never what the letters mean, and never what the very first character is. 'Try it' then asks me to decide that `-rw-------` allows the owner what `-rw-r--r--` allowed and nobody else anything. I can only do that by assuming r is reading and w is writing and that the leading `-` is not one of the nine — three guesses in one step.",
-        "quote": "the nine characters after the first are three groups of three — owner, then group, then everyone else — each showing reading, writing and running, with `-` for what is not allowed",
-        "fix": "In that same sentence, name the letters: '`r` for reading, `w` for writing, `x` for running, `-` for what is not allowed', and add half a clause saying what the first character is (or that it is not about permissions)."
+        "quote": "`dotnet run --project . -- read-config-file` runs the sample there and changes the first, third and fourth lines.",
+        "text": "I am told the fourth line changes, but not into what. Does it still say `not found:` with a different path, or is there an `app.conf` in that folder so the file's contents are printed instead? I can still answer q3 because it says 'can differ', but I cannot picture the second run's output.",
+        "fix": "Add half a sentence saying what the fourth line becomes from `samples/DonHang.Samples`, e.g. 'the fourth still says `not found:`, now with the `samples/DonHang.Samples` path'."
       },
       {
-        "severity": "major",
-        "section": "foundation.l1.files-and-permissions.q3",
+        "severity": "minor",
+        "section": 7,
+        "kind": "example",
+        "quote": "Start the example system with `scripts/up.sh` — it starts a small Linux machine inside your computer — then run `scripts/computer/permissions.sh` from the same terminal.",
+        "text": "After this lesson I know `scripts/up.sh` is a relative path, and section 5 warned that the `--project` command runs only from the top folder. Try it does not say where to stand, so the lesson's own point makes me unsure.",
+        "fix": "Add 'from the top folder of the example system' after 'Start the example system with `scripts/up.sh`'."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "quote": "So a file can exist, be named correctly, and still refuse to open — a different failure from absence.",
+        "text": "The diagram asks 'Anything there?' before 'Allowed for this user?', but the prose never says in words that the permission check only happens once something is found at the path. I inferred it from the arrows; q1 depends on that order.",
+        "fix": "Add one clause: 'the operating system first looks whether anything sits at the finished path, and only then checks whether this user may open it'."
+      },
+      {
+        "severity": "minor",
+        "section": "foundation.l1.files-and-permissions.q1",
         "kind": "quiz",
-        "text": "The lesson says running from inside the project folder 'changes the first line', but q3's explanation for option d says the first and third lines both differ. Reading only the lesson, option d ('the three lines it prints are the same on every run') looks only half wrong, and I cannot tell whether the third line changes — which is the whole point of the question.",
-        "quote": "runs the sample there and changes the first line",
-        "fix": "Change 'changes the first line' to 'changes the first and third lines' so the lesson and q3's explanation agree."
+        "quote": "The operating system sees the name does not start at the top of the file tree",
+        "text": "The lesson never describes this as a separate step the operating system takes; it only defines a relative path as one that does not start at the top. I placed d before a by logic, not from the text, so the item tests reasoning about steps the lesson did not narrate.",
+        "fix": "Either add to section 4's first paragraph 'seeing that it does not start with `/`, the operating system finishes it with the working directory', or drop option d and order four steps."
       },
       {
         "severity": "minor",
-        "section": "How it works",
-        "kind": "gap",
-        "text": "This sentence raises a whole mechanism and drops it: how would a program be 'set up to act as another user'? Since it ends with 'none here is', I can skip it, but I stopped and re-read the paragraph looking for the missing explanation.",
-        "quote": "a few programs are set up to act as another user, and none here is",
-        "fix": "Either delete the clause or make it plainly out of scope: 'a few programs can be set up to act as another user — not something you meet here'."
-      },
-      {
-        "severity": "minor",
-        "section": "How it works",
-        "kind": "term",
-        "text": "'Carriage return' and 'line feed' are names I have never met. The sentence does carry me anyway, because it also says two bytes versus one, so I can follow the argument by counting bytes; but the names themselves stay empty for me and reappear nowhere else.",
-        "quote": "a carriage return then a line feed; Linux and macOS use the line feed alone",
-        "fix": "Keep the byte count as the load-bearing part and mark the names as labels: 'two bytes (their names are carriage return and line feed)'."
-      },
-      {
-        "severity": "minor",
-        "section": "In the Đơn Hàng system",
-        "kind": "gap",
-        "text": "'the same output as everything else' implies there is more than one output a program can write to, which I have never been told. I understood that the note is about making the failure visible, but not what was moved from where.",
-        "quote": "`2>&1` puts the failure message into the same output as everything else",
-        "fix": "Say what the two are in one clause: 'failures are written to a separate output; `2>&1` sends that one into the same place as the rest'."
-      },
-      {
-        "severity": "minor",
-        "section": "The situation",
-        "kind": "style",
-        "text": "The situation gives away its own answer one sentence before asking the question, so the question at the end reads as rhetorical and I had no reason to keep reading for the answer.",
-        "quote": "The only thing that changed was where the run was standing. Why does one name mean a file at one moment and nothing at the next?",
-        "fix": "Replace 'The only thing that changed was where the run was standing.' with something that keeps the puzzle, e.g. 'Nobody touched the file between the two lines.'"
-      },
-      {
-        "severity": "minor",
-        "section": "How it works",
+        "section": 5,
         "kind": "length",
-        "text": "Section 4 teaches three separate things — relative paths and the working directory, owner and permissions, and how lines end in a file. Only the first two have a Core concepts bullet; line endings arrive with no bullet, are not what the situation asked about, and yet carry summary line 5 and quiz q5. Reading it felt like the end of one lesson and the start of another.",
-        "quote": "Once the name is right, two things can still surprise you: who may open the file, and how its lines end.",
-        "fix": "Add a Core concepts bullet for the line-ending idea in one sentence (no new term needed), so the third topic is announced with the other two."
+        "quote": "It prints that folder, then the folder the program file sits in, then that first folder with `app.conf` added, then `not found:` with that same path.",
+        "text": "The opening paragraph of section 5 packs the command, what `--` means, the four printed lines, why `--project` is relative, what `.` means, a second command and `RelativePath`. 'that folder' / 'that first folder' / 'that same path' made me re-read it twice.",
+        "fix": "Replace 'It prints that folder' with 'It prints the working directory', and 'that first folder with `app.conf` added' with 'the working directory with `app.conf` added'."
       },
       {
         "severity": "minor",
-        "section": "Try it (3 minutes)",
-        "kind": "gap",
-        "text": "'the script puts itself on that machine' is a mechanism I cannot picture: I type one command in my own terminal, and the output comes back as root in /tmp/demo. I can still run the two commands and read the output, so the exercise works, but I do not know what actually ran where.",
-        "quote": "the script puts itself on that machine, which is why its output shows `root` and `/tmp/demo`",
-        "fix": "Add one clause saying the script hands its commands to that small Linux machine and prints the answers back, so the user and folder you see are that machine's, not your own."
-      },
-      {
-        "severity": "minor",
-        "section": "foundation.l1.files-and-permissions.q4",
-        "kind": "quiz",
-        "text": "Option a is the lesson's own sentence with two words changed, and the 'Expected result' of 'Try it' states it again. I can mark it correct from memory of the wording without deciding anything about the file.",
-        "quote": "The two lines beginning `-rw` describe one file, before and after `chmod` changed what it allows",
-        "fix": "Rephrase option a so it asks for the consequence rather than the sentence, e.g. 'after the second line, a run acting as any user other than the owner may no longer read the file'."
-      },
-      {
-        "severity": "minor",
-        "section": "foundation.l1.files-and-permissions.q5",
-        "kind": "quiz",
-        "text": "The question restates the third 'Beginners often think' bullet almost step for step, including the 'command spelled correctly' detail, so I recognised the answer from that bullet without reasoning about bytes.",
-        "quote": "It stops, naming a command you can see is spelled correctly.",
-        "fix": "Change the scenario so it is not the bullet's scenario, e.g. a value read from a copied config file that compares unequal to the same word typed by hand."
+        "section": 5,
+        "kind": "length",
+        "quote": "Its commands: `rm -rf` deletes a folder and everything in it, `mkdir -p` creates one, `printf` with `>` writes the file,",
+        "text": "About ten commands are explained in one sentence before I have seen the script, so I had to go back and forth between this paragraph and the code block.",
+        "fix": "Turn the command list into a short bullet list, one command per line, keeping the same wording."
       }
     ],
     "readability": {
-      "unknown_terms": [
-        "terminal (and the idea that a terminal is standing in a folder)",
-        "`.` used as a path in `--project .`",
-        "carriage return",
-        "line feed",
-        "the letters r/w/x and the first character in `-rw-r--r--`",
-        "programs \"set up to act as another user\"",
-        "`2>&1` and the second output it implies",
-        "`$( )` in the script lines",
-        "the \"small Linux machine\" that `scripts/up.sh` starts"
-      ],
+      "unknown_terms": [],
       "skipped_steps": [
-        "\"a program launched from a terminal begins where that terminal stood\" — a terminal's own folder is assumed, never stated",
-        "\"the nine characters after the first are three groups of three ... with `-` for what is not allowed\" — the letters and the first character are never explained, but 'Try it' asks me to compare two such strings",
-        "\"from `samples/DonHang.Samples`, `dotnet run --project . -- read-config-file` runs the sample there\" — `.` as a name for the current folder is never introduced",
-        "\"a few programs are set up to act as another user, and none here is\" — mechanism raised and dropped",
-        "\"`2>&1` puts the failure message into the same output as everything else\" — the other output is never mentioned",
-        "\"the script puts itself on that machine\" — how a command typed on my machine ends up running as root in /tmp/demo"
+        "Section 5: what the fourth printed line becomes when run from `samples/DonHang.Samples`",
+        "Section 4: the existence check before the permission check is only in the diagram, not in prose",
+        "Try it: which folder to stand in when running `scripts/up.sh`"
       ],
       "situation_connects": true,
       "try_it_feasible": true,
       "summary_matches": true
     },
-    "verdict": "fix-required"
+    "verdict": "pass"
   }
 }

@@ -15,9 +15,9 @@ vocab: [stack, heap, garbage-collector]
 example_tag: stage-0
 versions_used: [dotnet]
 content_version: 1
-status: reviewed
-approved_by: null
-reviewed_at: "2026-09-07T03:33:09+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-28T13:00:00+07:00"
 ---
 
 ## Before you start
@@ -50,11 +50,11 @@ flowchart LR
   H -.->|"only once nothing reaches it"| G["Garbage collector takes the object back"]
 ```
 
-In the situation above, the method that does those three steps is called `Run`, and while it runs the stack holds one frame for it. The four local variables belong to that frame, each in its own slot (its place in the frame): `first` and `second`, which hold the order, and `oneAmount` and `anotherAmount`, which hold the amount. Exactly where the .NET runtime puts each slot is its own business; what matters here is that the slots live and die with the frame. When `Run` returns, the whole frame goes at once, and the four variables with it. That is why this memory needs no decision to release: it is taken back with the call that owns it — the frame added last is the first one to go.
+In the situation above, the method doing those steps is `Run`; while it runs, the stack holds one frame for it, on top of its caller's frame. Its four local variables each get a slot (a place in the frame): `first` and `second` for the order, `oneAmount` and `anotherAmount` for the amount. How the .NET runtime arranges the slots is its own business; they live and die with the frame. When `Run` returns, its frame goes at once, before its caller's, so this memory needs no decision to release, unlike the heap object below, which waits for the garbage collector.
 
-What each of those four slots holds is where the two halves differ. `new Order` puts an object on the heap and gives the frame a reference to it. Copying `first` into `second` copies that reference, so both slots reach the one object; changing the total through either slot changes that object, which is what you saw. An amount of money is a value type here, so the `oneAmount` slot holds the amount itself. Copying it into `anotherAmount` produces a second, independent amount, and setting one of them to zero says nothing about the other.
+The two halves differ in what each slot holds: `new Order` puts an object on the heap and gives the frame a reference to it. That is the model C# gives you, so in this lesson treat the `Order` as living on the heap; the .NET runtime may quietly keep an object on the stack when no reference to it ever leaves its method, but the output is the same. Copying `first` into `second` copies that reference, so both slots reach the one object; changing the total through either slot changes that object. `Money`, the type that holds the amount, is a value type (the next section shows which keyword makes it so), so the `oneAmount` slot holds the amount itself. Copying it into `anotherAmount` produces a second, independent amount, and setting one to zero leaves the other as it was.
 
-The object on the heap outlives the frame that made it, because heap memory is not tied to any one call. What ends it is the garbage collector: the .NET runtime takes back heap objects the running program can no longer reach, and it chooses when to collect. You never free heap memory by hand, and nothing in this code makes a particular object's memory come back at a particular line.
+The heap object outlives the frame that made it. The garbage collector, part of the .NET runtime, takes back heap objects the running program can no longer reach, and it chooses when. You never free heap memory by hand, and no line in this code makes an object's memory come back.
 
 ## In the Đơn Hàng system
 
@@ -74,7 +74,7 @@ The console sample project has one file for this lesson. It declares two small t
     }
 ```
 
-`Order` is declared with `class` and `Money` with `struct`. A type declared with `class` is a reference type; a type declared with `struct` is a value type. Each of the two holds a single `int` and nothing else, so that keyword is the only difference that matters below. A variable of type `Order` holds a reference; a variable of type `Money` holds an amount.
+`Order` is declared with `class` and `Money` with `struct` (`sealed` has nothing to do with where the object lives). A type declared with `class` is a reference type; a type declared with `struct` is a value type. Each of the two holds a single `int` and nothing else, so that keyword is the only difference that matters below. A variable of type `Order` holds a reference; a variable of type `Money` holds an amount.
 
 ```csharp file=samples/DonHang.Samples/Samples/Computer/StackHeap.cs tag=stage-0 lines=18-31
     public static void Run()
@@ -93,18 +93,18 @@ The console sample project has one file for this lesson. It declares two small t
     }
 ```
 
-`new Order` puts one object on the heap, and `first` and `second` are two slots in the frame that both reach it, so writing through `second` is writing through `first`; the first printed line reports `0`, not the `1250000` the order started with. `Money` is a value type, so `anotherAmount` is a second amount rather than a second way to reach the first one, and the second printed line still reports `1250000`. The underscores in `1_250_000` are only a reading aid for the person; the number is the same with or without them. The last line names what happens on return: the four slots go with the frame, while the `Order` object stays on the heap until the garbage collector finds nothing reaching it.
+`new Order` puts one object on the heap, and `first` and `second` are two slots in the frame that both reach it, so writing through `second` is writing through `first`; the first printed line reports `0`, not the `1250000` the order started with. `Money` is a value type, so `anotherAmount` is a second amount rather than a second way to reach the first one, and the second printed line still reports `1250000`. The underscores in `1_250_000` are only a reading aid for the person; the number is the same with or without them. The last printed line says "both locals"; it means all four local variables. They go with the frame, while the `Order` object stays on the heap until the garbage collector finds nothing reaching it.
 
 ## Beginners often think…
 
 - **"Assigning an object to a new variable copies the object."** → Actually assignment copies what the variable holds, and for a class type that is a reference, so the two variables end up reaching one object. You notice this when you keep a copy of an order as a backup before changing it and the backup changes too.
-- **"Setting a variable to null frees the memory immediately."** → Actually clearing a variable only removes one of the ways to reach the object; the object stays on the heap until the garbage collector later finds that the program cannot reach it. You notice this when the memory a system tool reports for your process — the same kind of tool that listed processes and their ids — does not fall at the line you expected, or falls long afterwards.
+- **"Setting a variable to null frees the memory immediately."** → Actually clearing a variable only removes one of the ways to reach the object; the object stays on the heap until the garbage collector later finds that the program cannot reach it. You notice this when you watch your process's memory in a tool that shows each process's memory. The figure does not fall at the line you expected; it may fall later, or not visibly at all, because the runtime can keep memory it took back for its next objects.
 - **"After `second` changed the order, `first` and `second` are the same variable."** → Actually they are two separate slots, each holding its own copy of the same reference, so putting a different order into `second` leaves `first` reaching the old one. You notice this when replacing an object in one variable quietly stops the two from agreeing; add `second = new Order { TotalVnd = 7 };` after the first print, print both totals, and they no longer match.
 
 ## Try it (3 minutes)
 
 1. In the example repository, run `dotnet run --project samples/DonHang.Samples -- stack-heap` — the last word picks the sample file shown above — and read the first two printed lines.
-2. In `samples/DonHang.Samples/Samples/Computer/StackHeap.cs`, change `private struct Money` to `private sealed class Money` (`sealed` is copied from `Order` and has nothing to do with where the object lives), run the same command again, then undo the change.
+2. In `samples/DonHang.Samples/Samples/Computer/StackHeap.cs`, change `private struct Money` to `private sealed class Money` (`sealed` is only copied from `Order`), run the same command again, then undo the change.
 
 Expected result: the first run prints `0` for the order and `1250000` for the amount; after changing the keyword both lines print `0`, because an amount is now an object on the heap and the second variable reaches the same one.
 

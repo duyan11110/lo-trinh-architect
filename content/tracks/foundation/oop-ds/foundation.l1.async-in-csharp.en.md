@@ -15,9 +15,9 @@ vocab: []
 example_tag: stage-0
 versions_used: [dotnet]
 content_version: 1
-status: reviewed
-approved_by: null
-reviewed_at: "2026-09-17T04:09:36+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-28T13:00:00+07:00"
 ---
 
 ## Before you start
@@ -53,19 +53,19 @@ sequenceDiagram
   L-->>R: the task is finished and holds the list
 ```
 
-In the situation above, your call runs `LoadPaidOrdersAsync` straight away, on your own thread. It keeps running until the first `await` whose work is not already done — here, opening the connection to the database. At that point the method stops and hands your code a `Task<List<string>>`. The list does not exist yet. The task is a receipt for it.
+Your call runs `LoadPaidOrdersAsync` straight away, on your own thread. It keeps running until the first `await` whose work is not already done — here, opening the connection. The method then stops and hands your code a `Task<List<string>>`: a receipt for a list that does not exist yet.
 
-If you `await` that task, your own method stops the same way and returns control to its caller. When the connection is open, `LoadPaidOrdersAsync` picks up again, sends the `SELECT` and waits once more; when the rows arrive it fills the list and marks the task finished. Only then does the rest of your method — its continuation — run. No thread waits through any of this.
+If you `await` that task, your own method stops the same way and returns control to its caller. When the connection is open, `LoadPaidOrdersAsync` picks up again, sends the `SELECT` and waits once more; when the rows arrive it fills the list and marks the task finished. Only then does the rest of your method — its continuation — run. Your thread does not sit waiting through any of this, and neither does the thread of whoever called your method.
 
-Without `await`, the work still starts but your code walks on holding a receipt instead of a list. That is why the `foreach` refuses to compile: a task is not a collection of strings.
+Without `await`, the work still starts but your code walks on holding a receipt instead of a list. That is why the `foreach` refuses to compile: a task is not a collection of strings. Sometimes that is intended, and you await the task later; the bug is never awaiting it.
 
-`.Result` and `.Wait()` close the gap from the other side: they hold the current thread until the task finishes, so the waiting you removed comes back. In some kinds of program the rest of a method must resume on one particular thread; if that is the thread you are holding, the rest can never run and the program stops for good. A console program like this sample has no such rule, so `.Result` here only puts the waiting back.
+`.Result` and `.Wait()` get the value without `await` by holding the current thread until the task finishes. In some programs, such as a desktop app, the rest of a method resumes, by default, on one particular thread; if that is the thread you are holding, the rest never runs and the program stops for good. This console sample has no such rule.
 
-Failure travels with the task too. An exception raised inside an async method that returns a task is not thrown at the call: it is stored in the task and thrown again where you `await` it. `.Result` brings it out too, wrapped in an `AggregateException` — a failure whose only job is to hold another one.
+An exception raised inside an async method that returns a task is not thrown at the call: it is stored in the task and thrown again where you `await` it. `.Result` brings it out too, wrapped in an `AggregateException` — a failure whose job is to hold other failures; here it holds exactly one, the real one.
 
 ## In the Đơn Hàng system
 
-This is the whole method behind the `load-orders` sample. `NpgsqlConnection` and `NpgsqlCommand` are the PostgreSQL classes that talk to the database, and `ConnectionString` is the text holding the address, user and password; none of that matters here, only the `await`s do. The `cancellationToken` belongs to a later lesson.
+This is the whole method behind the `load-orders` sample. `NpgsqlConnection` and `NpgsqlCommand` are the classes that talk to the database, and `ConnectionString` is the text holding the address, user and password; none of that matters here, only the `await`s do. The `cancellationToken` belongs to a later lesson.
 
 ```csharp file=samples/DonHang.Samples/Samples/Data/LoadOrdersAsync.cs tag=stage-0 lines=12-28
     public static async Task<List<string>> LoadPaidOrdersAsync(CancellationToken cancellationToken)
@@ -89,11 +89,9 @@ This is the whole method behind the `load-orders` sample. `NpgsqlConnection` and
 
 Three of the `await`s mark a moment where the method would otherwise sit and wait for the database: opening the connection, running the query, pulling each row.
 
-The three `await using` declarations are a different thing — one of them shares its line with the `await` on `ExecuteReaderAsync`. Writing `using` in front of a variable means the runtime closes that variable for you when the method ends, which is why you see no close line in the code; `await using` means that closing is itself waited on. So its waiting happens at the end of the method, not on the line you see it.
+The three `await using` declarations are a different thing — one of them shares its line with the `await` on `ExecuteReaderAsync`. Writing `using` in front of a variable means the compiler closes the connection, the command and the reader at the end of the block, here the end of the method, which is why you see no close line. `await using` means that closing is itself waited on, at the end of the method, not on the line you see. Apart from these six places, the code reads top to bottom like any other method.
 
-Between all of them the code is ordinary and reads top to bottom, which is what lets you write a loop here the same way you would in a method with no `await` in it.
-
-The `while` loop is worth staring at: the reader gives back one row at a time, `0` and `1` are the `id` and `status` columns of the query, and the method may stop and resume once per row; `orders` keeps everything added so far across every stop, because the local variables of an async method are preserved until it ends.
+In the `while` loop, the reader gives back one row at a time, `0` and `1` are the `id` and `status` columns of the query, and the method may stop and resume once per row; `orders` keeps everything added so far across every stop, because the local variables of an async method are preserved until it ends.
 
 The declared return type is `Task<List<string>>`, but the `return` statement hands back a `List<string>`; the compiler puts the list into the task for you.
 
@@ -109,12 +107,12 @@ The caller shows the shape to copy.
     }
 ```
 
-`RunAsync` is itself `async` and returns `Task`, because a method that awaits must be marked `async`, and an `async` method never hands a plain value back: a task carrying the value when there is one, plain `Task` when there is nothing, so its caller can still `await` it and know when it ended. The `await` sits between `in` and the call, so the `foreach` walks the list rather than the task. Awaiting spreads outwards: the caller of `RunAsync` awaits it in turn, and here that caller is `Program.cs`, the entry point of the console program.
+`RunAsync` is itself `async` and returns `Task`, because a method that awaits must be marked `async`, and an `async` method never hands a plain value back: here, a task carrying the value when there is one, plain `Task` when there is nothing, so its caller can still `await` it. The `await` sits between `in` and the call, so the `foreach` walks the list rather than the task. Awaiting spreads outwards: the caller of `RunAsync` awaits it in turn, and here that caller is `Program.cs`, the entry point of the console program. Its code sits outside any method and has no `async` keyword, because when such code uses `await`, the compiler generates an `async` entry point for it.
 
 ## Beginners often think…
 
-- **"Forgetting `await` just makes the call run to the end before it returns."** → Actually the call still starts the work and returns immediately with an unfinished task, so the two halves of your code now run in an order nobody chose. You notice this when a list comes back empty, or when a failure that should have stopped the program stops nothing, because the exception sat in a task nobody ever looked at.
-- **"`.Result` is a convenient shortcut when I need the value now."** → Actually it blocks the thread until the task finishes and, when the work failed, throws an `AggregateException` wrapping the real one instead of the real one. You notice this when a screen or a request hangs forever with no error at all, or when the error names `AggregateException` and the message you need sits in its `InnerException`.
+- **"Forgetting `await` just makes the call run to the end before it returns."** → Actually the call still starts the work and returns at its first unfinished `await`, handing you an unfinished task, so the two halves of your code now run in an order nobody chose. You notice this when the method you forgot to await fills a list you already hold, and your code reads that list before the filling is done, or when a failure that should have stopped the program stops nothing, because the exception sat in a task nobody ever looked at.
+- **"`.Result` is a convenient shortcut when I need the value now."** → Actually it blocks the thread until the task finishes and, when the work failed, throws an `AggregateException` wrapping the real one instead of the real one. You notice this when a desktop app's window freezes with no error at all, or when the error names `AggregateException` and the message you need sits in the failure it wraps, which it exposes as `InnerException`.
 - **"An `async` method runs my code on another thread."** → Actually `async` only lets the compiler split the method at each `await`; it starts nothing. You notice this when marking a slow loop of pure arithmetic `async` changes nothing, because there was never any waiting to give back.
 
 ## Try it (3 minutes)
@@ -122,7 +120,7 @@ The caller shows the shape to copy.
 1. In the example repository, open `samples/DonHang.Samples/Samples/Data/LoadOrdersAsync.cs` and delete the word `await` from the `foreach` line of `RunAsync`, leaving the call itself alone.
 2. Run `dotnet build samples/DonHang.Samples`, read the message, then put the `await` back and build again. Nothing needs to be running for this; the database is only touched when the sample runs.
 
-Expected result: the build fails, and the message says the `foreach` cannot walk over a `Task<List<string>>`. The call gave you the receipt; only `await` turns it into the list.
+Expected result: the build fails with an error whose message names `foreach` and the type `Task<List<string>>`. The call gave you the receipt; only `await` turns it into the list.
 
 <details><summary>Suggested answer</summary>
 
@@ -133,7 +131,7 @@ The compiler is not complaining about timing — it is complaining about a type.
 ## Connections
 
 - [[foundation.l1.threads-and-async-intro]] — it showed you why giving a thread back during a wait is worth doing at all; this lesson is the syntax that does it, and the two ways of undoing it by accident.
-- [[backend.l1.request-lifecycle]] — the same idea one layer up: a server handles many requests at the same time, and each request gives its thread back while it waits on a database.
+- [[backend.l1.request-lifecycle]] — the same idea applied to a server that handles many requests at the same time.
 
 ## Five-line summary
 

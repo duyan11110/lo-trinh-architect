@@ -15,7 +15,9 @@ vocab: [responsive]
 example_tag: stage-1
 versions_used: [flutter]
 content_version: 1
-status: draft
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-28T13:00:00+07:00"
 ---
 
 ## Before you start
@@ -24,11 +26,12 @@ status: draft
 
 ## The situation
 
-The product screen shows one product per row, which looks right on a phone. Someone opens the web version of the app on a wide office monitor, and the same list now stretches each row across almost two thousand pixels: a name at the far left, a price at the far right, and a lot of empty space between. A teammate suggests checking whether the screen is wider than 1920 pixels and switching to a grid if it is. Another asks what happens when the same app runs in a narrow browser window on that same monitor. Which width should the layout actually look at?
+The product screen shows one product per row, which looks right on a phone. Someone opens the web version of the app on a wide office monitor, and the same list now stretches each row across almost two thousand pixels: a name at the far left, a price at the far right, and a lot of empty space between. A teammate suggests checking whether the app window is wider than 1920 pixels and switching to a grid if it is. Another asks what happens when the same list sits in a narrow panel beside the order form on that monitor. Which width should the layout actually look at?
 
 ## Core concepts
 
 - **responsive** — a layout that adapts to the space it is actually given, instead of assuming one fixed screen size.
+- constraints — the smallest and largest width and height a parent allows its child during layout.
 - `LayoutBuilder` — a widget that calls a builder function with the constraints its parent gives it, so the builder can return a different subtree for different space.
 - arrangement — how the same pieces are placed: one column, or several.
 
@@ -44,9 +47,9 @@ flowchart TD
 
 A **responsive** layout adapts to the space it is given. In Flutter, that space arrives as constraints: during layout, each parent tells its child the smallest and largest width and height it may take. Most widgets use those constraints without you seeing them. `LayoutBuilder` hands them to you, by calling a builder function with them, so the widget you return can depend on how much room there really is.
 
-That is the whole trick in the diagram. The builder reads `constraints.maxWidth`, compares it with a width the team chose, and returns one subtree or another. Both subtrees can use the same pieces. Only the arrangement changes: a single column when space is tight, several columns when there is room.
+That is the whole trick in the diagram. The builder reads `constraints.maxWidth`, compares it with a width the team chose, 600 in the diagram, and returns one subtree or another: a `ListView` or a `GridView`. Both use the same piece, `ProductTile`. Only the arrangement changes: a single column when space is tight, several columns when there is room.
 
-The number being compared matters less than what it is compared with. A layout that checks the size of the whole screen, or assumes a phone's width, breaks as soon as the widget sits somewhere else: a narrow browser window on a big monitor, a panel beside another panel, a tablet turned sideways. The constraints describe the space this widget actually has, wherever it ends up, so a decision based on them keeps working.
+The number being compared matters less than what it is compared with. Deciding from the size of the whole app window gives the wrong answer when this widget gets only part of that window, such as a panel beside another panel. Its constraints describe the space this widget actually has, wherever it is placed.
 
 ## In the Đơn Hàng system
 
@@ -76,7 +79,9 @@ The number being compared matters less than what it is compared with. A layout t
   }
 ```
 
-When `maxWidth` is below `wideLayoutMinWidth`, 600, it returns a `ListView` with one `ProductTile` per row. Otherwise it works out how many 300-pixel columns fit, rounding down, and returns a `GridView` of the same `ProductTile`s. At stage-1 no screen uses `ProductCatalog` yet; the product screen still builds its own `ListView`. Its widget test, in `DonHang.App/test/product_catalog_test.dart`, shows both arrangements by giving it two widths:
+`ProductTile` is the widget that shows one product, its name and price. When `maxWidth` is below `wideLayoutMinWidth`, 600, the catalog returns a `ListView` with one `ProductTile` per row. Otherwise it divides `maxWidth` by `columnWidth`, 300, rounds down, and returns a `GridView` of the same tiles. `crossAxisCount` is that column count; `mainAxisExtent: 72` sets each tile's height. At stage-1 no screen uses `ProductCatalog` yet; the product screen still builds its own `ListView`, and replacing it with `ProductCatalog` is what would fix the stretched rows from the situation.
+
+A test in `DonHang.App/test/product_catalog_test.dart` builds the catalog without a device: `pumpWidget` builds it, and `expect` with `find.byType` checks which widgets ended up in the tree. It gives the catalog two widths:
 
 ```dart file=DonHang.App/test/product_catalog_test.dart tag=stage-1 lines=16-36
   Widget catalogWithWidth(double width) => MaterialApp(
@@ -102,12 +107,12 @@ When `maxWidth` is below `wideLayoutMinWidth`, 600, it returns a `ListView` with
   });
 ```
 
-`catalogWithWidth` places the catalog inside a box of the given width, so the constraints `LayoutBuilder` receives are 360 or 900 pixels wide, whatever the test screen's own size is. At 360 the test finds a list and no grid; at 900 it finds a grid holding the same two tiles.
+`MaterialApp`, `Scaffold` and `Center` are the usual page wrappers. `catalogWithWidth` places the catalog inside a `SizedBox` of the given width, but a box cannot be wider than the space its own parent allows. The test screen is 800 pixels wide by default, so at 360 the catalog gets 360 and the test finds a list and no grid. At 900 it gets 800, still wide enough for a grid holding the same two tiles.
 
 ## Beginners often think…
 
-- **"Responsive design is only relevant for a web browser, not a Flutter app running on a phone or tablet."** → Actually any widget can be given less or more room than you expected: a tablet shows a wider screen, and a phone turned sideways gets a different width. You notice this when a layout written for one phone width looks cramped or stretched on a tablet, although no browser is involved.
-- **"Using a fixed pixel width for every widget makes a layout more predictable, and predictable is what responsive means."** → Actually a fixed width is predictable only on the screen it was chosen for; responsive means the layout follows the space it is given. You notice this when a list with fixed 400-pixel rows overflows a 360-pixel phone and leaves most of a monitor empty.
+- **"Responsive design is only relevant for a web browser, not a Flutter app running on a phone or tablet."** → Actually any widget can be given less or more room than you expected: a tablet has a wider screen than a phone, and a panel gets only part of the screen. You notice this when a layout written for one phone width looks cramped or stretched on a tablet, although no browser is involved.
+- **"Using a fixed pixel width for every widget makes a layout more predictable, and predictable is what responsive means."** → Actually a fixed width is predictable only on the screen it was chosen for; responsive means the layout follows the space it is given. You notice this when a layout drawn for exactly 400 pixels gets squeezed or cut off on a 360-pixel phone and leaves most of a monitor empty.
 
 ## Try it (3 minutes)
 
@@ -121,11 +126,11 @@ Using the `ProductCatalog` code above, predict what it builds when `LayoutBuilde
 
 Expected result: 1 — a `ListView`, one tile per row. 2 — still a `ListView`, because 599 is below 600. 3 — a `GridView` with 2 columns: 600 divided by 300 is 2. 4 — a `GridView` with 3 columns. 5 — a `GridView` with 4 columns: 1250 divided by 300 is about 4.17, rounded down to 4.
 
-The same monitor shows the app in a browser window 500 pixels wide. What does `ProductCatalog` build, and why would a check on the monitor's width get this wrong?
+On the same monitor, the app window is wide, but `ProductCatalog` sits in a 500-pixel panel beside an order form. What does it build, and why would a check on the window's width get this wrong?
 
 <details><summary>Suggested answer</summary>
 
-It builds the one-column `ListView`, because the constraints it receives are about 500 pixels wide, below 600. A check on the monitor's width would see a very wide screen and choose the grid, squeezing several columns into a window that has room for one. `LayoutBuilder` looks at the space the widget actually has, not the device it happens to run on.
+It builds the one-column `ListView`, because the constraints it receives are 500 pixels wide, below 600. A check on the window's width would see a wide window and choose the grid, squeezing several columns into a panel that has room for one. `LayoutBuilder` looks at the space the widget actually has, not the device it happens to run on.
 
 </details>
 
@@ -138,6 +143,6 @@ It builds the one-column `ListView`, because the constraints it receives are abo
 
 1. A **responsive** layout adapts to the space it is actually given, not to one assumed screen size.
 2. `LayoutBuilder` passes a widget's constraints to a builder, which can return different subtrees for different widths.
-3. `ProductCatalog` returns a one-column `ListView` below 600 pixels and a `GridView` of 300-pixel columns above.
+3. `ProductCatalog` returns a one-column `ListView` below 600 pixels, and from 600 up a `GridView` with as many columns as 300 pixels fits into the width.
 4. Both arrangements use the same `ProductTile`; responsiveness changes the arrangement, not the pieces.
-5. Checking the screen's width breaks when the widget gets less room; checking its constraints keeps working.
+5. Checking the whole window's width breaks when the widget gets only part of it; checking its constraints keeps working.

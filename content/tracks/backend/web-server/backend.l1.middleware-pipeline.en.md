@@ -48,11 +48,11 @@ flowchart TD
   G -.-> H
 ```
 
-Before any of Đơn Hàng's own middleware runs, routing already works out which endpoint a request's path and method match — an automatic step with no line in `Program.cs`, and why a teammate can name `OrdersController.Create()` at all. In the situation above, the request never reaches that method because one of the middleware steps decided it could go no further first. That is a short-circuit: the middleware stops the request instead of calling the next step, so every step after it, including the already-matched endpoint, sees nothing.
+ASP.NET Core adds steps of its own, such as routing below; "Đơn Hàng's own" middleware means the `app.Use...` lines in `Program.cs`. Before any of those runs, one such added step, routing, works out which endpoint a request's path and method match. In the situation, the request never reaches that method because one middleware step stopped it. That is a short-circuit: the middleware stops instead of calling the next step, so every step after it, including the already-matched endpoint, sees nothing.
 
-Each `app.Use...` call in `Program.cs` registers one middleware, in the order a request meets them, top to bottom. Each step can act twice: once on the way in, before it calls the next step, and once on the way out, after that call returns. A step that only reads the request and always calls next uses just the top half of that shape; a step that also touches the response afterward uses the bottom half too. The endpoint itself, once reached, is terminal: it writes the response and calls nothing further, and that response travels back out through every middleware that did call `next`.
+Each `app.Use...` call in `Program.cs` registers one middleware, in the order a request meets them, top to bottom. Each step can act twice: once on the way in, before it calls the next step, and once on the way out, after that call returns. The endpoint is terminal: it writes the response and calls nothing further. That response travels back out through every middleware that did call `next`, in reverse order (dashed arrows in the diagram), so the first one registered (here `ExceptionHandlingMiddleware`) is usually the last to finish.
 
-`UseAuthentication` works out who is asking; `UseAuthorization` decides what an already-identified caller may do, and is what can short-circuit here: for an endpoint marked `[Authorize]`, it stops the request instead of calling next when not allowed, and a `401` (or `403`) is written on its behalf. `RequestLoggingMiddleware`, registered earlier, already called `next` and is simply waiting for it to return — which is why it still logs the outcome, even though the endpoint never ran.
+`UseAuthentication` works out who is asking; when a request carries nothing to read, it does not reject it but leaves the caller unidentified and calls next. `UseAuthorization` decides what an already-identified caller may do, and is what can short-circuit here: for an endpoint marked `[Authorize]` — as `OrdersController.Create()` is — it stops the request instead of calling next when not allowed. The answer is `401` when no caller was identified, as here, and `403` when a known caller is not allowed. `RequestLoggingMiddleware`, registered earlier, already called `next` and is waiting for it to return — which is why it still logs the outcome, even though the endpoint never ran.
 
 ## In the Đơn Hàng system
 
@@ -72,9 +72,13 @@ app.MapControllers();
 app.Run();
 ```
 
-`ExceptionHandlingMiddleware` is the first of Đơn Hàng's own middleware calls, so it can catch a failure from anything below it; `RequestLoggingMiddleware` comes next so it logs every request regardless of what happens later; `UseCors` (whether a browser page from another site may call this API) is not this lesson's subject, only its fixed position is; `UseAuthorization` comes last among them, because it is the last thing allowed to say no before an allowed request's endpoint runs. The comment's "auth, routing" names this whole last group — the routing it means is `app.MapControllers()` choosing which method to call, a later and different step from the automatic routing in "How it works" that first matched the endpoint. Moving `RequestLoggingMiddleware` below `UseAuthorization` would not just reorder two lines: a rejected request would then short-circuit before `RequestLoggingMiddleware` ever called `next`, so it would stop appearing in the log at all — exactly what Try it below checks for.
+"Terminal" in the comment is loose: in this lesson's sense only the endpoint is terminal, and the auth steps stop only the requests they reject. `ExceptionHandlingMiddleware` is the first of Đơn Hàng's own middleware calls, so it can catch a failure from anything below it; that failure comes back out through its call to `next`, just like a response does. `RequestLoggingMiddleware` comes next, so it logs every request that comes back out through it, including one a later middleware short-circuits. `UseCors` (whether a browser page from another site may call Đơn Hàng's server) is not this lesson's subject, only its fixed position is. `UseAuthorization` needs the caller `UseAuthentication` identified, so it must come after it, and it must still come before the endpoint it protects.
 
-`RequestLoggingMiddleware` itself shows the before/after shape from "How it works". ASP.NET Core calls its `InvokeAsync` once for every request, passing an `HttpContext` — the request and the response bundled into one object — and `next`, a callable (a `RequestDelegate`) pointing at the rest of the pipeline:
+The comment's "auth, routing" names this whole last group. In the comment, "routing" means running the endpoint `app.MapControllers()` registered; choosing which endpoint happened earlier, in ASP.NET Core's own routing step.
+
+Moving `RequestLoggingMiddleware` below `UseAuthorization` would not just reorder two lines: a rejected request would then short-circuit before `RequestLoggingMiddleware` ever called `next`, so it would stop appearing in the log at all — exactly what Try it below checks for.
+
+`RequestLoggingMiddleware` itself shows the before/after shape from "How it works". ASP.NET Core creates it once, handing its constructor `next`, a callable (a `RequestDelegate`) pointing at the rest of the pipeline, and a `logger` it uses to write output. Then, for every request, it calls `InvokeAsync`, a method it finds by that exact name, passing only that request's `HttpContext` — the request and the response bundled into one object:
 
 ```csharp file=DonHang.Api/Middleware/RequestLoggingMiddleware.cs tag=stage-1 lines=9-24
 public sealed class RequestLoggingMiddleware(RequestDelegate next, ILogger<RequestLoggingMiddleware> logger)
@@ -95,17 +99,17 @@ public sealed class RequestLoggingMiddleware(RequestDelegate next, ILogger<Reque
 }
 ```
 
-Everything before `await next(context)` runs on the way in; everything after runs on the way out, once `next` has returned — however far it got. `context.Response.StatusCode` is read only in that second half, after the rest of the pipeline (including a short-circuit further down) has already decided it.
+Everything before `await next(context)` runs on the way in; everything after runs on the way out, once `next` has returned — however far it got. `context.Response.StatusCode` is read only in that second half, after the rest of the pipeline (including a short-circuit further down) has already decided it. `logger.LogInformation` then writes one entry to the server's output (an `info:` line naming the class, then the message), filling `{Method}`, `{Path}` and the rest with the values listed after it — that output is what `docker compose logs api` shows in Try it.
 
 ## Beginners often think…
 
-- **"Middleware order in the code doesn't matter — ASP.NET Core figures out the right order to run things in."** → Actually your own `app.Use...` calls run in exactly the order you wrote them; ASP.NET Core never reorders them. You notice this when moving a line changes what a request experiences, as it would for `UseAuthorization`.
+- **"Middleware order in the code doesn't matter — ASP.NET Core figures out the right order to run things in."** → Actually your own `app.Use...` calls run in exactly the order you wrote them; ASP.NET Core never reorders them. You notice this when moving a line changes what a request experiences, as moving `RequestLoggingMiddleware` below `UseAuthorization` would: rejected requests would vanish from the log.
 - **"Every middleware always calls the next one, so nothing can stop a request partway through the pipeline."** → Actually a middleware can short-circuit: write a response and return without calling next. You notice this every time an unauthenticated request gets `401` without ever reaching `OrdersController.Create()`.
 
 ## Try it (3 minutes)
 
-1. With the lab running (`scripts/up.sh`), run `curl -i -X POST http://localhost:8080/api/v1/orders` with no `Authorization` header.
-2. Run `docker compose logs api` and find the line for that request.
+1. From Đơn Hàng's top-level folder, with Docker running and the Flutter SDK installed (Docker starts Đơn Hàng's parts on your machine; `scripts/up.sh` uses both for you), start the lab with `scripts/up.sh`, which runs Đơn Hàng on your machine. Then run `curl -i -X POST http://localhost:8080/api/v1/orders` (`localhost` means your own machine) with no `Authorization` header (`curl` sends the request from the terminal; `-X POST` sets the method, `-i` prints the status line and headers, where you will see `401`).
+2. Run `docker compose logs api`, which shows what the `api` part of the lab printed while running, and find the line for that request. Why does that line appear even though `Create()` never ran?
 
 Expected result: curl prints `401`; the log line still reads `POST /api/v1/orders responded 401 in ...ms` — `RequestLoggingMiddleware` ran and logged the outcome even though `UseAuthorization` short-circuited the request before `OrdersController.Create()` ever ran.
 

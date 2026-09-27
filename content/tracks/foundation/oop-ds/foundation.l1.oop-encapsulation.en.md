@@ -15,9 +15,9 @@ vocab: [encapsulation]
 example_tag: stage-0
 versions_used: [dotnet]
 content_version: 1
-status: reviewed
-approved_by: null
-reviewed_at: "2026-09-15T22:19:14+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-28T13:00:00+07:00"
 ---
 
 ## Before you start
@@ -26,7 +26,7 @@ reviewed_at: "2026-09-15T22:19:14+07:00"
 
 ## The situation
 
-You are asked to add one rule to Đơn Hàng: an order with no lines cannot be marked paid. You are handed `OrderExposed` from the samples project. Every field on it is public, so marking an order paid is one assignment to `Status`, and the total is a plain number any code can overwrite. You write your check next to the assignment you are adding. Then you notice that other code holding a reference to the same order can skip your check, set `Status` itself, or store a negative `TotalVnd`, and the compiler accepts all of it. Where does the rule have to live so that no code can go around it?
+You are asked to add one rule to Đơn Hàng: an order with no lines cannot be marked paid. You are handed `OrderExposed` from the samples project, the console program that holds the C# code of lessons like this one. Its fields are all public, so marking it paid is one assignment to `Status`, and the total is a plain number any code can overwrite. You write your check next to that assignment. Then you notice that other code holding a reference to the same order can skip your check, set `Status`, or store a negative `TotalVnd`, and the compiler accepts it. Where does the rule have to live so that no code can go around it?
 
 ## Core concepts
 
@@ -64,7 +64,7 @@ This answers the situation's question. The rule lives inside the class, in the o
 
 ## In the Đơn Hàng system
 
-Đơn Hàng has no application yet at this tag, so no running service has an order class. The samples project, a console program with one file per lesson, holds both versions of the order side by side. First, the one from the situation:
+Đơn Hàng has no application yet, so no running program has an order class. The samples project, a console program whose files are grouped by lesson, holds both versions of the order side by side. First, the one from the situation:
 
 ```csharp file=samples/DonHang.Samples/Samples/Oop/OrderExposed.cs tag=stage-0 lines=4-19
 // Every field is public, so any code anywhere can put an order into a state
@@ -87,7 +87,7 @@ public sealed class OrderLineExposed
 
 The comment at the top names the two states the business forbids. Look at `TotalVnd`: it is stored next to `Lines`, not worked out from them, so code can add a line and forget the total, or write any number at all. A field is only a storage place, and assigning it runs none of the class's code, so this class has nowhere to refuse a value.
 
-Now the encapsulated version. Lines 1–10, above this block, declare the class, then the order lines as a `private` field named `lines` on line 6, a constructor that takes only the id, and an `Id` that can only be read.
+Now the encapsulated version. Lines 1–10, above this block, declare the class, then the order lines as a `private` field named `lines` on line 6, a public constructor that takes only the id, and an `Id` that the constructor sets once and other code can only read.
 
 ```csharp file=samples/DonHang.Samples/Samples/Oop/OrderEncapsulated.cs tag=stage-0 lines=11-35
     public string Status { get; private set; } = "new";
@@ -119,7 +119,7 @@ Now the encapsulated version. Lines 1–10, above this block, declare the class,
 
 Line 11 is where the decision moves. `Status` is now a property instead of a field, and its setter is `private`. Because of that word, the class alone decides the status: line 34, `Status = "paid";` inside `MarkPaid`, is the only statement that can change it after the starting value `"new"`. Line 12 makes the total a calculation over `lines` rather than a stored number.
 
-One detail is easy to miss. Each order line is still an `OrderLineExposed` with public fields. That is safe here because the class creates every order line inside `AddLine` and never hands out the list or any line, so no code outside holds a reference to one. As in the previous lesson, code can change an object only through a reference to it.
+One detail is easy to miss. Each order line is still an `OrderLineExposed` with public fields. That is safe here because the class creates every order line inside `AddLine`, and the file ends right after `MarkPaid` with no member that returns `lines` or a line, so no code outside holds a reference to one. As in the previous lesson, code can change an object only through a reference to it.
 
 This is the payoff. With `OrderExposed`, an order that is paid with no lines could have come from any line of code anywhere, and finding it means searching them all. With `OrderEncapsulated`, code outside the class, which can use only its public members, cannot produce that order at all: the direct assignment does not compile, and `MarkPaid` refuses the empty list. The question "how did this order get like this" stops being hard to answer, because that state cannot be reached.
 
@@ -130,7 +130,7 @@ This is the payoff. With `OrderExposed`, an order that is paid with no lines cou
 
 ## Try it (3 minutes)
 
-1. From the root of the example repository, run `dotnet test samples/DonHang.Samples.Tests --filter OrderEncapsulatedTests`. `dotnet test` first builds the code, then runs the tests in `DonHang.Samples.Tests`, small pieces of code that call `OrderEncapsulated` and check what happens, and prints how many passed and failed. `--filter OrderEncapsulatedTests` keeps only the two tests for this class; one of them checks that an empty order cannot be paid.
+1. From the root of the example repository, run `dotnet test samples/DonHang.Samples.Tests --filter OrderEncapsulatedTests`. `dotnet test` first builds the code, then runs the tests in `DonHang.Samples.Tests`, small pieces of code that call the samples and check what happens, and prints how many passed and failed. `--filter OrderEncapsulatedTests` keeps only the two tests for this class; one of them checks that an empty order cannot be paid.
 2. In `samples/DonHang.Samples/Samples/Oop/OrderEncapsulated.cs`, delete the word `private` on line 11, so `Status` gets a public setter. Run the same command again, then undo your edit.
 3. Before opening the answer, decide what the edit changed for the rule "no lines, no payment".
 

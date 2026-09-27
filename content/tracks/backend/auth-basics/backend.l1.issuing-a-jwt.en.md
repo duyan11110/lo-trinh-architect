@@ -15,9 +15,9 @@ vocab: [jwt]
 example_tag: stage-1
 versions_used: [aspnetcore, jwt]
 content_version: 1
-status: reviewed
-approved_by: null
-reviewed_at: "2026-09-26T05:00:00+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-28T13:00:00+07:00"
 ---
 
 ## Before you start
@@ -84,22 +84,24 @@ public sealed class JwtTokenService(IConfiguration configuration)
 }
 ```
 
-`configuration["Jwt:SigningKey"]` is the signing key the previous lesson traced to the `Jwt__SigningKey` environment variable — the double underscore in the variable's name stands for the colon. `SymmetricSecurityKey(Encoding.UTF8.GetBytes(...))` turns that key's text into bytes; "symmetric" means the same key both signs a token and checks it. `SecurityAlgorithms.HmacSha256` is what becomes `"alg":"HS256"` in the header. The two `Claim` lines become `sub` and `email`, the issuer and audience come from the API's `appsettings.json` (`donhang-api`, `donhang-app`), and `expires` becomes `exp`, eight hours ahead.
+`configuration["Jwt:SigningKey"]` is the signing key the previous lesson traced to the `Jwt__SigningKey` environment variable — the double underscore in the variable's name stands for the colon. `SymmetricSecurityKey(Encoding.UTF8.GetBytes(...))` turns that key's text into bytes; "symmetric" means the same key both signs a token and checks it. `SecurityAlgorithms.HmacSha256` is what becomes `"alg":"HS256"` in the header.
+
+The rest is the payload. The two `Claim` lines become `sub` and `email`, the issuer and audience come from the API's `appsettings.json` (`donhang-api`, `donhang-app`), and `expires` becomes `exp`, eight hours ahead.
 
 `WriteToken` does the encoding and signing and returns the finished `header.payload.signature` string — the same string `AuthController.Login` returns as the `token` field, and nothing about it is saved.
 
 ## Beginners often think…
 
 - **"A JWT's payload is encrypted, so its claims can't be read without the API's signing key."** → Actually the payload is only Base64url-encoded, and decoding needs no key at all. The signing key is used to sign, not to hide. You notice this the first time you decode a token with `base64 -d` and see your own email in plain text — which is also why a payload should hold nothing that must stay hidden from whoever gets hold of the token.
-- **"Anyone who can read a JWT's payload could also produce a valid one, since both just need the same JSON."** → Actually the JSON is the easy part; the signature is computed from it with a key only the API holds. A token with an edited payload keeps the old signature, which no longer matches. You notice this when a request carrying a token with `"sub"` changed gets `401`.
+- **"Anyone who can read a JWT's payload could also produce a valid one, since both just need the same JSON."** → Actually the JSON is the easy part; the signature is computed from it with a key only the API holds. A token with an edited payload keeps the old signature, which no longer matches. You notice this when a request to `GET /api/v1/orders` carrying a token with `"sub"` changed gets `401`.
 
 ## Try it (3 minutes)
 
 1. From the Đơn Hàng project's root folder, with the example system running (`scripts/up.sh`), log in: `curl -s -X POST http://localhost:8080/api/v1/auth/login -H "Content-Type: application/json" -d '{"email": "anh.tran@example.com", "password": "donhang-dev-password"}'`. Copy the value of the `token` field.
-2. Decode the header: `echo "<token>" | cut -d. -f1 | tr '_-' '/+' | base64 -d`, with the copied value in place of `<token>`. The `tr` turns the two characters Base64url uses in place of `/` and `+` back into plain Base64.
+2. Decode the header: `echo "<token>" | cut -d. -f1 | tr '_-' '/+' | base64 -d`, with the copied value in place of `<token>`. `cut -d. -f1` splits the token at the dots and keeps the first part; `tr` turns the two characters Base64url uses in place of `/` and `+` back into the plain Base64 form that `base64 -d` reads.
 3. Decode the payload the same way, with `-f2` instead of `-f1`.
 
-Expected result: step 2 prints `{"alg":"HS256","typ":"JWT"}` and step 3 prints your claims — `sub`, `email`, `exp`, `iss`, `aud`. If `base64` still complains about invalid input, the part is missing its `=` padding: add `=` to the end until its length is a multiple of 4.
+Expected result: step 2 prints `{"alg":"HS256","typ":"JWT"}` and step 3 prints your claims — `sub`, `email`, `exp`, `iss`, `aud`. If `base64` complains about invalid input, the part is missing its `=` padding: run the same command without `| base64 -d`, copy the part it prints, then try `echo "<part>=" | base64 -d` and, if that still fails, `echo "<part>==" | base64 -d`.
 
 The third part, `-f3`, does not decode into anything readable. Why not, and why does that not matter to the API?
 

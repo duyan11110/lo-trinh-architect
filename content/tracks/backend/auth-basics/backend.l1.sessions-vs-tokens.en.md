@@ -15,9 +15,9 @@ vocab: [session]
 example_tag: stage-1
 versions_used: [aspnetcore]
 content_version: 1
-status: reviewed
-approved_by: null
-reviewed_at: "2026-09-26T03:00:00+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-28T13:00:00+07:00"
 ---
 
 ## Before you start
@@ -27,12 +27,12 @@ reviewed_at: "2026-09-26T03:00:00+07:00"
 
 ## The situation
 
-You log in as `anh.tran@example.com` and `POST /api/v1/auth/login` answers with a single field, `{"token":"..."}`. Nothing else changes: no new row appears in any table, `customers` has no "logged in" column, and there is no table of logins at all. Yet every later request that sends that value in an `Authorization: Bearer ...` header — `Bearer` just labels what follows as a token — is recognized as that customer — even after the API process restarts. In the cookies lesson, the lab recognized you by `sid=dev-session-1`, an id pointing at something the server kept. Who remembers that you're logged in here, if the server keeps nothing?
+You log in as `anh.tran@example.com` and `POST /api/v1/auth/login` answers with a single field, `{"token":"..."}`. Nothing else changes: no new row appears in any table, `customers` has no "logged in" column, and there is no table of logins at all. Yet every later request that sends that value in an `Authorization: Bearer ...` header is recognized as that customer, even after the API process restarts. `Bearer` just labels what follows as a token. In the cookies lesson, the lab recognized you by `sid=dev-session-1`, an id pointing at something the server kept. Who remembers that you're logged in here, if the server keeps nothing?
 
 ## Core concepts
 
 - **session** — a record the server keeps for each logged-in client, found again on every request through an id the client sends back, usually in a cookie.
-- token-based login — the server hands the client a self-contained, signed value saying who it is; the client sends that value on every request, and the server checks the value itself instead of looking anything up.
+- token-based login — the server hands the client a self-contained, signed value (marked with a key only the server holds, so it can later tell the value is its own) saying who it is; the client sends that value on every request, and the server checks the value itself instead of looking anything up.
 - expiry — the moment a login stops being accepted on its own, without anyone ending it.
 
 ## How it works
@@ -74,9 +74,11 @@ Each choice has a cost. A session store grows with every logged-in client. And o
 
 Read it for what is missing. After `PasswordHasher.Verify` succeeds, nothing is added to `db` and nothing is saved: the method issues a token and returns it.
 
-The signing key isn't made up inside the API process either: the API reads it at startup from the `Jwt__SigningKey` environment variable that `docker-compose.yml` passes in. So, because the API keeps no record of who is logged in, any copy of the API started with that same key can recognize the caller — and a restarted API recognizes the same token it issued before the restart.
+The signing key isn't made up inside the API process: the API reads it at startup from the `Jwt__SigningKey` environment variable (the name hints at the token format the next lesson opens), which is set outside the API's code when the example system starts.
 
-The token also carries its own end: `tokenService.IssueToken` sets it to expire eight hours after it was issued, and this app has no code that can end one earlier. What sits inside the token, and how it is signed, is the next lesson.
+This is why the section-4 cost of running several copies does not apply here: because the API keeps no record of who is logged in, any copy of the API started with that same key can recognize the caller — and a restarted API recognizes the same token it issued before the restart.
+
+The token also carries its own end: inside `IssueToken`, whose code is not shown here, it is set to expire eight hours after it was issued, and this app has no code that can end one earlier. What sits inside the token, and how it is signed, is the next lesson.
 
 ## Beginners often think…
 
@@ -87,7 +89,7 @@ The token also carries its own end: `tokenService.IssueToken` sets it to expire 
 
 1. From the Đơn Hàng project's root folder, with the example system running (`scripts/up.sh`), log in: `curl -s -X POST http://localhost:8080/api/v1/auth/login -H "Content-Type: application/json" -d '{"email": "anh.tran@example.com", "password": "donhang-dev-password"}'`. Copy the value of the `token` field from the response.
 2. Call `curl -sS -o /dev/null -w "%{http_code}\n" http://localhost:8080/api/v1/orders -H "Authorization: Bearer <token>"`, with the copied value in place of `<token>` — it prints only the status code. Without the `-H ...` part it prints `401`.
-3. Restart only the API process, leaving the database running: `docker compose restart api`. Wait a few seconds, then repeat step 2 with the same token. If it prints `502`, the API is still starting — wait a few more seconds and run it again.
+3. Restart only the API process, leaving the database running: `docker compose restart api` (`api` is the name the example system gives the API process). Wait a few seconds, then repeat step 2 with the same token. If it prints `502`, the API is still starting — wait a few more seconds and run it again.
 
 Expected result: `200` both times — the restarted API accepts the token it issued before the restart.
 

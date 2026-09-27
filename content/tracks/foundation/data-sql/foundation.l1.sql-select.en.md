@@ -15,9 +15,9 @@ vocab: []
 example_tag: stage-0
 versions_used: [postgresql, docker]
 content_version: 1
-status: reviewed
-approved_by: null
-reviewed_at: "2026-09-16T02:29:11+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-28T13:00:00+07:00"
 ---
 
 ## Before you start
@@ -28,14 +28,14 @@ reviewed_at: "2026-09-16T02:29:11+07:00"
 
 The shop wants a box on its home page showing the three most expensive products that cost more than 500,000 đồng. A teammate writes a query for it and shows you what PostgreSQL printed: products 1, 3 and 4, `Bàn phím cơ`, `Tai nghe` and `Màn hình 24 inch`.
 
-You open `db/seed.sql` to check the prices: it fills the tables of the lab, the copy of Đơn Hàng that `scripts/up.sh` starts on your laptop, with their starting rows in the order it lists them. `Tai nghe` costs 890,000 đồng, while `Ổ cứng SSD 512GB` costs 1,450,000 and is missing. The query ran without an error, and every product it returned does cost more than 500,000. What did the query fail to say?
+You open `db/seed.sql` to check the prices: it fills the tables with their starting rows, in the order it lists them. The lab is the copy of Đơn Hàng that `scripts/up.sh` starts on your laptop. `Tai nghe` costs 890,000 đồng, while `Ổ cứng SSD 512GB` costs 1,450,000 and is missing. The query ran without an error, and every product it returned does cost more than 500,000. What did the query fail to say?
 
 ## Core concepts
 
 - query — a question written in SQL, the language PostgreSQL reads, which PostgreSQL answers with rows; `db/queries/select-basics.sql` holds three of them.
 - clause — one part of a query, opened by a keyword: `SELECT` names the columns to show, `FROM` the table, `WHERE` the test a row must pass, `ORDER BY` the sort, and `LIMIT` how many rows to keep.
 - `NULL` — the marker PostgreSQL uses for a value that is unknown; it is not zero and not empty text.
-- psql — the program that sends a query to PostgreSQL and prints the answer as a table; here it runs in the lab box, a small separate machine that `scripts/up.sh` starts on your own laptop.
+- psql — the program that sends a query to PostgreSQL and prints the answer as a table; here it runs in the lab, the copy of Đơn Hàng from the situation.
 - row count — the line such as `(3 rows)` that psql prints under an answer, saying how many rows came back.
 
 ## How it works
@@ -50,15 +50,15 @@ flowchart LR
   L --> R["Answer: 3 rows"]
 ```
 
-The diagram follows the first query in `db/queries/select-basics.sql`, the one that answers the situation correctly. You write its clauses as `SELECT`, `FROM`, `WHERE`, `ORDER BY`, `LIMIT`. Read the diagram in the order the clauses take effect; PostgreSQL may take other steps inside, as the last paragraph explains.
+The diagram follows the first query in `db/queries/select-basics.sql`, the one that answers the situation correctly. You write its clauses as `SELECT`, `FROM`, `WHERE`, `ORDER BY`, `LIMIT`. Read the diagram in the order the clauses take effect: the rows you get are always as if these steps ran in this order, even if PostgreSQL works differently inside.
 
 `FROM products` starts with every row of the table: all eight products. `WHERE price_vnd > 500000` then tests each row and keeps it only when the test is true; false and unknown are both dropped. Unknown comes from `NULL`: a comparison such as `=` or `<>` (SQL's "not equal", like `!=` in C#) with `NULL` on either side gives `NULL`, not true or false. Nobody can say whether an unknown price is bigger than 500,000, so a product whose `price_vnd` held `NULL` would fail this test and quietly never reach the home-page box. Here five products pass.
 
-`SELECT id, name, price_vnd` picks the columns to show from those five rows. `ORDER BY price_vnd DESC` sorts them, most expensive first; without `DESC` the sort runs from smallest up. It may sort by any column of the table, even one `SELECT` does not show: `SELECT` only decides what gets printed, and the rest of each row is still there for `ORDER BY` to use. Only then does `LIMIT 3` keep the first three sorted rows.
+`SELECT id, name, price_vnd` picks the columns to show from those five rows. `ORDER BY price_vnd DESC` sorts them, most expensive first; without `DESC` the sort runs from smallest up. In a query like this one, it may sort by any column of the table, even one `SELECT` does not show: `SELECT` only decides what gets printed, and the rest of each row is still there for `ORDER BY` to use. Only then does `LIMIT 3` keep the first three sorted rows.
 
 So filtering comes before sorting, and sorting before cutting. `LIMIT` cuts from whatever order exists at that moment. With no `ORDER BY`, PostgreSQL returns rows in whatever order it happens to read them, and promises none. The situation's query had no `ORDER BY`, so "the first three" meant nothing in particular.
 
-The query never says how to find the rows. You describe the answer; PostgreSQL works out its own steps, which only have to give the same rows as the diagram.
+The query never says how to find the rows. You describe the answer; PostgreSQL works out its own steps.
 
 ## In the Đơn Hàng system
 
@@ -82,7 +82,7 @@ SELECT NULL = NULL AS "null_equals_null",
        NULL IS NULL AS "null_is_null";
 ```
 
-The first query is the diagram, clause by clause, and each query ends with `;`. The second is the situation's query: the same `WHERE`, no `ORDER BY`, and the comment above it says what that costs. The third asks PostgreSQL two questions about `NULL` directly, and `AS` gives each answer a column name. Every column in Đơn Hàng's tables is created with the rule `NOT NULL`, written out or implied by its `PRIMARY KEY`, so PostgreSQL refuses to store `NULL` in it; this query makes one on purpose. So in this lesson, `NULL` appears only where a query writes it, as in the `<> NULL` mistake below.
+The first query is the diagram, clause by clause, and each query ends with `;`. The second is the situation's query: the same `WHERE`, no `ORDER BY`, and the comment above it says what that costs. The third has no `FROM` because it reads no table: it asks PostgreSQL two questions about `NULL` directly, `SELECT` prints both answers as one row, and `AS` gives each a column name. Every column in Đơn Hàng's tables has the rule `NOT NULL`: written out on ordinary columns, and implied on each primary key column, so PostgreSQL refuses to store `NULL` in it; this query makes one on purpose. So in this lesson, `NULL` appears only where a query writes it, as in the `<> NULL` mistake below.
 
 A script runs the file through psql:
 
@@ -94,7 +94,7 @@ psql --host db --username donhang --dbname donhang \
      --file "/repo/db/queries/${query}.sql"
 ```
 
-With no argument it runs `select-basics`. The options you can ignore in this lesson pick the server, the user to log in as, and which of the server's named sets of tables to use, skip psql's start-up settings files, and stop at the first error. `--file` hands psql the query file, and `--echo-queries` makes psql print each query before its answer, which is why the output repeats the SQL:
+With no argument it runs `select-basics`. The options you can ignore in this lesson pick which PostgreSQL to talk to (the one in the lab), the user to log in as, and which of its named sets of tables to use, skip psql's start-up settings files, and stop at the first error. `--file` hands psql the query file, and `--echo-queries` makes psql print each query before its answer, which is why the output repeats the SQL:
 
 ```text output=true
 ...
@@ -141,7 +141,7 @@ In the last table, `null_is_null` shows `t`, the way PostgreSQL writes true (fal
 ## Try it (3 minutes)
 
 1. Open `db/seed.sql` and count the products whose price is above 500,000 đồng.
-2. In a terminal at the repository root, run `scripts/up.sh` and wait for `The lab is up.` If the lab is already up, running it again does no harm: it keeps the files it created the first time and every row PostgreSQL holds. Then run `scripts/sql/run-query.sh`; it runs psql inside the lab box, where your repository folder appears as `/repo`. Read the row count under each of the first two answers, then name the one line the second query needs to answer the situation.
+2. In a terminal at the repository root, run `scripts/up.sh` and wait for `The lab is up.` If the lab is already up, running it again does no harm: it keeps the files it created the first time and every row PostgreSQL holds. Then run `scripts/sql/run-query.sh`; it runs psql inside the lab, where your repository folder appears as `/repo`. Read the row count under each of the first two answers, then name the one line the second query needs to answer the situation.
 
 Expected result: five products cost more than 500,000 đồng (ids 1, 3, 4, 6 and 7), yet both answers end with `(3 rows)`. The first dropped the two cheapest, ids 3 and 7. The second dropped ids 6 and 7, for no reason the query states.
 

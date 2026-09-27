@@ -15,9 +15,9 @@ vocab: [dns]
 example_tag: stage-0
 versions_used: [docker]
 content_version: 1
-status: reviewed
-approved_by: null
-reviewed_at: "2026-09-08T06:46:15+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-28T13:00:00+07:00"
 ---
 
 ## Before you start
@@ -34,7 +34,7 @@ The script from the previous lesson knocked on five doors: five name-and-port pa
 - resolver — a machine, or a program on one, that answers the question "what address does this name have"; each machine is configured with a list of resolvers to ask, usually handed to it by the network it connects to. The machines that hold the true answer for a name, rather than fetch it, are called name servers.
 - record — one stored line of an answer; the kind this lesson uses says: this name has this address. One name may have several; one address may be reached by several names.
 - time-to-live — the length of time, stated together with a record, for which whoever receives that record may keep using it before asking again.
-- hosts file — a file of fixed name-and-address lines kept on one machine, which the machine's ordinary name lookup reads before any resolver is asked; some tools, `nslookup` among them, skip it and ask a resolver directly.
+- hosts file — a file of fixed name-and-address lines kept on one machine, which the machine's ordinary name lookup reads before any resolver is asked; some tools, such as `nslookup` (a command that asks a resolver and prints the reply), skip it and ask a resolver directly.
 
 ## How it works
 
@@ -43,22 +43,22 @@ flowchart LR
   P["A program that uses the machine's ordinary name lookup"] --> H["The hosts file on this machine"]
   H -->|listed, as donhang.local is| L["127.0.0.1"]
   H -->|not listed, as db is| R["The resolver this machine was given"]
-  R -->|it still has the answer from an earlier question| A["172.28.0.11"]
+  R -->|it already holds or still has the answer| A["172.28.0.11"]
   R -->|it has no answer for this name| U["The name servers that hold the name"]
-  U --> A
+  U --> B["The address"]
 ```
 
-In the situation above, `db` is a name and `172.28.0.11` is the address behind it. The name carries no address inside it, so something has to look it up: that is DNS.
+The name `db` carries no address inside it, so something has to look its address up: that is DNS.
 
-An ordinary name lookup starts at home: the machine reads its own hosts file first, and a name listed there is answered from it, with nobody asked. On the lab box that file holds one such line, pairing `donhang.local` with `127.0.0.1`. The lab's own configuration puts that line there; `STAGE.md` asks you to add the identical one on your own machine. On a machine that has it the name means that machine itself; on one without it the name means nothing, which is why your colleague saw nothing.
+An ordinary name lookup starts at home: the machine reads its own hosts file first, and a name listed there is answered from it with nobody asked. On the lab box the lab's configuration pairs `donhang.local` with `127.0.0.1` there; `STAGE.md` asks you to add the identical line on your own machine. The lab also makes its pages reachable at your laptop's own address, so on your laptop `127.0.0.1` leads there too; how is not this lesson's point. Without the line the name means nothing, which is why your colleague saw nothing.
 
-A name the file does not list goes to the resolver the network gave the machine when it connected. That resolver is run by the lab itself and holds the names of the machines on its network, so it answers `db` with `172.28.0.11`, `lab` with `172.28.0.12`, and `no-such-host.donhang` by saying no such name exists.
+A name the file does not list goes to the resolver the network gave the machine when it connected. That resolver is run by the lab and holds the true answer for the machines on its network, so for those names it is also their name server: it answers `db` with `172.28.0.11` and `lab` with `172.28.0.12`. For `no-such-host.donhang`, which it does not hold, it passes back the reply that no such name exists.
 
-For every name there are name servers whose job is to hold the true answer for it, normally more than one, so the answer survives a machine going down. That is also where it changes when a name is pointed at another machine. A resolver that does not hold a name asks them on your behalf, working down the chain towards the ones that hold it, and passes the answer back. Every resolver that handles an answer may keep it for the time-to-live it came with, and hand it on without asking again. So a name is not a machine, and the answer you get is not always fresh: it is the last one written down, good until its time runs out.
+For every name there are name servers that hold its true answer, normally more than one so it survives a machine going down; that is also where it changes when the name is pointed elsewhere. A resolver that does not hold a name asks name servers: one that does not hold it replies not with an address but with which name servers to ask next, and the resolver asks those and passes the answer back. The resolver that fetched an answer may keep it for the time-to-live it came with and hand it on without asking again, so the answer you get is the last one written down, good until its time runs out.
 
 ## In the Đơn Hàng system
 
-The lab has a script that asks for three names and then prints the machine's own file of fixed answers. The `exec` line re-runs the script inside the lab box, and each `grep` only trims `nslookup`'s output down to the lines shown below; you do not need to read how either is written.
+The lab has a script that asks for three names and then prints the machine's own file of fixed answers. Apart from the `nslookup` and `cat` commands, nothing in this block needs reading.
 
 ```bash file=scripts/network/resolve.sh tag=stage-0 lines=4-20
 # Everything below runs inside the lab box; this line puts it there.
@@ -105,13 +105,13 @@ ff02::2	ip6-allrouters
 
 `nslookup` is the tool that asks a resolver and prints what comes back. The first two questions get one address each: `db` is `172.28.0.11`, the database machine, and `lab` is `172.28.0.12`, the box the script itself runs on. Both answers came from the resolver the lab gave the box, because `nslookup` always asks one, and neither name is in the file at the bottom either. The third name comes back as `NXDOMAIN`, which is how a resolver says that no such name exists — a different outcome from the closed port of the previous lesson, where the machine was found and nothing was listening.
 
-Then read the file. Five of its lines give addresses written a second way, which this lesson does not use and you can skip. `172.28.0.12` is in it too, under a second name, `donhang-lab`: one machine, one address, two names that reach it. The line `127.0.0.1 donhang.local` is the identical one `STAGE.md` asks you to add on your own machine, and it is why that name opens the local site while the resolver the lab box uses has no answer for it.
+Then read the file. Its first line is where `localhost` gets its number, before any resolver is asked. Five of its lines give addresses written a second way, which this lesson does not use and you can skip. `172.28.0.12` is in it too, under a second name, `donhang-lab`: one machine, one address, two names that reach it. The line `127.0.0.1 donhang.local` is the identical one `STAGE.md` asks you to add on your own machine, and it is why that name means the lab box itself there, without any resolver being asked.
 
-That `nslookup` skips the file cuts both ways: the file is shown here only because the script's last line prints it, and a program that does read the file would not have found `db` or `lab` there in any case.
+The file is printed only for you to read; `nslookup` never used it. A program that does read it would not have found `db` or `lab` there anyway.
 
 ## Beginners often think…
 
-- **"Changing a DNS record takes effect everywhere immediately."** → Actually every resolver that already handed out the old answer may keep giving it until the time-to-live it stated runs out, and that clock started when it received the answer, not when you made the change. You notice this when you point a name at a new machine, reach the new one from a machine that never asked before, and keep landing on the old one from your own laptop.
+- **"Changing a DNS record takes effect everywhere immediately."** → Actually every resolver that already handed out the old answer may keep giving it until the time-to-live it stated runs out, and that clock started when it received the answer, not when you made the change. You notice this when you point a name at a new machine, reach the new one from a machine on another network, whose resolver never held the old answer, and keep landing on the old one from your own laptop.
 - **"One name equals one machine."** → Actually a name is a label on an address rather than the machine itself, so one address can carry several names, as `172.28.0.12` carries both `lab` and `donhang-lab`, and one name can be answered with several addresses. You notice this when two names you took for two systems fail together, because they were always one machine.
 - **"If a name works on my machine, it works on yours."** → Actually the first place a lookup goes is your own hosts file, which nobody else has a copy of. You notice this when `donhang.local` opens on your laptop and gives your colleague nothing, because the line is in your file and only yours.
 
@@ -120,18 +120,18 @@ That `nslookup` skips the file cuts both ways: the file is shown here only becau
 1. With the lab running (start it with `scripts/up.sh`), run `scripts/network/resolve.sh` and read the three answers against the file it prints last.
 2. Search that file for the two names the script asked about first, `db` and `lab`.
 
-Expected result: `db` answers `172.28.0.11`, `lab` answers `172.28.0.12`, and `no-such-host.donhang` comes back as `NXDOMAIN`. Neither `db` nor `lab` is anywhere in the file, so both addresses came from a resolver and not from the machine's own list. The names the file does hold are `localhost`, with `ip6-localhost` and `ip6-loopback` as its other spellings, four further fixed names the system puts there, `donhang.local` at `127.0.0.1`, and `donhang-lab` at the same address the resolver just gave for `lab`.
+Expected result: `db` answers `172.28.0.11`, `lab` answers `172.28.0.12`, and `no-such-host.donhang` comes back as `NXDOMAIN`. Neither `db` nor `lab` is anywhere in the file, so both addresses came from a resolver and not from the machine's own list. Among the names the file does hold are `localhost`, `donhang.local` at `127.0.0.1`, and `donhang-lab` at the same address the resolver just gave for `lab`.
 
 ## Connections
 
 - [[foundation.l1.ip-and-ports]] — the step before this one: `db:5432` worked there because the name half of it was answered by what this lesson describes.
-- [[foundation.l1.tls-and-https]] — where the name matters for a second reason: what a machine proves it is gets checked against the name you asked for, not the address you reached.
-- [[k8s.l1.service-and-dns]] — the same idea one layer up: there too a name is turned into an address, by a resolver that a group of machines runs for itself.
+- [[foundation.l1.tls-and-https]] — where the name you asked for matters for a second reason, once a connection is secured.
+- [[k8s.l1.service-and-dns]] — the same idea at a larger scale: there too a name is turned into an address, by a resolver that a group of machines runs for itself.
 
 ## Five-line summary
 
 1. DNS turns a name into an IP address by asking resolvers; a record in the answer carries a time-to-live limiting how long it is kept.
 2. A machine reads its own hosts file before asking any resolver, so a name can mean one thing here and nothing elsewhere.
-3. A resolver that does not hold a name asks others down the chain, until it reaches the ones that hold it.
+3. A resolver that does not hold a name asks name servers, each reply naming which to ask next, until it reaches those holding it.
 4. Because answers are kept for their time-to-live, a change to a name is seen at different moments on different machines.
 5. The name is not the machine: one address can carry several names, and one name can be answered with several addresses.

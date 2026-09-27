@@ -15,9 +15,9 @@ vocab: []
 example_tag: stage-0
 versions_used: [http, git]
 content_version: 1
-status: reviewed
-approved_by: null
-reviewed_at: "2026-09-20T23:39:27+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-28T13:00:00+07:00"
 ---
 
 ## Before you start
@@ -34,7 +34,7 @@ You are working through the HTTP scripts of Đơn Hàng at `stage-0`, the first 
 - how-to — a page that does one named thing for a reader who already has the context; you search for the task, then follow only those steps.
 - reference — a dry listing of what exists: the options, their defaults, the errors; you search it for one entry and read nothing else.
 - explanation — a page about why the thing was built this way; you read it when the reference is correct but still makes no sense to you.
-- specification — the standards document that defines something with no single product behind it, such as an HTTP header; it is a reference, and it has no version selector.
+- specification — the standards document that defines something with no single product behind it, such as an HTTP header; it is a reference. Internet protocols such as HTTP are defined in numbered documents called RFCs. An RFC has no version selector: a changed specification is published as a new RFC with a new number, and that later RFC says at its top which earlier RFCs it obsoletes (replaces) or updates (amends). That number is what you note in place of a version; check that no newer RFC obsoletes or updates it.
 - version selector — the control near the top of a documentation page that chooses which release (version) of the product the page describes.
 
 ## How it works
@@ -50,24 +50,24 @@ flowchart TD
   R --> V
   E --> V
   V -->|no| S["Move the selector, read again"]
-  V -->|yes| C["Read; on disagreement name which of three is wrong"]
+  V -->|yes| C["Read; on disagreement name which of three you bet on"]
 ```
 
-In the situation above, the header you met is defined in a reference — for a standard header, that reference is a specification — so a blog was the wrong first stop: you had a lookup question and went to a story. Start from your question, not from the search box.
+The situation's header is defined in a specification, a reference, so a blog was the wrong first stop.
 
-You still search, but for the product's own documentation site first; then search inside it, not the whole web. When the thing has no product — a header, a status code — search for the specification by name.
+Search for the product's own documentation site first, then inside it, not the whole web. When the thing has no product, such as a header, search for its specification by name. Its version is its number: note it and check that no newer number obsoletes or updates it; if one does, open the newer number and read that instead. The official RFC page says at its top when a later RFC replaces or amends it: `This RFC is now obsolete, see RFC <number>` or `Updated by` with the later numbers; if neither appears, nothing newer replaces or amends it.
 
-If you have never made the thing work, you want a tutorial, in its own order. If you have the context and want one named task done, you want a how-to. If you want one option, one default or one error message, you want a reference: jump to that entry rather than read from the top; you will usually get there faster. If the reference is correct and still makes no sense, you want an explanation — of the four kinds above, a shape you read through rather than search; a tutorial is read in order too, but for its steps.
+If you have never made the thing work, you want a tutorial. If you have the context and want one named task done, you want a how-to. If you want one option, default or error message, you want a reference: jump to that entry, usually faster than reading from the top. If the reference is correct yet makes no sense, you want an explanation, which, like a tutorial, you read through rather than search.
 
 Sites label these differently: a how-to may sit under Tasks, an explanation under Concepts. Match the shape, not the word.
 
-Once the page is open, find the version selector before you read the first sentence. A documentation site usually keeps one set of pages per release, and the default set is not always the release you are running. Move it to your version, then read.
+Once the page is open, find the version selector before the first sentence. A documentation site usually keeps one set of pages per release, and its default is not always your release. Move it to your version, then read. For a specification, the version check in the diagram is its document number, not a selector.
 
-Then compare the page with what your machine does. When they disagree, check three things: the version the page describes, the version you are running, and an assumption you made about your own setup. Name which one you are betting on before changing any code.
+When the page and your machine disagree, check three things: the version the page describes, the version you are running, and an assumption you made about your own setup. Name which one you are betting on before changing any code.
 
 ## In the Đơn Hàng system
 
-The repository keeps a checklist for exactly this, written in Vietnamese so that learning to read English pages is not itself a prerequisite. Its first box you answer before you open anything, and the last one you answer from your own machine; the two in the middle you answer with the page on screen, before you read a word of it.
+The repository keeps a checklist for exactly this, written in Vietnamese so that learning to read English pages is not itself a prerequisite. You answer the first box before opening anything, the middle two with the page on screen before you read its body, and the last from your own machine.
 
 ```markdown file=docs/craft/doc-reading-checklist.md tag=stage-0 lines=5-10
 - [ ] Tôi đang tìm **loại** thông tin nào: hướng dẫn nhập môn, hướng dẫn làm một
@@ -94,20 +94,22 @@ Tài liệu chính thức thường **dễ** hơn bài blog, vì nó không cố
 
 That short list of words is both the problem and the solution. Technical documentation reuses a narrow set of words with fixed meanings, so the same words keep coming back across products and pages. Read each sentence for its structure — what is required, of whom, under which condition — rather than one word at a time.
 
-The sharpest case is a specification, where `MUST`, `SHOULD` and `MAY` in capitals mark three different strengths of requirement, not three degrees of politeness. The specification says so itself, and it says the capitals are what make the difference: the same words in lower case are ordinary English. `MUST` is an absolute requirement; `SHOULD` is recommended — you may depart from it only for a valid reason whose full implications you have weighed; `MAY` is truly optional. The checklist above writes them in lower case because it is prose, not a specification.
+The sharpest case is a specification, where `MUST`, `SHOULD` and `MAY` in capitals mark three different strengths of requirement, not three degrees of politeness. A specification that uses these words usually states near its top that these words carry these meanings; recent ones, such as the HTTP specification, add that they count only when written in capitals, and in lower case they are ordinary English.
+
+`MUST` is an absolute requirement; `SHOULD` is recommended — you may depart from it only for a valid reason whose full implications you have weighed; `MAY` is truly optional. The checklist above writes them in lower case because it is prose, not a specification.
 
 ## Beginners often think…
 
 - **"Official docs are harder than blog posts, so start with blogs."** → Actually a blog post often leaves out the release it was written against and folds the author's own setup into the steps, so you cannot tell which of its sentences applies to you, while an official page usually states its version at the top. You notice this when a blog's command fails on an option your release does not have.
 - **"If my English is weak, machine translation of the docs is enough."** → Actually translation tends to flatten exactly the words that carry the meaning, turning `MUST`, `SHOULD` and `MAY` into one polite verb and `deprecated` — still working, but no longer recommended and often on its way out — into "old". You notice this when the translated sentence reads perfectly and your code still does the opposite.
-- **"If the page disagrees with my machine, the page is wrong."** → Actually the page's release, your release and your own assumption are all candidates, and your own assumption is the one people skip. You notice this when the header you were certain you had sent turns out never to have been sent.
+- **"If the page disagrees with my machine, the page is wrong."** → Actually the page's release, your release and your own assumption are all candidates, and your own assumption is the easiest one to skip. You notice this when the header you were certain the server returned turns out to have been added by something between you and the server, such as a cache.
 
 ## Try it (3 minutes)
 
-1. With the example repository at `stage-0` and the lab up — run `scripts/up.sh` once; it starts the site and the database the scripts talk to — run `scripts/http/cache-headers.sh` and copy the exact header line it prints under the first response.
-2. Before searching for anything, write two lines: which of the four shapes you need for that header, and which release you are asking about. Then open the official reference page for that header — for a standard header, that page is its specification — search the page for the header name, and read only the paragraph you land on. A specification has no version selector, so note the document's own number instead and move on.
+1. With the example repository at `stage-0`, run `scripts/up.sh` once. It starts the lab box — a small Linux machine where every script runs, so the output is the same on any computer — plus the site the scripts call and the database, and prints `The lab is up.` when ready. Then run `scripts/http/cache-headers.sh` and copy the exact `Cache-Control` line it prints under the first response.
+2. Before searching for anything, write two lines: which of the four shapes you need for that header, and what stands in for its version (for a header, the specification's number). Then open the official reference page for that header — for a standard header, that page is its specification — search the page for `max-age`, the word before the `=` in the line you copied, and read only the paragraph that defines it. Note the number printed at its top and move on.
 
-Expected result: you reach the defining sentence in under a minute without reading the page from the top, and you can state in one sentence what the value promises — or, if the page and the script look like they disagree, you can name which of the three candidates you will check first.
+Expected result: you reach the defining sentence in under a minute without reading the page from the top, and you can state in one sentence, in the paragraph's own wording, what the value promises and compare it with the blog's claim from the situation — or, if the page and the script look like they disagree, you can name which of the three candidates you will check first.
 
 ## Connections
 
@@ -118,7 +120,7 @@ Expected result: you reach the defining sentence in under a minute without readi
 
 ## Five-line summary
 
-1. Read the official page for your own version, in the shape that fits your question, and search it rather than read it.
+1. Read the official page for your version, in the shape that fits your question, and search a reference rather than read it from the top.
 2. Documentation comes in four shapes — tutorial, how-to, reference, explanation — and a reference is searched, not read from the top.
 3. Check the version selector before the first sentence; a page for another release answers a question you did not ask.
 4. Technical English is a small vocabulary used precisely, so read each sentence's structure instead of translating it word by word.

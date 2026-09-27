@@ -1,213 +1,146 @@
 {
   "id": "backend.l1.hosting-and-program-cs",
   "technical": {
-    "reviewed_at": "2026-09-24T16:20:00+07:00",
-    "reviewer": "claude-opus-5[1m]",
+    "reviewed_at": "2026-09-27T16:00:00+07:00",
+    "reviewer": "claude-opus-5-5[1m]",
     "claim_verdicts": [
       {
         "n": 1,
         "verdict": "verified",
-        "evidence": "Docs mirror, .NET 10 moniker block (range=\">= aspnetcore-10.0\"): \"WebApplication.CreateBuilder ... initializes a new instance of the WebApplicationBuilder class with preconfigured defaults\". The same page shows `var builder = WebApplication.CreateBuilder(args);` followed by `builder.Services.Add...` and `builder.Configuration`, i.e. services and configuration are registered on that object.",
-        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/minimal-apis/includes/webapplication10.md:15"
+        "evidence": "webapplication10.md:15 \"WebApplication.CreateBuilder initializes a new instance of the WebApplicationBuilder class with preconfigured defaults\". service-lifetimes.md:39-41 \"Singleton lifetime services are created either: The first time they're requested.\" - registration records availability; the service is created/used only when requested.",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/minimal-apis/includes/webapplication10.md:15; refs/dotnet-docs/docs/core/extensions/dependency-injection/service-lifetimes.md:39"
       },
       {
         "n": 2,
         "verdict": "verified",
-        "evidence": "fundamentals/middleware/index.md:55 \"The call to WebApplication.Run ... at the end of the code block runs the app and blocks the calling thread until host shutdown.\" fundamentals/servers/index.md: \"Kestrel server is the default, cross-platform HTTP server implementation\" (this app self-hosts in a Linux container; no IIS). Ran on SDK 10.0.300: after builder.Build(), builder.Services.AddSingleton<object>() throws InvalidOperationException \"The service collection cannot be modified because it is read-only\" - registration really does end at Build().",
-        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/middleware/index.md:55; fundamentals/servers/index.md; local run, dotnet 10.0.300"
+        "evidence": "fundamentals/index.md:336-338 \"The WebApplicationBuilder.Build method configures a host with a set of default options, such as: Using Kestrel as the web server\". middleware/index.md:55 \"The call to WebApplication.Run at the end of the code block runs the app and blocks the calling thread until host shutdown.\"",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/index.md:336; refs/aspnetcore-docs/aspnetcore/fundamentals/middleware/index.md:55"
       },
       {
         "n": 3,
         "verdict": "verified",
-        "evidence": ".NET docs mirror: \"Service registration is order-independent except when registering multiple implementations of the same type.\" Every builder.Services.Add... call in Program.cs lines 10-50 registers a distinct type (AddControllers, AddProblemDetails, AddDonHangInfrastructure -> DonHangDbContext/IOrderRepository/INotifier, OrderService, JwtTokenService, AddAuthentication/AddJwtBearer, AddAuthorization, AddCors), so the exception does not apply.",
+        "evidence": "service-registration.md:128 \"Service registration is order-independent except when registering multiple implementations of the same type.\" Lesson limits the reorder statement to AddScoped<OrderService>/AddSingleton<JwtTokenService> (different types) and keeps the same-type caveat.",
         "source": "refs/dotnet-docs/docs/core/extensions/dependency-injection/service-registration.md:128"
       },
       {
         "n": 4,
         "verdict": "verified",
-        "evidence": "fundamentals/routing.md:73 \"An endpoint is something that can be: Selected, by matching the URL and HTTP method. Executed, by running the delegate.\" mvc/controllers/routing.md:94 \"Call MapControllers to map attribute routed controllers.\" Ran a controller with [Route(\"api/v1/ping\")] + [HttpGet] and [HttpGet(\"{id:int}\")] on dotnet 10.0.300: GET /api/v1/ping -> 200, POST /api/v1/ping -> 405; one method-and-path pair per attribute-routed action.",
-        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/routing.md:73; mvc/controllers/routing.md:94; local run"
+        "evidence": "routing.md:72-75 \"An endpoint is something that can be: Selected, by matching the URL and HTTP method. Executed, by running the delegate.\" mvc/controllers/routing.md:264 \"you call MapControllers to map attribute routed controllers.\" git show stage-1:DonHang.Api/Program.cs: line 72 app.MapControllers() is the only Map* call.",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/routing.md:72; refs/aspnetcore-docs/aspnetcore/mvc/controllers/routing.md:264; examples/don-hang@stage-1 DonHang.Api/Program.cs"
       },
       {
         "n": 5,
         "verdict": "verified",
-        "evidence": "Local run, dotnet 10.0.300: action body List() contains Console.WriteLine(\"list ran\"); the startup log shows only \"startup: MapControllers done\", \"Now listening on: http://127.0.0.1:5199\", \"Application started\" - no \"list ran\". After two GET /api/v1/ping the log shows \"list ran\" exactly twice. The method body runs per matching request, not when MapControllers() executes.",
-        "source": "local run (scratch ASP.NET Core 10 app mirroring ProductsController)"
+        "evidence": "routing.md:285 \"After all of the middleware in the request processing pipeline is executed, the selected endpoint's delegate is invoked.\" routing.md:73-75: an endpoint is Selected by matching URL and HTTP method, Executed by running the delegate - execution is per matched request, not at mapping time.",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/routing.md:73,285"
       },
       {
         "n": 6,
         "verdict": "verified",
-        "evidence": "Ran the same app with builder.Services.AddControllers() removed, dotnet 10.0.300: \"Unhandled exception. System.InvalidOperationException: Unable to find the required services. Please add all the required services by calling 'IServiceCollection.AddControllers' ... at ControllerEndpointRouteBuilderExtensions.EnsureControllerServices(IEndpointRouteBuilder endpoints) at ...MapControllers(IEndpointRouteBuilder endpoints)\". MapControllers finds no controllers without AddControllers.",
-        "source": "local run, ASP.NET Core 10.0 / SDK 10.0.300"
+        "evidence": "combine-service-collection-60-or-later.md:71 \"Each services.Add{GROUP_NAME} extension method adds and potentially configures services. For example, AddControllersWithViews adds the services MVC controllers with views require\". app-parts.md:18 \"Application Parts allow ASP.NET Core to discover controllers\". Repo @stage-1: AddControllers() line 13; connection string read lines 16-17, passed to AddDonHangInfrastructure (AddDbContext UseNpgsql).",
+        "source": "refs/aspnetcore-docs/aspnetcore/includes/combine-service-collection-60-or-later.md:71; refs/aspnetcore-docs/aspnetcore/mvc/advanced/app-parts.md:18; examples/don-hang@stage-1 DonHang.Api/Program.cs"
       },
       {
         "n": 7,
         "verdict": "verified",
-        "evidence": "git -C examples/don-hang show stage-1:DonHang.Api/Program.cs: line 52 `var app = builder.Build();`, lines 54-62 the migration block (CreateScope, MigrationBaseline.ApplyIfNeeded, context.Database.Migrate()), lines 64-72 the wiring calls ending in app.MapControllers();, line 74 `app.Run();`, and the file has exactly 74 lines. Both lesson code fences (lines=10-20, lines=52-74) match the source byte-for-byte (scripted diff).",
-        "source": "examples/don-hang @ stage-1 (commit 83c0004), DonHang.Api/Program.cs"
+        "evidence": "git -C examples/don-hang show stage-1:DonHang.Api/Program.cs (stage-1^{commit}=75bf7d2): line 52 `var app = builder.Build();`, 54-62 migration block, 64-72 Use*/MapControllers, line 74 `app.Run();` is the last line (74 lines). Both fences (10-20, 52-74) match the source verbatim.",
+        "source": "examples/don-hang@stage-1 DonHang.Api/Program.cs"
       },
       {
         "n": 8,
         "verdict": "verified",
-        "evidence": "Behaviour executed locally (see claim 5): nothing at startup, one line per matching request, two requests -> two lines. Container mechanics from docs: \"When you run the command docker compose up --build, Docker Compose will build the images for each service and then start the containers\" and \"By default, docker logs shows the command's STDOUT and STDERR\". Not executed: the full stage-1 lab (scripts/up.sh needs flutter build web); no container was rebuilt here.",
-        "source": "local run; refs/docker-docs/content/guides/docker-compose.md:140; refs/docker-docs/content/manuals/engine/logging/_index.md:24"
+        "evidence": "Lab not run this session; follows claim 5 plus plumbing @stage-1: Caddyfile ':8080 { handle /api/v1/* { reverse_proxy api:8080 } }', compose publishes 8080:8080 on lab (web shares its network), List() is [HttpGet] under [Route(\"api/v1/products\")] without [Authorize]. compose_up.md:46 --build \"Build images before starting containers\"; compose_logs.md:4 \"Displays log output from services\".",
+        "source": "examples/don-hang@stage-1 Caddyfile, docker-compose.yml; refs/docker-docs/_vendor/github.com/docker/compose/v5/docs/reference/compose_up.md:46, compose_logs.md:4"
       },
       {
         "n": 9,
         "verdict": "verified",
-        "evidence": "git -C examples/don-hang show stage-1:DonHang.Api/Controllers/ProductsController.cs: the class carries [ApiController] and [Route(\"api/v1/products\")]; List() carries [HttpGet]; Get(int id) carries [HttpGet(\"{id:int}\")]. The path comes from the class attribute, the HTTP method (and the id segment) from the method attribute - exactly \"the class and its methods carry [Route]/[HttpGet] attributes\".",
-        "source": "examples/don-hang @ stage-1, DonHang.Api/Controllers/ProductsController.cs"
+        "evidence": "git show stage-1:DonHang.Api/Controllers/ProductsController.cs: class carries [ApiController] and [Route(\"api/v1/products\")]; List() carries [HttpGet]; Get(int id) carries [HttpGet(\"{id:int}\")].",
+        "source": "examples/don-hang@stage-1 DonHang.Api/Controllers/ProductsController.cs"
       }
     ],
     "issues": [
       {
-        "severity": "major",
-        "section": "backend.l1.hosting-and-program-cs.q6",
-        "kind": "quiz",
-        "quote": "Please move `app.UseAuthentication();` to right after `app.UseCors();` and before `app.UseMiddleware<RequestLoggingMiddleware>();`",
-        "text": "The scenario's reorder request is impossible against the file the lesson just quoted. In Program.cs lines 67-72 the order is ExceptionHandling, RequestLogging, UseCors, UseAuthentication, UseAuthorization: UseAuthentication is ALREADY immediately after UseCors, and UseCors itself comes after RequestLogging, so \"right after UseCors\" and \"before RequestLoggingMiddleware\" cannot both hold. A reader who checks the code can therefore defend option d (\"The reviewer's suggested line order is itself wrong\"), which makes the key ambiguous.",
-        "fix": "Rewrite the review comment in `context` as one coherent move, e.g. \"Please move `app.UseAuthentication();` above `app.UseMiddleware<RequestLoggingMiddleware>();` - the current order is a bug.\" Keep answer a; option d's explanation then holds (the scenario really says nothing about whether that move is right)."
+        "severity": "minor",
+        "section": "4",
+        "kind": "gap",
+        "quote": "`app.MapControllers()` itself runs once, at startup; it does not run again for every request",
+        "text": "Outline item 4 opens with \"Program.cs runs top to bottom once, at startup\". The lesson states run-once only for app.MapControllers(), never for the file as a whole; still established only by implication (carried over from r1, not applied).",
+        "fix": "In How it works, after \"Its `Run()` call, at the very end, is what actually starts Kestrel.\" add: \"Every line of Program.cs above `Run()` executes once, top to bottom, when the app starts.\" Covered by claims 2 and 5."
       },
       {
         "severity": "minor",
-        "section": 4,
-        "kind": "accuracy",
-        "quote": "Everything an ASP.NET Core app needs before it can run — a database connection, a way to prove a customer has signed in, and so on — gets registered on that one object.",
-        "text": "\"Everything\" overstates it: the docs say CreateBuilder hands back the builder \"with preconfigured defaults\" - configuration sources, logging and the server itself are already in place and the app never registers them. What goes on builder.Services is what this app adds on top of those defaults.",
-        "fix": "Change to: \"Whatever this app needs on top of what the framework already sets up - what it uses to reach the database, a way to prove a customer has signed in, and so on - gets registered on that one object.\""
-      },
-      {
-        "severity": "minor",
-        "section": 4,
-        "kind": "accuracy",
-        "quote": "app.MapControllers(), is the one that creates every **endpoint** this app has",
-        "text": "Unlisted claim: \"the one that creates every endpoint this app has\" is a checkable fact about DonHang.Api (MapControllers is the only endpoint-creating call in Program.cs), not a general property of MapControllers, and no claim in the ledger carries it (claim 4 only covers what MapControllers does).",
-        "fix": "Keep the sentence (true at stage-1: Program.cs lines 64-72 contain no other Map* call) and add a fact claim to .meta.json, section 4: \"In DonHang.Api/Program.cs at stage-1, app.MapControllers() is the only endpoint-creating call, so every endpoint the app has comes from it.\""
-      },
-      {
-        "severity": "minor",
-        "section": 5,
-        "kind": "code",
-        "quote": "register the pieces the app needs to reach the database, a standard error format (`AddProblemDetails()`), an order service, and a way to prove a customer has signed in",
-        "text": "Two mismatches with the source. AddDonHangInfrastructure registers DonHangDbContext, IOrderRepository AND INotifier/LoggingNotifier - the notifier is not a piece for reaching the database. JwtTokenService's only member is IssueToken(int customerId, string email): it hands out the proof, it does not prove or check anything; the checking is AddAuthentication/AddJwtBearer on line 25, outside the quoted block.",
-        "fix": "Write: \"...register the infrastructure pieces this app runs on (among them everything it uses to reach the database), a standard error format (`AddProblemDetails()`), an order service, and a way to give a signed-in customer something it can show on later requests.\""
-      },
-      {
-        "severity": "minor",
-        "section": 9,
-        "kind": "accuracy",
-        "quote": "`app.MapControllers()` creates one for every attribute-routed method it finds.",
-        "text": "True in this app only. An action method may carry several route attributes and each one produces its own endpoint; the routing docs note \"All of the HTTP verb attributes accept a route template\" and show several templates per action. Each ProductsController method carries exactly one, so the file matches, but the summary states it as a general rule.",
-        "fix": "Reword summary line 3 to \"...`app.MapControllers()` creates one for each route attribute it finds - one per method in `ProductsController`.\" (or add \"in this app\")."
-      },
-      {
-        "severity": "minor",
-        "section": "backend.l1.hosting-and-program-cs.q3",
-        "kind": "quiz",
-        "quote": "\"answer\": [\"MapControllers\"]",
-        "text": "The fill answer set has a single spelling. Comparison is case-insensitive and trimmed (docs/01), but a learner who types the call as the lesson writes it (MapControllers()) or repeats the prefix (app.MapControllers) is marked wrong for no content reason.",
-        "fix": "Set \"answer\": [\"MapControllers\", \"MapControllers()\", \"app.MapControllers\", \"app.MapControllers()\"]."
+        "section": "6",
+        "kind": "opinion-as-fact",
+        "quote": "Only the order among `builder.Services.Add...` calls that register different things is free to vary.",
+        "text": "\"Only\" overstates: other Program.cs lines are also order-free with respect to request handling (e.g. the migration block at lines 57-62 could move among the Use* calls without changing how a request is answered). The lesson's own claim 3 supports only the Services.Add... half.",
+        "fix": "Replace with: \"The order among `builder.Services.Add...` calls that register different things is free to vary; the order of the wiring calls is not.\""
       }
     ],
     "scope": {
       "outline_covered": true,
       "beyond_scope": []
     },
-    "verdict": "fix-required"
+    "verdict": "pass"
   },
   "junior": {
-    "reviewed_at": "2026-09-24T00:00:00Z",
-    "reviewer": "junior-reader (round 3)",
+    "reviewed_at": "2026-09-27T18:00:00+07:00",
+    "reviewer": "junior-reader (round 2)",
     "issues": [
       {
         "severity": "minor",
-        "section": 5,
+        "section": "In the Đơn Hàng system",
         "kind": "gap",
-        "text": "The prose lists 'send notifications' among what this block does, but no line is named as the one doing it. I can map 'a standard error format' to `AddProblemDetails()` and 'an order service' to `AddScoped<OrderService>()` because those names appear, yet nothing tells me notifications come out of `AddDonHangInfrastructure(connectionString)` — a call whose name and only argument both point at the database.",
-        "fix": "In section 5, name the call: replace 'the pieces the app needs to reach the database and send notifications' with 'the pieces the app needs to reach the database and send notifications (`AddDonHangInfrastructure`)'.",
-        "quote": "The rest read the connection string and register the pieces the app needs to reach the database and send notifications, a standard error format (`AddProblemDetails()`), an order service, and a way to hand out proof that a customer has signed in."
+        "quote": "The registration half of `Program.cs` — before `Build()` — only ever adds things the app might need:",
+        "text": "The first block ends at line 20 and the second starts at line 52 (`Build()`). Lines 21-51 are never shown or mentioned, so I cannot check 'only ever adds things' myself and do not know whether I am allowed to ignore them. The second block tells me exactly what to skip; the first does not.",
+        "fix": "Add one sentence after the first block saying what lines 21-51 hold (more registrations like these, belonging to later lessons) and that they can be skipped here."
       },
       {
         "severity": "minor",
-        "section": 5,
-        "kind": "term",
-        "text": "`AddScoped` and `AddSingleton` are words I do not know, and nothing says how 'scoped' differs from 'singleton'. In the body this costs me nothing — both are just registrations and the point is their order — but quiz q2 puts both names in the question, and for a moment I thought the difference between them was what I was being asked about.",
-        "fix": "In section 5, after the sentence listing the registrations, add: 'What the words `Scoped` and `Singleton` in those two lines mean is a later lesson's subject; nothing here depends on it.'",
-        "quote": "builder.Services.AddScoped<OrderService>();"
-      },
-      {
-        "severity": "minor",
-        "section": 4,
-        "kind": "length",
-        "text": "I had to read this sentence twice. It carries a parenthesis, a term coined on the spot ('wiring'), a definition of what those calls do, and a forward pointer to the next lesson, all in one breath.",
-        "fix": "Split it: end a sentence after 'before reaching your code', then start a new one — 'What order those wiring calls run in, and why it matters, is the next lesson's subject.'",
-        "quote": "Between `Build()` and `Run()`, Program.cs does the rest of its startup work, including wiring up (through `app.Use...`/`app.Map...` calls) the steps every incoming request will pass through before reaching your code;"
-      },
-      {
-        "severity": "minor",
-        "section": 6,
-        "kind": "example",
-        "text": "The misconception is about whether Program.cs affects later requests; the second half of the answer switches to which lines may be reordered, which is a different question. I had to re-read to see that the reorder clause is a concession, not part of the rebuttal.",
-        "fix": "In section 6's first bullet, split the answer: keep 'Actually the wiring calls between `Build()` and `Run()` decide exactly how every later request is handled.' as its own sentence, then begin the next one with 'Only the order among'.",
-        "quote": "Actually the wiring calls between `Build()` and `Run()` decide exactly how every later request is handled; only the order among `builder.Services.Add...` calls that register different things is free to vary."
-      },
-      {
-        "severity": "minor",
-        "section": 7,
-        "kind": "example",
-        "text": "'the lab', `scripts/up.sh`, `docker compose` and `curl` are all new to me, but each is given as an exact command I can paste and the expected result is concrete, so I could still do this. The one link I had to guess is why a `Console.WriteLine` I add in C# shows up in `docker compose logs api` at all.",
-        "fix": "In step 1, after 'watch `docker compose logs api`', add 'which shows what the app printed to its console'.",
-        "quote": "Then run `docker compose up -d --build api` to rebuild `api` with your change and watch `docker compose logs api` as it starts."
-      },
-      {
-        "severity": "minor",
-        "section": "Five-line summary",
+        "section": "How it works",
         "kind": "gap",
-        "text": "In section 4 the rule had a condition — 'When two calls register different things' — and quiz q2's answer turns on that condition. Line 2 drops it: read alone it sounds like any `Services.Add...` line may move anywhere, which also brushes against section 5's note that the `connectionString` line must stay above the line using it.",
-        "fix": "In summary line 2, replace 'Different `builder.Services.Add...` calls' with '`builder.Services.Add...` calls that register different things'.",
-        "quote": "Different `builder.Services.Add...` calls can run in any order in Program.cs without changing how a later request is answered."
+        "quote": "It can matter when two calls register the same kind of thing, a case you do not need to look for in this lesson.",
+        "text": "I stop here: what counts as 'the same kind of thing'? Are OrderService and JwtTokenService different kinds because they are different classes, or because one is Scoped and one Singleton? The lesson tells me not to look for it, but quiz q6 option c reuses 'the same kind of thing' as if I knew.",
+        "fix": "Add a few words making 'kind' concrete, e.g. 'the same class (two registrations of `OrderService`)', or drop the sentence and reword q6 option c to avoid the phrase."
       },
       {
         "severity": "minor",
-        "section": "quiz q2",
+        "section": "Beginners often think",
+        "kind": "example",
+        "quote": "You notice this the first time a request behaves differently after a wiring line moves — which is what the next lesson is about.",
+        "text": "The misconception is believable, but the correction only asserts that wiring calls matter; I cannot picture one case in Đơn Hàng where moving a wiring line changes an answer. The only wiring call I understand is MapControllers.",
+        "fix": "Add one concrete clause using a line I already know, e.g. 'if `app.MapControllers();` were deleted, GET /api/v1/products would no longer reach `List()`'."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz q1",
         "kind": "quiz",
-        "text": "I can pick option c without reasoning: it is section 4's sentence with words swapped ('register different things' to 'register different services', 'makes no difference to how a later request is answered' to 'does not decide how any request is later handled'). Matching the phrasing is enough to answer.",
-        "fix": "Reword option c away from the lesson's wording, e.g. 'False, because these two calls put two unrelated things on the builder, and neither one's position decides what a later request goes through.'",
-        "quote": "False, because these two `builder.Services.Add...` calls register different services; the order between them does not decide how any request is later handled."
-      },
-      {
-        "severity": "minor",
-        "section": "quiz q2",
-        "kind": "term",
-        "text": "'the compiled order of the assembly' uses a word the lesson never uses and I do not know. I can still discard option d, but only because option c already matched the lesson — not because I understood d. Its explanation repeats 'assembly' instead of replacing it.",
-        "fix": "In q2 option d and its explanation, replace 'the compiled order of the assembly' with wording the lesson uses, e.g. 'an order the compiler decides, not the order written in Program.cs'.",
-        "quote": "False, because `AddScoped` and `AddSingleton` always run in the compiled order of the assembly, not the order written in Program.cs."
+        "quote": "A connection string is registered earlier, but `Build()` itself does not open any connection; code that runs after it does.",
+        "text": "'Code that runs after it does' points at the migration block the lesson told me to skip, so the explanation leans on something I was told not to read. I can still answer q1, but this line leaves me wondering which code opens the connection.",
+        "fix": "End the explanation at 'does not open any connection', or say 'code in a later lesson does'."
       },
       {
         "severity": "minor",
         "section": "quiz q6",
-        "kind": "term",
-        "text": "q6 turns on `app.UseAuthentication();` and `app.UseMiddleware<RequestLoggingMiddleware>();` — lines section 5 told me to skip as belonging to later lessons. I did answer, because both begin with `app.Use...` and section 4 calls those wiring calls, and option a names that group. But I got there by the shape of the line, not by knowing what either line does.",
-        "fix": "In q6's correct explanation, add a half-sentence tying the lines to the category, e.g. 'both lines in the review comment are `app.Use...` wiring calls after `Build()`', so the reader confirms the mapping instead of guessing it.",
-        "quote": "Please move `app.UseAuthentication();` above `app.UseMiddleware<RequestLoggingMiddleware>();`"
+        "kind": "quiz",
+        "quote": "it should run before every request gets logged, not after",
+        "text": "The scenario is about `UseAuthentication` and `RequestLoggingMiddleware`, lines from the block I was told to skip. I can answer from the rule 'app.Use... between Build() and Run() is a wiring call', but I do not know what authentication does, so the reviewer's reason feels opaque.",
+        "fix": "In the context, add a short gloss: '`app.UseAuthentication()` (the wiring call that checks who the caller is)'."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz q3",
+        "kind": "quiz",
+        "quote": "The one call in `DonHang.Api/Program.cs` that turns attribute-routed methods into real endpoints is `app.___();`",
+        "text": "The stem is almost verbatim from the sentence after the second code block ('makes ... attribute-routed methods into real endpoints'), so I fill it by matching words, not by understanding.",
+        "fix": "Rephrase the stem around effect, e.g. 'Delete which line and GET /api/v1/products would no longer reach `List()`? `app.___();`'."
       }
     ],
     "readability": {
-      "unknown_terms": [
-        "AddScoped / AddSingleton (Scoped vs Singleton never explained)",
-        "AddDonHangInfrastructure (section 5 code)",
-        "AddProblemDetails (named in prose as 'a standard error format', so usable)",
-        "JwtTokenService — the 'Jwt' part (prose covers the intent)",
-        "builder.Configuration.GetConnectionString (never mentioned in prose)",
-        "middleware / auth / routing / migrations (code comments in section 5; the prose tells me to skip them)",
-        "the lab, scripts/up.sh, docker compose, curl (section 7; given as exact commands)",
-        "assembly (quiz q2 option d and its explanation)",
-        "UseAuthentication, RequestLoggingMiddleware, UseCors (quiz q6 and section 5 code)"
-      ],
+      "unknown_terms": [],
       "skipped_steps": [
-        "Which line in the registration block 'sends notifications' — the prose says it happens, no line is named.",
-        "Why a `Console.WriteLine` added in C# turns up in `docker compose logs api`.",
-        "How 'Scoped' differs from 'Singleton' — not needed for the lesson's point, but quiz q2 shows both words in its question."
+        "What Program.cs lines 21-51 contain and whether they can be ignored.",
+        "What 'the same kind of thing' means for two registrations."
       ],
       "situation_connects": true,
       "try_it_feasible": true,

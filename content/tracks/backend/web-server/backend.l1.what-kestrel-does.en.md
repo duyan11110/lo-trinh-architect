@@ -13,11 +13,11 @@ prereqs: [foundation.l1.http-request-response, foundation.l1.ip-and-ports]
 related: [management.l1.how-software-gets-made]
 vocab: [kestrel]
 example_tag: stage-0
-versions_used: [aspnetcore]
+versions_used: [aspnetcore, caddy]
 content_version: 1
-status: reviewed
-approved_by: null
-reviewed_at: "2026-09-24T00:30:00+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-28T13:00:00+07:00"
 ---
 
 ## Before you start
@@ -27,14 +27,13 @@ reviewed_at: "2026-09-24T00:30:00+07:00"
 
 ## The situation
 
-You are ready to build the real C# code behind `/api/v1/orders`, but every POST there today gets the same fixed JSON back from Caddy, the web server running the lab. Caddy's whole behaviour is written in one text file, `Caddyfile`; you open it and find a `respond` line with the JSON typed out literally — no C# anywhere. A teammate asks how your future ASP.NET Core code (the C# way of writing web apps in this course) will ever get a chance to run at all, since nothing running in the lab seems to call it. What actually stands between the network and the code you write?
+You are ready to build the real C# code behind `/api/v1/orders`, but every POST there today gets the same fixed JSON back from Caddy, the web server running the lab. Caddy's whole behaviour is written in one text file, `Caddyfile`; you open it and find a `respond` line with the JSON typed out literally — no C# anywhere. A teammate asks what, in an ASP.NET Core app (the C# way of writing web apps in this course), will even receive a request before your code sees it, since nothing running in the lab seems to call C# at all. What actually stands between the network and the code you write?
 
 ## Core concepts
 
 - **Kestrel** — the default web server for ASP.NET Core apps, the one Đơn Hàng will run on. It turns bytes arriving on a connection — a TCP connection for the HTTP/1.1 traffic in this course — into a request your C# code can read, and turns your code's decision back into response bytes.
-- web server — a program that accepts network connections and decides what to send back; Caddy so far, and Kestrel from this lesson on, are both web servers, but they decide answers in very different ways.
+- web server — a program that accepts network connections and sends an answer back; Caddy so far, and Kestrel from this lesson on, are both web servers, but their answers come from very different places.
 - TCP connection — the two-way byte stream Kestrel accepts a request on, the same kind of connection an earlier lesson described.
-- request handling — turning an accepted connection's bytes into something a program can act on; Kestrel does this part, and only this part.
 
 ## How it works
 
@@ -50,17 +49,17 @@ sequenceDiagram
   Kestrel-->>Client: writes the response bytes
 ```
 
-In the situation above, Caddy plays the role Kestrel will play once Đơn Hàng answers `/api/v1/orders` with C# code: it accepts the connection and decides what goes back. The difference is what happens in the middle. Caddy's decision is a line written into `Caddyfile`, a fixed string chosen before any request ever arrives. Kestrel's decision comes from a running C# program instead.
+In the situation above, Caddy plays the role Kestrel will play once Đơn Hàng answers `/api/v1/orders` with C# code: it accepts the connection and sends an answer back. The difference is what happens in the middle. Caddy's decision is a line written into `Caddyfile`, a fixed string chosen before any request ever arrives. Behind Kestrel, the decision comes from a running C# program instead. Whether Caddy stays in the lab once Kestrel arrives is a later lesson's question; this lesson looks only at what Kestrel does inside the app process.
 
-The diagram shows the shape of every request an ASP.NET Core app running on Kestrel answers, whatever the app does. The client opens a TCP connection to the port Kestrel is listening on and sends request bytes over it, the same first-line-then-headers-then-body shape an earlier lesson described. Kestrel parses those bytes: it does not care what a request means, only that it is well-formed HTTP; getting that shape right for every client that turns up is the work Kestrel exists to do.
+The diagram shows the shape of every request an ASP.NET Core app on Kestrel answers. The client opens a TCP connection to the port Kestrel is listening on and sends request bytes over it, the same first-line-then-headers-then-body shape an earlier lesson described. Kestrel parses those bytes: it does not care what a request means, only that it is well-formed HTTP.
 
 Once parsed, Kestrel hands the request to your code — exactly what "your code" is here is the next lesson's subject. Your code inspects the request and decides what to send back; Kestrel takes that decision and writes it onto the same connection as response bytes, in the same shape a response always has.
 
-Nothing in this diagram mentions paths, JSON, or Đơn Hàng specifically, and that is deliberate. Kestrel's job stops at accepting connections and producing request and response objects. It has no idea what `/api/v1/orders` should do; that decision belongs to code running on top of it, not to Kestrel itself.
+Nothing in this diagram mentions paths, JSON, or Đơn Hàng specifically, and that is deliberate. Kestrel's job stops at accepting connections, turning bytes into a request and your code's answer back into response bytes. It has no idea what `/api/v1/orders` should do; that decision belongs to code running on top of it, not to Kestrel itself.
 
 ## In the Đơn Hàng system
 
-The stage-0 `Caddyfile` — stage-0 is the lab as it stands before any C# exists — shows exactly the kind of fixed answer Kestrel replaces. Two of its blocks respond with JSON typed directly into `Caddyfile`, the same string every time, regardless of what a client sent:
+The stage-0 `Caddyfile` — stage-0 is the lab as it stands before any C# exists — shows exactly the kind of fixed answer that C# code behind Kestrel replaces. Two of its blocks respond with JSON typed directly into `Caddyfile`, the same string every time, regardless of what a client sent:
 
 ```caddyfile file=Caddyfile tag=stage-0 lines=36-44
 		handle @postOrder {
@@ -74,15 +73,15 @@ The stage-0 `Caddyfile` — stage-0 is the lab as it stands before any C# exists
 		}
 ```
 
-`handle @postOrder` is the part Caddy uses when the request is a POST to `/api/v1/orders` (`handle @getOrder` works the same way, for `GET /api/v1/orders/1`); the `header` lines set response headers and `respond` sets the body and status. Both bodies here are literal strings typed into `Caddyfile`, so `respond` sends exactly that text back on every matching request.
+`handle @postOrder` is the part Caddy uses for a POST to `/api/v1/orders`, a name defined a few lines earlier in `Caddyfile`; `handle @getOrder` does the same for `GET /api/v1/orders/1`. The `header` lines set response headers; `Location` tells the client where the newly created order lives, so it carries the new id. `respond` sets the body and status. Both bodies here are literal strings typed into `Caddyfile`, so `respond` sends exactly that text back on every matching request.
 
 A real `POST /api/v1/orders` should create a different order with a different id on every call; a real `GET /api/v1/orders/1` should read the current row from a database, not print `"status":"paid"` forever. Neither block here can do that — they are strings, not code. Once Kestrel and C# stand behind these paths, an incoming request reaches a C# method (how a request finds that method is the next lesson's subject) that runs fresh each time, reads whatever it needs, and decides its own answer.
 
 ## Beginners often think…
 
-- **"Kestrel spreads requests across several machines for you."** → Actually Kestrel is the server inside one app process; it only handles the connections that arrive on its own port. You notice this when every request lands in the same single app process, because that is the only process listening on the port.
-- **"Any program listening on a port serves HTTP the way Kestrel does, so Kestrel isn't doing anything special."** → Actually listening on a port only accepts a TCP connection; turning the bytes on it into a well-formed request object, and a decision back into well-formed response bytes, is the parsing work Kestrel exists to do. You notice this when a program you wrote yourself that only reads the bytes off the connection makes a real browser show a connection or protocol error instead of a page.
-- **"Caddy runs your C# code for you."** → Actually Caddy's `respond` blocks are fixed strings written into `Caddyfile`; nothing about them executes a program per request. You notice this when the same `respond` answer comes back no matter what data changed underneath it.
+- **"Kestrel spreads requests across several machines for you."** → Actually Kestrel is the server inside one app process; it only handles the connections that arrive on its own port. You notice this when you stop that one process and every request to its port fails at once.
+- **"Any program listening on a port serves HTTP the way Kestrel does, so Kestrel isn't doing anything special."** → Actually listening on a port only accepts a TCP connection; turning the bytes on it into a well-formed request object, and a decision back into well-formed response bytes, is the parsing work Kestrel exists to do. You notice this when a program you wrote yourself that only reads the bytes off the connection and then closes it without writing anything back makes curl (the command-line program that sends a request and prints the reply) report "Empty reply from server" instead of a response.
+- **"Caddy runs your C# code for you."** → Actually Caddy's `respond` blocks are fixed strings written into `Caddyfile`; nothing about them executes a program per request. You notice this when you send the same POST twice and get the same id back.
 
 ## Try it (3 minutes)
 
@@ -107,6 +106,6 @@ The id never changes because the response is not computed: it is copied verbatim
 
 1. Kestrel is the default web server for ASP.NET Core apps, turning connection bytes into a request object and a code decision into response bytes.
 2. Caddy's stage-0 `respond` blocks answer as if real code were answering, always returning the same fixed string; a real Kestrel-backed app replaces that.
-3. Kestrel itself decides nothing about what a request means: it only accepts connections and produces request and response objects for other code to use.
+3. Kestrel decides nothing about what a request means: it only accepts connections, turning bytes into a request and your code's answer into response bytes.
 4. What that other code is, and how it gets a chance to run, is the next lesson's subject.
 5. Serving HTTP the way Kestrel does is deliberate, non-trivial parsing work, not an automatic side effect of listening on a port.

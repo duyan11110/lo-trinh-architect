@@ -13,11 +13,11 @@ prereqs: [foundation.l1.oop-encapsulation]
 related: [design.l2.strategy-pattern]
 vocab: [polymorphism]
 example_tag: stage-0
-versions_used: [dotnet]
+versions_used: [dotnet, xunit]
 content_version: 1
-status: reviewed
-approved_by: null
-reviewed_at: "2026-09-16T02:29:15+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-28T13:00:00+07:00"
 ---
 
 ## Before you start
@@ -34,9 +34,9 @@ Later a fourth kind is added. You edit every copy you can find, miss one, and an
 
 - derives from — a class declared as `class StandardShipping : ShippingFee` derives from `ShippingFee`; the name after the `:` is the class it builds on.
 - base type — a class that other classes derive from; a variable declared as `ShippingFee` can hold an object of any class that derives from `ShippingFee`.
-- abstract method — a method the base type declares with `abstract` and no body; every class that derives directly from it and is not itself abstract must supply the body, marked `override`. A class marked `abstract`, like `ShippingFee`, cannot be created with `new`, and only such a class may declare an abstract method.
+- abstract method — a method the base type declares with `abstract` and no body; every class that derives directly from the base type and is not itself abstract must supply the body, marked `override`. A class marked `abstract`, like `ShippingFee`, cannot be created with `new`, and a class that declares an abstract method must itself be marked `abstract`.
 - actual type — the class named after `new` when the object was created, which can be more specific than the declared type of the variable holding it.
-- **polymorphism** — a call to an abstract method, written once through a variable declared as the base type, runs the override in the object's actual type, chosen while the program runs, so different objects answer the same call differently.
+- **polymorphism** — a call to an abstract method, written once through a variable declared as the base type, runs the override in the object's actual type, chosen while the program runs, so different objects answer the same call differently. This lesson shows it with an abstract method on a base type; "Beginners often think…" names another way.
 
 ## How it works
 
@@ -51,15 +51,15 @@ flowchart LR
   E --> F
 ```
 
-In the situation above, the caller is any code that needs a fee: the order total, the invoice, a test. It holds a variable of the base type `ShippingFee` and makes one call, `ForOrder(total)`. It never asks which kind of delivery it holds.
+In the situation above, the caller is any code needing a fee, such as the order total or invoice. It holds a variable of the base type `ShippingFee`, makes one call, `ForOrder(total)`, and never asks which kind it holds.
 
-The diamond's arrows are the three classes, one per kind; each box is that class's fee rule. When the call runs, .NET looks at the actual type of the object in the variable and runs that class's `override` of `ForOrder`. The compiler checked only that `ShippingFee` has a `ForOrder` taking an `int`; which of the three bodies runs is settled each time the line executes. That is polymorphism.
+Each arrow from the diamond is one class; the box it reaches is that class's fee rule. When the call runs, .NET, the system that runs your compiled C# program, looks at the actual type of the object in the variable. It runs that class's `override` of `ForOrder`, and the fee it returns goes back to the caller. The compiler checked only that `ShippingFee` has a `ForOrder` taking an `int`; which body runs is settled each time the line executes. That is polymorphism.
 
-Compare this with the `switch`. There, each place that needed the fee asked "which kind is this?" and kept its own list of answers. Moving that `switch` into one shared method removes the copies; while the fee is the only question, that can be enough. Once a second question about the kind, such as the delivery time, needs its own `switch`, each new kind must be added to every one, and the compiler does not notice a miss. Here each kind is a class that owns its answers, written once.
+With the `switch`, each place needing the fee asked "which kind is this?" and kept its own list of answers. One shared method holding the `switch` removes the copies; while the fee is the only question, that can be enough. Then a second question about the kind, such as the delivery time, needs its own `switch`. Each new kind must now join every switch, and because the kind is a string, the compiler does not notice a miss. Here each kind is a class that owns its answers.
 
-Adding a fourth kind now means adding a fourth class that derives from `ShippingFee` and overrides `ForOrder`. No caller changes, because no caller named a kind. If the new class forgets `ForOrder`, it does not compile, because an abstract method must get a body in every class that derives directly from it and is not abstract.
+Adding a fourth kind means adding a class that derives from `ShippingFee` and overrides `ForOrder`. No caller changes. If the new class forgets `ForOrder`, it does not compile: an abstract method needs a body in every non-abstract class that derives directly from the class declaring it.
 
-One place still names a class: the code that creates the object with `new` when the customer picks a delivery kind. Adding a kind also means teaching that one place to create the new class.
+One place still names a class: the code that looks at the customer's choice once and creates the matching object with `new`. Adding a kind also means teaching that place the new class.
 
 ## In the Đơn Hàng system
 
@@ -100,14 +100,14 @@ This file is also small enough to argue the other way. Polymorphism has a cost: 
 ## Beginners often think…
 
 - **"Polymorphism is method overloading."** → Actually overloading means several methods with the same name and different parameter lists, and the compiler picks one from the declared types of the arguments, before the program runs. Polymorphism picks the method while the program runs, from the object's actual type. You notice this when you write one same-named method per delivery kind, pass it a variable declared as `ShippingFee`, and the call does not compile: the compiler sees only the declared type `ShippingFee`, and none of those methods takes a `ShippingFee`.
-- **"Deriving from a base type is the only way to get polymorphism."** → Actually C# has another way, the subject of the next lesson: a type that names methods a class promises to provide, which many unrelated classes can each promise. A call made through that type also runs the method of the object's actual class. You notice this when `StandardShipping` and a payment class must both print a line on the invoice through one shared call. `StandardShipping` already names `ShippingFee` after its `:`, and a C# class can name only one class there, so it cannot also derive from an invoice-line class.
+- **"Deriving from a base type is the only way to get polymorphism."** → Actually C# has another way, the subject of the next lesson: a type that names methods a class promises to provide, which many unrelated classes can each promise. A call made through that type also runs the method of the object's actual class. You notice this when `StandardShipping` and a payment class must both answer one shared call that prints an invoice line. `StandardShipping` already names `ShippingFee` after its `:`, and a C# class can name only one class there, so it cannot also derive from an invoice-line class.
 
 ## Try it (3 minutes)
 
 1. In the Đơn Hàng repository, open `samples/DonHang.Samples.Tests/SamplesTests.cs` and go to line 21. Swap `new ExpressShipping()` and `new PickUpInStore()`, so the array holds standard, pick-up, express. Do not touch line 23, the call.
 2. From the repository root, run `dotnet test samples/DonHang.Samples.Tests` and read the one failure. Then undo the swap.
 
-Expected result: six tests pass and `EveryKindAnswersTheSameCall` fails. The `dotnet test` output lists the expected values `[0, 60000, 0]` and the actual values `[0, 0, 60000]`, each after a type name you can ignore. The call on line 23 did not change, yet the express fee moved to third place, because that is where the express object now sits: the result followed the object, not the line of code. Line 23 names only `ShippingFee`, never a kind; each object brought its own fee rule with it.
+Expected result: six tests pass and `EveryKindAnswersTheSameCall` fails. The `dotnet test` output lists the expected values `[0, 60000, 0]` and the actual values `[0, 0, 60000]`, each after a type name you can ignore. The call on line 23 did not change, yet the express fee moved to third place, because that is where the express object now sits: the result followed the object, not the line of code. Line 23 calls `ForOrder` on each element of the `ShippingFee[]` array from line 21 and never names `StandardShipping`, `ExpressShipping` or `PickUpInStore`; each object brought its own fee rule with it.
 
 ## Connections
 

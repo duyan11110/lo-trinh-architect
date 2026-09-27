@@ -15,9 +15,9 @@ vocab: []
 example_tag: stage-0
 versions_used: [git, dotnet]
 content_version: 1
-status: reviewed
-approved_by: null
-reviewed_at: "2026-09-17T02:21:18+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-28T13:00:00+07:00"
 ---
 
 ## Before you start
@@ -27,15 +27,16 @@ reviewed_at: "2026-09-17T02:21:18+07:00"
 
 ## The situation
 
-Someone asks you to change the price of the wireless mouse in Đơn Hàng, and today is the first time you have opened the repository: the folder tree holding every file of the project, and the record of every change made to them. Eight folders sit at the top: `db`, `docs`, `git-playground`, `lab`, `outputs`, `samples`, `scripts`, `www`. You open `samples/DonHang.Samples/Program.cs`, the only name you recognise, read it to the bottom, then open a file it names. Twenty minutes later you have read three files and still cannot explain the folder list. Where do you start when the repository is large and the question is small?
+Someone sends you a screenshot of the wireless mouse, `Chuột không dây`, and asks you to change its price in Đơn Hàng. Today is the first time you have opened the repository: the folder tree holding every file of the project, and the record of every change made to them. Eight folders show up when you list the top: `db`, `docs`, `git-playground`, `lab`, `outputs`, `samples`, `scripts`, `www`. You open `samples/DonHang.Samples/Program.cs`, the only name you recognise, and read it, then a file it names. Twenty minutes later you have read three files and still cannot explain the folder list. Where do you start when the repository is large and the question is small?
 
 ## Core concepts
 
 - folder shape — what the names of a repository's top-level folders say about what it holds, before you open a single file.
-- entry point — the file where execution begins: `Program.cs` for the console project, or `scripts/up.sh` for the lab, the small Linux machine this repository's lesson scripts run inside.
+- entry point — the file where execution begins: `Program.cs` for the console project, or `scripts/up.sh` for the lab, the small Linux machine that most of this repository's lesson scripts, map-codebase.sh among them, run inside.
 - one path — the ordered list of files a single command or a single question travels through, written down as you follow it.
 - backwards search — starting from a string you saw on screen and using `grep -rn` to reach the line that put it there.
-- intent and reason — the two questions code will not answer about itself: what it should do, which the tests state, and why it looks like this, which the file's history states. Git keeps a record of every change someone saved into it, each with a message from whoever made it; `git blame <file>` names the change that last modified a line, and `git log -- <file>` prints the messages of the changes behind that file.
+- intent — what the code should do, a question it will not answer about itself; the tests state it: small programs that run the code with known input and check the result.
+- reason — why the code looks like this, which the file's history states. Git keeps a record of every change someone saved into it, each with a message from whoever made it; `git blame <file>` names the change that last modified a line, and `git log -- <file>` prints the messages of the changes behind that file.
 
 ## How it works
 
@@ -50,17 +51,15 @@ flowchart LR
   F --> G["git log, git blame: why is it like this?"]
 ```
 
-Read the diagram from the left; the diamond is a question, not a step. Each box cuts down what you read next.
+The situation above skipped the first box. Five of the eight names rule themselves in or out on sight: `db`, `docs`, `samples`, `scripts` and `www` say database, prose, sample code, scripts and a site of ready-made pages. The other three say nothing about a price. For a price, `db`, the database, is the first place to look; the search below shows it is not the only one.
 
-In the situation above, the first box is the step you skipped. Five of the eight names rule themselves in or out on sight: `db`, `docs`, `samples`, `scripts` and `www` say database, prose, sample code, scripts and a site of ready-made pages. The other three — `git-playground`, `lab` and `outputs` — say nothing about a price, and a name you cannot read is not a reason to open the folder. A question about a price now has one likely home.
+The entry point answers what runs first: `Program.cs` keeps a list pairing each sample's name with the method that runs it, so one file names every sample the console project can run. It is also where input enters, the sample name you type after the command that runs the project, and where output leaves: each sample prints its result to the screen.
 
-The entry point answers what runs first. The Đơn Hàng console project keeps a list in `Program.cs` pairing each sample's name with the method that runs it, so one file names every sample it can run. The same file shows both ends: input arrives as the name you typed in `args[0]`, output leaves through `Console.WriteLine`.
+When the answer is yes, `grep -rn` takes a pattern and then the folders to search; `-r` walks every file under them, and `-n` prints the line number. When the string is written out literally in the repository, that lands you on the line in one step. When the string is assembled from pieces, search for a stable fragment of it. When it comes from data that is not in the repository, search for the fixed text printed next to it instead.
 
-When the answer is yes, `grep -rn` takes a pattern and then the folders to search; `-r` walks every file under them, and `-n` prints the line number. When the string you saw is written out literally somewhere in the repository, that lands you on the line in one step. When it is assembled from pieces or read from the database, search for a stable fragment instead.
+Your path starts at the line the search names; write that file down and follow on, keeping the list. With no such string, start at the entry point instead.
 
-The line the search names is where your path starts. Write that file down and follow the path on; the list is what you keep. With no such string, start at the entry point instead.
-
-The last two boxes answer what the code will not. A test states what the code should do, in a form you can run. The file's recorded history states why a strange line is there.
+The last two boxes answer what the code will not: a test states what it should do, in a form you can run, and the file's recorded history why a strange line is there.
 
 ## In the Đơn Hàng system
 
@@ -93,9 +92,9 @@ The repository writes this order down for you, as Vietnamese prose you can read 
    câu mà bản thân đoạn code không bao giờ trả lời được.
 ```
 
-The six steps cover the same ground as the diagram in a different order: the list follows one path (step 3) before the backwards search (step 4), while the diagram lets a string you already have take you to the search first. Step 3 names a real route — `scripts/sql/run-query.sh`, then `psql`, which runs the file against the database and prints the rows back, then `db/queries/select-basics.sql`, then `db/schema.sql` — and asks you to keep it as a list of files. Step 4 is the backwards search, with the wireless mouse as its example.
+The six steps match the diagram, except that the list follows one path (step 3) before the backwards search (step 4). Follow the diagram: with a string from the screen, search first, because the hit is where your path starts; the list's order fits when you have no string. Step 3 names a real route to keep as a list of files. Walk it: the last command in `scripts/sql/run-query.sh` is `psql`, which runs a file against the database and prints the rows back; that file is `db/queries/select-basics.sql` unless you name another. The query reads the `products` table, so the next stop is `db/schema.sql`, the file that creates the tables. Step 4 is the backwards search, with the wireless mouse as its example; its "luôn dùng được" (always works) holds only when the string is written out somewhere.
 
-One script walks list steps 1, 2 and 4, each a single command, and adds two of its own: a size count and a listing of the sample folders. Step 3, following one path, is the one you walk yourself:
+One script walks list steps 1, 2 and 4 (numbered the same in its output), each a single command, and adds two of its own: a size count and a listing of the sample folders. Step 3, following one path, is the one you walk yourself:
 
 ```bash file=scripts/craft/map-codebase.sh tag=stage-0 lines=9-26
 echo "1. what kind of thing is this?"
@@ -141,25 +140,25 @@ Http
 Oop
 ```
 
-The script's first command runs `ls -1`, which prints names one per line, over five folders it names in advance; the discovery the first box asks for is plain `ls` at the top of the repository, which the script skips because it already knows the answer. Its second command finds the entry point with `find samples -name 'Program.cs'`, which walks everything under `samples` and prints each file whose name matches, so you need not know where it lives.
+Its first command runs `ls -1`, which prints names one per line, over five folders it names in advance; the discovery the first box asks for is plain `ls` at the top of the repository. Its second command finds the entry point with `find samples -name 'Program.cs'`, which walks everything under `samples` and prints each file whose name matches, so you need not know where it lives.
 
 Its search settles the situation in one command: the price is written in `db/seed.sql`, the file that fills the tables with their starting rows, and again in a C# sample, on the lines the output names.
 
-The count of `.cs` files counts every one `find` sees under `samples`, so read it as a size signal, not as an inventory of files a person wrote: compiling the project writes a few extra `.cs` files there. The capture says `31` because the project had been compiled; a copy taken straight from the repository gives `25`, and either number is the same signal.
+Read the count as a size signal only; it differs between copies. The last step lists the sample folders: each is named after a subject of this course and holds that subject's sample files, so a subject tells you which folder to open.
 
 ## Beginners often think…
 
 - **"I need to understand the whole codebase before I can change anything."** → Actually you need to understand one path, the files a single question travels through. A change is safe when you know what reaches the line you touch and what that line feeds. You notice this when you are weeks into a job, have read a great deal, and still hand back your first small fix half done.
 - **"The best way to learn a codebase is to read it top to bottom."** → Actually reading with no question does not stick: you have nothing to hang the detail on. Reading in depth is what you do second, after a path has shown you which four files matter. You notice this when you finish a folder, close the editor, and cannot say what any of it did.
-- **"A line that looks strange means someone wrote careless code."** → Actually the reason is often outside the file: a system that returned something unexpected, a date that could not move, a rule nobody wrote down. `git blame <file>` names the recorded change that last modified that line, often the one that put it there and sometimes only the last one that touched it. `git log -- <file>` lists the changes that explain how the file came to be, each with its message, and the reason usually sits in one of them. You notice this when you tidy such a line away and something else breaks a week later.
+- **"A line that looks strange means someone wrote careless code."** → Actually the reason is often outside the file: a system that returned something unexpected, a date that could not move, a rule nobody wrote down. `git blame <file>` names the change that last modified that line, not always the one that put it there, and the messages `git log -- <file>` prints usually hold the reason. You notice this when you tidy such a line away and something else breaks a week later.
 
 ## Try it (3 minutes)
 
-1. From the top folder of the example repository, run `scripts/up.sh` and wait for it to finish — that starts the lab.
-2. From the same folder, run `scripts/craft/map-codebase.sh` and read its five numbered steps in order.
-3. Now do step 4 yourself for a different product. In that same folder on your own machine, run `grep -rn 'Bàn phím cơ' db samples`; this search only reads files, so it needs no lab. Open whichever of the two files is not SQL and read the lines around it.
+1. From the top folder of the example repository, run `scripts/up.sh` and wait until it prints `The lab is up.` — that starts the lab.
+2. From the same folder on your own machine, run `scripts/craft/map-codebase.sh`; it moves itself into the lab to run, which is why step 1 started it. Read its five numbered steps in order.
+3. Now do the script's step 4, the search, yourself for a different product. Run `grep -rn 'Bàn phím cơ' db samples`; this search only reads files, so it needs no lab. Open whichever of the two files is not SQL and read the lines around it.
 
-Expected result: the script prints what is inside the five folders it names, `samples/DonHang.Samples/Program.cs` as the entry point, a count of `.cs` files, two lines for `Chuột không dây`, and last the names of the sample folders. Your own search prints two lines as well, in `db/seed.sql` and in `samples/DonHang.Samples/Samples/Data/CollectionsChoice.cs`; the C# file holds a short list of products written out again in code. Both answers took one command, against twenty minutes of reading in the situation.
+Expected result: the script prints what is inside the five folders it names, `samples/DonHang.Samples/Program.cs` as the entry point, a count of `.cs` files, two lines for `Chuột không dây`, and last the names of the sample folders. Your own search prints two lines as well, in `db/seed.sql` and in `samples/DonHang.Samples/Samples/Data/CollectionsChoice.cs`; the C# file holds a short list of products written out again in code. Each answer took one command, not twenty minutes.
 
 ## Connections
 
@@ -171,7 +170,7 @@ Expected result: the script prints what is inside the five folders it names, `sa
 
 ## Five-line summary
 
-1. When a codebase is too large to read in one sitting, follow one path from the entry point instead of reading files in order.
+1. When a codebase is too large to read whole, follow one path, from a search hit or else the entry point, not file by file.
 2. Folder names and the entry point tell you what a repository holds and what runs first, before you open anything.
 3. `grep -rn` for a string written out literally in the code is the shortest route from a behaviour to the line that produced it.
 4. Write the path down as a list of files; one route you can explain beats a whole repository you cannot.

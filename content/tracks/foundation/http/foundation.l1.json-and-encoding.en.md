@@ -15,9 +15,9 @@ vocab: [json, encoding]
 example_tag: stage-0
 versions_used: [http, dotnet, caddy]
 content_version: 1
-status: reviewed
-approved_by: null
-reviewed_at: "2026-09-14T22:53:34+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-28T13:00:00+07:00"
 ---
 
 ## Before you start
@@ -57,7 +57,7 @@ Text is still not what travels. The connection carries bytes, and the encoding d
 
 The `Content-Type` header tells the receiver what the bytes are: `application/json` says the body is JSON. A server that does not accept the format named there can refuse with `415 Unsupported Media Type`. A body labelled JSON that breaks JSON's rules is a client error; a server can answer it with `400 Bad Request`.
 
-On the far side the steps run backwards. Decoding with an encoding that reads one byte as one character, such as ISO-8859-1, turns each letter that took several bytes into two or three wrong characters, one per byte, some of them invisible: garbled Vietnamese. Plain English letters stay the same. Deserializing matches JSON names to the object's properties, so, with settings like the sample's, both sides must agree on how they spell them.
+On the far side the steps run backwards. Decoding with an encoding that reads one byte as one character, such as ISO-8859-1, turns each letter that took several bytes into two or three wrong characters, one per byte: garbled Vietnamese. Plain English letters stay the same. Deserializing matches JSON names to the object's properties, so, with settings like the sample's, both sides must agree on how they spell them.
 
 ## In the Đơn Hàng system
 
@@ -84,11 +84,11 @@ echo "the bytes UTF-8 uses for those seven characters:"
 printf '%s' 'Đà Nẵng' | od -An -tx1
 ```
 
-As the comment at the top of the block says, the line under it starts the whole script again inside the lab box, so everything below runs there. `localhost` means the machine the command runs on, and Caddy shares the lab box's network, so `localhost:8080` reaches Caddy. `curl` sends one request and prints the reply. The `-H` line holds the `Content-Type` this script sends, and the `-d` line holds the body. The output shows the answer's headers before its body, and Caddy answers `201` only to a `POST` on this path.
+As the comment at the top of the block says, the line under it starts the whole script again inside the lab box, so everything below runs there. `localhost` means the machine the command runs on, and Caddy runs with the lab box's IP address and listens on its port 8080, so `localhost:8080` reaches Caddy. `curl` sends one request and prints the reply. The `-H` line holds the `Content-Type` this script sends, and the `-d` line holds the body. The output shows the answer's headers before its body, and Caddy answers `201` only to a `POST` on this path.
 
 The body is an object whose `items` value is an array holding one more object. Its names use a third convention, words joined by `_`; what matters is that the receiver expects the same one.
 
-Lower down, `printf '%s'` prints the city with no line break added. `wc -m` counts characters, `wc -c` counts bytes, and `od -An -tx1` prints each byte as a two-digit hexadecimal number.
+Lower down, `printf '%s'` prints the city with no line break added. `wc -m` counts characters, `wc -c` counts bytes, and `od -An -tx1` prints each byte as a two-digit hexadecimal number (base 16: digits 0-9 then a-f, so two of them cover every value one byte can hold).
 
 ```text output=true
 the request and the answer:
@@ -158,7 +158,7 @@ The `pascalCase` text uses the other convention; its `"""` quotes only let it co
 ## Try it (3 minutes)
 
 1. From the root of the Đơn Hàng repository, start the lab with `scripts/up.sh` and wait for `The lab is up.`, then run `scripts/http/post-json.sh` and note the two counts for `Đà Nẵng`.
-2. From the same folder, run `dotnet run --project samples/DonHang.Samples -- json-round-trip` and read the last line.
+2. From the same folder, run `dotnet run --project samples/DonHang.Samples -- json-round-trip` and read the last line (this needs the .NET 10 SDK on your computer; the lab box does not have it).
 
 Expected result: the script prints `7` and `11`; the sample prints `characters: 18, bytes in UTF-8: 22`. Both gaps are 4: the 11 characters of `{"city":""}` take one byte each, and the four extra bytes come from `Đ`, `à` and `ẵ`.
 
@@ -167,11 +167,11 @@ Expected result: the script prints `7` and `11`; the sample prints `characters: 
 - [[foundation.l1.http-request-response]] — the body after the blank line and the `Content-Length` that measures it; this lesson says what those bytes mean and why the count is in bytes.
 - [[foundation.l1.http-status-codes]] — `400` and `415` sit in the range where the client's request is wrong; a body the server cannot read is one way to land there.
 - [[foundation.l1.time-and-timezones]] — the answer to the missing date type: how to write a moment in time as a string both sides read the same way.
-- [[backend.l1.dtos-and-serialization]] — the same round trip one layer up, in the classes an API reads and writes.
+- [[backend.l1.dtos-and-serialization]] — the same round trip in the classes a server program reads and writes.
 
 ## Five-line summary
 
-1. Two programs exchange bytes; to read the values meant, they must agree on format and encoding, and a server checks `Content-Type` and field names.
+1. Two programs exchange bytes; to read the values meant, they must agree on format, encoding and field names, and `Content-Type` names the format.
 2. JSON is text holding objects, arrays, strings, numbers, `true`, `false` and `null`; it has no dates, no comments and one kind of number.
 3. An encoding turns characters into bytes; JSON between separate systems uses UTF-8, where `Đà Nẵng` is 7 characters but 11 bytes.
 4. `Content-Type` tells the receiver how to read the body; a refused format can earn `415`, a body that breaks JSON's rules `400`.

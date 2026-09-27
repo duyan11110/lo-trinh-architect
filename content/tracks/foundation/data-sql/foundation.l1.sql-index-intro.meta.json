@@ -30,7 +30,7 @@
     },
     {
       "n": 4,
-      "text": "With no index it can use for the condition, PostgreSQL answers a WHERE by a sequential scan: it reads every row of the table and applies the condition to each. EXPLAIN prints this as 'Seq Scan on <table>' with the condition on a 'Filter' line.",
+      "text": "With no index it can use for the condition, PostgreSQL answers a WHERE by a sequential scan: it reads the table row by row from the first and applies the condition to each. EXPLAIN prints this as 'Seq Scan on <table>' with the condition on a 'Filter' line.",
       "kind": "behavior",
       "version_key": "postgresql",
       "source_hint": "PostgreSQL 17 docs §14.1 Using EXPLAIN (Seq Scan example, Filter line); ch. 11 Indexes §11.1",
@@ -48,10 +48,10 @@
     },
     {
       "n": 6,
-      "text": "An index scan searches the index for the entries satisfying the condition and reads only the table rows those entries point to. EXPLAIN prints it as 'Index Scan using <index> on <table>' with the condition on an 'Index Cond' line.",
+      "text": "An index scan searches the index for entries satisfying the condition and reads only the rows they point to; EXPLAIN prints 'Index Scan using <index> on <table>' with an 'Index Cond' line. In a join it can search once per row of the other table (Index Cond: col = that row's value).",
       "kind": "behavior",
       "version_key": "postgresql",
-      "source_hint": "PostgreSQL 17 docs §14.1 Using EXPLAIN (Index Scan, Index Cond); §11.1",
+      "source_hint": "PostgreSQL 17 docs §14.1 Using EXPLAIN (Index Scan, Index Cond); §11.1; §14.1 nested loop example (Index Cond: unique2 = t1.unique2)",
       "needs_verification": true,
       "section": 3
     },
@@ -66,10 +66,10 @@
     },
     {
       "n": 8,
-      "text": "An index occupies disk space and has to stay synchronised with its table, which adds overhead to data manipulation: every INSERT and every UPDATE that changes an indexed column writes index entries too, and rows removed by DELETE leave entries the database cleans up later.",
+      "text": "An index takes disk and must stay in step with its table: every INSERT writes into it, an UPDATE usually does too (always when it changes an indexed column; a HOT update can skip it), and entries of rows a DELETE removes are cleared later by (auto)vacuum on its own.",
       "kind": "behavior",
       "version_key": "postgresql",
-      "source_hint": "PostgreSQL 17 docs ch. 11 Indexes §11.1 (keeping an index synchronised adds overhead to data modification)",
+      "source_hint": "PostgreSQL 17 docs ch. 11 Indexes §11.1 (overhead); storage-hot.html (HOT updates); §24.1 Routine Vacuuming (autovacuum)",
       "needs_verification": true,
       "section": 4
     },
@@ -93,7 +93,7 @@
     },
     {
       "n": 11,
-      "text": "An index on a column cannot serve a condition that applies a function to that column, such as date(placed_at) = '2026-01-02', because the index stores the column's values and not the function's results.",
+      "text": "date(placed_at) returns the day part of a timestamptz value. An index on a column cannot serve a condition that applies a function to that column, such as date(placed_at) = '2026-01-02', because the index stores the column's values and not the function's results.",
       "kind": "behavior",
       "version_key": "postgresql",
       "source_hint": "PostgreSQL 17 docs §11.7 Indexes on Expressions; §14.1 Using EXPLAIN",
@@ -102,10 +102,10 @@
     },
     {
       "n": 12,
-      "text": "A B-tree index can serve a LIKE pattern only when the pattern is a constant anchored to the start of the string, so a search such as LIKE '%webcam%' cannot use it.",
+      "text": "LIKE matches text against a pattern (% = any text). A B-tree index can serve a LIKE pattern only when it is a constant anchored to the start of the string, so LIKE '%Webcam%' cannot use it. LIKE is case-sensitive; the seed product is 'Webcam 720p'.",
       "kind": "behavior",
       "version_key": "postgresql",
-      "source_hint": "PostgreSQL 17 docs §11.2 Index Types (B-tree with LIKE, pattern anchored to the beginning of the string)",
+      "source_hint": "PostgreSQL 17 docs §11.2 Index Types (B-tree with LIKE); §9.7.1 LIKE; examples/don-hang@stage-0: db/seed.sql line 12",
       "needs_verification": true,
       "section": 5
     },
@@ -119,9 +119,9 @@
     },
     {
       "n": 14,
-      "text": "scripts/sql/explain.sh re-runs itself inside the lab box, where the repository appears as /repo, and hands db/queries/index-demo.sql to psql with --file, --echo-queries and ON_ERROR_STOP=on.",
+      "text": "scripts/sql/explain.sh re-runs itself inside the lab box, where the repository appears as /repo, and hands db/queries/index-demo.sql to psql with --file, --echo-queries and ON_ERROR_STOP=on. scripts/up.sh prints 'The lab is up.' when the lab is ready (line 11).",
       "kind": "fact",
-      "source_hint": "examples/don-hang@stage-0: scripts/sql/explain.sh lines 5-9; scripts/lab-run.sh; docker-compose.yml (lab volume ./:/repo:ro)",
+      "source_hint": "examples/don-hang@stage-0: scripts/sql/explain.sh lines 5-9; scripts/lab-run.sh; docker-compose.yml (lab volume ./:/repo:ro); scripts/up.sh line 11",
       "needs_verification": true,
       "section": 5
     },
@@ -153,10 +153,10 @@
     },
     {
       "n": 18,
-      "text": "Adding EXPLAIN (COSTS OFF) SELECT * FROM order_log WHERE customer_id = 3 to the end of index-demo.sql gives a Seq Scan: order_log carries only the placed_at index, and the file's first line sets max_parallel_workers_per_gather = 0 for the session.",
+      "text": "Adding EXPLAIN (COSTS OFF) SELECT * FROM order_log WHERE customer_id = 3 to the end of index-demo.sql gives a Seq Scan, because order_log carries only the placed_at index.",
       "kind": "behavior",
       "version_key": "postgresql",
-      "source_hint": "examples/don-hang@stage-0: db/queries/index-demo.sql lines 3, 16; PostgreSQL 17 docs §14.1; §15.2 When Can Parallel Query Be Used",
+      "source_hint": "examples/don-hang@stage-0: db/queries/index-demo.sql; PostgreSQL 17 docs §14.1",
       "needs_verification": true,
       "section": 7
     },
@@ -170,30 +170,34 @@
     },
     {
       "n": 20,
-      "text": "db/queries/index-demo.sql sets max_parallel_workers_per_gather = 0 above the quoted excerpt, which disables parallel query execution for the session, so no plan the file prints can grow the extra lines a parallel plan adds: each one is two lines, the scan step and its condition.",
+      "text": "Each plan index-demo.sql prints is two lines, the scan step and its condition. order_log is a temporary table, and scans of temporary tables are always parallel restricted, so no parallel (Gather) lines appear.",
       "kind": "behavior",
       "version_key": "postgresql",
-      "source_hint": "examples/don-hang@stage-0: db/queries/index-demo.sql line 3; PostgreSQL 17 docs §20.4 max_parallel_workers_per_gather; §15.2 When Can Parallel Query Be Used",
+      "source_hint": "PostgreSQL 17 docs §15.4 Parallel Safety (scans of temporary tables); lab psql",
       "needs_verification": true,
       "section": 5
     },
     {
       "n": 21,
-      "text": "ANALYZE only updates the statistics the planner reads; it opens no new way to reach a row, so the access path the second plan uses comes from CREATE INDEX and not from ANALYZE.",
+      "text": "ANALYZE only updates the statistics (row count among them) the planner reads to choose a plan; it opens no new path to a row, so the second plan's path comes from CREATE INDEX. On a very small table the planner can pick a Seq Scan even when a usable index exists.",
       "kind": "behavior",
       "version_key": "postgresql",
-      "source_hint": "PostgreSQL 17 docs, SQL Commands: ANALYZE (Description); ch. 11 Indexes §11.1; §14.2 Statistics Used by the Planner",
+      "source_hint": "PostgreSQL 17 docs, SQL Commands: ANALYZE (Description); ch. 11 Indexes §11.1; §14.2 Statistics Used by the Planner; §11.12 Examining Index Usage (very small test data sets)",
       "needs_verification": true,
       "section": 5
     }
   ],
   "coverage": {
-    "outline_items_covered": [1, 2, 3, 4],
+    "outline_items_covered": [
+      1,
+      2,
+      3,
+      4
+    ],
     "outline_items_missing": [],
     "beyond_scope": [
       "One clause says order_log is a temporary table that lasts until the session ends — needed to read the example file, not a topic of the lesson.",
-      "ANALYZE is named in one clause as what refreshes the statistics the planner reads, because it stands between the two EXPLAIN statements in the quoted code.",
-      "One clause says the file switches off the helpers PostgreSQL can split one scan across — needed to account for the shape of the printed plans; the term 'parallel worker' is not used and the planner detail is not opened."
+      "ANALYZE is named in one clause as what refreshes the statistics the planner reads, because it stands between the two EXPLAIN statements in the quoted code."
     ]
   },
   "self_check": {
@@ -201,8 +205,8 @@
     "vocab_all_defined": true,
     "code_from_repo": true,
     "no_external_urls": true,
-    "word_count": 1520,
-    "notes": "apply-review r2. Technical: s5 parallel clause now non-causal and the term dropped (claim 20 = suggested text); summary 4 restores its condition. Junior: s2 'statistics' glossed; diagram node glosses INSERT/UPDATE/DELETE; s5 says what each of the two lines changes (claim 21), glosses /repo, host db and the ::type tail, adds the first-characters step before LIKE, long paragraph split; s4 adds the join sentence. Quiz issues left to /quiz apply-review."
+    "word_count": 1565,
+    "notes": "apply-review r7 (technical r3 pass, junior r2): LIKE defined in one clause (claim 12); date() = day part (claim 11); text-column case split into own paragraph; join sentence rephrased per junior fix; Try-it names order_log query. Quiz: no quiz items. Earlier r6: SET sentence removed, claim 8 suggested_text, ANALYZE split, dictionary bridge."
   },
   "open_questions": [
     "Outline item 2 says primary keys and foreign keys are the usual index candidates; in PostgreSQL a primary key already has its index, so the lesson states the candidate as the foreign key column and any column filtered or joined on often (claim 16). If the outline wants the wording kept, it should be reworded there too."

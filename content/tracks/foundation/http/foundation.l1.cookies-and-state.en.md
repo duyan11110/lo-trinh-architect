@@ -15,9 +15,9 @@ vocab: [cookie]
 example_tag: stage-0
 versions_used: [http, caddy]
 content_version: 1
-status: reviewed
-approved_by: null
-reviewed_at: "2026-09-09T02:12:14+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-28T13:00:00+07:00"
 ---
 
 ## Before you start
@@ -31,10 +31,10 @@ You start the Đơn Hàng lab, this course's example site, with `scripts/up.sh`,
 ## Core concepts
 
 - stateless — the property that each request is meant to be understood on its own, so a server may answer two identical requests without relating them to each other.
-- **cookie** — a small name and value the server asks the client to keep and to send back on later requests to the same site: the same host name the client asked for, such as `localhost` in the lab.
+- **cookie** — a small name and value the server asks the client to keep and to send back on later requests to the same site — in the lab, exactly the host name the client asked for, `localhost`.
 - `Set-Cookie` — the response header that carries one cookie: its name, its value, and the attributes that constrain it.
 - `Cookie` — the request header the client uses to send stored values back, several pairs to a line.
-- session identifier — a value that means nothing by itself and only points at state — what the server remembers about this visitor — that the server holds, such as `sid=dev-session-1` in the lab.
+- session identifier — a value that means nothing by itself and only points at state — what the server remembers about this visitor — that the server holds; the lab's `sid=dev-session-1` has that shape, and what this lab keeps behind it comes under "In the Đơn Hàng system".
 - attribute — an instruction written after the value in `Set-Cookie`, such as `HttpOnly`, `Secure` or `SameSite`, deciding who may read the cookie and when it is sent.
 
 ## How it works
@@ -51,7 +51,7 @@ sequenceDiagram
   S-->>C: 200
 ```
 
-In the situation above, your first request carries nothing that names you, so the server answers `401`. HTTP is stateless: each request is meant to be understood on its own, and a server is free to answer two identical requests without ever relating them. The connection underneath may be reused for both, but a shared connection is a transport detail, not an identity.
+In the situation above, your first request carries nothing that names you, so the server answers `401`. HTTP is stateless: each request is meant to be understood on its own, and a server is free to answer two identical requests without ever relating them. One TCP connection can carry several requests one after another, but it only moves bytes; it says nothing about who sent them.
 
 The second exchange changes that. When the server answers `/login.html`, it adds a `Set-Cookie` header to the response, carrying one name, one value and a few attributes. The client stores them. From then on the client attaches a `Cookie` header to later requests to that site, without your code asking for it. The attributes decide which of those requests get it. That automatic resend is the whole mechanism.
 
@@ -89,7 +89,9 @@ curl -sS -o /dev/null -w '   %{http_code}\n' -H 'Cookie: role=guest' http://loca
 
 `curl` keeps nothing between runs unless you tell it to, which is why the script has to name a file (a line above this excerpt puts a temporary file name in `$jar`): `-c "$jar"` writes what the server sets into that file, and `-b "$jar"` sends it back on a later request.
 
-Of the other options, `-sS` hides the progress display, `-o /dev/null` throws the body away so that only what we asked for prints, `-w '%{http_code}'` prints the status code alone, `-D -` prints the response headers, and `-H` writes a request header by hand — which is what step 5 does instead of using the file. Two other programs trim the output: `grep` keeps only the lines matching a pattern, so step 2 keeps the `Set-Cookie` line out of all the headers, and `tr` in step 3 swaps tabs for spaces so the record prints readably. Here is what the five steps print:
+Of the other options, `-sS` hides the progress display, `-o /dev/null` throws the body away so that only what we asked for prints, `-w '%{http_code}'` prints the status code alone, `-D -` prints the response headers, and `-H` writes a request header by hand — which is what step 5 does instead of using the file.
+
+Two other programs trim the output: `grep` keeps only the lines matching a pattern, so step 2 keeps the `Set-Cookie` line out of all the headers, and `tr` in step 3 swaps tabs for spaces so the record prints readably. Here is what the five steps print:
 
 ```text output=true
 1. asking for /admin with nothing to identify us:
@@ -108,9 +110,9 @@ Set-Cookie: sid=dev-session-1; Path=/; HttpOnly; SameSite=Lax
    403
 ```
 
-Steps 1 and 4 send the same request to the same address and get `401` and `200`. The only difference is the header line built from what step 2 set. Read that header: `Path=/` sends the cookie on every path of this site, `HttpOnly` hides it from scripts in the page, and `SameSite=Lax` restricts requests another site starts. There is no `Secure`, because the lab site here is plain HTTP.
+Steps 1 and 4 send the same request to the same address and get `401` and `200`. The only difference is the header line built from what step 2 set. Read that header: `Path=/` sends the cookie on every path of this site, `HttpOnly` hides it from scripts in the page, and `SameSite=Lax` restricts requests another site starts (`Lax` is the setting's value; the lesson does not need the others). There is no `Secure`, because the lab site here is plain HTTP.
 
-Step 3 shows what the client actually filed — read the last two fields, `sid` and `dev-session-1`; the rest is the client's own bookkeeping, and none of it is about you. The lab's server files nothing behind the key — it only looks for the name — so the state on the server side is something you take on trust until stage 1. Step 5 sends the one value the lab is configured to reject. The lab treats `role=guest` as a visitor it has already decided about, so this request is not one with no identity — it is one with an identity the server turns away. The answer is `403`, not `401`, because the server understood the request and refused it rather than asking who is there.
+Step 3 shows what the client actually filed — read the last two fields, `sid` and `dev-session-1`; the rest is the client's own bookkeeping, and none of it is about you. The lab's server files nothing behind the key; it only checks the `Cookie` line: one containing `role=guest` gets `403`, otherwise one containing `sid=` gets `200`, and anything else gets `401`. Real server-side state waits for a later lesson that builds a server storing it. Step 5 sends the one value the lab is configured to reject. This request is not one with no identity — it is one with an identity the server turns away. The answer is `403`, not `401`, because the server understood the request and refused it rather than asking who is there.
 
 The page that sets the cookie is a plain page with no form and no password:
 
@@ -121,12 +123,12 @@ Sau đó <a href="/admin">/admin</a> nhận ra bạn.</p>
 <p>Cookie chỉ chứa một mã phiên. Dữ liệu nằm ở máy chủ.</p>
 ```
 
-The Vietnamese text says what the exchange does: open this page once, the server sets the `sid` cookie for you, and `/admin` then recognises you; the cookie holds only a session code and the data stays on the server. Nothing in the page does the work. The server attaches the header, and the client does the rest by itself.
+The Vietnamese text says what the exchange does: open this page once, the server sets the `sid` cookie for you, and `/admin` then recognises you; the cookie holds only a session code and the data stays on the server. The server attaches the header; the client does the rest.
 
 ## Beginners often think…
 
 - **"The server remembers me between requests by itself."** → Actually the server answers each request on what that request contains; two requests look like one visitor only because the client attached the same value to both. You notice this when a page works in the browser and the identical `curl` command answers `401`.
-- **"The cookie stores my login data."** → Actually the lab's cookie is `sid=dev-session-1`, a key with no meaning outside the server that issued it, and the server holds everything the key stands for. You notice this when deleting one small value makes the site treat you as a stranger, while everything the server holds is still there.
+- **"The cookie stores my login data."** → Actually the lab's cookie is `sid=dev-session-1`, a key with no meaning outside the server that issued it, and a server that keeps state holds everything the key stands for on its own side. You notice this when deleting one small value makes the site treat you as a stranger — as step 4 does once `-b "$jar"` is removed.
 - **"`HttpOnly` makes the value secret."** → Actually `HttpOnly` only keeps scripts in the page from reading it; the value still travels in the request, readable by anything that can see the connection, until `Secure` and TLS are in play. You notice this when a value marked `HttpOnly` shows up plainly in any tool that prints request headers.
 
 ## Try it (3 minutes)

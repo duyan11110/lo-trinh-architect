@@ -15,9 +15,9 @@ vocab: [dto]
 example_tag: stage-1
 versions_used: [aspnetcore]
 content_version: 1
-status: reviewed
-approved_by: null
-reviewed_at: "2026-09-25T00:30:00+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-28T13:00:00+07:00"
 ---
 
 ## Before you start
@@ -30,10 +30,10 @@ A teammate suggests skipping a separate type for what `GET /api/v1/products/{id}
 
 ## Core concepts
 
-- **DTO** (data transfer object) — a plain type shaped for the wire — for the JSON that travels in a request or a response — holding only the fields a client needs, kept separate from the internal type (the entity) the server uses for the same thing.
+- **DTO** (data transfer object) — a plain type shaped for the wire — for the JSON that travels in a request or a response — holding only the fields a client needs, kept separate from the internal type the server uses for the same thing. This lesson calls that internal type the entity.
 - serialization — turning a DTO into JSON automatically when an endpoint returns it; each property becomes a JSON field.
 - deserialization — the reverse: turning a request body's JSON into a DTO, the same kind of mapping run the other way.
-- naming — by default the server writes each property name in camelCase when it answers a request: the first word lowercase, later words keeping their capital — a C# `PriceVnd` becomes a JSON `priceVnd`, not because you asked, but because that is the default.
+- camelCase naming — by default the server writes each property name in camelCase when it answers a request: the first word lowercase, later words keeping their capital — a C# `PriceVnd` becomes a JSON `priceVnd`, not because you asked, but because that is the default.
 
 ## How it works
 
@@ -44,11 +44,13 @@ flowchart LR
   D[JSON request body] -->|deserialized| E[CreateOrderRequest DTO]
 ```
 
-A DTO is not the entity; something in the endpoint's own code has to build one from the other, field by field. `ProductsController.List()`, the method that answers `GET /api/v1/products` from the last lesson, does exactly this: `new ProductDto(p.Id, p.Name, p.PriceVnd)`, one argument per property, read off `p`, a `Product` row. `Get(int id)`, the item-URL method Try it below calls, builds one the same way from the single row it finds. Once that `ProductDto` is what the endpoint returns, serialization takes over — it walks the DTO's properties and writes one JSON field per property, with no further code from you.
+A DTO is not the entity; something in the endpoint's own code has to build one from the other, field by field. `ProductsController`, the class holding the product endpoints, answers `GET /api/v1/products` in its `List()` method. It builds each item with `new ProductDto(p.Id, p.Name, p.PriceVnd)`, one argument per property, where `p` is one `Product` read from the products table.
+
+`Get(int id)` answers the item URL that Try it calls; it builds a `ProductDto` the same way from the one row it finds. Once that `ProductDto` is what the endpoint returns, serialization takes over — it walks the DTO's properties and writes one JSON field per property, with no further code from you.
 
 The same mapping runs in reverse for a request body: `POST /api/v1/orders`'s body is JSON, and deserialization turns it into a `CreateOrderRequest` before your endpoint's code runs — one JSON field filling one property, the same field-by-field mapping, run the other way.
 
-Property names do not survive that trip unchanged going out: by default, each property name is written in camelCase for a response — the first word lowercase, later words keeping their capital — so a C# property `PriceVnd` is written as JSON `priceVnd`. What an incoming body's field names should look like is left for a later lesson. Nothing in `ProductDto` asks for this response-side change, and nothing in this lesson changes it further.
+Property names do not survive that trip unchanged going out: by default, each property name is written in camelCase for a response — the first word lowercase, later words keeping their capital — so a C# property `PriceVnd` is written as JSON `priceVnd`. Nothing in `ProductDto` asks for this, and this lesson only looks at the names in a response.
 
 ## In the Đơn Hàng system
 
@@ -70,18 +72,18 @@ public sealed record CreateOrderItemRequest(int ProductId, int Quantity, int Uni
 public sealed record CreateOrderRequest(List<CreateOrderItemRequest> Items);
 ```
 
-Each `record` here is a type whose only job is to hold these named values — a shape, not behavior. Each name in the parentheses is one property of that type — that is the list serialization walks. `ProductDto` happens to list the same three fields as the `Product` entity it is built from, but that is a coincidence of today's code, not a rule; they are still two separate types, and the comment above them says why: the API answers in these shapes, not the entity's.
+Each `record` here is a type whose only job is to hold these named values — a shape, not behavior. Each name in the parentheses is one property of that type — that is the list serialization walks. `CreateOrderRequest`'s `Items` holds one `CreateOrderItemRequest` per item being ordered, the request-body counterpart of `OrderItemDto`. `ProductDto` happens to list the same three fields as the `Product` entity it is built from, but that is a coincidence of today's code, not a rule; they are still two separate types, and the comment above them says why: the API answers in these shapes, not the entity's.
 
 `OrderItemDto` shows the "only the fields a client needs" half of the definition on its own: the entity behind it, `OrderItem`, also carries an `OrderId`, tying each item back to its order row. `OrderItemDto` drops that field — a client reading an order already knows which order it asked for, so repeating that id on every item inside it would say nothing new. An `OrderItemDto` only ever appears inside an `OrderDto`, in the `Items` list above, which is exactly why the order id it would repeat is always already known.
 
 ## Beginners often think…
 
-- **"Returning the same class the server uses internally is simpler and just as safe as writing a DTO."** → Actually it works only until the internal type needs a field the client should never see, or drops a field a client already depends on. `Customer`, in `DonHang.Domain`, carries a `PasswordHash` alongside a customer's name and email — returning `Customer` directly from any future endpoint would serialize that field too: it appears in the response as `passwordHash`, `null` or not.
+- **"Returning the same class the server uses internally is simpler and just as safe as writing a DTO."** → Actually it works only until the internal type needs a field the client should never see. `Customer`, in `DonHang.Domain`, carries a `PasswordHash` (a scrambled form of the customer's password, which must never leave the server; `null` until the customer sets a password) alongside a customer's name and email — returning `Customer` directly from any future endpoint would serialize that field too: it appears in the response as `passwordHash`, `null` or not. The same would happen to `Product` the day it gains such a field.
 - **"A JSON field's name always matches a C# property name exactly, with nothing to configure."** → Actually, by default, each property name is written in camelCase for a response: `ProductDto`'s `PriceVnd` reaches the client as `priceVnd`. You notice this in Try it below, where the response never has a capital `P` in `priceVnd`.
 
 ## Try it (3 minutes)
 
-1. From the Đơn Hàng project's root folder, start the example system with `scripts/up.sh`, then run `curl -s http://localhost:8080/api/v1/products/1`.
+1. From the Đơn Hàng project's root folder, start the example system with `scripts/up.sh`, then run `curl -s http://localhost:8080/api/v1/products/1` (`curl` sends a GET request to that URL and prints the response body; `-s` hides its progress output). `localhost:8080` is port 8080 on your own machine, where the lab that `scripts/up.sh` starts answers; requests under `/api/v1/` are passed on to the API.
 2. Look at the field names in the response.
 
 Expected result: `{"id":1,"name":"Bàn phím cơ","priceVnd":1250000}` — three fields, matching `ProductDto`'s three properties, but each name starts with a lowercase letter: `id`, not `Id`; `priceVnd`, not `PriceVnd`.

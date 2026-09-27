@@ -15,9 +15,9 @@ vocab: []
 example_tag: stage-0
 versions_used: [dotnet]
 content_version: 1
-status: reviewed
-approved_by: null
-reviewed_at: "2026-09-20T23:08:13+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-28T13:00:00+07:00"
 ---
 
 ## Before you start
@@ -31,9 +31,9 @@ A message about Đơn Hàng reaches you: order 1 shows 900.000 đồng instead o
 ## Core concepts
 
 - reproduction — a command you can run whenever you like that produces the same failure every time, so that a later run can tell you whether anything actually changed.
-- narrowing — shrinking the distance between the start of the run and the first value that is wrong, by halving the input or the path through the code.
+- narrowing — halving the input while the failure survives, until you hold the smallest input that still fails and the earliest value that differs from the one you expected.
 - hypothesis — one sentence naming a cause, written so that a single check could show it to be false.
-- check — the smallest thing you can run to decide a hypothesis, with its result predicted before you run it.
+- check — the smallest thing you can run, or trace by hand for one fixed input, to decide a hypothesis, with its result predicted before you do it.
 - notes — the running record of what you ran, what you expected and what you got, in the order you did it.
 
 ## How it works
@@ -51,17 +51,17 @@ flowchart LR
   C --> W
 ```
 
-In the situation above you have someone else's sentence and no reproduction: nothing you can run to see 900.000 for yourself. A reproduction is a command, a fixed input and an expected result. Without one you cannot tell a fix from a coincidence: a failure that comes and goes may simply not have happened on the run after your change.
+In the situation you have someone else's sentence and nothing you can run to see 900.000 yourself. A reproduction is a command, a fixed input and an expected result. Without one you cannot tell a fix from a coincidence: a failure that comes and goes may not have happened on the run after your change.
 
-Once the failure appears on demand, narrow it: keep the command, halve the input, and see whether the failure survives. Each halving is information. If it survives, the half you kept is enough to trigger it, so keep halving there. If it disappears, what you removed matters, so put half of it back and run again. You stop when you hold the smallest input that still fails and know the earliest point where the value you see differs from the value you expected.
+Once the failure appears on demand, narrow it: keep the command, halve the input, and see whether the failure survives. If it survives, the half you kept is enough to trigger it, so keep halving there. If it disappears, what you removed matters, so put half of it back and run again. You stop at the smallest input that still fails and the earliest value that differs from the one you expected. Here you see only printed values, so that is the first printed number that differs from the expected number printed beside it, as the sample in the next section does; watching values inside a run comes later.
 
-Then state one hypothesis — a single sentence that could be false, such as "the loop never processes the last line". "Something is wrong with the total" cannot be false, so it is not a hypothesis. Design the check before running it: say what you will see if the sentence is true and what you will see if it is not. A check whose result you cannot predict decides nothing.
+Then state one hypothesis — a single sentence that could be false, such as "the loop never processes the last line". "Something is wrong with the total" cannot be false, so it is not a hypothesis. Design the check before running it: say what you will see if the sentence is true and if it is not. A check whose result you cannot predict decides nothing about the sentence you are testing.
 
-If the check disproves the hypothesis, write the result down and state the next one; a disproved sentence still removes one possible cause, so there is less left to look at, even though the input you run stays the same size. If the hypothesis survives, change the code, then run the reproduction again, unchanged. The notes grow the whole way through, and they are what a later question or written report is made of.
+If the check disproves the hypothesis, write the result down and state the next one; a disproved sentence still removes one possible cause, even though the input you run stays the same size. If the hypothesis survives, change the code, then run the reproduction again, unchanged. The notes grow throughout; they are what a later question or written report is made of.
 
 ## In the Đơn Hàng system
 
-The console project in the example repository, at its first version (`stage-0`), carries this bug as a sample, and the sample carries its own reproduction. You start it from the top folder of the repository with `dotnet run --project samples/DonHang.Samples -- wrong-total`; `--project` names the project to run — here the folder that holds it — and the word after `--` picks the sample.
+The console project in the example repository, at its first version (`stage-0`), carries this bug as a sample, and the sample carries its own reproduction. You start it from the top folder of the repository with `dotnet run --project samples/DonHang.Samples -- wrong-total`; `--project` names the project to run — here the folder that holds it — and the word after `--` picks the sample. The sample calls `TotalVnd`, the function that adds up an order (shown further down).
 
 ```csharp file=samples/DonHang.Samples/Samples/Debug/WrongTotal.cs tag=stage-0 lines=18-24
     public static void Run()
@@ -73,9 +73,11 @@ The console project in the example repository, at its first version (`stage-0`),
     }
 ```
 
-Both printed lines are reproductions: a fixed input, and the expected number written beside the number actually produced — the second is the first one narrowed. The first is order 1 as the starting data has it, one item at 1.250.000 and two at 450.000. It prints `expected 2150000, got 1250000` — not the 900.000 the message claimed. You cannot reproduce the reported number from this code, so the number you produce yourself is the one to explain. The second printed line is the narrowing, already done for you: the same call with `orderOne[..1]`, the first item of the order alone, which prints `expected 1250000, got 0`.
+Both printed lines come from reproductions: one command, two fixed inputs, each with its expected number beside the number produced — the second input is the first one narrowed. The first is order 1 as the starting data has it, one item at 1.250.000 and two at 450.000. It prints `expected 2150000, got 1250000`, and the printed 1250000 does not match the reported 900.000, so this run does not reproduce the report; 900.000 is what the order's 2 × 450.000 line alone gives, for example if the reporter's rows arrive in the other order. Write the gap into your notes and ask for the reporter's data. The run still reproduces a failure, since order 1's total is wrong on every run, so the rest of this section works on that one.
 
-Of the two printed lines the 0 is the easier to explain, because for this input — a single line of 1 × 1.250.000 — the only way the sum stays 0 is a loop body that never ran, while 1.250.000 is a plausible number that still needs explaining. It gives the hypothesis something to bite on: the loop never runs its body when the order has one line.
+The second printed line is the narrowing, already done for you: the same call with `orderOne[..1]`, the first item of the order alone, which prints `expected 1250000, got 0`.
+
+Of the two printed lines the 0 is the easier to explain: for a single line of 1 × 1.250.000 the simplest explanation for a sum that stays 0 is a loop body that never ran, while 1.250.000 is a plausible number that still needs explaining. It gives the hypothesis something to bite on: the loop never runs its body when the order has one line.
 
 ```csharp file=samples/DonHang.Samples/Samples/Debug/WrongTotal.cs tag=stage-0 lines=7-16
     public static int TotalVnd(IReadOnlyList<(int Quantity, int UnitPriceVnd)> lines)
@@ -90,7 +92,7 @@ Of the two printed lines the 0 is the easier to explain, because for this input 
     }
 ```
 
-The check is to read the condition with `lines.Count` equal to 1: `i < 0` is false the first time it is evaluated, the body never runs, and `totalVnd` is returned as the 0 it started as. The hypothesis survives, and it predicts the other line as well — with two items the condition stops after `i` is 0, the second item is left out, and 1.250.000 comes back. One sentence now accounts for both observations, and that is the point at which changing the code stops being guessing.
+The check is to trace the condition by hand with `lines.Count` equal to 1, predicting first: if the hypothesis is true, 0 comes back; if it is false, the body runs once and 1250000 comes back. With `lines.Count` equal to 1, `lines.Count - 1` is 0, so the condition is `i < 0`, which is false the first time it is evaluated; the body never runs, and `totalVnd` is returned as the 0 it started as. The hypothesis survives, and it predicts the other line as well — with two items the condition stops after `i` is 0, the second item is left out, and 1.250.000 comes back. With the reporter's rows the other way round, the item left out is the 1 × 1.250.000, and only 2 × 450.000 = 900.000 comes back, which is why their data is worth asking for. One sentence now accounts for both observations, and that is the point at which changing the code stops being guessing. Changing the condition so the loop visits every line — dropping the `- 1`, so the loop runs while `i` is less than `lines.Count` — should make both printed lines show `got` equal to `expected`, which rerunning the reproduction confirms.
 
 ## Beginners often think…
 
@@ -99,7 +101,7 @@ The check is to read the condition with `lines.Count` equal to 1: `i < 0` is fal
 
 ## Try it (3 minutes)
 
-1. From the top folder of the example repository, run `dotnet run --project samples/DonHang.Samples -- wrong-total` and write the first printed line down as a note — `ran: wrong-total`, `expected: 2150000`, `got: 1250000` — then do the same for the second.
+1. From the top folder of the example repository at `stage-0`, run `dotnet run --project samples/DonHang.Samples -- wrong-total` and write the first printed line down as a note — `ran: wrong-total`, `expected: 2150000`, `got: 1250000` — then do the same for the second.
 2. Predict what `TotalVnd` returns for an order of three items — 1 × 1.250.000, 2 × 450.000 and 1 × 320.000 — by reading the loop's condition with `lines.Count` equal to 3. Write the prediction down before you open the suggested answer below.
 
 Expected result: the run prints `expected 2150000, got 1250000` and `one line only: expected 1250000, got 0`.

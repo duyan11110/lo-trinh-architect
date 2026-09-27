@@ -15,9 +15,9 @@ vocab: [tls]
 example_tag: stage-0
 versions_used: [caddy, docker, http, tls]
 content_version: 1
-status: reviewed
-approved_by: null
-reviewed_at: "2026-09-14T23:25:43+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-28T13:00:00+07:00"
 ---
 
 ## Before you start
@@ -44,21 +44,22 @@ sequenceDiagram
   participant B as Your browser
   participant S as donhang.local:8443
   B->>S: TCP connection, as in the previous lesson
-  B->>S: 1. hello — the name I asked for is donhang.local, and key material of my own
-  S->>B: 2. key material, then my certificate and a signature over the exchange
-  Note over B,S: after the server's key material, only these two can read the bytes, the certificate included
+  Note over B,S: TLS 1.3, the version the lab prints
+  B->>S: 1. the name I asked for is donhang.local, and key material of my own
+  S->>B: 2. key material, then my certificate, a signature over the exchange, and my own proof
+  Note over B,S: after the server's key material, only these two can read the handshake, the certificate included
   Note over B: 3. that signature, and name, signer, dates
   B->>S: 4. proof I saw the same handshake
   B->>S: 5. the page I want
 ```
 
-Your browser first opens a TCP connection, as in the previous lesson; every message below travels on it. It begins by naming the site it wants and sending key material: values made up for this connection, not the certificate's pair, that its keys will be built from. One machine on one port can hold certificates for several names, so it must be told which. In the usual setup, which the lab uses, that name travels before anything is encrypted: setting up the encryption is what this exchange, the TLS handshake, is for.
+Your browser first opens a TCP connection. It names the site it wants and sends key material. One machine on one port can hold certificates for several names, so it must be told which. This exchange, the TLS handshake, is what sets up the encryption, so in the usual setup, which the lab uses, the name travels before anything is encrypted. Some setups hide it.
 
-The server answers with key material of its own, then its certificate. The two sets become the keys both ends use; how is a later lesson, but seeing both sets on the way is not enough to build those keys. In TLS 1.3 everything after the server's key material is encrypted. The certificate is still no secret: anyone who connects is handed it.
+The server answers with key material of its own, then its certificate. The two sets become the keys both ends use; each side also keeps a private value it never sends, made for this connection, not the certificate's private key, so seeing both sets is not enough to build those keys. TLS comes in numbered versions; in 1.3, which the lab uses, every handshake message after the server's key material is encrypted. The certificate is still handed to anyone who connects.
 
-The server also signs the whole exchange with its private key, which is never sent. At step 3 the browser checks the server's signature over the exchange with the public key in the certificate; a machine holding only a copy of the certificate cannot make one that passes. The browser also checks three things it reads off the certificate: whether it lists the name you asked for, whether the authority's signature on it leads back to your machine's list, and whether now falls between its two dates. A failure in any one stops the page; some browsers let you confirm and go on anyway.
+The server also signs the whole exchange with its private key, which is never sent. At step 3 the browser checks that signature with the certificate's public key; a machine holding only a copy of the certificate cannot make one that passes. The browser also checks three things it reads off the certificate: whether it lists the name you asked for, whether its signer is on your machine's list, directly or through another authority that is, and whether now falls between its two dates. A failure in any one stops the page; some browsers let you confirm and go on anyway.
 
-At step 4 the browser sends back proof it saw the same messages, so nothing in between changed them. Only then, at step 5, does the browser ask for the page, inside the same protection.
+The server ended step 2 with a proof computed over the messages so far; at step 4 the browser sends its own, so both know they saw the same messages and nothing in between changed them. Only then, at step 5, does it ask for the page.
 
 ## In the Đơn Hàng system
 
@@ -76,7 +77,7 @@ donhang.local:8443 {
 
 The line `donhang.local:8443 {` is an address: everything up to the closing brace answers for `donhang.local` on port 8443. `root * /srv/www` and `file_server` serve the same folder as the plain `:8080` site. The line that matters is `tls internal`: it tells Caddy to create an authority of its own and sign a certificate for `donhang.local` with it. Nothing in the lab puts that authority on your browser's list, and that is the whole difference.
 
-A script reads the certificate back off the connection. It runs on the lab box, the lab's small Linux machine for scripts, whose list lacks Caddy's authority too. Caddy runs on a second small machine the lab starts, which shares the lab box's addresses and ports: on the lab box, `127.0.0.1` port 8443 is Caddy listening, and the lab box's hosts file already points `donhang.local` there.
+A script reads the certificate back off the connection. It runs on the lab box, the lab's small Linux machine for scripts, whose list lacks Caddy's authority too. Caddy runs on a second small machine the lab starts; the lab gives it no address of its own, so it shares the lab box's. So on the lab box, `127.0.0.1` port 8443 is Caddy listening, and the lab box's hosts file already points `donhang.local` there.
 
 ```bash file=scripts/network/inspect-cert.sh tag=stage-0 lines=7-19
 echo "the certificate the site presents:"
@@ -110,24 +111,24 @@ what the two sides agreed to use:
     Cipher    : TLS_AES_128_GCM_SHA256
 ```
 
-`openssl s_client` opens a TLS connection to `donhang.local:8443` and prints what came back; `openssl x509 -noout` then prints only the fields named after it, and `grep -E` keeps only the `Protocol` and `Cipher` lines. You can pass over `echo |` and `2>/dev/null`.
+`openssl s_client` opens a TLS connection to `donhang.local:8443` and prints what came back; `openssl x509 -noout` then prints only the fields named after it, and `grep -E` keeps only the `Protocol` and `Cipher` lines.
 
-The first part names the signer but no site: `subject=` is empty, so the site's name lives in the second part, under `X509v3 Subject Alternative Name` (the trailing `critical` you can pass over). That field, not the subject, is what a browser matches the name against. The issuer is the authority `tls internal` created; the rest of its name is a later lesson. The dates print as `...` because this printed copy masks values that can change between runs; your own run shows two real dates. The third part prints the version, `TLSv1.3`, and one more line a later lesson explains; both are agreed during the handshake, not assumed.
+The first part names the signer but no site: `subject=` (the field that once named the site) is empty, so the name lives in the second part, under `X509v3 Subject Alternative Name`, where `DNS:` marks a name, not a lookup. That field, not the subject, is what a browser matches the name against. The issuer is the authority `tls internal` created. The third part prints the version, `TLSv1.3`, agreed during the handshake, not assumed. You can pass over `echo |`, `2>/dev/null`, the trailing `critical`, the rest of the issuer's name and the `Cipher` line, which later lessons explain. The dates print as `...` because this printed copy masks values that change between runs.
 
 Notice what the script never does: nothing in it stops on a signer it does not accept, so it prints the certificate of the site the browser refuses. The check that failed is about who signed, not about encryption. The browser, which does refuse, ran the checks and knows which failed; TLS also has separate error codes for an expired certificate and for a signer it does not accept.
 
 ## Beginners often think…
 
 - **"HTTPS means the website is trustworthy."** → Actually the checks say only that the bytes are hidden on the way and that the server holds the private key for the name you typed. None of them looks at who is behind that name or what the site does with what you send. You notice this when a fake shop, at a name one letter off the real one, shows the same padlock, with a genuine certificate for its own name.
-- **"Encryption hides everything, including which site I visit."** → Actually the address, the port and, normally, the name in the first message travel before any encryption starts. What is hidden is which page you asked for and what you sent with it. You notice this when a network you do not control can list the sites a laptop opened, but not one page from any of them.
+- **"Encryption hides everything, including which site I visit."** → Actually the address and port are never encrypted, and normally the name in the first message goes out before encryption. What is hidden is which page you asked for and what you sent with it. You notice this when a network you do not control can list the sites a laptop opened, but not one page from any of them.
 - **"An expired certificate still encrypts, so nothing is really wrong."** → Actually the date check fails on the date alone, however well the encryption works. If nobody is responsible for replacing the certificate before its later date, this is not bad luck but a date that was always coming. You notice this when a site that worked yesterday fails for everyone at once, on a day nobody changed anything.
 
 ## Try it (3 minutes)
 
 1. Start the lab with `scripts/up.sh`, then run `scripts/network/inspect-cert.sh`. Read the `issuer=` line and the name under the second heading, and check the `notBefore` and `notAfter` dates against today.
-2. Add `127.0.0.1 donhang.local` to your machine's hosts file, then open `donhang.local` on port 8443 in a browser, using the `https` form of the address. Read what the browser says about the connection.
+2. Add `127.0.0.1 donhang.local` to your machine's hosts file, then open `donhang.local` on port 8443 in a browser, using the `https` form of the address.
 
-Expected result: the script prints an issuer containing `Caddy Local Authority`, one valid name `DNS:donhang.local`, and `Protocol  : TLSv1.3`. The browser stops or asks you to confirm, as in the situation. Two of its three checks pass, name and dates, so the one that failed is who signed.
+Expected result: the script prints an issuer containing `Caddy Local Authority`, one valid name `DNS:donhang.local`, and `Protocol  : TLSv1.3`. The browser stops or asks you to confirm, as in the situation. Of the three checks above, name and dates pass, so the one that failed is who signed.
 
 ## Connections
 

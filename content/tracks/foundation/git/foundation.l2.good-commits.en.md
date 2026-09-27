@@ -15,9 +15,9 @@ vocab: []
 example_tag: stage-0
 versions_used: [git]
 content_version: 1
-status: reviewed
-approved_by: null
-reviewed_at: "2026-09-22T00:57:08+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-28T13:00:00+07:00"
 ---
 
 ## Before you start
@@ -32,7 +32,7 @@ In the Git module's playground repository — the throwaway repository its scrip
 
 - logical change — one thing done to the system that stands on its own: a fix, a rename, one new behaviour. It is the unit a commit should hold.
 - subject line and body — the first line of a commit message, the one `git log --oneline` prints next to the abbreviated id, and everything after the blank line that follows it, where the reasoning goes.
-- diff — the list of lines a change removes and adds: what `git diff` prints and what a reader of your commit sees. Each contiguous block of those lines inside one file is a hunk, marked in the output by a line starting `@@`, and the hunk is the unit `git add --patch` offers you one at a time.
+- diff — the list of lines a change removes and adds: what `git diff` prints and what a reader of your commit sees. Each block of changed lines, together with the few unchanged lines Git prints around it (three by default), is a hunk, marked by a line starting `@@`; changes close enough to share those surrounding lines fall into one hunk. The hunk is the unit `git add --patch` offers you one at a time.
 - revert — a new commit that undoes exactly what one earlier commit changed, written by `git revert <commit>`.
 - blame — `git blame`, which names, for each line of a file, the commit that last changed it.
 - bisect — `git bisect`, which repeatedly halves a range of commits to find the first one where a symptom appears.
@@ -46,12 +46,13 @@ flowchart LR
   P -->|"n, second hunk"| W2["working directory: second edit stays"]
   S1 --> C1["commit 1: one change, its own message"]
   W2 --> S2["staging area: second edit"]
+  C1 -->|"then"| S2
   S2 --> C2["commit 2: revertable on its own"]
 ```
 
-In the situation above, the two edits are one sitting but two logical changes: marking the script work in progress has nothing to do with how a reader checks the total. `git add --patch README.md` walks the file hunk by hunk and asks about each one, so the two edits reach the staging area separately even though they live in the same file. Answer `y` to the first question and `n` to the second, and the staging area holds one change while the working directory still holds the other. Commit, then stage and commit what is left: two commits out of one sitting.
+In the situation above, the two edits are one sitting but two logical changes: marking the script work in progress has nothing to do with telling the reader to run `./test.sh`. `git add --patch README.md` walks the file hunk by hunk and asks about each one, so the two edits reach the staging area separately even though they live in the same file. Answer `y` to the first question and `n` to the second, and the staging area holds one change while the working directory still holds the other. Commit, then stage and commit what is left: two commits out of one sitting.
 
-What that buys you is every tool that works per commit. `git revert` writes one undo commit for one target, so a commit holding one change can be taken back without taking back anything else. `git blame` leads you from a line you distrust to the commit that last changed it, and so to that commit's message. `git bisect` halves the history to find the first commit where a symptom appears; the smaller each commit, the fewer lines you have left to read when it stops. A reviewer, too, reads your change one commit at a time, so the split you choose decides what can be judged in one go.
+What that buys you is every tool that works per commit. `git revert` writes one undo commit for one target, so a commit holding one change can be taken back without taking back anything else. `git blame` leads you from a line you distrust to the commit that last changed it, and so to that commit's message. `git bisect` halves the history to find the first commit where a symptom appears; the smaller each commit, the fewer lines you have left to read when it stops. On a team whose reviewers read commit by commit, each commit is judged in one go.
 
 The message is the half the diff cannot supply. The diff says how the code changed and never which alternative you rejected or what forced the change. That is what the body is for; the subject line is what a reader meets first, alone, in a list.
 
@@ -68,11 +69,11 @@ The example system keeps the team's rule for messages in a short file under `doc
   đầu, đó là hai commit.
 ```
 
-Four rules, in order: keep the first line to 50 characters, in the imperative — `Mark the price list script work in progress`, not `Marked…` or `Marking…` — saying what changes; leave the second line blank; put why in the body together with the option you rejected, since the diff already says how; and keep one commit to one change that can be reverted on its own — if the first line needs the word "and", that is two commits. Git's own documentation recommends the same shape — a summary line of no more than 50 characters, a blank line, then a fuller description — and checks none of that shape when you commit.
+Four rules, in order: keep the first line to 50 characters, in the imperative — `Mark the price list script work in progress` — saying what changes; leave the second line blank; put why in the body together with the option you rejected, since the diff already says how; and keep one commit to one change that can be reverted on its own — if the first line needs the word "and", that is two commits. Git's own documentation recommends the same shape — a summary line of no more than 50 characters, a blank line, then a fuller description — and checks none of that shape when you commit.
 
-The rest of that file shows both sides: five one-line messages that nobody, the author included, can interpret three months later, and one whose body names the option the team turned down and why — open `docs/git/commit-message-examples.md` in the example system to read both. Some teams also require a prefix on the subject line, a category word and a colon, under the name Conventional Commits; this repository does not, and the four rules stand without it.
+The rest of that file shows both sides: five one-line messages that nobody, the author included, can interpret three months later, and one whose body says why cancelling a paid order is now blocked — refunds are not built yet — and that marking such orders "awaiting refund" was turned down because nobody watches that state. Some teams also require a fixed prefix on the subject line, a convention called Conventional Commits; this repository's rule file does not ask for one.
 
-The fourth rule is the one that feels impossible once both edits are already in the same file: one commit, one change that can be reverted on its own. A script in the repository does that split anyway, on the playground repository from the previous lessons:
+The fourth rule feels impossible once both edits sit in the same file. A script in the repository makes that split anyway, on a playground repository it builds for itself:
 
 ```bash file=scripts/git/stage-partial.sh tag=stage-0 lines=10-27
 git switch --quiet -c staging-demo main
@@ -117,17 +118,19 @@ diff --git a/README.md b/README.md
 +Run ./test.sh from this folder to check the total.
 ```
 
-The first line makes a new branch `staging-demo` starting from `main`, so the demo edits stay off the main line of history. The two `sed` lines then make the two edits of the situation, on lines 3 and 14 of `README.md` — far enough apart to be two separate blocks of changed lines, which is why `--patch` has two hunks to offer — and `git diff --stat` reports one file with two insertions and two deletions, the two rewritten lines counted once as removed and once as added. The `printf` feeds two answers into `git add --patch README.md`, which offers the two hunks in turn and takes the first only. The last two commands are the proof: `git diff --cached` shows the staged hunk alone, and `git diff` shows the other one still sitting in the working directory — `working tree`, the script's words, is Git's own name for what this lesson calls the working directory. Commit at that moment and the first change is a commit by itself, with the second still there to commit next.
+The first line makes a new branch `staging-demo` starting from `main`, so the demo edits stay off the main line of history. The two `sed` lines then make the two edits of the situation, on lines 3 and 14 of `README.md` — far enough apart that their surrounding lines do not meet, so `--patch` has two hunks to offer — and `git diff --stat` counts each rewritten line once as removed and once as added.
+
+The `printf` feeds two answers into `git add --patch README.md`, which offers the two hunks in turn and takes the first only. The last two commands are the proof: `git diff --cached` shows the staged hunk alone, and `git diff` shows the other one still sitting in the working directory — `working tree`, the script's words, is Git's own name for what this lesson calls the working directory. The text after the second `@@` is not part of that hunk: it is an earlier line of the file that Git repeats as a label for where the hunk sits, and the hunk itself holds just the `-Prices…`/`+Run ./test.sh…` pair.
 
 ## Beginners often think…
 
 - **"Commit messages do not matter because the code is what counts."** → Actually the code says what the system does now and never says why it was changed, and the commit message is the only reasoning stored inside the commit itself, so it is the only one that travels with the change. You notice this when you find a line that looks wrong, run `git blame` on it, follow the commit it names, and find `fix` — so you change the line back and reopen the bug it was closing.
 - **"One commit per day is a reasonable rhythm."** → Actually the rhythm is one logical change, which may be three commits before lunch or one across two days, while a day-sized commit holds whatever you happened to touch. You notice this when reverting yesterday takes back a fix you still want, or `git bisect` stops at a commit of forty files and tells you nothing.
-- **"I will tidy the history later, so anything goes now."** → Actually tidying later means reading a diff you no longer remember and inventing the reasoning after the fact; the cheapest moment to write why is while you still know it. You notice this when you sit down to split a week-old commit — undoing it and staging it again piece by piece — and cannot tell which lines belonged together.
+- **"I will tidy the history later, so anything goes now."** → Actually tidying later means reading a diff you no longer remember and inventing the reasoning after the fact; the cheapest moment to write why is while you still know it. You notice this when you sit down to split a week-old commit and cannot tell which lines belonged together.
 
 ## Try it (3 minutes)
 
-1. From the top folder of the example system, run `scripts/up.sh` once in this session to start the lab, then run `scripts/git/stage-partial.sh`, which builds the playground repository there and makes the two edits.
+1. From the top folder of the example system, run `scripts/up.sh`, which starts the example system the Git scripts run inside and is ready when it prints `The lab is up.`; then run `scripts/git/stage-partial.sh`, which builds its playground repository and makes the two edits.
 2. In its output, compare the block under `what is staged:` with the block under `what is still only in the working tree:`, and count the `@@` lines in each.
 3. Write the subject line you would give the staged change alone, in 50 characters or fewer, without the word "and".
 
@@ -144,6 +147,6 @@ Expected result: each block holds one `@@` line — one hunk staged, one hunk le
 
 1. One commit holds one logical change — the unit you could revert on its own without taking back anything you still want.
 2. The subject line says what in 50 characters or fewer; the body says why, and which option you rejected.
-3. The diff already says how, so repeating it in the message spends the only space the reasoning has.
+3. The diff already says how; the message is the commit's only place for why, so spend it on why and the rejected option.
 4. `git add --patch` stages one hunk at a time, so two unrelated edits in one file can still become two commits.
-5. A reviewer, `git revert`, `git blame` and `git bisect` all work one commit at a time, so commit quality is the quality of all four.
+5. `git revert`, `git blame`, `git bisect` and a reviewer reading commit by commit all work per commit, so commit quality is their quality.
