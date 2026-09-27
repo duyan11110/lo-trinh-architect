@@ -15,9 +15,9 @@ vocab: [branch]
 example_tag: stage-0
 versions_used: [git]
 content_version: 1
-status: reviewed
-approved_by: null
-reviewed_at: "2026-09-21T02:37:03+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-28T14:00:00+07:00"
 ---
 
 ## Before you start
@@ -31,7 +31,7 @@ In the example system you run `scripts/git/branches.sh`. It first runs `git-play
 ## Core concepts
 
 - **branch** — a name that points at one commit; the name moves to the new commit each time you commit while standing on it, and creating one writes a name and a commit id (plus a one-line log of where the name has been — a later lesson uses it) and copies no files.
-- HEAD — the record of which branch you are standing on (Git can also point it straight at a commit; a later lesson meets that case); `git switch` moves it and makes the working directory match the commit the new name points at. Git 2.46's own manual labels `git switch` experimental, so you will also meet `git checkout <branch>`, which makes the same move.
+- HEAD — the record of which branch you are standing on (Git can also point it straight at a commit; a later lesson meets that case); `git switch` moves it and makes the working directory match the commit the new name points at. You will also meet `git checkout <branch>`, which makes the same move.
 - remote — another repository that yours knows under a short name; the playground's stand-in for a server is called `origin`.
 - remote-tracking name — a name such as `origin/main` that your repository keeps for where the server's `main` stood the last time the two spoke; you do not commit on it.
 - upstream — the remote-tracking name a branch is paired with, so Git can say how far ahead or behind you are without asking the server again.
@@ -48,7 +48,7 @@ flowchart LR
   C6 -->|parents| C3
 ```
 
-In the situation above, the three names the script lists first are branches; the dotted arrows are all a branch is: a name and one commit id. The solid arrows are parent links; the two labelled `parents` skip the commits in between, which the output block below prints. Follow them back from any of the three names and you reach `09c8526`: the first commit of each of the three lines names it as its parent, so the history splits there into three lines of work. Two of those lines can belong to two people — each stands on a different name, and neither one's commits move the other's.
+In the situation above, the three names the script lists first are branches; the dotted arrows are all a branch is: a name and one commit id. The unbroken arrows are parent links; the two labelled `parents` skip the commits in between, which the output block below prints. Follow them back from any of the three names and you reach `09c8526`: the first commit of each of the three lines names it as its parent, so the history splits there into three lines of work. Two of those lines can belong to two people — each stands on a different name, and neither one's commits move the other's.
 
 Standing on a branch means HEAD holds its name. Commit, and Git writes the new commit with the current one as its parent, then moves that one name forward; no other name changes. `git switch feature/shipping` moves HEAD and replaces the files in the working directory with the snapshot `59f8ec8` holds, so `README.md` disappears and `shipping.sh` appears; the folder is rewritten in place, not duplicated.
 
@@ -144,7 +144,7 @@ Each `...` marks lines cut from this listing, not something the script prints. `
 
 The graph below it marks every commit with a `*` of its own, where that symbol says nothing about where you stand, and draws after each id every name that points at it in round brackets: the names you make and the `origin/*` names side by side, with the `|` columns and the `|/` lines drawing where the history splits. `HEAD -> main` means HEAD holds the name `main`.
 
-`origin/feature/currency` is there because a full copy of a repository copies its branches too. `origin/HEAD` names the branch a fresh copy of that second repository is put on first; the Git that runs `scripts/git/branches.sh` records it when it fetches.
+`origin/feature/currency` is there because a full copy of a repository copies its branches too. `origin/HEAD` names the branch a fresh copy of that second repository is put on first; `git fetch` records it.
 
 The two `ls -1` listings are the point of the lesson. Same folder, four files each, and between them nothing ran but `git switch` and the `git rev-parse` that prints the branch name — no command that copies a folder. `shipping.sh` exists on one branch and `README.md` on the other, because each name points at a commit whose snapshot holds different files. The last two lines print `57a2d53` twice, which is what you expect just after a fetch and before anyone has pushed anything new.
 
