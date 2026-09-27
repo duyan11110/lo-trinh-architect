@@ -103,6 +103,21 @@ skills:
     vi: "Phát hành một phiên bản"
     en: "Cutting a release"
   prereqs: [devops.release.versioning]
+- id: devops.monitoring.metrics
+  title:
+    vi: "Metric và Prometheus"
+    en: "Metrics with Prometheus"
+  prereqs: [devops.docker.compose]
+- id: devops.monitoring.dashboards
+  title:
+    vi: "Truy vấn metric và dashboard Grafana"
+    en: "Metric queries and Grafana dashboards"
+  prereqs: [devops.monitoring.metrics]
+- id: devops.monitoring.logs
+  title:
+    vi: "Log JSON và log tập trung"
+    en: "JSON logs and centralized logging"
+  prereqs: [backend.errors.logging, devops.monitoring.dashboards]
 levels:
 - level: 1
   title:
@@ -798,3 +813,211 @@ levels:
       - "A release should rebuild the image from the tagged commit so that it is fresh."
       - "A git tag and an image tag are the same thing, so creating one creates the other."
       depth_notes: "Không nói nhánh release/hotfix, backport, ký tag, tự tăng version, blue-green/canary (devops GĐ4). Deploy một phiên bản lên cluster — track k8s GĐ2."
+  - id: monitoring-basics
+    title:
+      vi: "Monitoring cơ bản: metric, dashboard và log tập trung"
+      en: "Monitoring basics: metrics, dashboards and centralized logs"
+    stage: 2
+    summary:
+      vi: "Cho API Đơn Hàng xuất metric, để Prometheus thu về, đọc tốc độ request, lỗi và thời gian phản hồi bằng PromQL trên dashboard Grafana, và tìm log JSON của mọi container ở một chỗ bằng Loki."
+      en: "Make the Đơn Hàng API expose metrics, have Prometheus collect them, read request rate, errors and response time with PromQL on a Grafana dashboard, and search every container's JSON logs in one place with Loki."
+    lessons:
+    - id: devops.l2.why-monitoring
+      title:
+        vi: "Monitoring: biết API đang hỏng trước khi người dùng báo"
+        en: "Monitoring: learning the API is failing before a user tells you"
+      main_path: true
+      duration_min: 12
+      skills: [devops.monitoring.metrics]
+      prereqs: [backend.l1.structured-logging, devops.l1.compose-for-the-api]
+      related: []
+      vocab: [monitoring, metric]
+      example_tag: stage-1
+      example_files: [DonHang.Api/Middleware/RequestLoggingMiddleware.cs, docker-compose.yml]
+      outline:
+      - "Monitoring means collecting signals from a running system all the time, so that a problem becomes visible without a user having to report it."
+      - "At stage-1 the only signal Đơn Hàng's API gives is the line `RequestLoggingMiddleware` writes for each request to the container's output, read with `docker compose logs api`."
+      - "A log line records one event with its details; a metric is one number measured again and again over time, such as how many requests ended with a `5xx` status."
+      - "Answering how many requests failed in the last five minutes from logs means finding and counting lines, while a metric already holds that count."
+      - "A metric's size depends on how many different things are counted, not on how much traffic arrives, while logs grow with every request."
+      misconceptions:
+      - "If the logs show no errors, the API is working fine."
+      - "Metrics and logs are the same data; a metric is just a log drawn as a chart."
+      - "Monitoring means somebody watches a screen all day."
+      depth_notes: "Không nói trace, OpenTelemetry, khái niệm observability (backend/observability GĐ3); không nói alert, SLO (GĐ4). Cách API xuất metric — devops.l2.metrics-endpoint; log JSON — devops.l2.json-logs."
+    - id: devops.l2.metrics-endpoint
+      title:
+        vi: "API bày số liệu của mình dạng văn bản ở /metrics"
+        en: "The API publishes its numbers as text at /metrics"
+      main_path: true
+      duration_min: 13
+      skills: [devops.monitoring.metrics]
+      prereqs: [devops.l2.why-monitoring, backend.l1.middleware-pipeline]
+      related: []
+      vocab: [prometheus, metric-label]
+      example_tag: stage-2
+      example_files: [DonHang.Api/Program.cs, Directory.Packages.props, scripts/devops/metrics-endpoint.sh]
+      outline:
+      - "Prometheus is a monitoring system that reads metrics over HTTP in a plain-text format; from stage-2 `DonHang.Api` uses the prometheus-net library to publish its metrics in that format."
+      - "`app.UseHttpMetrics()` measures every request that passes through the pipeline, and `app.MapMetrics()` answers `GET /metrics` with the current value of every metric."
+      - "The API sends its metrics nowhere on its own: `/metrics` only reports the values at the moment it is asked, and another program has to ask."
+      - "Each line of `/metrics` holds a metric name, labels in braces and a number; `http_requests_received_total` has one line per combination of label values such as `code` and `method`."
+      - "Caddy forwards only `/api/v1/*` to the API, so `/metrics` is reachable from inside the Docker network, for example from the lab box at `api:8080`, but not through Caddy."
+      misconceptions:
+      - "The API pushes its metrics to a monitoring server every few seconds."
+      - "`/metrics` returns the history of each value, like a small database."
+      - "Counting `GET` and `POST` requests separately needs two differently named metrics."
+      depth_notes: "Không nói OpenTelemetry hay Meter API của .NET (backend/observability GĐ3), không nói bảo vệ /metrics bằng xác thực. Loại metric và metric tự định nghĩa — devops.l2.counters-and-rate; Prometheus server — devops.l2.prometheus-scraping."
+    - id: devops.l2.prometheus-scraping
+      title:
+        vi: "Prometheus tự đi lấy: scrape /metrics theo nhịp"
+        en: "Prometheus pulls: scraping /metrics on a schedule"
+      main_path: true
+      duration_min: 14
+      skills: [devops.monitoring.metrics]
+      prereqs: [devops.l2.metrics-endpoint, devops.l1.docker-networks]
+      related: []
+      vocab: [scrape, time-series, compose-profile]
+      example_tag: stage-2
+      example_files: [docker-compose.yml, deploy/monitoring/prometheus.yml, scripts/devops/prometheus-targets.sh]
+      outline:
+      - "The Prometheus server scrapes: every `scrape_interval` it sends `GET /metrics` to each target in its configuration and stores the numbers it gets back with the time of the scrape."
+      - "Đơn Hàng's `deploy/monitoring/prometheus.yml` has one scrape job, `api`, whose target is `api:8080`, the API's name and port on the `donhang` network."
+      - "For every target Prometheus records a metric named `up`, which is `1` when the last scrape succeeded and `0` when it failed, so a stopped API shows up as `0`."
+      - "Each distinct combination of metric name and label values is its own time series, so a label with unbounded values, such as an order id, adds a new series for every order."
+      - "The monitoring services in `docker-compose.yml` carry `profiles: [monitoring]`, so they start only when the profile is named, as in `docker compose --profile monitoring up -d`."
+      misconceptions:
+      - "Prometheus reads the API's log output to build its numbers."
+      - "If the API stops, its metrics just stop changing and Prometheus cannot tell that anything is wrong."
+      - "Adding a label is free, so putting the customer id on a metric is a good way to get per-customer numbers."
+      depth_notes: "Không nói service discovery, federation, remote write, retention, lưu trữ dài hạn; không nói Prometheus trong cluster (k8s GĐ3). Truy vấn PromQL — devops.l2.counters-and-rate."
+    - id: devops.l2.counters-and-rate
+      title:
+        vi: "Counter chỉ tăng: đọc nó thành tốc độ bằng PromQL"
+        en: "A counter only goes up: read it as a rate with PromQL"
+      main_path: true
+      duration_min: 14
+      skills: [devops.monitoring.metrics, devops.monitoring.dashboards]
+      prereqs: [devops.l2.prometheus-scraping]
+      related: []
+      vocab: [counter, gauge, promql]
+      example_tag: stage-2
+      example_files:
+      - DonHang.Api/Monitoring/OrderMetrics.cs
+      - DonHang.Api/Controllers/OrdersController.cs
+      - scripts/devops/promql-rate.sh
+      outline:
+      - "A counter is a metric that only increases, such as `http_requests_received_total`, and starts again from zero when the process restarts; a gauge, such as `http_requests_in_progress`, can go up and down."
+      - "Đơn Hàng adds its own counter, `donhang_orders_placed_total`, which `OrdersController` increases each time a new order is created, next to the metrics prometheus-net provides."
+      - "PromQL is Prometheus's query language: `http_requests_received_total{code=~\"5..\"}` selects the series of that metric whose `code` label matches the pattern."
+      - "`rate(http_requests_received_total[5m])` gives the average increase per second over the last five minutes, and treats a drop to zero as a restart, not as a negative change."
+      - "`sum by (code) (...)` adds the per-series rates into one result per status code, which answers how many requests per second end in each status."
+      misconceptions:
+      - "The current value of `http_requests_received_total` tells me how busy the API is right now."
+      - "After the API restarts, the chart of a counter shows a huge negative dip in traffic."
+      - "A counter and a gauge are the same kind of number; only the naming convention differs."
+      depth_notes: "Không nói increase, irate, recording rule, alert rule (alert — GĐ4); không nói summary. Histogram và thời gian phản hồi — devops.l2.histograms-and-percentiles."
+    - id: devops.l2.histograms-and-percentiles
+      title:
+        vi: "Vì sao thời gian phản hồi trung bình che mất request chậm"
+        en: "Why the average response time hides the slow requests"
+      main_path: true
+      duration_min: 14
+      skills: [devops.monitoring.metrics, devops.monitoring.dashboards]
+      prereqs: [devops.l2.counters-and-rate]
+      related: []
+      vocab: [histogram, percentile]
+      example_tag: stage-2
+      example_files: [scripts/devops/promql-latency.sh]
+      outline:
+      - "An average response time can stay low while a small share of requests is very slow, because the many fast requests pull the average down."
+      - "The 95th percentile, p95, is the time that 95% of requests stayed under; it shows how slow the slower requests are, which the average cannot."
+      - "A histogram counts observations into buckets by upper bound: each `http_request_duration_seconds_bucket` line counts requests that took at most its `le` value, so each bucket includes all smaller ones."
+      - "`histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket[5m])))` estimates p95 from the buckets, so its precision depends on where the bucket bounds are."
+      - "A histogram also has `_sum` and `_count` series, so the average can be computed from the same metric and compared with the percentile."
+      misconceptions:
+      - "If the average response time is 50 ms, almost every user waits about 50 ms."
+      - "A p95 of 200 ms means 5% of the requests failed."
+      - "Prometheus keeps the duration of every single request, so the percentile it returns is exact."
+      depth_notes: "Không nói summary, native histogram, cách chọn bucket; không đặt mục tiêu thời gian phản hồi/SLO (backend/capacity-and-slo GĐ4). Vẽ lên dashboard — devops.l2.grafana-dashboards."
+    - id: devops.l2.grafana-dashboards
+      title:
+        vi: "Dashboard Grafana: các truy vấn đã lưu, vẽ thành panel"
+        en: "A Grafana dashboard is saved queries drawn as panels"
+      main_path: true
+      duration_min: 13
+      skills: [devops.monitoring.dashboards]
+      prereqs: [devops.l2.histograms-and-percentiles]
+      related: []
+      vocab: [grafana, dashboard]
+      example_tag: stage-2
+      example_files:
+      - deploy/monitoring/grafana/provisioning/datasources/datasources.yml
+      - deploy/monitoring/grafana/provisioning/dashboards/dashboards.yml
+      - deploy/monitoring/grafana/dashboards/donhang-api.json
+      - docker-compose.yml
+      outline:
+      - "Grafana stores no metrics of its own: each panel sends a query to a data source, here Prometheus, and draws the result."
+      - "Đơn Hàng's dashboard `donhang-api.json` has panels for requests per second by status code, `5xx` responses per second, p95 response time and orders placed, each one PromQL query."
+      - "Grafana loads its data sources and the dashboard from provisioning files under `deploy/monitoring/grafana/` when it starts, so every fresh lab gets the same dashboard without clicking."
+      - "Because the dashboard is a JSON file in the repository, changing it goes through a commit and a review like code, instead of living only inside one Grafana."
+      - "When you start monitoring an API, request rate, error rate and response time are a common first set of panels, because together they show whether it is used, failing or slow."
+      misconceptions:
+      - "Grafana collects the metrics, and Prometheus is only where they get stored."
+      - "A dashboard can only be built by clicking in the web page, so it cannot be kept in Git."
+      - "The more panels a dashboard has, the better it shows what is wrong."
+      depth_notes: "Không nói alert của Grafana, biến dashboard, người dùng và quyền Grafana, SLO (GĐ4). Log trong Grafana — devops.l2.centralized-logs."
+    - id: devops.l2.json-logs
+      title:
+        vi: "Ghi log dạng JSON để công cụ đọc được từng field"
+        en: "Writing logs as JSON so a tool can read every field"
+      main_path: true
+      duration_min: 13
+      skills: [devops.monitoring.logs]
+      prereqs: [backend.l1.structured-logging, devops.l1.config-and-env, devops.l2.why-monitoring]
+      related: []
+      vocab: [log-level]
+      example_tag: stage-2
+      example_files:
+      - docker-compose.yml
+      - DonHang.Api/appsettings.json
+      - DonHang.Api/Middleware/RequestLoggingMiddleware.cs
+      - scripts/devops/json-logs.sh
+      outline:
+      - "At stage-2 the `api` service in `docker-compose.yml` sets `Logging__Console__FormatterName` to `json`, so the console logger writes each log event as one JSON object per line."
+      - "In that JSON line the template's fields, such as `Method`, `StatusCode` and `ElapsedMs` from `RequestLoggingMiddleware`, keep their own names inside the `State` object."
+      - "Every log event has a log level, from `Trace` and `Debug` through `Information` and `Warning` to `Error` and `Critical`, and the JSON line carries it as `LogLevel`."
+      - "`Logging:LogLevel` in `appsettings.json` sets the lowest level written for each category, which is why `Microsoft.AspNetCore` writes only `Warning` and above while the API's own `Information` lines appear."
+      - "The output format is chosen by configuration, not by code: the log calls did not change, and without that variable the same build prints the usual readable lines."
+      misconceptions:
+      - "Switching to JSON logs means rewriting every log call in the code."
+      - "Setting `Microsoft.AspNetCore` to `Warning` hides its errors too."
+      - "A log level is only a label for people; it does not change what gets written."
+      depth_notes: "Không nói log scope, trace id trong log (backend/observability GĐ3), Serilog hay provider khác; không bàn chọn level cho từng câu log. Gom log mọi container về một chỗ — devops.l2.centralized-logs."
+    - id: devops.l2.centralized-logs
+      title:
+        vi: "Loki: log của mọi container, tìm ở một chỗ"
+        en: "Loki: every container's logs searchable in one place"
+      main_path: true
+      duration_min: 15
+      skills: [devops.monitoring.logs]
+      prereqs: [devops.l2.json-logs, devops.l2.grafana-dashboards]
+      related: []
+      vocab: [log-aggregation, loki, logql]
+      example_tag: stage-2
+      example_files:
+      - deploy/monitoring/alloy/config.alloy
+      - docker-compose.yml
+      - deploy/monitoring/grafana/provisioning/datasources/datasources.yml
+      - scripts/devops/loki-query.sh
+      outline:
+      - "Log aggregation collects the logs of every service into one store, so you search one place instead of each container, and the logs outlive a removed container."
+      - "In Đơn Hàng, Grafana Alloy reads the output of the Compose containers through the Docker socket and sends each line to Loki, labelled with its Compose service, such as `service=\"api\"`."
+      - "Loki indexes only the labels of each log stream, not the text of its lines, so a LogQL query first picks streams by label, as in `{service=\"api\"}`, then filters their lines."
+      - "In LogQL, `| json` turns the fields of each JSON line into labels for that query, so it can keep only the lines whose status code field is `500` or more."
+      - "Loki has no page of its own in Đơn Hàng: you query it from Grafana, where it is a second data source next to Prometheus."
+      misconceptions:
+      - "Loki indexes every word of every line, so any text search is as fast as a lookup by label."
+      - "To find one order's logs quickly, I should put the order id in a Loki label."
+      - "`docker compose logs` already keeps every container's logs for good, so a log store adds nothing."
+      depth_notes: "Không nói retention, object storage, Loki nhiều instance, collector khác, log trong cluster (k8s GĐ3), nối log với trace (backend/observability GĐ3); không nói alert từ log (GĐ4)."
