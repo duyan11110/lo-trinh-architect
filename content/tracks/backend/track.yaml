@@ -780,7 +780,7 @@ levels:
       - "A collection endpoint that returns every row sends a response that grows with the table; pagination returns one page at a time, and the client asks for the next page when it needs it."
       - "With offset pagination the client sends a page size and how many rows to skip as query parameters, such as `?limit=20&offset=40`, and EF Core turns `Take` and `Skip` into `LIMIT` and `OFFSET` in the SQL it sends to PostgreSQL."
       - "Pages need a fixed order: without `ORDER BY` on a unique column, PostgreSQL may return rows in a different order on each query, so two pages can overlap or miss a row."
-      - "The Đơn Hàng endpoint caps the page size it accepts, so a client cannot ask for the whole table by sending a very large `limit`."
+      - "The Đơn Hàng endpoint accepts a `limit` of at most 100 and answers `400` to a larger one, so a client cannot ask for the whole table by sending a very large `limit`."
       misconceptions:
       - "Pagination is the app's job; the API can return everything and the app shows 20 at a time."
       - "Without an ORDER BY, the database returns rows in the order they were inserted, so pages are stable anyway."
@@ -928,6 +928,7 @@ levels:
       example_files:
       - DonHang.Api/Controllers/OrdersController.cs
       - DonHang.Domain/OrderService.cs
+      - DonHang.Infrastructure/DonHangDbContext.cs
       - scripts/backend/idempotent-order.sh
       outline:
       - "A client whose `POST /api/v1/orders` times out cannot tell whether the order was created, and sending the same `POST` again can create a second order."
@@ -1006,7 +1007,7 @@ levels:
       outline:
       - "OAuth 2.0 gives the client an access token meant for the API; it does not define how the client learns who logged in."
       - "OpenID Connect is a layer on top of OAuth 2.0: when the app includes the `openid` scope, Keycloak also returns an ID token, a JWT that tells the app who logged in."
-      - "The ID token's `aud` claim contains the app's `client_id` and its `sub` claim identifies the user at Keycloak; the app reads it, and the app never sends it to the API."
+      - "The ID token's `aud` claim contains the app's `client_id` and its `sub` claim identifies the user at Keycloak; it is for the app to read, and the app never sends it to the API."
       - "The Đơn Hàng access token carries `donhang-api` in `aud`, so an API that checks the audience rejects an ID token sent in place of an access token."
       misconceptions:
       - "OAuth 2.0 and OpenID Connect are two competing ways to do the same thing."
@@ -1027,7 +1028,7 @@ levels:
       outline:
       - "At stage-1 the API signed and checked tokens with one shared HMAC key, so anything able to check a token could also create one."
       - "Keycloak signs tokens with a private key only it holds and publishes the matching public keys; a public key can check a signature but cannot make one."
-      - "With `Authority` set to the Keycloak realm URL, `AddJwtBearer` downloads Keycloak's metadata and public keys, then checks signature, issuer, audience and expiry on each request without calling Keycloak."
+      - "With `Authority` set to the Keycloak realm URL, `AddJwtBearer` downloads Keycloak's metadata and public keys (in the lab, from `MetadataAddress`), then checks signature, issuer, audience and expiry on each request without calling Keycloak."
       - "The token's `sub` is Keycloak's id for the user, not `customers.id`, so the API finds the customer by a stored subject column instead of reading `sub` as a number."
       misconceptions:
       - "The API has to ask Keycloak on every request whether the token is still valid."
@@ -1048,7 +1049,7 @@ levels:
       outline:
       - "Because the API checks an access token by itself, a leaked token or one held after logout keeps working until its `exp`; Đơn Hàng's API has no way to recall it earlier."
       - "The Đơn Hàng realm therefore gives access tokens a lifetime of minutes, and Keycloak returns a refresh token alongside the access token."
-      - "When the access token expires, the app sends the refresh token to the token endpoint with `grant_type=refresh_token` and gets a new access token without the customer logging in again."
+      - "When the access token expires, a client sends the refresh token to the token endpoint with `grant_type=refresh_token` and gets a new access token without the customer logging in again, as `refresh-token.sh` does."
       - "The refresh token goes only to Keycloak, never to the API, and logging out at Keycloak ends it, so a stolen access token stays usable for at most its own short lifetime."
       misconceptions:
       - "Logging out deletes the token, so it stops working straight away."
@@ -1069,6 +1070,7 @@ levels:
       example_files:
       - DonHang.Api/Program.cs
       - DonHang.Api/Controllers/OrdersController.cs
+      - keycloak/donhang-realm.json
       - scripts/backend/staff-only.sh
       outline:
       - "RBAC decides what a caller may do from the roles given to it, such as `staff`, instead of listing permissions user by user."
@@ -1268,7 +1270,7 @@ levels:
       example_files: [DonHang.Api/Jobs/NotificationSender.cs, DonHang.Api/Program.cs]
       outline:
       - "`NotificationSender` derives from `BackgroundService` and is registered with `AddHostedService<NotificationSender>()`; the host calls its `ExecuteAsync` when the app starts, in the same process that serves requests."
-      - "`ExecuteAsync` receives a `CancellationToken` that is signalled when the app shuts down, so the loop can finish its round and stop instead of starting new work."
+      - "`ExecuteAsync` receives a `CancellationToken` that is signalled when the app shuts down: the timer stops waiting, a round in progress is cancelled, and the loop ends instead of starting new work."
       - "The loop waits on a `PeriodicTimer`, which wakes it every few seconds and holds no thread while it waits."
       - "A hosted service is created once and lives as long as the app, like a singleton, so it must not keep a scoped `DonHangDbContext`; each round creates a scope with `IServiceScopeFactory` and gets a fresh `DbContext` from it."
       - "By default an exception that escapes `ExecuteAsync` stops the whole app, so `NotificationSender` catches and logs errors inside each round and keeps looping."
@@ -1290,6 +1292,7 @@ levels:
       example_tag: stage-2
       example_files:
       - DonHang.Domain/OrderService.cs
+      - DonHang.Infrastructure/QueuedNotifier.cs
       - DonHang.Api/Jobs/NotificationSender.cs
       - scripts/backend/order-email.sh
       outline:
@@ -1466,7 +1469,7 @@ levels:
       related: [backend.l1.efcore-n-plus-one]
       vocab: []
       example_tag: stage-2
-      example_files: [docker-compose.yml, scripts/backend/efcore-sql.sh]
+      example_files: [docker-compose.yml, DonHang.Api/appsettings.json, scripts/backend/efcore-sql.sh]
       outline:
       - "EF Core logs each command it sends, with its SQL and how long it took, under the category `Microsoft.EntityFrameworkCore.Database.Command` at `Information` level."
       - "Đơn Hàng's `appsettings.json` keeps `Microsoft.EntityFrameworkCore` at `Warning`, so at stage-2 the lab's `api` service raises only the command category to `Information` through configuration."

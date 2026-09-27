@@ -837,7 +837,7 @@ levels:
       - "The Decorator pattern wraps an object in another object that implements the same interface, holds the wrapped one, and adds work before or after passing each call on."
       - "At stage-2, `ProductCache` implements `IProductRepository` and receives another `IProductRepository` to wrap; on a cache miss it passes `FindAsync` on and stores the result in Redis."
       - "When staff change a price, `ProductCache` lets the wrapped repository save it first and only then deletes `product:{id}`, so cache invalidation is added around the call, not inside the query code."
-      - "`ProductsController` depends only on `IProductRepository` and cannot tell which one it got; the registration in `ServiceCollectionExtensions` alone puts `ProductCache` around an `EfProductRepository`."
+      - "`ProductsController` gets and updates one product only through `IProductRepository` and cannot tell which one it got; the registration in `ServiceCollectionExtensions` alone puts `ProductCache` around an `EfProductRepository`."
       - "Because a decorator has the same interface as what it wraps, decorators can be stacked, each adding one job, without any change to the class at the centre."
       misconceptions:
       - "To cache product reads, you have to edit the repository method that runs the query."
@@ -1050,23 +1050,22 @@ levels:
       prereqs: [design.l2.driving-and-driven-adapters, design.l1.wiring-the-container]
       related: [design.l1.tracing-a-request-through-layers]
       vocab: [composition-root]
-      example_tag: stage-1
+      example_tag: stage-2
       example_files:
       - DonHang.Api/Program.cs
       - DonHang.Api/DonHang.Api.csproj
       - DonHang.Api/Controllers/ProductsController.cs
-      - DonHang.Api/Controllers/AuthController.cs
       outline:
       - "The composition root is the one place where the application's objects are wired together; in Đơn Hàng it is `Program.cs`, together with the `AddDonHangInfrastructure` method it calls."
       - "`DonHang.Api.csproj` references `DonHang.Infrastructure` because the composition root must name the adapters to register them; `DonHang.Domain` never needs that reference."
-      - "The same reference lets any class in `DonHang.Api` use `DonHangDbContext`: at stage-1, `ProductsController` and `AuthController` do, so those driving adapters reach the database without going through the core."
-      - "Such a shortcut leaves `DonHang.Domain` untouched, but a business rule later added to those endpoints would live in a driving adapter, outside the core and outside its tests."
+      - "The same reference lets any class in `DonHang.Api` use `DonHangDbContext`: at stage-2, `ProductsController` lists products straight from it, so that driving adapter reaches the database without going through the core."
+      - "Such a shortcut leaves `DonHang.Domain` untouched, but a business rule later added to that endpoint would live in a driving adapter, outside the core and outside its tests."
       - "Skipping the core is a reasonable trade for an endpoint that only reads rows and applies no rule; once an endpoint has a rule to enforce, sending it through the core keeps that rule in one place."
       misconceptions:
       - "`DonHang.Api` references `DonHang.Infrastructure`, so Đơn Hàng breaks the dependency rule."
       - "The composition root is just another name for the DI container."
       - "Every endpoint must go through a service in the core, even one that only lists rows."
-      depth_notes: "Không nhắc lại từng đăng ký hay lifetime — design.l1.wiring-the-container. Không nói ProductsController ở stage-2 (IProductRepository) — design.l2.decorator-pattern. Không tách project Api/Host — ngoài GĐ2."
+      depth_notes: "Không nhắc lại từng đăng ký hay lifetime — design.l1.wiring-the-container. Không nói phần IProductRepository của ProductsController — design.l2.decorator-pattern. Không tách project Api/Host — ngoài GĐ2."
     - id: design.l2.testing-the-dependency-rule
       title:
         vi: "Một test đỏ lên khi lõi bắt đầu phụ thuộc framework"
@@ -1084,7 +1083,7 @@ levels:
       - DonHang.Tests/DonHang.Tests.csproj
       outline:
       - "An architecture test is a unit test that checks how the code is structured, such as which assemblies a project uses, instead of how it behaves."
-      - "At stage-2, `DependencyRuleTests` reads `typeof(OrderService).Assembly.GetReferencedAssemblies()` and fails if a name starts with `DonHang.Infrastructure`, `DonHang.Api`, `Microsoft.EntityFrameworkCore` or `Microsoft.AspNetCore`."
+      - "At stage-2, `DependencyRuleTests` reads `typeof(OrderService).Assembly.GetReferencedAssemblies()` and fails if a name starts with an outer prefix such as `DonHang.Infrastructure`, `DonHang.Api`, `Microsoft.EntityFrameworkCore` or `Npgsql`."
       - "Without a project reference, code in `DonHang.Domain` cannot name a type from `DonHang.Infrastructure` — the build fails; but nothing in the build stops someone adding an EF Core package to `DonHang.Domain`."
       - "The test runs with every other test in `DonHang.Tests`, so a change that breaks the dependency rule shows up as a failing test before code review, not as a comment during it."
       - "A passing architecture test proves only the rule it checks: it says nothing about whether a business rule sits in the core or in a controller."
@@ -1170,7 +1169,7 @@ levels:
       outline:
       - "A domain model puts each business rule in the class whose data the rule is about, so that class's methods become the way to change the data."
       - "At stage-2, `Order.Cancel()` throws `OrderStatusException` for an order that is already `cancelled` or `shipped`, and otherwise sets `Status` to `cancelled`."
-      - "`CancelOrderAsync` now finds the order, calls `order.Cancel()`, saves and notifies: `OrderService` still runs the use case, while `Order` decides what is allowed."
+      - "`CancelOrderAsync` now finds the order, calls `order.Cancel()`, notifies, then saves: `OrderService` still runs the use case, while `Order` decides what is allowed."
       - "`OrderStatusException` lives in `DonHang.Domain` and names no HTTP status; `ExceptionHandlingMiddleware` turns it into `409` with one problem `type` per case, so the dependency rule still holds."
       - "Moving a rule into `Order` pays off when several use cases change the same data; for data with no rules it only adds methods that set a value."
       misconceptions:
@@ -1220,7 +1219,7 @@ levels:
       - DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs
       outline:
       - "At stage-2, `Order`'s public constructor takes the customer id, the items and the time placed, throws `ArgumentException` when there are no items, and sets `Status` to `new` itself."
-      - "`PlaceOrderAsync` calls that constructor instead of an object initializer, so the empty-items check moves from `OrderService` into `Order`, and no code can create an order without items."
+      - "`PlaceOrderAsync` calls that constructor instead of setting every property in an object initializer, so the empty-items check moves from `OrderService` into `Order`, and no code can create an order without items."
       - "The API still answers `400` for an order with no items, because `ExceptionHandlingMiddleware` already maps `ArgumentException` to `400`: moving the check did not change the contract."
       - "A constructor that checks its inputs means every `Order` the code creates starts in an allowed state, so later methods need not ask whether it was built correctly."
       misconceptions:
@@ -1297,7 +1296,7 @@ levels:
       outline:
       - "A rule that needs only one order's own data, such as which status may follow which or that an order has items, belongs in `Order`."
       - "Steps that reach outside the order, such as loading it, saving it and sending a notification, stay in `OrderService`, which runs the use case and asks `Order` for each decision."
-      - "Who may act is decided in `DonHang.Api`: the ship endpoint's `staff` policy and `OrderOwnerHandler` run there, before `OrderService` changes anything."
+      - "Who may act is decided in `DonHang.Api`: the ship endpoint's `StaffOnly` policy and `OrderOwnerHandler` run there, before `OrderService` changes anything."
       - "Turning HTTP into a call and the result back into HTTP stays in `OrdersController`; a controller that starts deciding status changes has taken a rule out of `Order`."
       - "A domain model is worth its extra methods where rules exist; an operation with no rule, such as listing products, stays simpler as a direct query or a short script."
       misconceptions:
@@ -1387,7 +1386,7 @@ levels:
       - "A test fixture is setup that several tests share; `EfOrderRepositoryTests` implements `IClassFixture<PostgresFixture>`, and xUnit creates one `PostgresFixture` for all tests in that class."
       - "`PostgresFixture` implements `IAsyncLifetime`, so xUnit awaits its `InitializeAsync` before the class's first test and its `DisposeAsync` after the last one, where the container starts and stops."
       - "Starting a container takes far longer than one repository test, so one container per class keeps the suite quick enough to run often."
-      - "Because the tests share the fixture, they also share one database: rows saved by one test are still there when the next test runs."
+      - "Because the tests share the fixture, they also share one database: rows saved by one test are still there when the next test runs, unless something empties the tables first."
       misconceptions:
       - "The test class constructor runs once per class, so it is the right place to start the container."
       - "A class fixture is shared by every test class in the project."
@@ -1462,8 +1461,8 @@ levels:
       outline:
       - "`WebApplicationFactory<Program>` starts `DonHang.Api` inside the test process with the same `Program.cs`; `CreateClient()` returns an `HttpClient` whose requests reach it without Kestrel or a network port."
       - "At stage-2, `ApiFactory` starts a PostgreSQL and a Redis container and gives their connection strings to the app as configuration, so the API under test uses real stores."
-      - "`Program.cs` applies migrations when the app starts, so the API's own startup creates the schema in the test container."
-      - "`ConfigureTestServices` runs after the app's own registrations, so `ApiFactory` replaces only `IEmailSender` with a fake and keeps every other registration as the app wrote it."
+      - "`Program.cs` applies no migrations, so `ApiFactory` has its `PostgresFixture` apply them to the empty test database before the app starts, and the API finds the schema ready."
+      - "`ConfigureTestServices` runs after the app's own registrations, so `ApiFactory` replaces `IEmailSender` with a fake, adds the test authentication of the next lesson, and keeps every other registration as the app wrote it."
       - "An API test sends a request and asserts what a client would see: `POST /api/v1/orders` answers `201` with a `Location` header, through the same middleware, routing and controller."
       misconceptions:
       - "Testing a controller means creating it with `new` and calling its method."
@@ -1490,7 +1489,7 @@ levels:
       - DonHang.Tests/Integration/OrdersApiTests.cs
       outline:
       - "API tests do not start Keycloak: `ApiFactory`, which exists only in `DonHang.Tests`, makes `TestAuthHandler` the default authentication scheme; it builds the caller from `X-Test-Subject` and `X-Test-Roles`."
-      - "A request without those headers gets no identity, so a protected endpoint still answers `401`, and the `staff` policy and `OrderOwnerHandler` run unchanged on the test caller."
+      - "A request without those headers gets no identity, so a protected endpoint still answers `401`, and the `StaffOnly` policy and `OrderOwnerHandler` run unchanged on the test caller."
       - "The test inserts a customer whose `identity_subject` equals the header's subject, the same link the API makes from a Keycloak `sub`."
       - "Tests can then check who may do what: another customer's `GET /api/v1/orders/{id}` answers `403`, and a customer calling the ship endpoint answers `403`."
       - "These tests do not check the token itself (signature, issuer, audience, expiry); that stays with `AddJwtBearer` and is seen only when the API runs against Keycloak."
@@ -1516,7 +1515,7 @@ levels:
       - DonHang.Tests/Integration/EfOrderRepositoryTests.cs
       outline:
       - "The test pyramid pictures a suite with many fast unit tests at the bottom, fewer integration tests above them, and very few tests of the whole running system at the top."
-      - "In Đơn Hàng every status rule is checked in `OrderTests`; `OrdersApiTests` checks once that such a refusal reaches the client as `409` with its problem `type`, not every rule again over HTTP."
+      - "In Đơn Hàng the status rules are checked in `OrderTests`; `OrdersApiTests` checks once that such a refusal reaches the client as `409` with its problem `type`, not every rule again over HTTP."
       - "An integration test pays for its cost where the risk sits where parts meet (a query, a mapping, a foreign key, the HTTP contract, who may call); a unit test where the risk sits in a rule."
       - "When an application mostly moves data between HTTP and the database with few rules, putting most tests at the integration level is a reasonable choice; the pyramid fits where rules live in code."
       misconceptions:
