@@ -13,11 +13,11 @@ prereqs: [foundation.l1.http-request-response]
 related: [backend.l1.errors-and-problem-details]
 vocab: [proxy]
 example_tag: stage-0
-versions_used: [http, http_messaging, caddy]
+versions_used: [http, http_messaging, caddy, shell]
 content_version: 1
-status: reviewed
-approved_by: null
-reviewed_at: "2026-09-09T00:22:27+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-28T15:00:00+07:00"
 ---
 
 ## Before you start
@@ -40,7 +40,7 @@ You are checking the Đơn Hàng lab site the example project starts for you (ta
 ```mermaid
 flowchart LR
   R["A response arrives; its status line carries a three-digit number"] --> D{"What is the first digit?"}
-  D -->|2| A["Done. What you asked for is in the body, or there was nothing to send"]
+  D -->|2| A["Succeeded. What you asked for is in the body, or there was nothing to send"]
   D -->|3| B["Not what you asked for. Usually the Location header names where to ask instead; a 304 says you already hold it"]
   D -->|4| C["Your request seems to be at fault; the fix usually starts on your side"]
   D -->|5| E["The server failed. Your request may have been perfectly fine"]
