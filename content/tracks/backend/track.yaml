@@ -123,6 +123,21 @@ skills:
     vi: "Endpoint an toàn khi gửi lại"
     en: "Endpoints that are safe to retry"
   prereqs: [backend.rest.crud]
+- id: backend.auth.oauth2
+  title:
+    vi: "Giao việc đăng nhập cho authorization server bằng OAuth 2.0"
+    en: "Delegating login to an authorization server with OAuth 2.0"
+  prereqs: [backend.auth.jwt-validating]
+- id: backend.auth.oidc
+  title:
+    vi: "OpenID Connect và kiểm token do provider ký"
+    en: "OpenID Connect and checking provider-signed tokens"
+  prereqs: [backend.auth.oauth2]
+- id: backend.auth.access-models
+  title:
+    vi: "Phân quyền theo role và theo thuộc tính"
+    en: "Role-based and attribute-based authorization"
+  prereqs: [backend.auth.authorization, backend.auth.oidc]
 levels:
 - level: 1
   title:
@@ -883,3 +898,168 @@ levels:
       - "Retrying a failed POST is always safe, because a request that failed did nothing."
       - "The server can spot a duplicate order by comparing the items, so the client does not need to send anything extra."
       depth_notes: "Không nói thời hạn lưu key, idempotency trong message queue hay retry tự động phía client — ngoài phạm vi GĐ2 (messaging GĐ3)."
+  - id: oauth-and-authz
+    title:
+      vi: "OAuth 2.0, OpenID Connect và phân quyền"
+      en: "OAuth 2.0, OpenID Connect and authorization"
+    stage: 2
+    summary:
+      vi: "Chuyển đăng nhập của Đơn Hàng sang Keycloak: lấy token bằng authorization code và PKCE, đọc ID token, kiểm token bằng public key, làm mới bằng refresh token, và phân quyền theo role lẫn theo chủ sở hữu đơn."
+      en: "Move Đơn Hàng's login to Keycloak: get tokens with authorization code and PKCE, read the ID token, check tokens with public keys, renew them with refresh tokens, and authorize by role and by order owner."
+    lessons:
+    - id: backend.l2.oauth2-roles
+      title:
+        vi: "OAuth 2.0: ứng dụng nhận token, không bao giờ thấy mật khẩu"
+        en: "OAuth 2.0: the app gets a token, never your password"
+      main_path: true
+      duration_min: 13
+      skills: [backend.auth.oauth2]
+      prereqs: [backend.l1.issuing-a-jwt, backend.l1.hashing-passwords]
+      related: []
+      vocab: [oauth2, authorization-server, resource-server, access-token]
+      example_tag: stage-2
+      example_files: [docker-compose.yml, keycloak/donhang-realm.json, DonHang.Api/Program.cs]
+      outline:
+      - "OAuth 2.0 names four roles; in Đơn Hàng the customer is the resource owner, `DonHang.App` the client, Keycloak the authorization server and `DonHang.Api` the resource server."
+      - "At stage-2 the customer types the password on Keycloak's login page, so neither `DonHang.App` nor `DonHang.Api` ever receives it."
+      - "The authorization server gives the client an access token, and the client sends it to the API in the `Authorization: Bearer` header, the same way it sent the stage-1 token."
+      - "`DonHang.Api` no longer issues tokens or checks passwords: the stage-1 login endpoint and `JwtTokenService` are gone, and the API only checks the access tokens it receives."
+      misconceptions:
+      - "With OAuth, DonHang.App still takes my password; it just forwards it to Keycloak for me."
+      - "Once Keycloak handles login, the API does not need to check anything about the token it receives."
+      depth_notes: "Không nói luồng lấy token cụ thể — bài authorization-code-flow. Không nói ID token/OIDC — bài openid-connect-id-token. Không nói client credentials (máy gọi máy) hay đăng nhập bằng tài khoản mạng xã hội — ngoài phạm vi GĐ2."
+    - id: backend.l2.authorization-code-flow
+      title:
+        vi: "Authorization code và PKCE: ứng dụng lấy token bằng cách nào"
+        en: "Authorization code with PKCE: how the app gets its token"
+      main_path: true
+      duration_min: 15
+      skills: [backend.auth.oauth2]
+      prereqs: [backend.l2.oauth2-roles]
+      related: []
+      vocab: [authorization-code-flow, pkce, oauth-scope]
+      example_tag: stage-2
+      example_files: [keycloak/donhang-realm.json, scripts/backend/oauth-code-flow.sh]
+      outline:
+      - "The app sends the browser to Keycloak's authorization endpoint with its `client_id`, a `redirect_uri` and the scopes it asks for; after login, Keycloak redirects the browser back to that URI with a short-lived authorization code."
+      - "The app then exchanges the code for an access token with a direct `POST` to Keycloak's token endpoint, so the token itself never appears in the browser's address bar."
+      - "Keycloak redirects only to redirect URIs registered for the client, so a code is never delivered to a site the client did not register."
+      - "An app running in the browser cannot keep a client secret, so it uses PKCE: it creates a random `code_verifier` and sends a SHA-256 hash of it as `code_challenge` in the first redirect."
+      - "With the code the app sends the `code_verifier` itself, and Keycloak issues tokens only if its hash matches the challenge, so a code stolen on the way back is useless without the verifier."
+      misconceptions:
+      - "The authorization code in the redirect URL is the access token."
+      - "PKCE encrypts the tokens so nobody else can read them."
+      - "A client secret compiled into the app's code is safe, because users do not read compiled code."
+      depth_notes: "Không nói refresh token — bài refresh-tokens. Không nói ID token — bài sau. Không nói implicit flow, password grant hay client credentials. Không dạy code đăng nhập phía Flutter — chỉ luồng HTTP qua script và cấu hình realm."
+    - id: backend.l2.openid-connect-id-token
+      title:
+        vi: "OpenID Connect: ID token cho ứng dụng biết ai vừa đăng nhập"
+        en: "OpenID Connect: the ID token tells the app who logged in"
+      main_path: true
+      duration_min: 12
+      skills: [backend.auth.oidc]
+      prereqs: [backend.l2.authorization-code-flow]
+      related: []
+      vocab: [openid-connect, id-token]
+      example_tag: stage-2
+      example_files: [scripts/backend/oidc-tokens.sh, DonHang.Api/Program.cs]
+      outline:
+      - "OAuth 2.0 gives the client an access token meant for the API; it does not define how the client learns who logged in."
+      - "OpenID Connect is a layer on top of OAuth 2.0: when the app includes the `openid` scope, Keycloak also returns an ID token, a JWT that tells the app who logged in."
+      - "The ID token's `aud` claim contains the app's `client_id` and its `sub` claim identifies the user at Keycloak; the app reads it, and the app never sends it to the API."
+      - "The Đơn Hàng access token carries `donhang-api` in `aud`, so an API that checks the audience rejects an ID token sent in place of an access token."
+      misconceptions:
+      - "OAuth 2.0 and OpenID Connect are two competing ways to do the same thing."
+      - "The ID token and the access token are interchangeable, since both are JWTs."
+      depth_notes: "Không nói endpoint userinfo, nonce hay chi tiết tài liệu metadata của provider — ngoài phạm vi GĐ2. Không nói cách API kiểm chữ ký — bài validating-provider-tokens."
+    - id: backend.l2.validating-provider-tokens
+      title:
+        vi: "Kiểm token mình không ký: public key của Keycloak"
+        en: "Checking a token you did not sign: the provider's public keys"
+      main_path: true
+      duration_min: 14
+      skills: [backend.auth.oidc]
+      prereqs: [backend.l2.openid-connect-id-token, backend.l1.validating-a-jwt]
+      related: []
+      vocab: [public-key]
+      example_tag: stage-2
+      example_files: [DonHang.Api/Program.cs, DonHang.Api/Controllers/OrdersController.cs]
+      outline:
+      - "At stage-1 the API signed and checked tokens with one shared HMAC key, so anything able to check a token could also create one."
+      - "Keycloak signs tokens with a private key only it holds and publishes the matching public keys; a public key can check a signature but cannot make one."
+      - "With `Authority` set to the Keycloak realm URL, `AddJwtBearer` downloads Keycloak's metadata and public keys, then checks signature, issuer, audience and expiry on each request without calling Keycloak."
+      - "The token's `sub` is Keycloak's id for the user, not `customers.id`, so the API finds the customer by a stored subject column instead of reading `sub` as a number."
+      misconceptions:
+      - "The API has to ask Keycloak on every request whether the token is still valid."
+      - "If anyone can download the public key, anyone can sign tokens with it."
+      depth_notes: "Không nói xoay vòng khóa (key rotation), toán học của RSA hay PKI — GĐ4 (kiến trúc bảo mật). Không nói introspection endpoint — ngoài phạm vi GĐ2."
+    - id: backend.l2.refresh-tokens
+      title:
+        vi: "Vì sao access token hết hạn sau vài phút: refresh token"
+        en: "Why access tokens expire in minutes: refresh tokens"
+      main_path: true
+      duration_min: 13
+      skills: [backend.auth.oauth2]
+      prereqs: [backend.l2.validating-provider-tokens, backend.l2.authorization-code-flow]
+      related: [backend.l1.sessions-vs-tokens]
+      vocab: [refresh-token]
+      example_tag: stage-2
+      example_files: [keycloak/donhang-realm.json, scripts/backend/refresh-token.sh]
+      outline:
+      - "Because the API checks an access token by itself, a leaked token or one held after logout keeps working until its `exp`; Đơn Hàng's API has no way to recall it earlier."
+      - "The Đơn Hàng realm therefore gives access tokens a lifetime of minutes, and Keycloak returns a refresh token alongside the access token."
+      - "When the access token expires, the app sends the refresh token to the token endpoint with `grant_type=refresh_token` and gets a new access token without the customer logging in again."
+      - "The refresh token goes only to Keycloak, never to the API, and logging out at Keycloak ends it, so a stolen access token stays usable for at most its own short lifetime."
+      misconceptions:
+      - "Logging out deletes the token, so it stops working straight away."
+      - "A refresh token is just a longer-lived access token that the API also accepts."
+      - "Access tokens that last for days are fine as long as every request uses HTTPS."
+      depth_notes: "Không nói xoay vòng refresh token, danh sách thu hồi hay token revocation endpoint — ngoài phạm vi GĐ2. Không nói nơi app lưu token — track frontend."
+    - id: backend.l2.role-based-access
+      title:
+        vi: "Role trong token: nhân viên được giao đơn, khách thì không"
+        en: "Roles in the token: staff can ship orders, customers cannot"
+      main_path: true
+      duration_min: 13
+      skills: [backend.auth.access-models]
+      prereqs: [backend.l2.validating-provider-tokens, backend.l1.protecting-an-endpoint]
+      related: []
+      vocab: [rbac]
+      example_tag: stage-2
+      example_files:
+      - DonHang.Api/Program.cs
+      - DonHang.Api/Controllers/OrdersController.cs
+      - scripts/backend/staff-only.sh
+      outline:
+      - "RBAC decides what a caller may do from the roles given to it, such as `staff`, instead of listing permissions user by user."
+      - "Keycloak puts the user's roles into the access token; Đơn Hàng's realm writes them to a `roles` claim, and `RoleClaimType = \"roles\"` tells ASP.NET Core to read roles from it."
+      - "`PATCH /api/v1/orders/{id}/ship` requires a policy that demands the `staff` role: a customer's valid token gets `403`, and a missing token still gets `401`."
+      - "Roles come from the token, so a role granted or removed in Keycloak reaches the API only in the next access token the app obtains."
+      misconceptions:
+      - "OAuth scopes and roles are the same thing, so the app can ask for the staff role as a scope."
+      - "Removing someone's role in Keycloak blocks them from the API immediately."
+      depth_notes: "Không nói kiểm quyền theo chủ sở hữu đơn — bài sau. Không nói role lồng nhau, composite role hay client role của Keycloak — ngoài phạm vi GĐ2."
+    - id: backend.l2.resource-based-authorization
+      title:
+        vi: "Khi role không đủ: kiểm ai sở hữu đơn hàng"
+        en: "When a role is not enough: checking who owns the order"
+      main_path: true
+      duration_min: 14
+      skills: [backend.auth.access-models]
+      prereqs: [backend.l2.role-based-access]
+      related: []
+      vocab: [abac]
+      example_tag: stage-2
+      example_files:
+      - DonHang.Api/Authorization/OrderOwnerHandler.cs
+      - DonHang.Api/Controllers/OrdersController.cs
+      - scripts/backend/order-owner.sh
+      outline:
+      - "Whether a customer may read order 42 depends on that order's `customer_id`, which a role cannot express, because every customer has the same role."
+      - "ABAC decides from attributes of the caller, the resource and the request; Đơn Hàng's rule is that the caller owns the order or has the `staff` role."
+      - "The order must be loaded before the rule can run, so the endpoint calls `IAuthorizationService.AuthorizeAsync` with the order after reading it, instead of relying only on an attribute."
+      - "At stage-2, `GET /api/v1/orders/{id}` and the cancel endpoint answer `403` for another customer's order, closing the gap left open at stage-1."
+      misconceptions:
+      - "Giving each customer their own role is a fine way to control who reads which order."
+      - "An `[Authorize]` attribute with a role can also check who owns the order."
+      depth_notes: "Không nói trả 404 thay 403 để giấu đơn tồn tại, policy engine bên ngoài hay phân quyền theo tenant — GĐ3–4. Chỉ một quy tắc: chủ đơn hoặc staff."
