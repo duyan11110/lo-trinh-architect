@@ -163,6 +163,21 @@ skills:
     vi: "Job nền chịu được lỗi, chạy lại và nhiều instance"
     en: "Background jobs that survive failures, reruns and several instances"
   prereqs: [backend.jobs.background, backend.api.idempotency]
+- id: backend.data.query-plans
+  title:
+    vi: "Đọc query plan và chọn index"
+    en: "Reading query plans and choosing indexes"
+  prereqs: [foundation.sql.index]
+- id: backend.ef.performance
+  title:
+    vi: "Truy vấn EF Core không làm việc thừa"
+    en: "EF Core queries that do no extra work"
+  prereqs: [backend.ef.querying, backend.data.query-plans]
+- id: backend.data.concurrency
+  title:
+    vi: "Ghi đồng thời mà không mất thay đổi"
+    en: "Concurrent writes without lost changes"
+  prereqs: [foundation.sql.transaction, backend.ef.persistence]
 levels:
 - level: 1
   title:
@@ -1355,4 +1370,219 @@ levels:
       misconceptions:
       - "The `WHERE status = 'pending'` filter is enough: once one copy sends the email, the other copy will not see the row."
       - "A locked row is hidden from every other query until the transaction ends."
-      depth_notes: "Không nói isolation level hay deadlock — backend.l2.transactions-in-practice. Không nói advisory lock, bầu leader hay cột lease — ngoài GĐ2. Không nói competing consumers trên RabbitMQ — messaging GĐ3."
+      depth_notes: "Không nói isolation level — backend.l2.transactions-in-practice; không nói deadlock — ngoài GĐ2. Không nói advisory lock, bầu leader hay cột lease — ngoài GĐ2. Không nói competing consumers trên RabbitMQ — messaging GĐ3."
+  - id: indexes-and-plans
+    title:
+      vi: "Index, query plan, truy vấn EF Core và ghi đồng thời"
+      en: "Indexes, query plans, EF Core reads and concurrent writes"
+    stage: 2
+    summary:
+      vi: "Đọc được plan của PostgreSQL kèm chi phí và thời gian thật, chọn index cho đúng truy vấn Đơn Hàng gửi, bắt EF Core bớt việc thừa khi đọc, và chặn được hai request ghi đè thay đổi của nhau."
+      en: "Read a PostgreSQL plan with its costs and real timings, choose indexes for the queries Đơn Hàng actually sends, make EF Core reads do less needless work, and stop two requests from overwriting each other's change."
+    lessons:
+    - id: backend.l2.indexes-and-plans
+      title:
+        vi: "EXPLAIN ANALYZE: đọc plan kèm chi phí, số dòng và thời gian"
+        en: "EXPLAIN ANALYZE: reading a plan with costs, rows and timings"
+      main_path: true
+      duration_min: 15
+      skills: [backend.data.query-plans]
+      prereqs: [foundation.l1.sql-index-intro, foundation.l1.sql-join]
+      related: []
+      vocab: [query-plan, query-planner]
+      example_tag: stage-2
+      example_files: [db/queries/explain-analyze.sql, scripts/backend/explain-analyze.sh]
+      outline:
+      - "Without `COSTS OFF`, each step of an `EXPLAIN` plan shows an estimated cost as two numbers (before the first row, for all rows) plus estimated rows; cost is in the planner's own units, not milliseconds."
+      - "`EXPLAIN ANALYZE` really runs the statement and adds actual time in milliseconds, actual rows and loops for each step, so on an `UPDATE` or `DELETE` it changes data unless wrapped in a transaction that is rolled back."
+      - "A plan is a tree: each step takes rows from the more indented steps under it, and the top line's figures cover the whole query."
+      - "The planner estimates row counts from statistics that `ANALYZE` collects, and autovacuum refreshes them after enough rows change; an estimate far from the actual rows often means the statistics are out of date."
+      - "The planner picks the plan with the lowest estimated cost, so a sequential scan is the right choice when a query needs a large share of the table's rows."
+      misconceptions:
+      - "A cost of 1000 in the plan means the query takes 1000 milliseconds."
+      - "A sequential scan in a plan always means an index is missing."
+      - "`EXPLAIN ANALYZE` only prints a plan, so it is safe to put in front of a `DELETE`."
+      depth_notes: "Không nói các kiểu join (nested loop, hash, merge) chi tiết, BUFFERS, song song hóa hay chỉnh tham số planner — ngoài GĐ2. Chọn index cho truy vấn thật — bài composite-indexes; lấy SQL EF Core gửi — bài efcore-generated-sql."
+    - id: backend.l2.foreign-key-indexes
+      title:
+        vi: "Index của Đơn Hàng từ đâu ra: EF Core index khóa ngoại, PostgreSQL thì không"
+        en: "Where Đơn Hàng's indexes come from: EF Core indexes foreign keys"
+      main_path: true
+      duration_min: 12
+      skills: [backend.data.query-plans]
+      prereqs: [backend.l2.indexes-and-plans, backend.l1.migrations, backend.l1.efcore-n-plus-one]
+      related: []
+      vocab: []
+      example_tag: stage-1
+      example_files:
+      - DonHang.Infrastructure/Migrations/20260924092625_AddOrderCustomerNavigation.cs
+      - DonHang.Infrastructure/Migrations/20260923154631_InitialCreate.cs
+      - DonHang.Infrastructure/DonHangDbContext.cs
+      - db/schema.sql
+      outline:
+      - "PostgreSQL builds an index for every `PRIMARY KEY` and `UNIQUE` constraint but none for `REFERENCES` alone, so `db/schema.sql` left `orders.customer_id` without an index."
+      - "By convention EF Core creates an index for each foreign key in its model, so the `AddOrderCustomerNavigation` migration that mapped `Order.Customer` also runs `CreateIndex` for `IX_orders_customer_id`."
+      - "EF Core skips that index when the foreign key columns already start a key, which is why `InitialCreate` adds the `order_items` foreign key to `orders` with no index: the key `(order_id, product_id)` starts with `order_id`."
+      - "A foreign key that exists only in `db/schema.sql`, such as `payments.order_id`, is not in EF Core's model, so no migration indexed it; the C# model does not list every index the database has."
+      misconceptions:
+      - "`orders.customer_id` has had an index since stage-0, because it is a foreign key."
+      - "EF Core only creates the indexes I write with `HasIndex`."
+      - "`order_items` needs its own index on `order_id`, since every foreign key needs one."
+      depth_notes: "Không đọc plan hay đo tốc độ — bài indexes-and-plans và composite-indexes. Không nói hai ràng buộc khóa ngoại trùng trên `orders.customer_id` (schema.sql và migration) hay cascade delete. Không thêm index mới — bài composite-indexes."
+    - id: backend.l2.composite-indexes
+      title:
+        vi: "Index hai cột: thứ tự cột quyết định truy vấn nào được lợi"
+        en: "A two-column index: column order decides which queries it serves"
+      main_path: true
+      duration_min: 15
+      skills: [backend.data.query-plans]
+      prereqs: [backend.l2.foreign-key-indexes, backend.l2.cursor-pagination]
+      related: []
+      vocab: [composite-index]
+      example_tag: stage-2
+      example_files:
+      - DonHang.Infrastructure/DonHangDbContext.cs
+      - db/queries/composite-index.sql
+      - scripts/backend/composite-index.sh
+      outline:
+      - "An index on `(customer_id, id)` keeps its entries sorted by `customer_id` and, for the same customer, by `id`, like a phone book sorted by family name and then given name."
+      - "It narrows the search for a condition on `customer_id`, or on both columns, but not for a condition on `id` alone, because entries with nearby ids are spread across every customer."
+      - "For one customer's page after a cursor, the plan reads the index from the cursor in `id` order and stops after the `LIMIT` rows, with no separate `Sort` step."
+      - "With only `IX_orders_customer_id`, no index gives one customer's orders in `id` order, so the plan either sorts all of that customer's orders or walks `orders` by id skipping other customers, reading more rows than it returns."
+      - "The composite index serves every query `IX_orders_customer_id` served, so the stage-2 migration from `HasIndex` replaces the single-column index instead of keeping both."
+      misconceptions:
+      - "An index on `(customer_id, id)` helps any query that filters on either column."
+      - "The order of the columns in an index does not matter."
+      - "Two separate indexes on `customer_id` and on `id` do the same job as one index on both."
+      depth_notes: "Không nói index covering (INCLUDE), index một phần, kiểu index khác B-tree hay skip scan — ngoài GĐ2. Không nói CREATE INDEX CONCURRENTLY và khóa ghi khi tạo index trên bảng đang chạy — zero-downtime migration GĐ4."
+    - id: backend.l2.efcore-generated-sql
+      title:
+        vi: "Xem SQL mà EF Core thật sự gửi trước khi đoán vì sao chậm"
+        en: "See the SQL EF Core really sends before guessing why it is slow"
+      main_path: true
+      duration_min: 12
+      skills: [backend.ef.performance]
+      prereqs: [backend.l2.indexes-and-plans, backend.l1.structured-logging, backend.l1.querying-with-linq]
+      related: [backend.l1.efcore-n-plus-one]
+      vocab: []
+      example_tag: stage-2
+      example_files: [docker-compose.yml, scripts/backend/efcore-sql.sh]
+      outline:
+      - "EF Core logs each command it sends, with its SQL and how long it took, under the category `Microsoft.EntityFrameworkCore.Database.Command` at `Information` level."
+      - "Đơn Hàng's `appsettings.json` keeps `Microsoft.EntityFrameworkCore` at `Warning`, so at stage-2 the lab's `api` service raises only the command category to `Information` through configuration."
+      - "Parameter values show as `?` in that log unless sensitive data logging is turned on, because they can hold personal data such as an email."
+      - "`ToQueryString()` on a LINQ query returns the SQL EF Core would send for it, without running it."
+      - "The logged SQL, with its parameters filled in, is what you give to `EXPLAIN ANALYZE` to see how PostgreSQL plans the query your code sends."
+      misconceptions:
+      - "When a LINQ query is slow, the problem is in the C# code, so the API is the place to look first."
+      - "The `?` in the logged SQL means EF Core sent the query without the values."
+      - "EF Core sends exactly the SQL I would have written by hand for the same LINQ."
+      depth_notes: "Không bật sensitive data logging ngoài môi trường dev, không nói interceptor, compiled query hay OpenTelemetry — observability GĐ3. Không nói plan chung cho truy vấn có tham số (generic plan) — ngoài GĐ2."
+    - id: backend.l2.no-tracking-queries
+      title:
+        vi: "AsNoTracking: đọc entity mà bạn sẽ không sửa"
+        en: "AsNoTracking: reading entities you will not change"
+      main_path: true
+      duration_min: 12
+      skills: [backend.ef.performance]
+      prereqs: [backend.l1.saving-changes, backend.l2.efcore-generated-sql]
+      related: []
+      vocab: [change-tracker]
+      example_tag: stage-2
+      example_files: [DonHang.Infrastructure/EfOrderRepository.cs, DonHang.Api/Controllers/OrdersController.cs]
+      outline:
+      - "By default every entity a query returns is tracked: the change tracker keeps a snapshot of it, so `SaveChangesAsync` can find what changed and write only that."
+      - "`AsNoTracking()` returns entities the change tracker does not keep, which saves that work and memory for data that is only read to build a response."
+      - "`AsNoTracking()` does not change the SQL sent to PostgreSQL; what it saves is work inside the API process."
+      - "Changing an entity loaded with `AsNoTracking()` and then calling `SaveChangesAsync` writes nothing, because the context never knew about it."
+      - "At stage-2 the read-only `GET /api/v1/orders/{id}` loads the order with `AsNoTracking()`, while cancelling keeps the tracked query because it changes the order."
+      misconceptions:
+      - "`AsNoTracking()` makes the database run the query faster."
+      - "After `AsNoTracking()`, I can still change the order and `SaveChangesAsync` will save it."
+      - "Tracking costs nothing when I never call `SaveChangesAsync`."
+      depth_notes: "Không nói identity resolution (AsNoTrackingWithIdentityResolution), đặt no-tracking mặc định cho cả context hay attach entity để cập nhật — ngoài GĐ2. Chọn cột bằng Select — bài projection-queries."
+    - id: backend.l2.projection-queries
+      title:
+        vi: "Chỉ lấy những gì response cần: Select thay cho Include"
+        en: "Fetch only what the response needs: Select instead of Include"
+      main_path: true
+      duration_min: 13
+      skills: [backend.ef.performance]
+      prereqs:
+      - backend.l2.no-tracking-queries
+      - backend.l1.efcore-n-plus-one
+      - backend.l1.dtos-and-serialization
+      related: []
+      vocab: [projection]
+      example_tag: stage-2
+      example_files:
+      - DonHang.Infrastructure/EfOrderRepository.cs
+      - DonHang.Domain/OrderSummary.cs
+      - scripts/backend/efcore-sql.sh
+      outline:
+      - "At stage-1, `ListByCustomerAsync` uses `Include(o => o.Customer)` and loads whole `Order` and `Customer` entities, every mapped column, while the order list shows only id, status and the customer's name."
+      - "At stage-2 a `Select` into an `OrderSummary` record inside the query makes EF Core put only those columns in the SQL, as the logged command shows."
+      - "Reading `o.Customer.FullName` inside the `Select` makes EF Core write the JOIN itself, so the query needs no `Include`."
+      - "A projection whose results contain no entities is not tracked, so it skips the change tracker without `AsNoTracking()`."
+      - "A projection returns plain records that cannot be changed and saved back, so it fits reading for a response, not loading something to change."
+      misconceptions:
+      - "`Include` is the only way to read data from a related table."
+      - "EF Core only fetches the columns my code later reads from the entity."
+      - "A query that returns records still fills the change tracker, so I also need `AsNoTracking()`."
+      depth_notes: "Không nói split query, projection lồng collection hay AutoMapper/ProjectTo — ngoài GĐ2. Không dạy lại N+1 — backend.l1.efcore-n-plus-one. Record `OrderSummary` nằm ở DonHang.Domain để repository không phụ thuộc DTO của DonHang.Api; không bàn sâu read model — design GĐ3."
+    - id: backend.l2.transactions-in-practice
+      title:
+        vi: "Read Committed: hai request cùng đọc trạng thái cũ rồi ghi đè nhau"
+        en: "Read Committed: two requests act on the same old status"
+      main_path: true
+      duration_min: 15
+      skills: [backend.data.concurrency]
+      prereqs:
+      - foundation.l1.transaction-intro
+      - backend.l1.saving-changes
+      - backend.l2.role-based-access
+      - backend.l2.problem-types
+      related: [backend.l2.skip-locked-claiming]
+      vocab: [isolation-level, lost-update]
+      example_tag: stage-2
+      example_files:
+      - DonHang.Domain/OrderService.cs
+      - scripts/backend/lost-update.sh
+      - scripts/backend/repeatable-read-conflict.sh
+      outline:
+      - "An isolation level decides what a transaction sees of changes other transactions make while it runs; PostgreSQL's default is Read Committed, and `SaveChangesAsync` uses the default unless code asks for another."
+      - "Under Read Committed each statement sees only rows committed before it began, so a cancel and a ship request that both read order 5 before either writes both see `paid` and both pass their status check."
+      - "The second `UPDATE` waits for the first one's row lock and, once it commits, overwrites its status: a lost update, such as a shipped order that ends up `cancelled`."
+      - "The repository's `FindAsync` and `SaveChangesAsync` run in separate transactions unless code wraps both in `Database.BeginTransactionAsync`, so an isolation level on the save alone cannot protect a read-then-write."
+      - "Under Repeatable Read the read and the write share one snapshot, and PostgreSQL rejects the second write with a serialization error (`40001`) that the application must catch and retry."
+      misconceptions:
+      - "Because `SaveChangesAsync` uses a transaction, two requests cannot overwrite each other's change."
+      - "Under PostgreSQL's default isolation level, a transaction sees the database as it was when the transaction began."
+      - "Raising the isolation level fixes concurrent writes without changing any other code."
+      depth_notes: "Không nói Serializable chi tiết, anomaly khác (phantom, write skew), deadlock hay transaction phân tán — ngoài GĐ2 (outbox, saga GĐ3). Cách Đơn Hàng chặn lost update — bài optimistic-concurrency."
+    - id: backend.l2.optimistic-concurrency
+      title:
+        vi: "Concurrency token: lần lưu thứ hai thất bại thay vì ghi đè"
+        en: "A concurrency token makes the second save fail, not overwrite"
+      main_path: true
+      duration_min: 14
+      skills: [backend.data.concurrency]
+      prereqs: [backend.l2.transactions-in-practice, backend.l1.exception-handling-middleware]
+      related: [backend.l2.skip-locked-claiming]
+      vocab: [optimistic-concurrency, concurrency-token]
+      example_tag: stage-2
+      example_files:
+      - DonHang.Infrastructure/DonHangDbContext.cs
+      - DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs
+      - scripts/backend/concurrency-conflict.sh
+      outline:
+      - "Optimistic concurrency lets requests read without locking and checks at save time whether the row changed since it was read; the losing save fails instead of overwriting."
+      - "Đơn Hàng's token is PostgreSQL's `xmin`, a system column every row has that changes whenever the row is updated; `Order` gets a `uint` property the Npgsql provider maps to it via `IsRowVersion()`."
+      - "EF Core adds the token's original value to the `WHERE` of its `UPDATE`; when no row matches, `SaveChangesAsync` throws `DbUpdateConcurrencyException` and writes nothing."
+      - "The API answers that exception with `409` and its own problem `type`, so the client reloads the order and decides again instead of repeating a change based on a stale status."
+      - "Locking the row first with `SELECT ... FOR UPDATE` is the alternative: the second request waits instead of failing, which costs less when many writers compete for the same row."
+      misconceptions:
+      - "Optimistic concurrency locks the order while someone is changing it."
+      - "When `SaveChangesAsync` throws a concurrency exception, the fix is to call it again."
+      - "A concurrency token needs a new column added to the `orders` table."
+      depth_notes: "Không nói ETag/If-Match trên HTTP, gộp thay đổi khi xung đột hay token trên nhiều bảng — ngoài GĐ2. Không dạy lại row lock — backend.l2.skip-locked-claiming."
