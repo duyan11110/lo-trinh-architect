@@ -29,6 +29,26 @@ skills:
     vi: Pod
     en: Pods
   prereqs: [k8s.basics.cluster-architecture]
+- id: k8s.workloads.labels
+  title:
+    vi: "Label và label selector"
+    en: "Labels and label selectors"
+  prereqs: [k8s.basics.kubectl]
+- id: k8s.workloads.replication
+  title:
+    vi: "Giữ đủ số Pod: ReplicaSet và Deployment"
+    en: "Keeping Pods running: ReplicaSets and Deployments"
+  prereqs: [k8s.workloads.labels, k8s.basics.pods]
+- id: k8s.workloads.services
+  title:
+    vi: "Service và DNS trong cluster"
+    en: "Services and cluster DNS"
+  prereqs: [k8s.workloads.labels]
+- id: k8s.workloads.rollouts
+  title:
+    vi: "Deploy theo tag, rolling update và rollback"
+    en: "Deploying by tag, rolling updates and rollbacks"
+  prereqs: [k8s.workloads.replication, devops.release.publishing]
 levels:
 - level: 1
   title:
@@ -207,3 +227,197 @@ levels:
       - "The scheduler starts the containers on the node it picks."
       - "etcd is where Kubernetes keeps my application's data."
       depth_notes: "Không nói kube-controller-manager chi tiết, cloud-controller-manager, kube-proxy, CNI, container runtime, backup etcd (k8s GĐ3), cách scheduler chấm điểm node. Controller tạo lại Pod — k8s/workloads."
+  - id: workloads
+    title:
+      vi: "Giữ ứng dụng chạy: Deployment, Service, cập nhật và quay lui"
+      en: "Keeping apps running: Deployments, Services, updates and rollbacks"
+    stage: 2
+    summary:
+      vi: "Chạy được nhiều bản của một ứng dụng bằng Deployment, cho chúng một tên ổn định bằng Service, deploy image api từ ghcr.io theo tag cố định, cập nhật dần và quay lui khi bản mới hỏng."
+      en: "Run several copies of an app with a Deployment, give them a stable name with a Service, deploy the api image from ghcr.io by a fixed tag, update it gradually and roll back when a new version breaks."
+    lessons:
+    - id: k8s.l1.labels
+      title:
+        vi: "Label đánh dấu object, selector tìm object theo label"
+        en: "Labels tag objects so selectors can find them"
+      main_path: true
+      duration_min: 11
+      skills: [k8s.workloads.labels]
+      prereqs: [k8s.l1.namespaces]
+      related: []
+      vocab: [k8s-label, label-selector]
+      example_tag: stage-2
+      example_files: [deploy/k8s/lessons/labelled-pods.yaml, scripts/k8s/labels.sh]
+      outline:
+      - "A label is a key–value pair in an object's `metadata.labels`, such as `app: web`; unlike a name, the same label may sit on many objects."
+      - "A label selector picks objects by their labels: `kubectl get pods -n donhang -l app=web` lists only the Pods whose `app` label equals `web`."
+      - "A selector with several comma-separated conditions matches only the objects that satisfy all of them."
+      - "Keys you choose, such as `app`, mean nothing to Kubernetes by themselves; they matter once an object uses a selector to decide which Pods it works with."
+      misconceptions:
+      - "A label is just another name, so two Pods cannot carry the same one."
+      - "Kubernetes knows what `app: web` means and treats those Pods specially."
+      - "`-l app=web` searches the Pods' names for the text `web`."
+      depth_notes: "Không nói selector dạng tập hợp (in, notin, exists), annotation, label khuyến nghị app.kubernetes.io/*, label Kubernetes tự gắn cho node. ReplicaSet, Service dùng selector — các bài sau trong module."
+    - id: k8s.l1.replicasets
+      title:
+        vi: "ReplicaSet thay Pod bị mất, Pod đơn lẻ mất là mất hẳn"
+        en: "A ReplicaSet replaces lost Pods; a bare Pod stays gone"
+      main_path: true
+      duration_min: 13
+      skills: [k8s.workloads.replication]
+      prereqs: [k8s.l1.labels, k8s.l1.control-plane-components]
+      related: []
+      vocab: [replicaset, pod-template]
+      example_tag: stage-2
+      example_files: [deploy/k8s/lessons/web-replicaset.yaml, scripts/k8s/replicaset.sh]
+      outline:
+      - "A Pod created on its own is not recreated: after `kubectl delete pod`, it is gone until someone applies its manifest again."
+      - "A ReplicaSet declares `replicas`, a label selector and a Pod template, and creates Pods from the template until the number of matching Pods equals `replicas`."
+      - "The labels in the Pod template must match the ReplicaSet's selector; the API server rejects a manifest where they do not."
+      - "When one of its Pods is deleted, the ReplicaSet's control loop sees fewer Pods than `replicas` and creates a replacement, with a new name and a new IP address."
+      - "Changing `replicas` and applying again adds or removes Pods, but changing only the Pod template leaves the Pods that already run untouched."
+      misconceptions:
+      - "Kubernetes always brings back a deleted Pod, even one I created on its own."
+      - "The replacement is the same Pod started again, with the same name and IP address."
+      - "Changing the image in a ReplicaSet's Pod template updates the Pods it already runs."
+      depth_notes: "Không nói Deployment (bài sau), node hỏng và eviction, ownerReferences, ReplicaSet nhận Pod mồ côi, kubectl scale. Container tự khởi động lại trong Pod, probe — k8s/config-and-probes."
+    - id: k8s.l1.deployments
+      title:
+        vi: "Bạn viết Deployment, Deployment lo ReplicaSet"
+        en: "You write a Deployment; it manages the ReplicaSet for you"
+      main_path: true
+      duration_min: 12
+      skills: [k8s.workloads.replication]
+      prereqs: [k8s.l1.replicasets]
+      related: []
+      vocab: [k8s-deployment]
+      example_tag: stage-2
+      example_files: [deploy/k8s/lessons/web-deployment.yaml, scripts/k8s/deployment.sh]
+      outline:
+      - "A Deployment declares `replicas`, a selector and a Pod template like a ReplicaSet, then creates a ReplicaSet that creates the Pods; you do not write that ReplicaSet."
+      - "`deploy/k8s/lessons/web-deployment.yaml` runs three replicas of `caddy:2.10.0`, labelled `app: web`, in the namespace `donhang`."
+      - "The names show who owns what: the ReplicaSet is named after the Deployment plus a hash of the Pod template, each Pod after that ReplicaSet plus a random suffix."
+      - "Changing only `replicas` and applying again scales the existing ReplicaSet without replacing any running Pod."
+      - "A deleted Pod of the Deployment is replaced by its ReplicaSet; deleting the Deployment deletes its ReplicaSet and Pods as well."
+      misconceptions:
+      - "A Deployment runs the Pods itself, so no ReplicaSet is involved."
+      - "For each app I should write both a ReplicaSet and a Deployment."
+      - "Scaling from 3 to 5 replicas restarts the three Pods that already run."
+      depth_notes: "Không nói đổi Pod template, rolling update (bài rolling-updates); không nói StatefulSet, DaemonSet, Job, autoscaling (GĐ3); request/limit, probe — k8s/config-and-probes."
+    - id: k8s.l1.services
+      title:
+        vi: "Service cho một nhóm Pod luôn đổi một địa chỉ cố định"
+        en: "A Service gives a changing set of Pods one stable address"
+      main_path: true
+      duration_min: 13
+      skills: [k8s.workloads.services]
+      prereqs: [k8s.l1.deployments, devops.l1.docker-networks]
+      related: []
+      vocab: [k8s-service]
+      example_tag: stage-2
+      example_files: [deploy/k8s/lessons/web-service.yaml, scripts/k8s/service.sh]
+      outline:
+      - "Pod IP addresses do not last: a replacement Pod gets a new one, so a client that stored a Pod's IP address loses its target when that Pod is replaced."
+      - "A Service selects Pods by label and gets one virtual IP address, its cluster IP, that stays the same for as long as the Service exists."
+      - "A connection to the Service's IP address and `port` is forwarded to `targetPort` on one of the Pods its selector matches; connections are spread across those Pods."
+      - "The set of Pod addresses behind a Service follows its selector: it changes as Pods are replaced or scaled, while the cluster IP does not."
+      - "A Service with no `type` is of type `ClusterIP`: its address can be reached only from inside the cluster."
+      misconceptions:
+      - "A Kubernetes Service runs containers, like a service in `docker-compose.yml`."
+      - "Clients should look up the Pods' IP addresses and call them directly."
+      - "A Service's IP address changes whenever its Pods are replaced."
+      depth_notes: "Không nói NodePort, LoadBalancer, Ingress, port-forward (k8s/ingress-helm GĐ3), kube-proxy và cách chuyển tiếp (networking-deep GĐ3), headless Service, session affinity. Pod chưa ready — k8s/config-and-probes; tên DNS — bài sau."
+    - id: k8s.l1.service-and-dns
+      title:
+        vi: "Pod gọi Service bằng tên nhờ DNS của cluster"
+        en: "Pods reach a Service by name through the cluster's DNS"
+      main_path: true
+      duration_min: 12
+      skills: [k8s.workloads.services]
+      prereqs: [k8s.l1.services, foundation.l1.dns]
+      related: [devops.l1.docker-networks]
+      vocab: [cluster-dns]
+      example_tag: stage-2
+      example_files: [scripts/k8s/service-dns.sh]
+      outline:
+      - "The cluster runs its own DNS server as Pods in `kube-system`, and each Pod's `/etc/resolv.conf` names it as the resolver, so Pods look up names there first."
+      - "Each Service gets the DNS name `<service>.<namespace>.svc.cluster.local`, which resolves to its cluster IP; in Đơn Hàng's cluster that is `web.donhang.svc.cluster.local`."
+      - "A Pod in `donhang` can use the short name `web` because its `/etc/resolv.conf` lists search domains starting with `donhang.svc.cluster.local`; from another namespace, `web.donhang` works."
+      - "The name stays valid while the Pods behind the Service are replaced, so a client configured with `web` never needs a Pod IP, as the service name did on a Compose network."
+      misconceptions:
+      - "A Pod can find a Service by name only when both are in the same namespace."
+      - "A Service's DNS name resolves to the IP address of one of its Pods."
+      - "Service names like `web.donhang.svc.cluster.local` also work from the browser on my laptop."
+      depth_notes: "Không nói cấu hình CoreDNS, bản ghi SRV, tên DNS của Pod, headless Service, ExternalName, dnsPolicy và ndots (k8s/networking-deep GĐ3)."
+    - id: k8s.l1.deploying-an-image-tag
+      title:
+        vi: "Deploy api từ registry theo một tag cố định, không dùng latest"
+        en: "Deploying the api from the registry by a fixed tag, never latest"
+      main_path: true
+      duration_min: 13
+      skills: [k8s.workloads.rollouts]
+      prereqs: [k8s.l1.deployments, devops.l2.tagging-images-by-commit, devops.l2.image-tags-and-digests]
+      related: [devops.l2.cutting-a-release]
+      vocab: [image-pull-policy]
+      example_tag: stage-2
+      example_files: [deploy/k8s/lessons/api-deployment.yaml, scripts/k8s/deploy-api.sh]
+      outline:
+      - "`deploy/k8s/lessons/api-deployment.yaml` runs two replicas of `ghcr.io/duyan11110/donhang-api` with a `sha-` tag naming the commit CI built it from; nothing is built on the cluster."
+      - "The node a Pod lands on pulls the image from the registry itself; Đơn Hàng's package on GitHub Container Registry is public, so pulling needs no credentials."
+      - "When `imagePullPolicy` is not set and the tag is not `latest`, it defaults to `IfNotPresent`: a node that already has an image under that tag does not pull it again."
+      - "With the tag `latest` or no tag, the default becomes `Always` and the manifest no longer says which build runs; Đơn Hàng's manifests never use `latest`."
+      - "This Deployment gives the api only settings that are not secret, enough for it to start; requests that need the database fail until k8s/config-and-probes supplies the rest."
+      misconceptions:
+      - "The cluster builds the image from the Dockerfile in the repository."
+      - "Using `latest` is fine because it always gives the newest build."
+      - "Pushing a new image under the same tag updates the Pods that already run that tag."
+      depth_notes: "Không nói imagePullSecret, ConfigMap/Secret (k8s/config-and-probes), ghim image bằng digest trong manifest, ký/quét image (devops/supply-chain GĐ3), deploy từ pipeline/GitOps (GĐ3). Đổi tag, rolling update — bài sau."
+    - id: k8s.l1.rolling-updates
+      title:
+        vi: "Đổi image thì Pod được thay dần từng ít một"
+        en: "A new image tag replaces Pods a few at a time"
+      main_path: true
+      duration_min: 14
+      skills: [k8s.workloads.rollouts]
+      prereqs: [k8s.l1.deploying-an-image-tag]
+      related: []
+      vocab: [rolling-update]
+      example_tag: stage-2
+      example_files:
+      - deploy/k8s/lessons/api-deployment.yaml
+      - deploy/k8s/lessons/api-deployment-1.0.0.yaml
+      - scripts/k8s/rolling-update.sh
+      outline:
+      - "Any change to a Deployment's Pod template, such as a new image tag, makes the Deployment create a new ReplicaSet and move the Pods over to it; changing only `replicas` does not."
+      - "With the default strategy, `RollingUpdate`, the new ReplicaSet is scaled up while the old one is scaled down, so Pods of both versions run side by side for a while."
+      - "By default `maxSurge` and `maxUnavailable` are both 25%: during the update at most about a quarter more Pods than `replicas` exist, and at most about a quarter fewer are available."
+      - "`kubectl rollout status` waits until the update has finished; afterwards `kubectl get replicasets -n donhang` still shows the old ReplicaSet, scaled to 0."
+      - "Without a readiness check, a new Pod counts as available once its container runs, so the update moves on even if the new api cannot serve requests yet."
+      misconceptions:
+      - "Updating the image stops every old Pod first and then starts the new ones."
+      - "The Deployment changes the image inside the Pods that already run."
+      - "When `kubectl apply` returns, the new version is already serving every request."
+      depth_notes: "Không nói strategy Recreate chi tiết, cách làm tròn maxSurge/maxUnavailable, minReadySeconds, pause/resume, blue-green, canary (devops GĐ4). Readiness probe — k8s/config-and-probes; quay lui — bài sau."
+    - id: k8s.l1.rollbacks
+      title:
+        vi: "kubectl rollout undo đưa ReplicaSet cũ trở lại"
+        en: "kubectl rollout undo brings the previous ReplicaSet back"
+      main_path: true
+      duration_min: 13
+      skills: [k8s.workloads.rollouts]
+      prereqs: [k8s.l1.rolling-updates]
+      related: []
+      vocab: [rollout-history]
+      example_tag: stage-2
+      example_files: [deploy/k8s/lessons/api-deployment-bad-tag.yaml, scripts/k8s/rollback.sh]
+      outline:
+      - "A Deployment keeps its old ReplicaSets, scaled to 0, as numbered revisions, up to `revisionHistoryLimit` (10 by default); `kubectl rollout history` lists them."
+      - "A tag that does not exist in the registry leaves the new Pod in `ErrImagePull` or `ImagePullBackOff`; with two replicas and default limits, both old api Pods keep running."
+      - "Kubernetes does not roll back on its own: a stuck update is only reported as not progressing, and it stays stuck until someone acts."
+      - "`kubectl rollout undo` makes the previous revision's Pod template current again, and the Deployment scales that old ReplicaSet back up."
+      - "After an undo the cluster no longer matches the manifest in Git; unless the manifest is fixed and applied, the next apply brings the bad tag back."
+      misconceptions:
+      - "Kubernetes rolls back by itself when the new Pods fail."
+      - "Rolling back also reverts the manifest file in Git."
+      - "A rollback has to rebuild the old image."
+      depth_notes: "Không nói --to-revision, progressDeadlineSeconds chi tiết, rollback tự động (devops GĐ4), rollback migration DB, GitOps (devops/gitops GĐ3)."
