@@ -153,6 +153,16 @@ skills:
     vi: "Giữ cache khớp với database"
     en: "Keeping a cache in line with the database"
   prereqs: [backend.cache.cache-aside]
+- id: backend.jobs.background
+  title:
+    vi: "Chạy việc nền ngoài request"
+    en: "Running work outside the request"
+  prereqs: [backend.http.hosting, backend.ef.persistence]
+- id: backend.jobs.reliability
+  title:
+    vi: "Job nền chịu được lỗi, chạy lại và nhiều instance"
+    en: "Background jobs that survive failures, reruns and several instances"
+  prereqs: [backend.jobs.background, backend.api.idempotency]
 levels:
 - level: 1
   title:
@@ -1188,3 +1198,161 @@ levels:
       - "A cache can only take load off the database, never add to it."
       - "A longer TTL fixes a stampede."
       depth_notes: "Không nói khóa phân tán qua Redis, làm mới trước khi hết hạn (refresh-ahead) hay TTL ngẫu nhiên hóa — ngoài phạm vi GĐ2. Không dạy HybridCache. Không nói đo tải/benchmark thật — chỉ đếm truy vấn trong log của script."
+  - id: background-jobs
+    title:
+      vi: "Background job: gửi email đơn hàng ngoài request"
+      en: "Background jobs: order emails outside the request"
+    stage: 2
+    summary:
+      vi: "Đưa việc gửi email đơn hàng ra khỏi request: lưu job vào bảng notifications cùng transaction với đơn, chạy nó bằng một hosted service, thử lại có giãn cách, và giải thích được vì sao email có thể đi hai lần nhưng không bao giờ mất."
+      en: "Move Đơn Hàng's order emails out of the request: save the job in the notifications table in the order's transaction, run it with a hosted service, retry with growing delays, and explain why an email can go out twice but is never lost."
+    lessons:
+    - id: backend.l2.work-outside-the-request
+      title:
+        vi: "Vì sao response đặt đơn không nên chờ gửi email"
+        en: "Why the order response should not wait for the email"
+      main_path: true
+      duration_min: 12
+      skills: [backend.jobs.background]
+      prereqs:
+      - design.l1.the-service-layer
+      - backend.l1.exception-handling-middleware
+      - foundation.l1.threads-and-async-intro
+      related: []
+      vocab: [background-job]
+      example_tag: stage-1
+      example_files:
+      - DonHang.Domain/OrderService.cs
+      - DonHang.Infrastructure/LoggingNotifier.cs
+      - DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs
+      outline:
+      - "At stage-1, `PlaceOrderAsync` saves the order and then calls `notifier.Send` in the same request, so the response to `POST /api/v1/orders` waits for whatever `Send` does."
+      - "`LoggingNotifier` only writes a log line, which is quick; a real email means talking to a mail server over the network, which can take seconds or fail."
+      - "The order is already saved when `Send` runs, so a mail error reaching `ExceptionHandlingMiddleware` would answer `500` for an order that exists, and the customer may place it again."
+      - "A background job is work the application does outside any request: the request only records that the email must be sent, so its response no longer depends on the mail server."
+      - "Work started only in memory, such as a `Task.Run` nobody awaits, is lost if the process stops before it ends, and nothing tries it again when it fails."
+      misconceptions:
+      - "If `Send` becomes async and I `await` it, the customer no longer waits for the email."
+      - "Starting the email with `Task.Run` and not awaiting it is already a background job."
+      - "If the email fails, the order was not placed."
+      depth_notes: "Chỉ nêu vấn đề bằng code stage-1; không dạy BackgroundService — bài hosted-services; không nói lưu job ở đâu — bài database-job-queue. Không nói message broker — messaging GĐ3."
+    - id: backend.l2.hosted-services
+      title:
+        vi: "Hosted service: code chạy song song với request suốt đời app"
+        en: "A hosted service runs beside the requests for the app's whole life"
+      main_path: true
+      duration_min: 14
+      skills: [backend.jobs.background]
+      prereqs:
+      - backend.l2.work-outside-the-request
+      - design.l1.service-lifetimes
+      - backend.l1.hosting-and-program-cs
+      related: []
+      vocab: [hosted-service]
+      example_tag: stage-2
+      example_files: [DonHang.Api/Jobs/NotificationSender.cs, DonHang.Api/Program.cs]
+      outline:
+      - "`NotificationSender` derives from `BackgroundService` and is registered with `AddHostedService<NotificationSender>()`; the host calls its `ExecuteAsync` when the app starts, in the same process that serves requests."
+      - "`ExecuteAsync` receives a `CancellationToken` that is signalled when the app shuts down, so the loop can finish its round and stop instead of starting new work."
+      - "The loop waits on a `PeriodicTimer`, which wakes it every few seconds and holds no thread while it waits."
+      - "A hosted service is created once and lives as long as the app, like a singleton, so it must not keep a scoped `DonHangDbContext`; each round creates a scope with `IServiceScopeFactory` and gets a fresh `DbContext` from it."
+      - "By default an exception that escapes `ExecuteAsync` stops the whole app, so `NotificationSender` catches and logs errors inside each round and keeps looping."
+      misconceptions:
+      - "A background service runs as a separate program next to the API."
+      - "The background service can take `DonHangDbContext` in its constructor, just like a controller does."
+      - "If the background loop throws, only the loop stops and the API keeps serving requests."
+      depth_notes: "Không nói Worker Service tách riêng, thứ tự khởi động giữa hosted service và Kestrel hay thời gian chờ khi tắt app — ngoài GĐ2. Không nói lịch chạy theo giờ (cron) — CronJob của Kubernetes, GĐ3. Việc bảng notifications làm hàng đợi — bài sau."
+    - id: backend.l2.database-job-queue
+      title:
+        vi: "Hàng đợi job trong PostgreSQL: lưu việc gửi email cùng đơn hàng"
+        en: "A job queue in PostgreSQL: save the email job with the order"
+      main_path: true
+      duration_min: 15
+      skills: [backend.jobs.background]
+      prereqs: [backend.l2.hosted-services, backend.l1.saving-changes]
+      related: [design.l3.outbox-pattern]
+      vocab: [job-queue]
+      example_tag: stage-2
+      example_files:
+      - DonHang.Domain/OrderService.cs
+      - DonHang.Api/Jobs/NotificationSender.cs
+      - scripts/backend/order-email.sh
+      outline:
+      - "At stage-2, placing an order stages a `notifications` row with status `pending` next to the order, and one `SaveChangesAsync` saves both in one transaction, so there is never an order without its email job or a job without its order."
+      - "The request then answers without contacting the mail server; the `notifications` table is Đơn Hàng's job queue, and `NotificationSender` is the only code that takes work from it."
+      - "On each tick, `NotificationSender` reads the pending rows that are due, sends each email to the mail server running in Compose, and sets `status` to `sent` together with `sent_at`."
+      - "Because each job is a row in PostgreSQL, a restart of the API loses nothing: rows still pending when it stopped are sent after it starts again."
+      - "An email goes out a few seconds after the order, not at the same moment, because the sender only looks for work when its timer wakes it."
+      misconceptions:
+      - "Keeping pending emails in a list in memory works just as well as a table, and it is faster."
+      - "Saving the order and adding the email job in two separate `SaveChangesAsync` calls is just as safe."
+      - "When the order response comes back, the email has already been sent."
+      depth_notes: "Không gọi tên outbox pattern hay message broker (RabbitMQ) — design.l3.outbox-pattern và messaging GĐ3. Không nói thất bại khi gửi — bài retry-with-backoff; không nói nhiều bản API cùng lấy job — bài skip-locked-claiming. Không dạy cấu hình SMTP hay thư viện gửi mail."
+    - id: backend.l2.retry-with-backoff
+      title:
+        vi: "Mail server sập: thử lại sau, mỗi lần chờ lâu hơn"
+        en: "When the mail server is down: retry later, waiting longer each time"
+      main_path: true
+      duration_min: 13
+      skills: [backend.jobs.reliability]
+      prereqs: [backend.l2.database-job-queue, backend.l1.structured-logging]
+      related: []
+      vocab: [exponential-backoff]
+      example_tag: stage-2
+      example_files: [DonHang.Api/Jobs/NotificationSender.cs, scripts/backend/email-retry.sh]
+      outline:
+      - "When a send fails, `NotificationSender` keeps the row `pending`, adds one to `attempts` and moves `next_attempt_at` later, so the email is tried again on a later tick instead of being dropped."
+      - "Retrying at once in a loop sends a burst of attempts to a mail server that is already failing; with exponential backoff the wait doubles after each failure, which gives the server time to recover."
+      - "After a fixed number of failed attempts the row is marked `failed` and never retried automatically, so an email that can never be sent does not keep the sender busy forever."
+      - "Each failure is logged with the notification id and the attempt number as structured fields, so a person can find why a row ended up `failed`."
+      misconceptions:
+      - "If sending fails, the most reliable fix is to retry straight away until it works."
+      - "A job that keeps failing should be retried forever, because giving up loses the email."
+      depth_notes: "Không nói jitter, circuit breaker hay thư viện resilience — backend/resilience GĐ3. Không nói dead-letter queue — messaging GĐ3. Không nói gửi lại hàng loạt các dòng failed bằng tay."
+    - id: backend.l2.at-least-once-jobs
+      title:
+        vi: "Sập sau khi gửi mà trước khi đánh dấu: email đi hai lần"
+        en: "A crash after sending but before marking sends the email twice"
+      main_path: true
+      duration_min: 13
+      skills: [backend.jobs.reliability]
+      prereqs: [backend.l2.retry-with-backoff, backend.l2.idempotent-endpoints]
+      related: []
+      vocab: [at-least-once, at-most-once]
+      example_tag: stage-2
+      example_files: [DonHang.Api/Jobs/NotificationSender.cs]
+      outline:
+      - "`NotificationSender` sends the email first and saves `sent` afterwards; if the process stops between the two steps, the row is still `pending` and the email is sent again after the restart."
+      - "A send that fails with a timeout may still have reached the mail server, so its retry can deliver a second copy."
+      - "Such a job is at-least-once: it is never lost but can run more than once; saving `sent` before sending makes it at-most-once, where a crash loses the email instead."
+      - "No order of the two steps gives exactly once, because the mail server and PostgreSQL cannot take part in one transaction."
+      - "Đơn Hàng accepts a rare duplicate email; when a repeat would do harm, such as taking a payment twice, the job must be idempotent, for example by sending a key the receiver checks, as `Idempotency-Key` does for orders."
+      misconceptions:
+      - "Putting the send and the status update in one database transaction makes the email go out exactly once."
+      - "Marking the row as sent before sending is the safer order, because then nothing is ever sent twice."
+      depth_notes: "Không nói inbox/outbox, khử trùng lặp phía người nhận hay exactly-once của message broker — messaging GĐ3. Không nói nhiều bản API cùng gửi — bài skip-locked-claiming."
+    - id: backend.l2.skip-locked-claiming
+      title:
+        vi: "Hai bản API không được gửi trùng một email: SKIP LOCKED"
+        en: "Two API copies must not send the same email: SKIP LOCKED"
+      main_path: true
+      duration_min: 15
+      skills: [backend.jobs.reliability]
+      prereqs: [backend.l2.database-job-queue, foundation.l1.transaction-intro]
+      related: [backend.l2.at-least-once-jobs]
+      vocab: [row-lock]
+      example_tag: stage-2
+      example_files:
+      - DonHang.Infrastructure/NotificationQueue.cs
+      - DonHang.Api/Jobs/NotificationSender.cs
+      - scripts/backend/skip-locked.sh
+      outline:
+      - "Every running copy of the API runs its own `NotificationSender`, so two copies that read the same pending row can both send its email."
+      - "Inside a transaction, `SELECT ... FOR UPDATE` takes a row lock on each row it returns; another transaction that tries to lock or change those rows waits until the first one commits or rolls back."
+      - "With `SKIP LOCKED` added, the second query skips rows another transaction has locked instead of waiting, so each copy of the sender claims a different set of pending rows."
+      - "The lock lasts until the transaction ends, so the sender claims a small batch, sends it and commits; a crash rolls the transaction back and leaves the rows pending for the next claim."
+      - "A row lock does not stop a plain `SELECT` from reading the row; it only makes other lockers and writers wait or, with `SKIP LOCKED`, pass the row by."
+      misconceptions:
+      - "The `WHERE status = 'pending'` filter is enough: once one copy sends the email, the other copy will not see the row."
+      - "A locked row is hidden from every other query until the transaction ends."
+      depth_notes: "Không nói isolation level hay deadlock — backend.l2.transactions-in-practice. Không nói advisory lock, bầu leader hay cột lease — ngoài GĐ2. Không nói competing consumers trên RabbitMQ — messaging GĐ3."
