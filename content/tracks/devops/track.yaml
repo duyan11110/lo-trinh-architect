@@ -88,6 +88,21 @@ skills:
     vi: "Migration database trong pipeline"
     en: "Database migrations in the pipeline"
   prereqs: [devops.cd.delivery, backend.ef.migrations]
+- id: devops.release.registry
+  title:
+    vi: "Registry và tag image"
+    en: "Registries and image tags"
+  prereqs: [devops.cd.delivery]
+- id: devops.release.versioning
+  title:
+    vi: "Semantic versioning và changelog"
+    en: "Semantic versioning and changelogs"
+  prereqs: [devops.release.registry]
+- id: devops.release.publishing
+  title:
+    vi: "Phát hành một phiên bản"
+    en: "Cutting a release"
+  prereqs: [devops.release.versioning]
 levels:
 - level: 1
   title:
@@ -616,3 +631,170 @@ levels:
       - "The pipeline should run `dotnet ef database update` on the deploy machine, from a copy of the source code."
       - "If a migration fails, the new API version still starts and simply keeps using the old schema."
       depth_notes: "Không nói migration không downtime (expand/contract, CREATE INDEX CONCURRENTLY) — GĐ4; không nói rollback migration hay script SQL idempotent; chạy migrate trong cluster (Job) — track k8s."
+  - id: release
+    title:
+      vi: "Registry, phiên bản và phát hành"
+      en: "Registry, versions and releases"
+    stage: 2
+    summary:
+      vi: "Đưa image của Đơn Hàng lên registry với tag chỉ rõ commit và phiên bản, đặt số phiên bản theo semantic versioning, viết changelog, và phát hành từ một git tag mà không build lại."
+      en: "Publish Đơn Hàng's images to a registry under tags that name their commit and version, number versions with semantic versioning, keep a changelog, and cut a release from a git tag without rebuilding."
+    lessons:
+    - id: devops.l2.container-registry
+      title:
+        vi: "Container registry: nơi máy khác lấy image của bạn"
+        en: "A container registry: where other machines get your images"
+      main_path: true
+      duration_min: 12
+      skills: [devops.release.registry]
+      prereqs: [devops.l2.building-images-in-ci, devops.l1.image-vs-container]
+      related: []
+      vocab: [container-registry]
+      example_tag: stage-1
+      example_files: [docker-compose.yml, DonHang.Api/Dockerfile, lab/Dockerfile]
+      outline:
+      - "A container registry is a server that stores images by name and tag; `docker pull` downloads an image from a registry and `docker push` uploads one to it."
+      - "When the first part of an image name is a host name, such as `mcr.microsoft.com` or `lscr.io`, that part names the registry; a name without one, such as `caddy:2.10.0`, comes from Docker Hub."
+      - "`donhang-api:stage-1` exists only on the machine that built it: Compose builds it from `DonHang.Api/Dockerfile`, and no registry holds a copy."
+      - "A machine outside the workflow run, such as a server, can run an image it did not build only if the image is pushed to a registry that machine can reach."
+      misconceptions:
+      - "`docker run` always downloads the image from the internet before starting it."
+      - "An image I build with `docker build` is uploaded to Docker Hub automatically."
+      - "A registry is where Docker keeps the containers it is running."
+      depth_notes: "Không nói tự dựng registry, mirror, quyền kéo image riêng tư (pull secret — track k8s), quét/ký image (devops/supply-chain GĐ3). Tag và digest — devops.l2.image-tags-and-digests; push từ CI — devops.l2.pushing-images-from-ci."
+    - id: devops.l2.image-tags-and-digests
+      title:
+        vi: "Tag có thể dời đi, digest thì không"
+        en: "A tag can move, a digest cannot: naming the exact image"
+      main_path: true
+      duration_min: 13
+      skills: [devops.release.registry]
+      prereqs: [devops.l2.container-registry, devops.l1.dockerfile-for-dotnet]
+      related: []
+      vocab: [image-digest]
+      example_tag: stage-1
+      example_files: [DonHang.Api/Dockerfile, docker-compose.yml]
+      outline:
+      - "An image tag is a label that points at one image in a registry, and whoever can push to that name can later point the same tag at a different image by pushing again."
+      - "`latest` is only the tag Docker uses when a name gives none; it does not mean newest, and it points at whatever image was last pushed under it."
+      - "`mcr.microsoft.com/dotnet/sdk:10.0` in `DonHang.Api/Dockerfile` names a release line that moves to each new 10.0 patch, so two builds months apart can start from different SDK images."
+      - "An image digest, `sha256:` followed by a hash of the image's content, identifies exactly one image; pulling by digest returns that image whatever later happens to its tags."
+      misconceptions:
+      - "`latest` always gives me the newest version of an image."
+      - "Once an image is published under a version tag such as `2.10.0`, that tag gives the same image forever."
+      - "Two images with the same name and tag on two machines must be identical."
+      depth_notes: "Không nói image nhiều kiến trúc (manifest list), ký hay xác minh image (devops/supply-chain GĐ3); repo Đơn Hàng không ghim image bằng digest — chỉ giải thích. Quy ước tag của Đơn Hàng — devops.l2.tagging-images-by-commit."
+    - id: devops.l2.pushing-images-from-ci
+      title:
+        vi: "Đẩy image API lên GitHub Container Registry từ CI"
+        en: "Pushing the API image to GitHub Container Registry from CI"
+      main_path: true
+      duration_min: 14
+      skills: [devops.release.registry]
+      prereqs:
+      - devops.l2.image-tags-and-digests
+      - devops.l2.deployment-environments
+      - devops.l1.secrets-vs-config
+      related: []
+      vocab: []
+      example_tag: stage-2
+      example_files: [".github/workflows/ci.yml"]
+      outline:
+      - "GitHub Container Registry serves images under `ghcr.io/<owner>/<name>`; from stage-2 Đơn Hàng publishes `ghcr.io/duyan11110/donhang-api` and `ghcr.io/duyan11110/donhang-migrate` there."
+      - "A job logs in to `ghcr.io` with the `GITHUB_TOKEN` that GitHub creates for each workflow run, and the workflow must grant it `packages: write` under `permissions:` before a push is allowed."
+      - "At stage-2 the `publish` job runs only for pushes to `master`, `needs:` the test and image jobs, loads the image artifact and pushes it, so the registry receives only images that passed the quality gate."
+      - "`docker tag` gives an image that already exists a second name, with the registry host and owner in front; it builds nothing, so the pushed image is the one the tests ran against."
+      misconceptions:
+      - "To push to GitHub's registry, CI needs my personal GitHub password or token stored as a secret."
+      - "Pushing an image from every pull request is harmless, since images in a registry are only stored, not run."
+      - "`docker tag` makes a copy of the image, so the pushed image may differ from the one that was tested."
+      depth_notes: "Không nói quyền xem package (public/private) hay cài đặt package trên GitHub; không nói Docker Hub hay registry tự dựng; không nói cluster kéo image (track k8s). Tên tag Đơn Hàng dùng — devops.l2.tagging-images-by-commit."
+    - id: devops.l2.tagging-images-by-commit
+      title:
+        vi: "Gắn tag image bằng commit đã build ra nó"
+        en: "Tagging each image with the commit it was built from"
+      main_path: true
+      duration_min: 12
+      skills: [devops.release.registry]
+      prereqs: [devops.l2.pushing-images-from-ci, foundation.l2.git-mental-model]
+      related: []
+      vocab: []
+      example_tag: stage-2
+      example_files: [".github/workflows/ci.yml"]
+      outline:
+      - "Đơn Hàng tags every image it pushes as `sha-` followed by the full id of the commit that was pushed, so any running image leads back to the exact code that built it."
+      - "Each commit on `master` is built and pushed once, so a `sha-` tag is never reused for different content; this is Đơn Hàng's convention, since the registry would accept a second push under the same tag."
+      - "Đơn Hàng never pushes or deploys `latest`: a deployment names a tag that says which commit runs, and going back means naming the tag that ran before."
+      - "A commit id says which code runs but not whether it is newer or older than another; people and clients need a version number for that."
+      misconceptions:
+      - "Tagging the image with the branch name, like `master`, tells you which code is running."
+      - "`latest` is the safest tag to deploy, because it is always up to date."
+      depth_notes: "Không nói dọn image cũ trong registry (retention), không ghim digest trong cấu hình deploy (track k8s). Số phiên bản — devops.l2.semantic-versioning."
+    - id: devops.l2.semantic-versioning
+      title:
+        vi: "Semantic versioning: MAJOR.MINOR.PATCH hứa hẹn điều gì"
+        en: "Semantic versioning: what MAJOR.MINOR.PATCH promises"
+      main_path: true
+      duration_min: 13
+      skills: [devops.release.versioning]
+      prereqs: [devops.l2.tagging-images-by-commit, backend.l2.api-versioning]
+      related: []
+      vocab: [semantic-versioning]
+      example_tag: stage-1
+      example_files: []
+      outline:
+      - "Under semantic versioning 2.0.0 a version is MAJOR.MINOR.PATCH: PATCH goes up for backward-compatible bug fixes, MINOR for backward-compatible additions, MAJOR for any breaking change to the public API."
+      - "Raising MINOR resets PATCH to 0 and raising MAJOR resets both, so after 1.4.2 comes 1.4.3, 1.5.0 or 2.0.0, and 1.10.0 is newer than 1.9.0."
+      - "The numbers mean something only against a declared public API; for a web API such as Đơn Hàng's, that is the requests and responses its clients rely on."
+      - "Versions 0.y.z are for initial development, when anything may change at any time; 1.0.0 is the version that defines the public API."
+      - "The `v1` in `/api/v1` versions the URL contract, not the product: many product releases can ship under `/api/v1`, and only a break that needs `/api/v2` forces both to change."
+      misconceptions:
+      - "After 1.9.0 the next minor version is 2.0.0, and 1.10.0 would be older than 1.9.0."
+      - "A MAJOR version bump means the release has big new features."
+      - "The `v1` in `/api/v1` and the product's version must always change together."
+      depth_notes: "Không nói pre-release/build metadata (-rc.1, +…) chi tiết, dải phiên bản của NuGet/pub, tự tăng version từ commit message (Conventional Commits) — ngoài GĐ2. Số phiên bản của chính Đơn Hàng — devops.l2.changelog."
+    - id: devops.l2.changelog
+      title:
+        vi: "Changelog: mỗi phiên bản đổi gì, viết cho người dùng nó"
+        en: "A changelog: what changed in each version, for the people using it"
+      main_path: true
+      duration_min: 12
+      skills: [devops.release.versioning]
+      prereqs: [devops.l2.semantic-versioning, foundation.l2.good-commits]
+      related: []
+      vocab: [changelog]
+      example_tag: stage-2
+      example_files: [CHANGELOG.md]
+      outline:
+      - "A changelog is a file, `CHANGELOG.md` in Đơn Hàng, that lists for each released version, newest first, the changes that matter to the people who use it."
+      - "Đơn Hàng follows the Keep a Changelog format: each version groups entries under Added, Changed, Deprecated, Removed, Fixed and Security, below an Unreleased section at the top."
+      - "Each pull request that changes behaviour adds its line under Unreleased, so a release turns that section into a version instead of rebuilding months of work from memory."
+      - "Đơn Hàng's `1.0.0` entry lists `POST /api/v1/auth/login` under Removed, telling a client what it must change before it upgrades from `0.1.0`."
+      - "A changelog is not the commit log: commit messages explain each change to developers, while a changelog entry sums up what a user of the version notices."
+      misconceptions:
+      - "The changelog is just `git log` pasted into a file at release time."
+      - "Only new features belong in a changelog; fixes and removals are too small to mention."
+      depth_notes: "Không sinh changelog tự động từ commit (Conventional Commits, công cụ release) — chỉ nhắc là có. Đưa phần changelog vào ghi chú phát hành — devops.l2.cutting-a-release."
+    - id: devops.l2.cutting-a-release
+      title:
+        vi: "Phát hành: git tag nâng image đã qua kiểm tra thành phiên bản"
+        en: "Cutting a release: a git tag promotes an image that already passed"
+      main_path: true
+      duration_min: 15
+      skills: [devops.release.publishing]
+      prereqs: [devops.l2.changelog, devops.l2.tagging-images-by-commit]
+      related: []
+      vocab: [git-tag]
+      example_tag: stage-2
+      example_files: [".github/workflows/release.yml", scripts/release-notes.sh, CHANGELOG.md]
+      outline:
+      - "A git tag is a name fixed to one commit; `git tag -a v1.0.0` creates an annotated tag with its own message, and `git push` sends a tag only when asked, as in `git push origin v1.0.0`."
+      - "Đơn Hàng's `release.yml` runs when a tag matching `v*.*.*` is pushed; it pulls the `sha-` images of the tagged commit, adds the tag `1.0.0` to them and pushes, without building."
+      - "Because the release reuses images CI already tested, the job fails when the tagged commit was never pushed to `master` and so has no `sha-` image."
+      - "The job copies that version's section of `CHANGELOG.md`, extracted by `scripts/release-notes.sh`, into a GitHub release attached to the tag."
+      - "Đơn Hàng's `stage-0`, `stage-1` and `stage-2` tags mark states of the course, while `v0.1.0` and `v1.0.0` mark product versions; one commit can carry both kinds."
+      misconceptions:
+      - "`git push` uploads my tags together with my commits."
+      - "A release should rebuild the image from the tagged commit so that it is fresh."
+      - "A git tag and an image tag are the same thing, so creating one creates the other."
+      depth_notes: "Không nói nhánh release/hotfix, backport, ký tag, tự tăng version, blue-green/canary (devops GĐ4). Deploy một phiên bản lên cluster — track k8s GĐ2."
