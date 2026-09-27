@@ -128,6 +128,26 @@ skills:
     vi: "Pattern bọc đối tượng: decorator, adapter"
     en: "Wrapping patterns: decorator, adapter"
   prereqs: [design.patterns.behavior, design.solid.dip]
+- id: design.architecture.dependency-rule
+  title:
+    vi: "Dependency rule: phụ thuộc hướng vào quy tắc nghiệp vụ"
+    en: "The dependency rule: dependencies point toward the business rules"
+  prereqs: [design.solid.dip, design.layers.tracing]
+- id: design.architecture.hexagonal
+  title:
+    vi: "Hexagonal architecture: port và adapter"
+    en: "Hexagonal architecture: ports and adapters"
+  prereqs: [design.architecture.dependency-rule, design.patterns.wrapping]
+- id: design.architecture.clean
+  title:
+    vi: "Clean Architecture so với hexagonal và layered"
+    en: "Clean Architecture compared with hexagonal and layered"
+  prereqs: [design.architecture.hexagonal]
+- id: design.architecture.unit-of-work
+  title:
+    vi: "Unit of work và DbContext của EF Core"
+    en: "The unit of work and EF Core's DbContext"
+  prereqs: [design.architecture.hexagonal, design.layers.repository]
 levels:
 - level: 1
   title:
@@ -847,3 +867,204 @@ levels:
       - "Raising an event runs the subscribers in the background, so the raiser does not wait for them."
       - "If one subscriber throws, the others still run, because subscribers do not know about each other."
       depth_notes: "Không nói domain event, message broker hay publish/subscribe giữa các service — design/ddd-tactical và backend/messaging GĐ3. Không nói hủy đăng ký, rò bộ nhớ do event hay IObservable<T> — ngoài GĐ2."
+  - id: clean-hexagonal
+    title:
+      vi: "Clean và Hexagonal: khác gì Layered"
+      en: "Clean and hexagonal: how they differ from layered"
+    stage: 2
+    summary:
+      vi: "Chỉ ra được chiều phụ thuộc giữa các project Đơn Hàng, gọi đúng tên port, adapter, use case, unit of work, composition root, và giữ dependency rule bằng một test."
+      en: "Point out which way Đơn Hàng's projects depend on each other, name its ports, adapters, use cases, unit of work and composition root, and guard the dependency rule with a test."
+    lessons:
+    - id: design.l2.dependency-rule
+      title:
+        vi: "Gọi đi một chiều, phụ thuộc chiều ngược lại: dependency rule"
+        en: "Calls go one way, dependencies the other: the dependency rule"
+      main_path: true
+      duration_min: 13
+      skills: [design.architecture.dependency-rule]
+      prereqs: [design.l1.the-repository-layer, design.l1.tracing-a-request-through-layers]
+      related: [design.l1.solid-dip]
+      vocab: [dependency-rule]
+      example_tag: stage-1
+      example_files:
+      - DonHang.Domain/DonHang.Domain.csproj
+      - DonHang.Infrastructure/DonHang.Infrastructure.csproj
+      - DonHang.Domain/IOrderRepository.cs
+      - DonHang.Infrastructure/EfOrderRepository.cs
+      outline:
+      - "In a classic layered design each layer depends on the one below it, so the business layer depends on the data-access layer and, through it, on the database technology."
+      - "Đơn Hàng reverses that arrow: `DonHang.Infrastructure.csproj` has a `ProjectReference` to `DonHang.Domain`, while `DonHang.Domain.csproj` references no other project and no package."
+      - "At run time `OrderService` calls into `EfOrderRepository`, yet at compile time `EfOrderRepository` depends on `DonHang.Domain`: `IOrderRepository` lets the call and the dependency point in opposite directions."
+      - "The dependency rule: source-code dependencies point only toward the business rules, so the code that holds the rules never names a class, package or project from outside it."
+      misconceptions:
+      - "If `OrderService` calls the repository, `DonHang.Domain` must depend on `DonHang.Infrastructure`."
+      - "Splitting code into layers already guarantees that the business rules don't depend on the database."
+      - "The dependency rule means no project may reference another project."
+      depth_notes: "Không gọi tên port/adapter hay hexagonal — design.l2.ports-and-adapters; không nói Clean Architecture — design.l2.clean-architecture. Vì sao DonHang.Api tham chiếu cả hai project — design.l2.composition-root."
+    - id: design.l2.ports-and-adapters
+      title:
+        vi: "Hexagonal: lõi chỉ nói chuyện với bên ngoài qua port của chính nó"
+        en: "Hexagonal: the core reaches the outside only through its own ports"
+      main_path: true
+      duration_min: 14
+      skills: [design.architecture.hexagonal]
+      prereqs: [design.l2.dependency-rule, design.l2.adapter-pattern]
+      related: [design.l1.solid-isp]
+      vocab: [hexagonal-architecture]
+      example_tag: stage-1
+      example_files:
+      - DonHang.Domain/INotifier.cs
+      - DonHang.Infrastructure/LoggingNotifier.cs
+      - DonHang.Domain/Entities.cs
+      - DonHang.Infrastructure/DonHangDbContext.cs
+      outline:
+      - "Hexagonal architecture, also called ports and adapters, puts the business rules in a core that reaches the outside world only through interfaces the core declares itself, called ports."
+      - "`IOrderRepository` and `INotifier` are Đơn Hàng's ports: both live in `DonHang.Domain` and say what `OrderService` needs in its own words — find an order, save, send a message about an order."
+      - "An adapter implements a port for one technology: `EfOrderRepository` for PostgreSQL through EF Core, `LoggingNotifier` for the application log; neither class is named anywhere in `DonHang.Domain`."
+      - "`Order` and `OrderItem` carry no EF Core attribute; which table and column each property maps to is set in `DonHangDbContext`, outside the core."
+      - "Changing a technology means writing another adapter for the same port; `FakeOrderRepository` in `DonHang.Tests` is already a second adapter for `IOrderRepository`, one that keeps orders in memory."
+      misconceptions:
+      - "Hexagonal architecture means splitting the application into six layers."
+      - "A port is the network port the API listens on."
+      - "An interface belongs next to its implementation, so `IOrderRepository` should live in `DonHang.Infrastructure`."
+      depth_notes: "Không phân biệt hai phía adapter — design.l2.driving-and-driven-adapters. Không nói lịch sử hay hình lục giác có nghĩa gì ngoài việc vẽ. Không nhắc lại Adapter pattern — design.l2.adapter-pattern."
+    - id: design.l2.driving-and-driven-adapters
+      title:
+        vi: "Controller cũng là adapter: phía gọi vào lõi và phía lõi gọi ra"
+        en: "Controllers are adapters too: the side that calls in, the side called"
+      main_path: true
+      duration_min: 13
+      skills: [design.architecture.hexagonal]
+      prereqs:
+      - design.l2.ports-and-adapters
+      - design.l1.testing-with-a-fake-repository
+      - design.l1.the-controller-layer
+      related: []
+      vocab: [driving-adapter, driven-adapter]
+      example_tag: stage-1
+      example_files:
+      - DonHang.Api/Controllers/OrdersController.cs
+      - DonHang.Tests/Services/OrderServiceTests.cs
+      - DonHang.Tests/FakeNotifier.cs
+      - DonHang.Domain/OrderService.cs
+      outline:
+      - "Adapters sit on two sides of the core: a driving adapter calls into the core to ask it to do something, and a driven adapter is called by the core through a port the core declares."
+      - "`OrdersController` is a driving adapter: it turns an HTTP request into a call to `OrderService.PlaceOrderAsync` and the result back into HTTP; `EfOrderRepository` and `LoggingNotifier` are driven adapters."
+      - "`OrderServiceTests` drives the same core with no HTTP at all: it calls `PlaceOrderAsync` directly and plugs `FakeOrderRepository` and `FakeNotifier` into the driven ports."
+      - "The core cannot tell which adapter calls it or which one it calls, so the same `OrderService` runs unchanged behind a controller in the API and behind a test in `DonHang.Tests`."
+      - "On the driving side Đơn Hàng declares no interface: `OrdersController` calls `OrderService`'s public methods directly, because that dependency already points toward the core."
+      misconceptions:
+      - "Only the database and notification code are adapters; controllers belong to the core."
+      - "Every port must be a C# interface, including the one a controller calls."
+      - "Tests sit outside the architecture, so they don't count as using the core."
+      depth_notes: "Không nói driving adapter khác (hosted service, CLI, message consumer) — backend/messaging GĐ3. Không nhắc lại fake và test double — module unit-testing GĐ1."
+    - id: design.l2.clean-architecture
+      title:
+        vi: "Clean, hexagonal hay layered: khác nhau ở chiều phụ thuộc"
+        en: "Clean vs hexagonal vs layered: where the dependencies point"
+      main_path: true
+      duration_min: 14
+      skills: [design.architecture.clean]
+      prereqs: [design.l2.driving-and-driven-adapters, design.l1.why-layers]
+      related: []
+      vocab: [clean-architecture, use-case]
+      example_tag: stage-1
+      example_files:
+      - DonHang.Domain/OrderService.cs
+      - DonHang.Domain/Entities.cs
+      - DonHang.Domain/DonHang.Domain.csproj
+      - DonHang.Api/DonHang.Api.csproj
+      outline:
+      - "Clean Architecture, named after the book Clean Architecture, draws a system as rings: business rules at the centre, then use cases, then adapters such as controllers, then frameworks and the database at the edge."
+      - "A use case is one thing the application does for its user, with the rules for doing it; `PlaceOrderAsync` and `CancelOrderAsync` in `OrderService` are Đơn Hàng's use cases."
+      - "Clean Architecture's central rule is the dependency rule: code in an inner ring names nothing in an outer ring — the same direction hexagonal architecture keeps between the core and its adapters."
+      - "Layered, hexagonal and Clean all keep HTTP, business rules and data access apart; classic layering lets business code depend on data access, while hexagonal and Clean make data access depend on the rules."
+      - "The rings describe dependency direction, not a count of projects: in Đơn Hàng, `Order` and `OrderService` share `DonHang.Domain`, while controllers and repositories sit outside it, in `DonHang.Api` and `DonHang.Infrastructure`."
+      misconceptions:
+      - "Clean Architecture and hexagonal architecture are rival designs, so a project has to pick one."
+      - "Following Clean Architecture means one project per ring."
+      - "`DonHang.Api`, `DonHang.Domain` and `DonHang.Infrastructure` are three layers, so Đơn Hàng is just a classic layered design."
+      depth_notes: "Không dạy presenter, input/output boundary hay tách project theo ring; không nói domain model vs anemic — design/domain-model; không chia theo module/feature — design/modular-monolith GĐ3. Không nêu tên tác giả."
+    - id: design.l2.unit-of-work
+      title:
+        vi: "DbContext của EF Core đã là một unit of work"
+        en: "EF Core's DbContext is already a unit of work"
+      main_path: true
+      duration_min: 14
+      skills: [design.architecture.unit-of-work]
+      prereqs: [design.l2.ports-and-adapters, backend.l2.no-tracking-queries, design.l1.service-lifetimes]
+      related: [backend.l2.database-job-queue, backend.l2.transactions-in-practice]
+      vocab: [unit-of-work]
+      example_tag: stage-1
+      example_files:
+      - DonHang.Domain/IOrderRepository.cs
+      - DonHang.Infrastructure/EfOrderRepository.cs
+      - DonHang.Domain/OrderService.cs
+      - DonHang.Tests/FakeOrderRepository.cs
+      outline:
+      - "A unit of work keeps track of everything one business operation changes and writes all of it together at the end, so the operation is saved completely or not at all."
+      - "EF Core's `DbContext` is a unit of work: its change tracker records what was added or modified, and one `SaveChangesAsync` writes all of it in a single transaction."
+      - "`CancelOrderAsync` sets `Status` on the order `FindAsync` returned, then calls `SaveChangesAsync`; it never tells the repository what changed, because the tracked `DbContext` behind `EfOrderRepository` noticed."
+      - "`EfOrderRepository.SaveChangesAsync` calls `db.SaveChangesAsync()`, which saves every change tracked by that scoped `DbContext`, including changes made by any other class given the same instance in that request."
+      - "Declaring `SaveChangesAsync` on the `IOrderRepository` port lets `OrderService` decide when an operation is finished without naming EF Core; `FakeOrderRepository` implements it as doing nothing."
+      - "A hand-written unit-of-work class around the `DbContext` repeats what EF Core does; it pays off when the core coordinates several repositories and needs one commit call that belongs to none of them."
+      misconceptions:
+      - "A unit of work is just another name for a database transaction."
+      - "`IOrderRepository` has no `Update` method, so changing `order.Status` is never saved."
+      - "Each repository saves its own changes, so two repositories used in one request always write in two separate transactions."
+      - "Clean code needs a generic repository and a unit-of-work class wrapped around EF Core."
+      depth_notes: "Không nhắc lại AsNoTracking hay chi tiết change tracker — backend.l2.no-tracking-queries; không nói isolation level — backend.l2.transactions-in-practice. Không trích code stage-2 (đơn + dòng notifications) — chỉ related."
+    - id: design.l2.composition-root
+      title:
+        vi: "Composition root: chỗ duy nhất được biết mọi project"
+        en: "The composition root: the one place that knows every project"
+      main_path: true
+      duration_min: 13
+      skills: [design.architecture.dependency-rule]
+      prereqs: [design.l2.driving-and-driven-adapters, design.l1.wiring-the-container]
+      related: [design.l1.tracing-a-request-through-layers]
+      vocab: [composition-root]
+      example_tag: stage-1
+      example_files:
+      - DonHang.Api/Program.cs
+      - DonHang.Api/DonHang.Api.csproj
+      - DonHang.Api/Controllers/ProductsController.cs
+      - DonHang.Api/Controllers/AuthController.cs
+      outline:
+      - "The composition root is the one place where the application's objects are wired together; in Đơn Hàng it is `Program.cs`, together with the `AddDonHangInfrastructure` method it calls."
+      - "`DonHang.Api.csproj` references `DonHang.Infrastructure` because the composition root must name the adapters to register them; `DonHang.Domain` never needs that reference."
+      - "The same reference lets any class in `DonHang.Api` use `DonHangDbContext`: at stage-1, `ProductsController` and `AuthController` do, so those driving adapters reach the database without going through the core."
+      - "Such a shortcut leaves `DonHang.Domain` untouched, but a business rule later added to those endpoints would live in a driving adapter, outside the core and outside its tests."
+      - "Skipping the core is a reasonable trade for an endpoint that only reads rows and applies no rule; once an endpoint has a rule to enforce, sending it through the core keeps that rule in one place."
+      misconceptions:
+      - "`DonHang.Api` references `DonHang.Infrastructure`, so Đơn Hàng breaks the dependency rule."
+      - "The composition root is just another name for the DI container."
+      - "Every endpoint must go through a service in the core, even one that only lists rows."
+      depth_notes: "Không nhắc lại từng đăng ký hay lifetime — design.l1.wiring-the-container. Không nói ProductsController ở stage-2 (IProductRepository) — design.l2.decorator-pattern. Không tách project Api/Host — ngoài GĐ2."
+    - id: design.l2.testing-the-dependency-rule
+      title:
+        vi: "Một test đỏ lên khi lõi bắt đầu phụ thuộc framework"
+        en: "A test that fails when the core starts depending on a framework"
+      main_path: true
+      duration_min: 12
+      skills: [design.architecture.dependency-rule]
+      prereqs: [design.l2.composition-root, design.l1.writing-a-unit-test]
+      related: []
+      vocab: [architecture-test]
+      example_tag: stage-2
+      example_files:
+      - DonHang.Tests/Architecture/DependencyRuleTests.cs
+      - DonHang.Domain/DonHang.Domain.csproj
+      - DonHang.Tests/DonHang.Tests.csproj
+      outline:
+      - "An architecture test is a unit test that checks how the code is structured, such as which assemblies a project uses, instead of how it behaves."
+      - "At stage-2, `DependencyRuleTests` reads `typeof(OrderService).Assembly.GetReferencedAssemblies()` and fails if a name starts with `DonHang.Infrastructure`, `DonHang.Api`, `Microsoft.EntityFrameworkCore` or `Microsoft.AspNetCore`."
+      - "Without a project reference, code in `DonHang.Domain` cannot name a type from `DonHang.Infrastructure` — the build fails; but nothing in the build stops someone adding an EF Core package to `DonHang.Domain`."
+      - "The test runs with every other test in `DonHang.Tests`, so a change that breaks the dependency rule shows up as a failing test before code review, not as a comment during it."
+      - "A passing architecture test proves only the rule it checks: it says nothing about whether a business rule sits in the core or in a controller."
+      misconceptions:
+      - "If the solution builds, the core cannot depend on a framework."
+      - "Unit tests can only check behaviour, so structure needs a separate tool."
+      - "If the architecture test passes, the design is clean."
+      depth_notes: "Không dạy thư viện kiểm kiến trúc (NetArchTest, ArchUnitNET) hay kiểm ranh giới giữa các module — design/modular-monolith GĐ3; fitness function — GĐ4. Không nói CI chạy test — devops/ci-cd."
