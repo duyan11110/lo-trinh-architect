@@ -63,6 +63,31 @@ skills:
     vi: "12-factor: nguyên tắc Config"
     en: "12-factor: the Config rule"
   prereqs: [devops.config.secrets]
+- id: devops.ci.continuous-integration
+  title:
+    vi: "Tích hợp liên tục với GitHub Actions"
+    en: "Continuous integration with GitHub Actions"
+  prereqs: [devops.config.twelve-factor]
+- id: devops.ci.quality-gate
+  title:
+    vi: "Quality gate trong CI"
+    en: "Quality gates in CI"
+  prereqs: [devops.ci.continuous-integration, design.testing.integration]
+- id: devops.ci.cache-and-artifacts
+  title:
+    vi: "Cache và artifact giữa các job"
+    en: "Caches and artifacts between jobs"
+  prereqs: [devops.ci.continuous-integration]
+- id: devops.cd.delivery
+  title:
+    vi: "Continuous delivery: image và môi trường deploy"
+    en: "Continuous delivery: images and deployment environments"
+  prereqs: [devops.ci.cache-and-artifacts, devops.docker.dotnet-image]
+- id: devops.cd.db-migrations
+  title:
+    vi: "Migration database trong pipeline"
+    en: "Database migrations in the pipeline"
+  prereqs: [devops.cd.delivery, backend.ef.migrations]
 levels:
 - level: 1
   title:
@@ -396,3 +421,198 @@ levels:
       - "Twelve-factor is a checklist every app must fully satisfy from day one, or it's being built wrong."
       - "Config living in environment variables is the whole of twelve-factor, and the other eleven factors are about something else entirely unrelated."
       depth_notes: "Không liệt kê hay giải thích 11 factor còn lại — chỉ Config, factor duy nhất module này thật sự dạy. Không nói stateless process hay disposability — chạm ở module devops GĐ2+ khi liên quan."
+- level: 2
+  title:
+    vi: "Level 2"
+    en: "Level 2"
+  modules:
+  - id: ci-cd
+    title:
+      vi: "CI/CD với GitHub Actions: kiểm tra, đóng gói, đưa tới môi trường"
+      en: "CI/CD with GitHub Actions: check, package, deliver"
+    stage: 2
+    summary:
+      vi: "Đọc và mở rộng được workflow GitHub Actions của Đơn Hàng: kiểm tra mỗi thay đổi, cache, build image một lần, trao artifact giữa các job, đưa bản xanh tới staging và migrate database thành bước riêng."
+      en: "Read and extend Đơn Hàng's GitHub Actions workflow: check every change, cache, build the image once, pass artifacts between jobs, deliver a green build to staging and migrate the database as its own step."
+    lessons:
+    - id: devops.l2.continuous-integration
+      title:
+        vi: "Tích hợp liên tục: mỗi lần push được một máy sạch kiểm tra"
+        en: "Continuous integration: every push is checked on a clean machine"
+      main_path: true
+      duration_min: 12
+      skills: [devops.ci.continuous-integration]
+      prereqs:
+      - foundation.l2.git-merge-vs-rebase
+      - management.l1.code-review-basics
+      - devops.l1.twelve-factor-config
+      related: []
+      vocab: [continuous-integration]
+      example_tag: stage-1
+      example_files: [".github/workflows/ci.yml"]
+      outline:
+      - "Continuous integration means merging small changes into the shared main branch often, with every change built and tested automatically rather than by whoever remembers to."
+      - "Đơn Hàng's `.github/workflows/ci.yml` runs on every push and every pull request, so a change is checked on its branch before it is merged, and again after."
+      - "CI runs on a fresh machine that has only what the repository declares, so a file that was never committed or a tool installed only on one laptop makes the run fail."
+      - "A CI result belongs to one commit: a green run says that commit built and passed its checks, nothing about the commits that come after it."
+      misconceptions:
+      - "CI is the name of a tool like GitHub Actions; a team that uses GitHub Actions is doing CI by definition."
+      - "If I run the tests on my own machine before pushing, a CI run adds nothing."
+      depth_notes: "Không nói cú pháp workflow (job, step, runner) — devops.l2.ci-pipeline-anatomy; không nói chặn merge khi đỏ — devops.l2.quality-gate; không nói CD — devops.l2.deployment-environments. Không so sánh trunk-based với feature branch."
+    - id: devops.l2.ci-pipeline-anatomy
+      title:
+        vi: "ci.yml chạy thế nào: đọc một workflow từ trên xuống"
+        en: "What happens when ci.yml runs: a workflow read top to bottom"
+      main_path: true
+      duration_min: 14
+      skills: [devops.ci.continuous-integration]
+      prereqs: [devops.l2.continuous-integration, foundation.l1.shell-scripts]
+      related: []
+      vocab: [github-actions, workflow, runner]
+      example_tag: stage-1
+      example_files: [".github/workflows/ci.yml"]
+      outline:
+      - "A GitHub Actions workflow is a YAML file in `.github/workflows/`; its `on:` block lists the events that start it, such as `push`, `pull_request` and `workflow_dispatch` (a manual run)."
+      - "A workflow holds one or more jobs; each job runs on a runner, a machine started for that job and named by `runs-on` (`ubuntu-24.04` in `ci.yml`), which has no code until `actions/checkout` fetches it."
+      - "A job's steps run in order on the same runner: a step with `uses:` runs a published action such as `actions/setup-dotnet@v4`, a step with `run:` runs shell commands."
+      - "A step fails when its command exits with a non-zero code; later steps are then skipped unless their `if:` says otherwise, as `if: failure()` and `if: always()` do in `ci.yml`."
+      misconceptions:
+      - "The runner already has the repository's code, so `actions/checkout` is just a formality."
+      - "If one step fails, GitHub still runs the remaining steps and reports how many of them failed."
+      - "`uses:` and `run:` are two spellings of the same thing."
+      depth_notes: "Chỉ một job như ci.yml stage-1; nhiều job song song và `needs:` — devops.l2.workflow-artifacts. Không nói matrix, reusable workflow, tự viết action, self-hosted runner, cú pháp expression."
+    - id: devops.l2.quality-gate
+      title:
+        vi: "Quality gate: những gì phải xanh trước khi thay đổi đi tiếp"
+        en: "A quality gate: what must pass before a change goes further"
+      main_path: true
+      duration_min: 13
+      skills: [devops.ci.quality-gate]
+      prereqs:
+      - devops.l2.ci-pipeline-anatomy
+      - design.l2.test-pyramid
+      - design.l2.testcontainers-postgresql
+      - management.l1.reading-a-300-line-pr
+      related: []
+      vocab: [quality-gate]
+      example_tag: stage-2
+      example_files: [".github/workflows/ci.yml", DonHang.Tests/DonHang.Tests.csproj]
+      outline:
+      - "A quality gate is a set of automated checks a change must pass before it may go further; in Đơn Hàng they are the build with `--warnaserror`, `dotnet test`, `flutter analyze` and `flutter test`."
+      - "At stage-2, `dotnet test` in CI also runs the integration tests: Testcontainers starts PostgreSQL and Redis on the Docker engine the GitHub-hosted Ubuntu runner already has, without the lab."
+      - "A workflow only reports pass or fail on a commit; refusing to merge a pull request while a check is red is a repository setting on GitHub (required status checks), not something `ci.yml` does."
+      - "A green gate proves only what its checks check: at stage-1 the suite passed while cancelling a `shipped` order was still allowed, because no test covered that case."
+      misconceptions:
+      - "A green CI run means the change has no bugs."
+      - "Putting `dotnet test` in the workflow is enough to stop a failing pull request from being merged."
+      - "Integration tests can't run in CI because they need Docker, so CI should run only unit tests."
+      depth_notes: "Không nói code coverage, lint/format, quét bảo mật hay quét image — ngoài GĐ2 (quét image: devops/supply-chain GĐ3). Không hướng dẫn bật required status check trong settings. Không nói tách job — devops.l2.workflow-artifacts."
+    - id: devops.l2.dependency-cache
+      title:
+        vi: "Cache gói NuGet giữa các lần chạy bằng cache key"
+        en: "Caching NuGet packages between runs with a cache key"
+      main_path: true
+      duration_min: 13
+      skills: [devops.ci.cache-and-artifacts]
+      prereqs: [devops.l2.quality-gate, devops.l1.dockerfile-for-dotnet, foundation.l1.http-caching]
+      related: []
+      vocab: [cache-key]
+      example_tag: stage-2
+      example_files: [".github/workflows/ci.yml", Directory.Packages.props]
+      outline:
+      - "Every job starts on a fresh runner, so without a cache `dotnet restore` downloads every NuGet package again on every run."
+      - "`actions/cache` restores a saved folder when a copy exists under the step's cache key, and when no copy matched that key exactly it saves the folder under it after the job succeeds."
+      - "Đơn Hàng keys the NuGet package folder on a hash of `Directory.Packages.props` and every `.csproj` file, so the key changes exactly when the declared packages change."
+      - "When no key matches exactly, `restore-keys` restores the most recent cache whose key starts with a given prefix; `dotnet restore` then downloads only the packages still missing."
+      - "A cache only saves time: the job must pass the same way when nothing is restored, because a cache can be missing or removed by GitHub."
+      misconceptions:
+      - "A cache hit means the build step itself is skipped."
+      - "The cache key should never change, so that the cache is always hit."
+      depth_notes: "Không nói cache layer Docker trong CI hay cache của Flutter/pub. Không nêu giới hạn dung lượng hay thời hạn giữ cache. Khác biệt cache với artifact — devops.l2.workflow-artifacts."
+    - id: devops.l2.building-images-in-ci
+      title:
+        vi: "Build image của API trong CI, mỗi lần chạy một lần"
+        en: "Building the API image in CI, once per run"
+      main_path: true
+      duration_min: 13
+      skills: [devops.cd.delivery]
+      prereqs: [devops.l2.quality-gate, devops.l1.multi-stage-builds, devops.l1.twelve-factor-config]
+      related: []
+      vocab: []
+      example_tag: stage-2
+      example_files: [".github/workflows/ci.yml", DonHang.Api/Dockerfile, docker-compose.yml]
+      outline:
+      - "At stage-2 CI builds `DonHang.Api`'s image from the same `DonHang.Api/Dockerfile` the lab uses, so a change that breaks the image fails the pipeline instead of the next deploy."
+      - "The image is built once per workflow run and tagged with the name `docker-compose.yml` gives the `api` service; the job that later starts the services runs that image instead of building again."
+      - "Running the image that was built and checked, instead of rebuilding for each environment, is the twelve-factor idea of one build running everywhere with only config changing."
+      - "An image built on a runner disappears with that runner: another job needs it handed over as a file, and machines outside the run need it published to a server that stores images."
+      misconceptions:
+      - "CI only needs to compile and test the code; the Dockerfile gets checked when someone deploys."
+      - "Each environment can build its own image from the same commit, and the result is the same image anyway."
+      depth_notes: "Không nói registry, push image hay cách đặt tag theo phiên bản — devops/release. Không nói cache layer Docker trong CI, build nhiều kiến trúc, ký hay quét image — devops/supply-chain GĐ3."
+    - id: devops.l2.workflow-artifacts
+      title:
+        vi: "Artifact: job này trao file cho job sau thế nào"
+        en: "Artifacts: how one job hands a file to the next"
+      main_path: true
+      duration_min: 13
+      skills: [devops.ci.cache-and-artifacts]
+      prereqs: [devops.l2.building-images-in-ci, devops.l2.dependency-cache]
+      related: []
+      vocab: [artifact]
+      example_tag: stage-2
+      example_files: [".github/workflows/ci.yml"]
+      outline:
+      - "Jobs in one workflow run start at the same time on separate runners unless `needs:` makes one wait for another, and they share no files."
+      - "An artifact is a set of files a job uploads with `actions/upload-artifact`; a later job in the same run downloads it with `actions/download-artifact`, and it stays attached to the run afterwards."
+      - "At stage-2 the image job writes the images it built to a file with `docker save` and uploads it; the `staging` job, which `needs:` the image job, downloads it and runs `docker load`."
+      - "A cache reuses files that rarely change across many runs to save time; an artifact keeps a specific output of one run, so a job that needs an artifact cannot go on without it."
+      misconceptions:
+      - "A job that `needs:` another runs on the same machine, so it can read the files the first job wrote."
+      - "Cache and artifact are two names for stored files, so either one can pass a build between jobs."
+      depth_notes: "Không nêu thời hạn giữ artifact hay giới hạn dung lượng. Không nói push image lên registry — devops/release. Không nói matrix hay job outputs."
+    - id: devops.l2.deployment-environments
+      title:
+        vi: "Continuous delivery: bản xanh tới staging qua một cổng"
+        en: "Continuous delivery: a green build reaches staging through a gate"
+      main_path: true
+      duration_min: 14
+      skills: [devops.cd.delivery]
+      prereqs: [devops.l2.workflow-artifacts, devops.l1.secrets-vs-config, devops.l1.compose-for-the-api]
+      related: []
+      vocab: [continuous-delivery, continuous-deployment, deployment-environment]
+      example_tag: stage-2
+      example_files: [".github/workflows/ci.yml", docker-compose.yml]
+      outline:
+      - "Continuous delivery keeps every change that passes CI ready to deploy through automated steps; continuous deployment also deploys every such change to production with no person deciding."
+      - "A job names a deployment environment with `environment:`; Đơn Hàng's stage-2 `staging` job does, runs only for pushes to `master`, and waits through `needs:` for the test and image jobs."
+      - "Protection rules set on an environment in the repository settings, such as required reviewers, must pass before a job that references it starts; a required approval is what keeps delivery from being deployment."
+      - "Secrets stored on an environment are given only to jobs that reference that environment; a job without `environment:` cannot read them."
+      - "Đơn Hàng's `staging` is a throwaway copy of Đơn Hàng's services that the job starts on its own runner from the image artifact and checks with a request; running it on a cluster comes later."
+      misconceptions:
+      - "Continuous delivery and continuous deployment are the same thing: both mean every commit goes straight to production."
+      - "An environment in GitHub Actions is a server that GitHub creates and keeps running."
+      - "A staging environment has to be a permanent server, or it doesn't count as deploying."
+      depth_notes: "Không deploy lên cluster — track k8s GĐ2. Không nói blue-green, canary, rollback tự động — devops GĐ4. Không nói registry hay tag phát hành — devops/release. Không cấu hình protection rule cụ thể cho repo Đơn Hàng."
+    - id: devops.l2.migrations-in-the-pipeline
+      title:
+        vi: "Migrate database thành bước riêng, trước khi API chạy"
+        en: "Migrating the database as its own step, before the API starts"
+      main_path: true
+      duration_min: 15
+      skills: [devops.cd.db-migrations]
+      prereqs: [devops.l2.deployment-environments, backend.l1.migrations, devops.l1.compose-for-the-api]
+      related: []
+      vocab: [migration-bundle]
+      example_tag: stage-2
+      example_files: [DonHang.Api/Dockerfile, docker-compose.yml, DonHang.Api/Program.cs, ".github/workflows/ci.yml"]
+      outline:
+      - "At stage-1, `Program.cs` applies pending migrations each time `DonHang.Api` starts; EF Core's documentation advises against that for production databases, for example when several copies start at once."
+      - "A migration bundle is a single executable built by `dotnet ef migrations bundle`; run against a database, it applies the migrations that database has not recorded as applied yet."
+      - "At stage-2 a `migrate` service runs the bundle and exits, `api` starts only after it exits successfully (`service_completed_successfully`), and `Program.cs` no longer migrates."
+      - "The lab and the `staging` job start the same services, so a migration that fails stops the job before any `api` container runs on that database."
+      misconceptions:
+      - "Migrating at startup is safe everywhere, since EF Core skips migrations that are already applied."
+      - "The pipeline should run `dotnet ef database update` on the deploy machine, from a copy of the source code."
+      - "If a migration fails, the new API version still starts and simply keeps using the old schema."
+      depth_notes: "Không nói migration không downtime (expand/contract, CREATE INDEX CONCURRENTLY) — GĐ4; không nói rollback migration hay script SQL idempotent; chạy migrate trong cluster (Job) — track k8s."
