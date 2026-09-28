@@ -1,0 +1,149 @@
+{
+  "id": "backend.l2.validating-provider-tokens",
+  "technical": {
+    "reviewed_at": "2026-09-28T16:30:00+07:00",
+    "reviewer": "claude-opus-5-5 (round 3)",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "stage-1 DonHang.Api/Program.cs:23-39: signingKey = Configuration[\"Jwt:SigningKey\"]; IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey)). stage-1 JwtTokenService.cs:9,16: \"Signs a token with HMAC-SHA256 and the key from config\"; new SigningCredentials(key, SecurityAlgorithms.HmacSha256). Same key signs and validates.",
+        "source": "git show stage-1:DonHang.Api/Program.cs; stage-1:DonHang.Api/JwtTokenService.cs"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Keycloak Server Admin Guide (Configuring realm keys): \"Keycloak uses asymmetric key pairs, a private and public key\"; \"The active key pair is used to create new signatures\". Execution: live access token header {\"alg\":\"RS256\",...,\"kid\":\"kgqDy...\"}; the JWKS entries contain only kty,n,e,x5c,x5t (no private parameter d).",
+        "source": "https://www.keycloak.org/docs/latest/server_admin/index.html + run 2026-09-28 in donhang-lab (stage-2 checked out): scripts/lib/keycloak.sh token + curl localhost:8080/api/v1/orders"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "curl localhost:8180/realms/donhang/.well-known/openid-configuration -> \"issuer\":\"http://localhost:8180/realms/donhang\", jwks_uri = .../protocol/openid-connect/certs. certs -> keys: [kgqDy... RSA use=sig alg=RS256], [mhDPI... RSA use=enc alg=RSA-OAEP]. Exactly one key with use sig / RS256, as the Try it expects.",
+        "source": "run 2026-09-28 in donhang-lab (stage-2 checked out): scripts/lib/keycloak.sh token + curl localhost:8080/api/v1/orders"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Ledger and lesson now say the same thing (sec 4, sec 6, sec 9, quiz q2): kept in memory, fetched again only now and then, never per request. JwtBearerOptions: ConfigurationManager \"Responsible for retrieving, caching, and refreshing the configuration from metadata\"; AutomaticRefreshInterval \"how often an automatic metadata refresh should occur\". Fallback address: Program.cs:46-47 `?? $\"{authority}/.well-known/openid-configuration\"`.",
+        "source": "https://learn.microsoft.com/dotnet/api/microsoft.aspnetcore.authentication.jwtbearer.jwtbeareroptions?view=aspnetcore-10.0"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Ledger and sec 4 now agree: \"if any check fails on an endpoint that needs a signed-in caller, the API answers `401`\". Execution, bearer token \"x\": GET /api/v1/products -> 200, GET /api/v1/orders -> 401. configure-jwt-bearer-authentication.md lists \"Signature... Issuer claim... Audience claim... Token expiration\" and \"If any of these claims or values are incorrect, the API should return a 401 response.\"",
+        "source": "refs/aspnetcore-docs/aspnetcore/security/authentication/configure-jwt-bearer-authentication.md ; run 2026-09-28 round 3 in donhang-lab (stage-2 running): curl from donhang-lab to localhost:8080/api/v1/products and /api/v1/orders"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Execution: payload sub changed 92f6ba26-... -> fa850632-..., header and signature kept: HTTP/1.1 401 Unauthorized, Www-Authenticate: Bearer error=\"invalid_token\", error_description=\"The signature is invalid\".",
+        "source": "run 2026-09-28 in donhang-lab (stage-2 checked out): scripts/lib/keycloak.sh token + curl localhost:8080/api/v1/orders"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "stage-2 docker-compose.yml:118-123 Keycloak__Authority \"http://localhost:8180/realms/donhang\", Keycloak__MetadataAddress \"http://keycloak:8080/...\"; keycloak service KC_HOSTNAME \"http://localhost:8180\", KC_HOSTNAME_BACKCHANNEL_DYNAMIC \"true\". Execution: curl http://keycloak:8080/realms/donhang/.well-known/openid-configuration -> {\"issuer\":\"http://localhost:8180/realms/donhang\", ... \"jwks_uri\":\"http://keycloak:8080/realms/donhang/protocol/openid-connect/certs\"}. Caddyfile `:8180 { reverse_proxy keycloak:8080 }`.",
+        "source": "git show stage-2:docker-compose.yml (118-123, 192-205) ; git show stage-2:Caddyfile ; run 2026-09-28 round 3 in donhang-lab (stage-2 running): curl from donhang-lab"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "JwtBearerOptions.RequireHttpsMetadata: \"Gets or sets if HTTPS is required for the metadata address or authority. The default is true. This should be disabled only in development environments.\" Program.cs:51 sets it false; compose addresses are http://.",
+        "source": "https://learn.microsoft.com/dotnet/api/microsoft.aspnetcore.authentication.jwtbearer.jwtbeareroptions?view=aspnetcore-10.0"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Live access token for anh.tran@example.com: \"sub\":\"92f6ba26-729c-4d61-854b-c04c9f2db11a\" (realm users[0].id; customers.id 1 per db/seed.sql). stage-1 OrdersController.cs:21 `int.Parse(User.FindFirstValue(JwtRegisteredClaimNames.Sub)!)`.",
+        "source": "run 2026-09-28 in donhang-lab (stage-2 checked out): scripts/lib/keycloak.sh token + curl localhost:8080/api/v1/orders ; git show stage-1:DonHang.Api/Controllers/OrdersController.cs"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "OrdersController.cs:120-124 `var subject = User.FindFirstValue(\"sub\"); return subject is null ? null : await customers.FindByIdentitySubjectAsync(subject);` EfCustomerRepository.cs:8-9 `FirstOrDefaultAsync(c => c.IdentitySubject == identitySubject)`.",
+        "source": "git show stage-2:DonHang.Api/Controllers/OrdersController.cs, stage-2:DonHang.Infrastructure/EfCustomerRepository.cs"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "20260927110108_AddCustomerIdentitySubject.cs: AddColumn<string>(\"identity_subject\", \"customers\", type \"text\", nullable: true); CreateIndex(\"IX_customers_identity_subject\", unique: true); five UPDATE ... WHERE email = ... for the 5 seeded customers.",
+        "source": "git show stage-2:DonHang.Infrastructure/Migrations/20260927110108_AddCustomerIdentitySubject.cs"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "OrdersController.cs:34-35 `if (customer is null) return Forbid();`. Execution: token for lan.do@example.com (realmRoles staff; not in db/seed.sql customers) -> POST /api/v1/orders: 403.",
+        "source": "run 2026-09-28 in donhang-lab (stage-2 checked out): scripts/lib/keycloak.sh token + curl localhost:8080/api/v1/orders"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "JwtBearerOptions.MapInboundClaims: \"If this is set to true, the Claim Type is set to the JSON claim 'name' after translating using this mapping. Otherwise, no mapping occurs.\" Program.cs:54 sets false. Execution: GET /orders with customer 1 token -> 200, so FindFirstValue(\"sub\") found the claim.",
+        "source": "https://learn.microsoft.com/dotnet/api/microsoft.aspnetcore.authentication.jwtbearer.jwtbeareroptions?view=aspnetcore-10.0 ; run 2026-09-28 in donhang-lab (stage-2 checked out): scripts/lib/keycloak.sh token + curl localhost:8080/api/v1/orders"
+      },
+      {
+        "n": 14,
+        "verdict": "not-needed",
+        "evidence": "Design reasoning (kind opinion), now worded with its condition: sec 2 \"makes every signed-in request fail while Keycloak is down\", q4 explanation c \"refuse signed-in requests while Keycloak is down\". A per-token call to a server that is down cannot succeed; anonymous endpoints are no longer included. No version-specific behaviour asserted."
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "Ledger now matches: \"until its exp (plus the default clock skew, 300 s, which Program.cs leaves unchanged)\". TokenValidationParameters.DefaultClockSkew: \"Default for the clock skew.\" Remarks: \"300 seconds (5 minutes).\" Program.cs:37-55 sets no ClockSkew. RFC 7519 4.1.4 exp: \"the expiration time on or after which the JWT MUST NOT be accepted\". Lesson sec 8 \"until it expires\" is acceptable at this depth.",
+        "source": "https://learn.microsoft.com/dotnet/api/microsoft.identitymodel.tokens.tokenvalidationparameters.defaultclockskew ; https://www.rfc-editor.org/rfc/rfc7519 ; git show stage-2:DonHang.Api/Program.cs"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "RFC 7519 sec 8: \"only HMAC SHA-256 (\"HS256\") and \"none\" MUST be implemented\"; \"It is RECOMMENDED that implementations also support RSASSA-PKCS1-v1_5 with the SHA-256 hash algorithm (\"RS256\")\". Stage-1 JwtTokenService.cs signs with SecurityAlgorithms.HmacSha256 and one config key. Live Keycloak token header alg RS256; JWKS signing key kty RSA (claims 2, 3 run). Keycloak admin guide: \"asymmetric key pairs, a private and public key\".",
+        "source": "https://www.rfc-editor.org/rfc/rfc7519 ; git show stage-1:DonHang.Api/JwtTokenService.cs ; run 2026-09-28 (claims 2, 3)"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "code",
+        "quote": "AddJwtBearer reads\n// Keycloak's metadata and public keys once",
+        "text": "Carried, repo-side only: the Program.cs:37-39 comment shown verbatim in sec 5 still says \"once\", while sec 4 says \"it fetches them again only now and then\" (JwtBearerOptions.ConfigurationManager retrieves, caches and refreshes). Sec 6 no longer points at the comment, so the lesson prose is consistent; the code block itself still carries the older word.",
+        "fix": "No lesson change. Optionally propose a repo change (prompt 08): comment \"reads Keycloak's metadata and public keys ahead of time and keeps them\" instead of \"once\", then re-extract lines 37-51."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-28T17:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation, round 3)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "style",
+        "quote": "The document fetched this way still names the `localhost:8180` realm as the issuer, so the `iss` check matches.",
+        "text": "The new sentence answers my round-2 question, but it sits between the reason for `keycloak:8080` (\"inside the API's container `localhost` is the API itself\") and the sentence that explains what `keycloak` on port 8080 is. I read the iss sentence before I know what `keycloak:8080` means, then had to re-read the paragraph once.",
+        "fix": "Move this sentence to just after \"...8180 is the port your browser uses from outside.\" so the address is explained before the iss consequence."
+      },
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "style",
+        "quote": "it tells the API only where to download the keys, not a call to make for each token.",
+        "text": "The two halves are not parallel (\"where to download\" vs \"not a call to make\"), so I read it twice. The meaning is clear after that: Program.cs holds only addresses, no per-token call.",
+        "fix": "Rewrite as \"it tells the API only where to download the keys; it sets up no call to Keycloak for each token.\""
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

@@ -1,0 +1,139 @@
+{
+  "id": "backend.l2.refresh-tokens",
+  "technical": {
+    "reviewed_at": "2026-09-28T16:20:00+07:00",
+    "reviewer": "claude-opus-5-5 (review-technical, round 3)",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Round 2 wording \"until it expires\" (was \"until its exp\"). Program.cs:37-55 AddJwtBearer checks signature/issuer/audience/expiry locally, no introspection. Re-ran scripts/backend/refresh-token.sh: logout -> 204, then the pre-logout access token -> 200.",
+        "source": "git show stage-2:DonHang.Api/Program.cs; live run in donhang-lab (don-hang HEAD = stage-2^{commit} 7a131bc), 2026-09-28 round 2"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Realm file line 5 \"accessTokenLifespan\": 300. Keycloak docs (timeouts.adoc): Access Token Lifespan \"When {project_name} creates an OIDC access token, this value controls the lifetime of the token.\" Live run: expires_in 300, \"exp - iat = 300 seconds\".",
+        "source": "git show stage-2:keycloak/donhang-realm.json; Keycloak Server Admin Guide, Session and token timeouts (docs source keycloak/docs/documentation/server_admin/topics/sessions/timeouts.adoc, WebFetch); live run"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "TokenValidationParameters.DefaultClockSkew: \"300 seconds (5 minutes).\" Round 3: `git grep -i clockskew stage-2` still returns nothing (rc=1), so Program.cs keeps the default. Round 1 live: token 30 s past exp -> 200. Section 4 now \"(five minutes by default; `Program.cs` does not change it)\" and \"minutes, not days\" - matches.",
+        "source": "https://learn.microsoft.com/dotnet/api/microsoft.identitymodel.tokens.tokenvalidationparameters.defaultclockskew (WebFetch, round 1); git grep stage-2"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Live run: the authorization-code token response carries refresh_token (script reads .refresh_token, output shows refresh_expires_in 1800). Decoded refresh token: typ \"Refresh\", azp donhang-app. RFC 6749 §5.1 lists refresh_token as OPTIONAL in the response.",
+        "source": "live run scripts/backend/refresh-token.sh + decode in donhang-lab; RFC 6749 §5.1"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "RFC 6749 §6: client makes a request to the token endpoint with grant_type \"REQUIRED. Value MUST be set to refresh_token.\" and refresh_token REQUIRED. Script lines 30-31 send grant_type, client_id, refresh_token only; donhang-app is publicClient true. Live: \"a new access token, different from the first: yes\", -> 200.",
+        "source": "https://www.rfc-editor.org/rfc/rfc6749#section-6 ; git show stage-2:scripts/backend/refresh-token.sh; live run"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Live run in donhang-lab: after grant_type=refresh_token, response expires_in 300 and decoded new access token exp - iat = 300. Docs: Access Token Lifespan controls the lifetime \"When ... creates an OIDC access token\".",
+        "source": "live run (scratch script in donhang-lab); Keycloak Server Admin Guide, Session and token timeouts"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Live run: after logout, grant_type=refresh_token with the first refresh token returns {\"error\":\"invalid_grant\",\"error_description\":\"Session not active\"}. RFC 6749 §5.2 invalid_grant: \"The provided authorization grant ... or refresh token is invalid, expired, revoked ...\".",
+        "source": "live run scripts/backend/refresh-token.sh; RFC 6749 §5.2"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Script lines 30-31 post to $keycloak/token, lines 41-42 post client_id + the renewed refresh_token to $keycloak/logout. Live: logout -> 204; renewal with the FIRST refresh token then -> {\"error\":\"invalid_grant\",\"error_description\":\"Session not active\"}: the whole session ended. (Line 23 sends it to the api only as the 401 demo.)",
+        "source": "git show stage-2:scripts/backend/refresh-token.sh; live run in donhang-lab (don-hang HEAD = stage-2^{commit} 7a131bc), 2026-09-28 round 2"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Live: refresh token at GET /api/v1/orders/1 -> 401. Decoded refresh token header {\"alg\":\"HS512\",\"kid\":\"c77de732-...\"}; realm certs endpoint lists only kids kgqDy... (RS256, sig) and mhDPI... (RSA-OAEP, enc) - HS512 key absent. Payload typ \"Refresh\", aud \"http://localhost:8180/realms/donhang\"; Program.cs Audience = \"donhang-api\".",
+        "source": "live run in donhang-lab (don-hang HEAD = stage-2^{commit} 7a131bc), 2026-09-28 round 2; GET .../realms/donhang/protocol/openid-connect/certs; git show stage-2:DonHang.Api/Program.cs"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Keycloak docs: SSO Session Idle \"This timeout value resets when clients request authentication or send a refresh token request.\" \"For idle timeouts, a two-minute window of time exists that the session is active. For example, when you have the timeout set to 30 minutes, it will be 32 minutes before the session expires.\" SSO Session Max \"The maximum time before a user session expires.\" Lesson section 5 now: \"about 1,800 seconds (Keycloak adds a two-minute margin)\".",
+        "source": "Keycloak Server Admin Guide, Session and token timeouts (docs source timeouts.adoc, WebFetch)"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Live run: \"refresh_expires_in\": 1800; realm file line 6 \"ssoSessionIdleTimeout\": 1800; decoded refresh token exp - iat = 1800.",
+        "source": "live run; git show stage-2:keycloak/donhang-realm.json"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Round 3 text equals round-2 suggested_text. keycloak_sign_in.dart:68 returns only ['access_token']; auth_controller.dart:23 signOut() => state = null; router.dart:28 redirects to /login only when signed out; API accepts ~5 min past exp (default ClockSkew). \"Once the API starts answering 401, a few minutes after the token's exp, the customer has to sign in again\" states a need, not app behaviour - supported.",
+        "source": "git show stage-2:DonHang.App/lib/auth/{keycloak_sign_in,auth_controller}.dart, lib/router.dart; git grep clockskew stage-2"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "refresh-token.sh:13-16 signs in anh.tran@example.com (customer 1), sets access_token/refresh_token; lines 21-23 call_api \"$access_token\" then call_api \"$refresh_token\" (new round-3 phrase \"call the API once with each token\" - true); keycloak.sh:7 realm openid-connect address; call_api prints %{http_code} of $base/orders/1; curl -d => POST (RFC 6749 3.2).",
+        "source": "git show stage-2:scripts/backend/refresh-token.sh; git show stage-2:scripts/lib/keycloak.sh; RFC 6749 3.2; live run round 2"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "Section 6 now conditions it (\"With a token that lasts days\"). RFC 6749 10.3: access token credentials \"MUST be kept confidential in transit and storage\" - TLS covers transit only; Program.cs checks signature/iss/aud/exp with no sender binding, so any holder of a copy is accepted until expiry; live run shows 200 after logout (no recall).",
+        "source": "RFC 6749 10.3; git show stage-2:DonHang.Api/Program.cs; live run in donhang-lab (don-hang HEAD = stage-2^{commit} 7a131bc), 2026-09-28 round 2"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "Round 3 text: \"the next step puts what a caller may do into the access token, so a permission removed at Keycloak keeps working at the API until that token expires.\" Realm mapper \"realm roles as roles\" \"access.token.claim\": \"true\"; Program.cs:55 RoleClaimType = \"roles\", :64 RequireRole(\"staff\") read from the validated token, no call to Keycloak. Outline role-based-access item 4 says the same.",
+        "source": "git show stage-2:keycloak/donhang-realm.json (47-58); git show stage-2:DonHang.Api/Program.cs; track.yaml backend.l2.role-based-access"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "Live: renewal response {\"expires_in\":300,\"refresh_expires_in\":1800,\"has_rt\":true}; second refresh token differs from the first but both carry sid \"VAw8iht_fnERhwnQ-eTZOXHC\" (same session). Logout with the second -> 204; renewal with the first -> invalid_grant \"Session not active\". RFC 6749 6: server \"MAY issue a new refresh token\". Script line 42 sends .refresh_token of $renewed, line 45 the first.",
+        "source": "live run in donhang-lab (don-hang HEAD = stage-2^{commit} 7a131bc), 2026-09-28 round 2; RFC 6749 section 6; git show stage-2:scripts/backend/refresh-token.sh"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "Keycloak Server Admin Guide, Core concepts: \"A realm manages a set of users, credentials, roles, and groups. A user belongs to and logs into a realm. Realms are isolated from one another\"; clients are configured per realm (donhang-realm.json \"clients\"). Realm file line 2 \"realm\": \"donhang\". RFC 7519 4.1.6: \"The \\\"iat\\\" (issued at) claim identifies the time at which the JWT was issued.\"",
+        "source": "https://www.keycloak.org/docs/latest/server_admin/index.html (WebFetch); RFC 7519 4.1.6 (WebFetch); git show stage-2:keycloak/donhang-realm.json"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "Ledger lag: claim 13 text still reads \"earlier lines sign in as customer 1 and set $access_token/$refresh_token\" and omits the new round-3 phrase about the two API calls. The sentence is true (refresh-token.sh:21-23), so no text change is needed.",
+        "quote": "then call the API once with each token.",
+        "fix": "In .meta.json claim 13 text, after \"set $access_token/$refresh_token\" add \"; lines 21-23 call the API once with each token\" and extend source_hint to refresh-token.sh:7-23."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-28T16:40:00+07:00",
+    "reviewer": "claude-opus-5-5 (review-junior, round 3)",
+    "issues": [],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

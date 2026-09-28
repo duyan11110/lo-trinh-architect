@@ -1,0 +1,131 @@
+{
+  "id": "backend.l2.role-based-access",
+  "technical": {
+    "reviewed_at": "2026-09-28T21:30:00+07:00",
+    "reviewer": "claude-opus-5-5 (round 2)",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "not-needed",
+        "evidence": "Definition of the term rbac as used by the lesson (roles assigned to callers instead of per-user permissions); matches the glossary term the lesson defines. Definitional, no version-dependent behaviour."
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "stage-2 keycloak/donhang-realm.json: roles.realm = customer, staff, default-roles-donhang; users anh.tran, chau.nguyen, dung.le, ha.pham, khanh.vu have \"realmRoles\": [\"customer\"]; lan.do@example.com has \"realmRoles\": [\"staff\"]. Five customers, one staff account.",
+        "source": "git -C examples/don-hang show stage-2:keycloak/donhang-realm.json"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "donhang-realm.json, clients[donhang-app].protocolMappers: {\"name\": \"realm roles as roles\", \"protocolMapper\": \"oidc-usermodel-realm-role-mapper\", \"claim.name\": \"roles\", \"multivalued\": \"true\", \"access.token.claim\": \"true\", \"id.token.claim\": \"false\"}. Execution: staff-only.sh prints roles in customer 1's token: [\"customer\"], staff token: [\"staff\"].",
+        "source": "git show stage-2:keycloak/donhang-realm.json; run 2026-09-28: bash examples/don-hang/scripts/backend/staff-only.sh (stage-2 checked out, stack running)"
+      },
+      {
+        "n": 4,
+        "verdict": "unverified",
+        "evidence": "Second half follows from claim 5 (API validates locally, never calls Keycloak) and the token being signed. First half (Keycloak re-reads role mappings at each issuance, so the next token lacks a removed role) not found: WebFetch of Keycloak Server Admin Guide returned a truncated page with no text on role mapper timing, token lifespan or revocation. A live test (remove staff from lan.do, compare old/new token, restore) was refused by the environment's permission check as modifying a shared resource.",
+        "source": "https://www.keycloak.org/docs/latest/server_admin/index.html (truncated); stage-2 DonHang.Api/Program.cs:37-56"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "stage-2 Program.cs:42-56: only AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(...) with Authority/MetadataAddress/Audience; comment \"checks each token's signature, issuer, audience and expiry itself, without calling Keycloak\". No introspection or userinfo client anywhere in Program.cs; RoleClaimType reads roles from the validated token's claims.",
+        "source": "git show stage-2:DonHang.Api/Program.cs"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "API docs TokenValidationParameters.RoleClaimType: \"Controls the results of IsInRole(String). Each Claim where Type == RoleClaimType will be checked for a match against the 'string' passed to IsInRole(String). The default is DefaultRoleClaimType.\" refs blazor-web-app-with-oidc.md: \"When MapInboundClaims is set to false, the handler doesn't perform claims mappings, and the claim names from the JWT are used directly by the app.\"",
+        "source": "https://learn.microsoft.com/dotnet/api/microsoft.identitymodel.tokens.tokenvalidationparameters.roleclaimtype ; refs/aspnetcore-docs/aspnetcore/blazor/security/blazor-web-app-with-oidc.md:300"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "roles.md \"Policy-based authorization checks\": \"Role requirements can be expressed using policy syntax\"; \"The RequireAdminRole policy specifies that users must be in the Admin role\" with policy => policy.RequireRole(\"Admin\"). Code: Program.cs:64 AddPolicy(\"StaffOnly\", policy => policy.RequireRole(\"staff\")); OrdersController.cs:91 [Authorize(Policy = \"StaffOnly\")] on Ship. Execution: customer 403, staff 200.",
+        "source": "refs/aspnetcore-docs/aspnetcore/security/authorization/roles.md:215-230; staff-only.sh run 2026-09-28"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "authentication/index.md: \"An authentication challenge is invoked by Authorization when an unauthenticated user requests an endpoint that requires authentication\" - \"A JWT bearer scheme returning a 401 result\"; Forbid \"is called by Authorization when an authenticated user attempts to access a resource they're not permitted to access\" - \"A JWT bearer scheme returning a 403 result.\" Execution: no token -> 401, customer 1 -> 403.",
+        "source": "refs/aspnetcore-docs/aspnetcore/security/authentication/index.md:111-126; staff-only.sh run 2026-09-28"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Run output: roles in customer 1's token: [\"customer\"]; roles in the staff token: [\"staff\"]; no token -> 401; as customer 1 (who owns order 1) -> 403; as staff -> 200 {\"id\":1,\"customerId\":1,\"status\":\"shipped\",...}.",
+        "source": "run 2026-09-28: bash examples/don-hang/scripts/backend/staff-only.sh (stage-2)"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "staff-only.sh: set_order_1_paid (UPDATE orders SET status = 'paid' WHERE id = 1); customer=$(keycloak_access_token anh.tran@example.com); staff=$(keycloak_access_token lan.do@example.com); ship_order_1 three times (no header, customer bearer, staff bearer). It also resets order 1 to paid again at the end.",
+        "source": "git show stage-2:scripts/backend/staff-only.sh"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "donhang-realm.json: \"accessTokenLifespan\": 300. oauth-code-flow.sh run: \"expires_in\": 300. API docs TokenValidationParameters.DefaultClockSkew remarks: \"300 seconds (5 minutes).\" Program.cs does not set ClockSkew. So an old token can be accepted up to ~10 min after issue: still \"minutes, not days\".",
+        "source": "git show stage-2:keycloak/donhang-realm.json; run 2026-09-28 scripts/backend/oauth-code-flow.sh; https://learn.microsoft.com/dotnet/api/microsoft.identitymodel.tokens.tokenvalidationparameters.defaultclockskew"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Lesson now uses round-1 suggested_text plus the script path. RFC 6749 3.3: \"The authorization server MAY fully or partially ignore the scope requested by the client\". stage-2 donhang-realm.json: role mapper sits in clients[donhang-app].protocolMappers, not in a client scope. Round-1 run of scripts/backend/oauth-code-flow.sh (exists at stage-2): request scope=openid, response \"scope\": \"email openid profile\", access token carries roles.",
+        "source": "https://www.rfc-editor.org/rfc/rfc6749#section-3.3 ; git show stage-2:keycloak/donhang-realm.json; git ls-tree stage-2 scripts/backend/oauth-code-flow.sh"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "OrdersController.cs:91-97: [Authorize(Policy = \"StaffOnly\")] on Ship; body only calls orderService.ShipOrderAsync(id) and returns Ok, no role check. OrderService.cs:52-61 ShipOrderAsync: FindAsync, then order.Ship(). The policy is enforced server-side on the endpoint: round-1 run of staff-only.sh sends the request with curl (not the app) and gets 403 as customer 1.",
+        "source": "git show stage-2:DonHang.Api/Controllers/OrdersController.cs; stage-2:DonHang.Domain/OrderService.cs; staff-only.sh run 2026-09-28"
+      },
+      {
+        "n": 14,
+        "verdict": "not-needed",
+        "evidence": "Design reasoning stated in the situation; consistent with the run (customer 1, owner of order 1, gets 403) and with the outline. No version-dependent behaviour."
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "simple.md: \"In its most basic form, applying the [Authorize] attribute to a Razor component, controller, action, or Razor Page, limits access to that component to authenticated users.\"",
+        "source": "refs/aspnetcore-docs/aspnetcore/security/authorization/simple.md:13"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "API docs JwtBearerOptions.MapInboundClaims (aspnetcore-10.0): \"determining whether or not to map claim types ... If this is set to true, the Claim Type is set to the JSON claim 'name' after translating using this mapping. Otherwise, no mapping occurs. The default value is true.\" Run (JwtBearer 10.0.12): MapInboundClaims default: True; sub -> http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier.",
+        "source": "https://learn.microsoft.com/dotnet/api/microsoft.aspnetcore.authentication.jwtbearer.jwtbeareroptions.mapinboundclaims?view=aspnetcore-10.0 ; scratch console app run 2026-09-28"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Claim 4 (Keycloak re-reads roles at each issuance, so the next token reflects a removal) could not be verified: Keycloak docs fetch was truncated and a live role-removal test was refused by the environment. The claim underpins outline item 4, Misconception 2 and quiz q2.",
+        "quote": "Each time Keycloak issues an access token, it looks up the user's roles and writes them into the token as the `roles` claim.",
+        "fix": "Owner: run once in the lab (remove staff from lan.do via admin console, get a new token with keycloak_access_token, check roles and ship -> 403, restore role) and record the output as the source_hint of claim 4; no text change needed if it behaves as described."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-28T22:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior, round 2)",
+    "issues": [],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

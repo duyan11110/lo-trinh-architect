@@ -1,0 +1,138 @@
+{
+  "id": "backend.l2.resource-based-authorization",
+  "technical": {
+    "reviewed_at": "2026-09-28T23:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "stage-1 OrdersController.cs:30-36: Get has only [HttpGet(\"{id:int}\")], no [Authorize], body = FindAsync(id); NotFound if null; Ok(ToDto(order)). stage-1 Program.cs:43 AddAuthorization() with no fallback policy. So any request, including customer 1's, reads order 3 with 200. backend.l1.protecting-an-endpoint Try it: \"step 2 answers 200 with \\\"customerId\\\":2\".",
+        "source": "git -C examples/don-hang show stage-1:DonHang.Api/Controllers/OrdersController.cs; stage-1:DonHang.Api/Program.cs"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "stage-2 keycloak/donhang-realm.json users: anh.tran, chau.nguyen, dung.le, ha.pham, khanh.vu realmRoles ['customer']; lan.do realmRoles ['staff']. db/seed.sql: (1, 1, ..., 'paid'), (3, 2, ..., 'paid'). outputs order-owner.txt table: 1 | 1 | paid; 3 | 2 | paid.",
+        "source": "git show stage-2:keycloak/donhang-realm.json; stage-2:db/seed.sql; stage-2:outputs/stage-2/scripts/backend/order-owner.txt"
+      },
+      {
+        "n": 3,
+        "verdict": "not-needed",
+        "evidence": "Definition of the lesson's vocab term abac (attributes of caller, resource, request; a role is one attribute). Definitional, no version-dependent behaviour; the cited NIST SP 800-162 is not a docs root in versions.yaml, so it was not opened.",
+        "source": "content/glossary.yaml (abac)"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "stage-2 Program.cs:62-67: options.AddPolicy(\"OrderOwner\", policy => policy.AddRequirements(new OrderOwnerRequirement())); builder.Services.AddScoped<IAuthorizationHandler, OrderOwnerHandler>();",
+        "source": "git show stage-2:DonHang.Api/Program.cs"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "\"Attribute evaluation occurs before data binding and before execution of an action that loads a resource. Declarative authorization with an [Authorize] attribute doesn't suffice for resource-based authorization. Instead, the app must invoke a custom authorization method—an approach known as imperative authorization.\"",
+        "source": "refs/aspnetcore-docs/aspnetcore/mvc/security/authorization/resource-based.md:16 (same wording security/authorization/resource-based.md:16)"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "\"IAuthorizationService has two AuthorizeAsync method overloads. One of the overloads accepts a resource and policy name: Task<AuthorizationResult> AuthorizeAsync(ClaimsPrincipal user, object resource, string policyName);\" ... \"If authorizationResult.Succeeded is true, the user is authorized for the document\". Code: OrdersController.cs:62-63.",
+        "source": "refs/aspnetcore-docs/aspnetcore/security/authorization/resource-based.md:41-59"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "policies.md:22 \"the framework uses handlers to evaluate the requirements behind a policy\"; :37 a requirement acts \"to trigger an associated authorization handler\"; :107 all requirements must pass. resource-based.md:112 AuthorizationHandler<SameAuthorRequirement, Document>. Program.cs stage-2: AddPolicy(\"OrderOwner\", ...AddRequirements(new OrderOwnerRequirement())); AddScoped<IAuthorizationHandler, OrderOwnerHandler>(). Execution: customer 1/order 3 -> 403, handler never calls Fail.",
+        "source": "refs/aspnetcore-docs/aspnetcore/security/authorization/policies.md:22,37,107,234-238; resource-based.md:112; stage-2 Program.cs; order-owner.txt"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "ClaimsPrincipal.IsInRole remarks: \"checks whether an identity that this claims principal possesses contains a claim of type ClaimsIdentity.RoleClaimType where the value of the claim is equal to the value specified by the role parameter.\" Program.cs:54-55 MapInboundClaims=false; RoleClaimType=\"roles\". Execution: staff reads order 3 -> 200; lan.do has no customers row, so only the IsInRole branch can succeed.",
+        "source": "https://learn.microsoft.com/dotnet/api/system.security.claims.claimsprincipal.isinrole?view=net-10.0; outputs/stage-2/scripts/backend/order-owner.txt"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "OrderOwnerHandler.cs:22-33 staff -> Succeed; FindFirstValue(\"sub\"); FindByIdentitySubjectAsync; caller.Id == order.CustomerId. DonHangDbContext.cs:26 IdentitySubject -> \"identity_subject\". Realm user anh.tran id 92f6ba26-729c-4d61-854b-c04c9f2db11a = migration AddCustomerIdentitySubject identity_subject for anh.tran = \"sub\" in outputs oidc-tokens.txt:10.",
+        "source": "git show stage-2: OrderOwnerHandler.cs; DonHangDbContext.cs; Migrations/20260927110108_AddCustomerIdentitySubject.cs:28; keycloak/donhang-realm.json:65; outputs/stage-2/scripts/backend/oidc-tokens.txt"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "OrdersController.cs stage-2: Get 55-66 and Cancel 72-84 both [Authorize]; FindForReadingAsync(id); NotFound() if null; AuthorizeAsync(User, order|existing, \"OrderOwner\"); Forbid() if !Succeeded; Cancel calls orderService.CancelOrderAsync(id) only after that (line 82).",
+        "source": "git show stage-2:DonHang.Api/Controllers/OrdersController.cs"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "authentication/index.md: challenge examples \"A JWT bearer scheme returning a 401 result with a www-authenticate: bearer header.\"; \"An authentication scheme's forbid action is called by Authorization when an authenticated user attempts to access a resource they're not permitted to access\"; \"A JWT bearer scheme returning a 403 result.\" Execution: no token -> 401, customer 1 order 3 -> 403.",
+        "source": "refs/aspnetcore-docs/aspnetcore/security/authentication/index.md:116-125; outputs/stage-2/scripts/backend/order-owner.txt"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "order-owner.txt: \"== customer 1 reads order 1 -> 200; == customer 1 reads order 3 -> 403; == customer 1 cancels order 3 -> 403; == staff reads order 3 -> 200; == nobody signed in reads order 3 -> 401\"; \"order 3 afterwards: 3 | 2 | paid\". Script order-owner.sh issues exactly these requests.",
+        "source": "git show stage-2:outputs/stage-2/scripts/backend/order-owner.txt; stage-2:scripts/backend/order-owner.sh"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "AuthorizeAttribute (aspnetcore-10.0) constructors: AuthorizeAttribute(), AuthorizeAttribute(String) \"with the specified policy\"; properties AuthenticationSchemes, Policy \"the policy name\", Roles \"a comma delimited list of roles\" — all strings. C# docs: \"Attribute arguments must be compile-time constant values\".",
+        "source": "https://learn.microsoft.com/dotnet/api/microsoft.aspnetcore.authorization.authorizeattribute?view=aspnetcore-10.0; refs/dotnet-docs/docs/csharp/language-reference/compiler-messages/attribute-usage-errors.md:172"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "Lesson now uses the round-1 suggested_text verbatim (no ranking, no 'always'). Supported by code: orders.customer_id holds the owner; Get/Cancel load the order via FindForReadingAsync per request before AuthorizeAsync; roles are realm roles declared in donhang-realm.json, so a per-customer role means a new realm role per sign-up.",
+        "source": "stage-2 OrdersController.cs:52-84; OrderOwnerHandler.cs; keycloak/donhang-realm.json"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "diagram",
+        "text": "The [Authorize] check is drawn as a self-call on OrdersController. With app.UseAuthorization() (Program.cs:110) the attribute is evaluated before Get runs, outside the controller's code; the lesson's own prose says 'checked before the endpoint's code runs'. The self-arrow suggests the controller's code performs it.",
+        "quote": "OC->>OC: [Authorize]: valid token? If not, 401",
+        "fix": "Replace with a note before the controller acts, e.g. `Note over C,OC: [Authorize] before Get runs: no valid token -> 401`, or change the label to `[Authorize] (before Get runs): valid token? If not, 401`."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-28T23:50:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior, round 2)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "diagram",
+        "text": "The diagram step says [Authorize] checks for a valid token and answers 401, but the section 4 prose only says the attribute 'is checked before the endpoint's code runs', not what it checks. I learn the 401 part only in section 5 ('Two layers work here'). I can still narrate the diagram, so this is minor.",
+        "quote": "The C# `[Authorize]` attribute is checked before the endpoint's code runs, when the order has not been read yet.",
+        "fix": "Extend the sentence: \"The C# `[Authorize]` attribute is checked before the endpoint's code runs: it only asks for a valid token, answering `401` without one, and the order has not been read yet.\""
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "example",
+        "text": "Step 1 says the script 'prints' the owners and status, but Expected result talks about 'the first table' and 'the last table'. I can guess they are the same output, but the word 'table' first appears in Expected result.",
+        "quote": "The last table still shows order 3 with the status it had in the first table, `paid`, so the refused cancel changed nothing.",
+        "fix": "In step 1 write \"It prints a table of who owns orders 1 and 3 and their status\" and \"finally prints that table again\"."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}
