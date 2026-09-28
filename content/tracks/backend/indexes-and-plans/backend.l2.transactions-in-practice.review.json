@@ -1,0 +1,123 @@
+{
+  "id": "backend.l2.transactions-in-practice",
+  "technical": {
+    "reviewed_at": "2026-09-29T00:30:00+07:00",
+    "reviewer": "claude-opus-5-5 (review-technical, round 3)",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "PG 17 docs 13.2: \"Read Committed is the default isolation level in PostgreSQL.\" Live run of scripts/backend/lost-update.sh @ stage-2 (2026-09-28): both sessions print \"transaction_isolation / read committed\"; SHOW default_transaction_isolation on donhang-db → read committed (PostgreSQL 17.6).",
+        "source": "https://www.postgresql.org/docs/17/transaction-iso.html"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "PG 17 docs 13.2.1: \"a SELECT query (without a FOR UPDATE/SHARE clause) sees only data committed before the query began; it never sees either uncommitted data or changes committed by concurrent transactions during the query's execution.\" and \"two successive SELECT commands can see different data, even though they are within a single transaction, if other transactions commit changes after the first SELECT starts and before the second SELECT starts.\"",
+        "source": "https://www.postgresql.org/docs/17/transaction-iso.html#XACT-READ-COMMITTED"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "PG 17 docs 13.2.1: \"the would-be updater will wait for the first updating transaction to commit or roll back (if it is still in progress)... The search condition of the command (the WHERE clause) is re-evaluated to see if the updated version of the row still matches the search condition. If so, the second updater proceeds with its operation using the updated version of the row.\" Live run: cancel's UPDATE → \"UPDATE 1\", order 5 ends cancelled.",
+        "source": "https://www.postgresql.org/docs/17/transaction-iso.html#XACT-READ-COMMITTED"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Round 2 re-fetch, PG 17 docs 13.3.2: FOR NO KEY UPDATE: \"This lock mode is also acquired by any UPDATE that does not acquire a FOR UPDATE lock.\" \"Row-level locks are released at transaction end or during savepoint rollback, just like table-level locks.\" Table 13.3 marks FOR NO KEY UPDATE as conflicting with itself. source_hint now points at FOR NO KEY UPDATE (round-1 minor fixed). Round-1 live run: cancel's UPDATE returned only after ship's COMMIT.",
+        "source": "https://www.postgresql.org/docs/17/explicit-locking.html#LOCKING-ROWS"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "EF docs: \"By default, if the database provider supports transactions, all changes in a single call to SaveChanges are applied in a transaction.\" Round-1 live test, Npgsql 10.0.3 vs donhang-db: with SET default_transaction_isolation='repeatable read', BeginTransactionAsync() and BeginTransactionAsync(IsolationLevel.Unspecified) → SHOW transaction_isolation = read committed. Round 2: Npgsql 10.0.3 Npgsql.dll holds only BEGIN strings with an explicit level (…READ COMMITTED/REPEATABLE READ/SERIALIZABLE/READ UNCOMMITTED), no bare BEGIN.",
+        "source": "refs/efcore-docs/entity-framework/core/saving/transactions.md:17; ~/.nuget/packages/npgsql/10.0.3/lib/net10.0/Npgsql.dll; live Npgsql test (round 1)"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "EfOrderRepository.FindAsync @ stage-2 is `db.Orders.Include(o => o.Items).FirstOrDefaultAsync(...)`, a separate query awaited before SaveChangesAsync in OrderService. EF docs Controlling transactions: \"The following example shows two SaveChanges operations and a LINQ query being executed in a single transaction\" via `context.Database.BeginTransactionAsync()`. The IsolationLevel overload is used in EF docs sample BloggingController.cs: `_context.Database.BeginTransactionAsync(IsolationLevel.Serializable)`. R3: EfOrderRepository(DonHangDbContext db) = the wrapped DbContext.",
+        "source": "refs/efcore-docs/entity-framework/core/saving/transactions.md; refs/efcore-docs/samples/core/Testing/BloggingWebApi/Controllers/BloggingController.cs:49"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "PG 17 docs 13.2.2: \"a query in a repeatable read transaction sees a snapshot as of the start of the first non-transaction-control statement in the transaction\"; \"if the first updater commits (and actually updated or deleted the row, not just locked it) then the repeatable read transaction will be rolled back with the message ERROR: could not serialize access due to concurrent update\". Live run of repeatable-read-conflict.sh prints exactly that line.",
+        "source": "https://www.postgresql.org/docs/17/transaction-iso.html#XACT-REPEATABLE-READ"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "PG 17 docs 13.4: \"it will always have the SQLSTATE code 40001 (serialization_failure)\"; \"applications using these levels must be prepared to retry transactions that fail due to serialization errors\"; \"It is important to retry the complete transaction, including all logic that decides which SQL to issue and/or which values to use.\" Live run: \"SQLSTATE: 40001\".",
+        "source": "https://www.postgresql.org/docs/17/mvcc-serialization-failure-handling.html"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "OrderService.cs @ stage-2 L40-61: FindAsync → Cancel()/Ship() → notifier.Send → SaveChangesAsync, no re-read. Re-read gap: PG 17 13.2.1 a Read Committed SELECT \"sees only data committed before the query began\" and \"two successive SELECT commands can see different data ... if other transactions commit changes after the first SELECT starts\"; a plain SELECT takes no row lock (13.3.2 locks are taken by UPDATE/SELECT FOR ...), so nothing stops a commit between a re-read and the write.",
+        "source": "examples/don-hang @ stage-2: DonHang.Domain/OrderService.cs; https://www.postgresql.org/docs/17/transaction-iso.html#XACT-READ-COMMITTED"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Entities.cs @ stage-2: `if (Status == \"shipped\") throw new OrderStatusException(Id, \"already-shipped\", ...)` in Cancel(); ExceptionHandlingMiddleware maps OrderStatusException to 409 with `type: ProblemTypeBase + ex.Code`; OrdersController Ship has `[Authorize(Policy = \"StaffOnly\")]`.",
+        "source": "examples/don-hang @ stage-2: DonHang.Domain/Entities.cs, DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs, DonHang.Api/Controllers/OrdersController.cs"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "DonHangDbContext.cs @ stage-2 L61-65: \"IsRowVersion() on a uint makes the Npgsql provider map Version to PostgreSQL's xmin column. EF Core then adds \\\"AND xmin = <value it read>\\\" to the WHERE of every UPDATE of an order.\" Entities.cs L43-46: `public uint Version`. ExceptionHandlingMiddleware catches DbUpdateConcurrencyException → 409 concurrent-update. With PG 13.2.1 WHERE re-evaluation, the waiting UPDATE's xmin no longer matches → 0 rows. Next lesson in track.yaml after this one: backend.l2.optimistic-concurrency. Scripts use psql only.",
+        "source": "examples/don-hang @ stage-2: DonHang.Infrastructure/DonHangDbContext.cs, DonHang.Domain/Entities.cs, DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs; content/tracks/backend/track.yaml"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Round-1 live run 2026-09-28 (claim unchanged in round 2) in the lab (examples/don-hang checked out at stage-2): lost-update.sh → both sessions \"read committed\", both read paid, both \"UPDATE 1\", order 5 \"cancelled\"; repeatable-read-conflict.sh → cancel \"repeatable read\", reads paid, \"ERROR:  could not serialize access due to concurrent update\", \"SQLSTATE: 40001\", order 5 \"shipped\". Both scripts reset order 5; afterwards SELECT → 5 | paid.",
+        "source": "examples/don-hang @ stage-2: scripts/backend/lost-update.sh, scripts/backend/repeatable-read-conflict.sh (live run)"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "PG 17 docs 13.4: \"It is important to retry the complete transaction, including all logic that decides which SQL to issue and/or which values to use.\" A rerun takes a new snapshot after the ship committed, so it reads shipped; Entities.cs @ stage-2 Cancel() throws OrderStatusException \"already-shipped\" when Status == \"shipped\". R3 opened: EfOrderRepository.cs, Entities.cs, OrderService.cs @ stage-2; refs efcore transactions.md, BloggingController.cs.",
+        "source": "https://www.postgresql.org/docs/17/mvcc-serialization-failure-handling.html; examples/don-hang @ stage-2: DonHang.Domain/Entities.cs"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-28T23:45:00+07:00",
+    "reviewer": "review-junior (claude-opus-5-5), round 2",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": "backend.l2.transactions-in-practice.q6",
+        "kind": "quiz",
+        "quote": "A few orders each week end up `cancelled` although a staff member got `200` for shipping them.",
+        "text": "Section 5 just told me that at stage-2 the real endpoints do not lose this update because `Order` carries a guard. q6 then describes the same `OrderService` losing updates every week, so for a moment I thought I had misread section 5. I can still pick a, but the scenario seems to contradict the lesson.",
+        "fix": "Add one clause to the q6 context (en and vi), e.g. 'Their `Order` has no guard like the one the next lesson covers.' so the scenario matches section 5."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "quote": "one way is for the code to call `BeginTransactionAsync` on the DbContext's `Database` property, passing the level, before the read, and commit after the save",
+        "text": "The code in section 5 only holds `repository`; the DbContext lives inside `EfOrderRepository` (saving-changes). I can follow the idea, but I cannot tell whether this call belongs in `OrderService` or in the repository, so I could not picture the change.",
+        "fix": "Add a few words saying where the call would go, e.g. 'the DbContext's `Database` property (the DbContext the repository wraps)'."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

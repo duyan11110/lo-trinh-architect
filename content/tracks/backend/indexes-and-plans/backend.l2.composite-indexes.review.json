@@ -1,0 +1,151 @@
+{
+  "id": "backend.l2.composite-indexes",
+  "technical": {
+    "reviewed_at": "2026-09-29T02:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (prompt 04, round 3)",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "11.4: \"Consider a two-column index on (x, y): this can satisfy ORDER BY x, y if we scan forward\". 11.3: \"given an index on (a, b, c) and a query condition WHERE a = 5 AND b >= 42 AND c < 77, the index would have to be scanned from the first entry with a = 5 and b = 42 up through the last entry with a = 5\" (entries ordered by a, then b within equal a).",
+        "source": "https://www.postgresql.org/docs/17/indexes-ordering.html; https://www.postgresql.org/docs/17/indexes-multicolumn.html"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "11.3: \"equality constraints on leading columns, plus any inequality constraints on the first column that does not have an equality constraint, will be used to limit the portion of the index that is scanned.\" \"...constraints on b and/or c with no constraint on a — but the entire index would have to be scanned\". Live: WHERE id = 120086 on donhang_perf uses PK_orders, not the composite index.",
+        "source": "https://www.postgresql.org/docs/17/indexes-multicolumn.html"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "11.4: \"This allows a query's ORDER BY specification to be honored without a separate sorting step.\" \"...if there is an index matching the ORDER BY, the first n rows can be retrieved directly, without scanning the remainder at all.\" Live run: Limit (actual rows=20) > Index Scan using IX_orders_customer_id_id (actual rows=20), no Sort node.",
+        "source": "https://www.postgresql.org/docs/17/indexes-ordering.html; live composite-index.sql on donhang_perf 2026-09-28"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "11.5: \"The table rows are visited in physical order, because that is how the bitmap is laid out; this means that any ordering of the original indexes is lost, and so a separate sort step will be needed if the query has an ORDER BY clause.\" Lesson: \"it then visits those rows in the order they are stored in the table, not in either index's order, so a `Sort` step is still needed\" matches.",
+        "source": "https://www.postgresql.org/docs/17/indexes-bitmap-scans.html"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "git show stage-2: DonHangDbContext.cs:53 `e.HasIndex(o => new { o.CustomerId, o.Id });`; 20260927102959_ReplaceOrdersCustomerIdIndex.cs Up: DropIndex(name: \"IX_orders_customer_id\") then CreateIndex(name: \"IX_orders_customer_id_id\", columns: new[] { \"customer_id\", \"id\" }). pg_indexes on donhang_perf: IX_orders_customer_id_id btree (customer_id, id).",
+        "source": "examples/don-hang@stage-2 DonHang.Infrastructure/DonHangDbContext.cs; Migrations/20260927102959_ReplaceOrdersCustomerIdIndex.cs"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "\"EF does not create indexes for properties that are already covered by an existing index or primary key constraint.\" Execution: model snapshot @stage-2 has only b.HasIndex(\"CustomerId\", \"Id\") for Order (no separate CustomerId index), and the migration drops IX_orders_customer_id.",
+        "source": "refs/efcore-docs/entity-framework/core/modeling/relationships/conventions.md:433; examples/don-hang@stage-2 DonHangDbContextModelSnapshot.cs:155"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "composite-index.sh@stage-2:9 perf-db.sh --if-missing (perf-db.sh exits 0 if pg_database has donhang_perf, else DROP/CREATE + migrate + fill), :10 lab-run.sh -> docker compose exec lab, :14-17 psql ... --echo-queries --pset format=unaligned --file /repo/db/queries/composite-index.sql. docker-compose.yml lab volumes: \"./:/repo:ro\" (checkout, so edits apply next run). psql docs: \"-e --echo-queries Copy all SQL commands sent to the server to standard output as well.\"",
+        "source": "examples/don-hang@stage-2 scripts/backend/composite-index.sh, perf-db.sh, lab-run.sh, docker-compose.yml; https://www.postgresql.org/docs/17/app-psql.html"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Live run 2026-09-28 (PostgreSQL 17.6) identical to outputs/stage-2/scripts/backend/composite-index.txt: \"Limit (actual rows=20 loops=1) -> Index Scan using \\\"IX_orders_customer_id_id\\\" ... Index Cond: ((customer_id = 7) AND (id > 120000))\"; \"Aggregate (actual rows=1 loops=1) -> Index Only Scan using \\\"IX_orders_customer_id_id\\\" on orders (actual rows=2000 loops=1) Index Cond: (customer_id = 7) Heap Fetches: 0\".",
+        "source": "examples/don-hang@stage-2 outputs/stage-2/scripts/backend/composite-index.txt; live psql on donhang_perf"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Live run 2026-09-28 identical to capture: \"Index Scan using \\\"PK_orders\\\" on orders o (actual rows=20 loops=1) Index Cond: (id > 120000) Filter: (customer_id = 7) Rows Removed by Filter: 1966\", between BEGIN / DROP INDEX \"IX_orders_customer_id_id\" / CREATE INDEX \"IX_orders_customer_id\" / ANALYZE and ROLLBACK.",
+        "source": "examples/don-hang@stage-2 db/queries/composite-index.sql:30-42; outputs/stage-2/scripts/backend/composite-index.txt"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Temp copy of orders (200,000 rows) with PK(id) + index on customer_id, ANALYZE: default plan \"Limit (cost=0.42..81.06) -> Index Scan using t_pkey ... Filter: (customer_id = 7)\"; with enable_indexscan=off: \"Limit (cost=1484.96..1485.01) -> Sort ... Sort Key: id -> Bitmap Heap Scan on t ... Recheck Cond: (customer_id = 7) Filter: (id > 120000) -> Bitmap Index Scan on t_c\". Sort alternative priced ~18x higher.",
+        "source": "live experiment 2026-09-28, TEMP TABLE in donhang_perf (PostgreSQL 17.6)"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "11.9: \"index-only scans, which can answer queries from an index alone without any heap access\"; \"If it's not set, the heap entry must be visited\". Lesson now conditions the no-table-read statement on `Heap Fetches: 0`, as in the live plan (Index Only Scan ... Heap Fetches: 0). Round-1 suggested_text applied verbatim.",
+        "source": "https://www.postgresql.org/docs/17/indexes-index-only-scans.html; live composite-index.sh 2026-09-28"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "ROLLBACK: \"rolls back the current transaction and causes all the updates made by the transaction to be discarded.\" Execution: after running composite-index.sql (DROP/CREATE INDEX inside BEGIN..ROLLBACK), pg_indexes for orders lists PK_orders, IX_orders_customer_id_id, IX_orders_idempotency_key and no IX_orders_customer_id.",
+        "source": "https://www.postgresql.org/docs/17/sql-rollback.html; live pg_indexes on donhang_perf 2026-09-28"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Live: EXPLAIN (COSTS OFF) SELECT * FROM orders WHERE id = 120086 -> \"Index Scan using \\\"PK_orders\\\" on orders / Index Cond: (id = 120086)\".",
+        "source": "live psql on donhang_perf 2026-09-28"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "Live EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF) with LIMIT 100: \"Limit (actual rows=100 loops=1) -> Index Scan using \\\"IX_orders_customer_id_id\\\" on orders o (actual rows=100 loops=1) Index Cond: ((customer_id = 7) AND (id > 120000))\", no Sort. SELECT count(*) WHERE customer_id=7 AND id>120000 = 800. LIMIT 20 is on line 18 of composite-index.sql@stage-2.",
+        "source": "live psql on donhang_perf 2026-09-28; examples/don-hang@stage-2 db/queries/composite-index.sql:18"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "11.1: \"After an index is created, the system has to keep it synchronized with the table. This adds overhead to data manipulation operations.\" \"...indexes that are seldom or never used in queries should be removed.\" Round-1 wording (\"for little or no gain\") applied. \"every index on it\": pg_indexes on orders = PK_orders, IX_orders_customer_id_id, IX_orders_idempotency_key, none partial, so each insert adds an entry to all three.",
+        "source": "https://www.postgresql.org/docs/17/indexes-intro.html; live pg_indexes on donhang_perf 2026-09-28"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "EfOrderRepository.cs@stage-2 ListByCustomerAsync: Where(CustomerId == customerId && Id > afterId).OrderBy(Id).Take(limit). outputs/stage-2 efcore-sql capture: inner \"SELECT o.id, o.customer_id, o.status FROM orders AS o WHERE o.customer_id = @customerId AND o.id > @afterId ORDER BY o.id LIMIT @p\" = composite-index.sql:14-18 with 7 / 120000 / 20.",
+        "source": "examples/don-hang@stage-2 DonHang.Infrastructure/EfOrderRepository.cs:23-29; outputs/stage-2/scripts/backend/efcore-sql.txt; db/queries/composite-index.sql:1-4"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "EXPLAIN: ANALYZE \"Carry out the command and show actual run times and other statistics\"; COSTS = estimated cost/rows/width; TIMING \"actual startup time and time spent in each node\"; SUMMARY \"totaled timing information ... included by default when ANALYZE is used\". 11.3: right-of-range constraints \"are checked in the index ... but they do not reduce the portion of the index that has to be scanned\" - claim now says only 'here it bounds the scan', true for all 3 plans (live: SUMMARY on prints Planning/Execution Time).",
+        "source": "https://www.postgresql.org/docs/17/sql-explain.html; https://www.postgresql.org/docs/17/indexes-multicolumn.html; live psql donhang_perf 2026-09-29"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "Live 2026-09-28 in the lab: composite-index.sql followed by `EXPLAIN SELECT * FROM orders WHERE id = 120086;`, piped to psql with the script's exact options -> tail: \"ROLLBACK; / ROLLBACK / EXPLAIN SELECT * FROM orders WHERE id = 120086; / QUERY PLAN / Index Scan using \\\"PK_orders\\\" on orders  (cost=0.42..8.44 rows=1 width=54) / Index Cond: (id = 120086)\". (File not modified; simulated via stdin.)",
+        "source": "live docker compose exec lab psql on donhang_perf (PostgreSQL 17.6), examples/don-hang@stage-2 7a131bc"
+      },
+      {
+        "n": 19,
+        "verdict": "verified",
+        "evidence": "Live 2026-09-29, EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF) SELECT * FROM orders WHERE customer_id = 7 AND status = 'paid': \"Bitmap Heap Scan on orders (actual rows=572 loops=1) / Recheck Cond: (customer_id = 7) / Filter: (status = 'paid'::text) / Rows Removed by Filter: 1428 / -> Bitmap Index Scan on \\\"IX_orders_customer_id_id\\\" (actual rows=2000 loops=1) / Index Cond: (customer_id = 7)\".",
+        "source": "live docker compose exec lab psql on donhang_perf (PostgreSQL 17.6)"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-29T01:10:00+07:00",
+    "reviewer": "review-junior (claude-opus-5-5, prompt 05), round 2",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "text": "q3: the reworded option c no longer copies misconception 3, but it closely paraphrases section 4 ('finds customer 7's orders but not in `id` order ... mixes all customers') and is the longest option, so I could still pick it by matching wording. Acceptable; noted only for the record.",
+        "quote": "False, because one index finds customer 7's orders out of `id` order, and the other keeps `id` order but for all customers.",
+        "fix": "Optional: keep option c's wording and lengthen options a, b and d slightly so option length does not single out c."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

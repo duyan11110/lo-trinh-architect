@@ -1,0 +1,143 @@
+{
+  "id": "backend.l2.transactions-in-practice",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-09-28T21:00:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "PostgreSQL's default transaction isolation level is Read Committed; SHOW transaction_isolation prints 'read committed' in a session that asks for no other level.",
+      "kind": "behavior",
+      "version_key": "postgresql",
+      "source_hint": "PostgreSQL docs 13.2 Transaction Isolation ('Read Committed is the default'); default_transaction_isolation; outputs/stage-2/scripts/backend/lost-update.txt",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 2,
+      "text": "Under Read Committed a SELECT sees only data committed before the query began, never uncommitted changes of concurrent transactions; two SELECTs in one transaction can see different data.",
+      "kind": "behavior",
+      "version_key": "postgresql",
+      "source_hint": "PostgreSQL docs 13.2.1 Read Committed Isolation Level",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 3,
+      "text": "Under Read Committed an UPDATE that finds the target row already updated by a concurrent uncommitted transaction waits; if that one commits, the UPDATE re-checks its WHERE on the updated row and, if it still matches, applies its change to it.",
+      "kind": "behavior",
+      "version_key": "postgresql",
+      "source_hint": "PostgreSQL docs 13.2.1 Read Committed Isolation Level (UPDATE, DELETE ... will wait for the first updating transaction)",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 4,
+      "text": "An UPDATE takes a row lock on the rows it changes, held until the transaction ends; a second UPDATE of the same row waits for it.",
+      "kind": "behavior",
+      "version_key": "postgresql",
+      "source_hint": "PostgreSQL docs 13.3.2 Row-Level Locks (FOR NO KEY UPDATE is acquired by any UPDATE that does not acquire a FOR UPDATE lock; Table 13.3)",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 5,
+      "text": "SaveChanges applies its changes in a transaction EF Core starts without naming a level; Npgsql then begins it as READ COMMITTED explicitly, so it runs under Read Committed even if the database default is changed.",
+      "kind": "behavior",
+      "version_key": "npgsql_efcore",
+      "source_hint": "EF Core docs: Transactions, Default transaction behavior; live Npgsql 10.0.3 test (technical review round 1)",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 6,
+      "text": "The repository's FindAsync is a query that runs before SaveChangesAsync and outside the transaction SaveChangesAsync uses, unless code opens one with Database.BeginTransactionAsync first; that method has an overload taking an IsolationLevel.",
+      "kind": "behavior",
+      "version_key": "efcore",
+      "source_hint": "EF Core docs: Transactions, Controlling transactions; RelationalDatabaseFacadeExtensions.BeginTransactionAsync(IsolationLevel); EfOrderRepository.cs @ stage-2",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 7,
+      "text": "Under Repeatable Read all statements of a transaction see a snapshot as of its first query; an UPDATE of a row changed by a transaction that committed after that snapshot fails with 'could not serialize access due to concurrent update'.",
+      "kind": "behavior",
+      "version_key": "postgresql",
+      "source_hint": "PostgreSQL docs 13.2.2 Repeatable Read Isolation Level",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 8,
+      "text": "The serialization failure has SQLSTATE 40001 (serialization_failure); applications using Repeatable Read must be prepared to retry the whole transaction.",
+      "kind": "number",
+      "version_key": "postgresql",
+      "source_hint": "PostgreSQL docs 13.2.2 Repeatable Read; 13.4 Serialization Failure Handling; Appendix A Error Codes 40001",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 9,
+      "text": "CancelOrderAsync/ShipOrderAsync call FindAsync, then Cancel()/Ship() check the status in C#, then SaveChangesAsync; nothing re-reads the status between, and a re-read just before the save would still leave a gap before the write.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: DonHang.Domain/OrderService.cs:40-61; Entities.cs:83-96",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 10,
+      "text": "Cancel() on a shipped order throws OrderStatusException already-shipped, which the API answers with 409 and a type ending in already-shipped; the ship endpoint requires the StaffOnly policy.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: Entities.cs:83-88, OrdersController.cs:86-97; prereqs backend.l2.problem-types, backend.l2.role-based-access",
+      "needs_verification": true,
+      "section": 2
+    },
+    {
+      "n": 11,
+      "text": "At stage-2 Order.Version is a concurrency token (IsRowVersion, xmin), so the real endpoints' second save fails and they do not lose this update; the scripts leave that guard out and use plain psql sessions.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: DonHangDbContext.cs:61-65, Entities.cs:43-46",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 12,
+      "text": "lost-update.sh: ship session in background, cancel 0.5 s later, both read paid, both UPDATE 1, order 5 ends cancelled; the script resets order 5 to paid. repeatable-read-conflict.sh prints the 40001 error and order 5 ends shipped.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: scripts/backend/lost-update.sh, repeatable-read-conflict.sh; outputs/stage-2/scripts/backend/*.txt; live run 2026-09-28",
+      "needs_verification": true,
+      "section": 7
+    },
+    {
+      "n": 13,
+      "text": "After a serialization failure, running the whole cancel transaction again reads 'shipped', so Cancel() refuses it.",
+      "kind": "behavior",
+      "version_key": "postgresql",
+      "source_hint": "PostgreSQL docs 13.4 Serialization Failure Handling; Entities.cs:83-88 @ stage-2",
+      "needs_verification": true,
+      "section": 4
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "outline_items_missing": [],
+    "beyond_scope": []
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1140,
+    "notes": "Generated; quiz fix-validation 1 (Q07 vi 'tất cả'). Round 1 tech: claim 5 -> suggested_text (Npgsql begins READ COMMITTED explicitly); sections 2,4,6 reframed: script has no guard; claim 11 widened; claim 4 source_hint; q5 stem+explanation; q6 b, c explanations. Junior r1: session/psql/SQLSTATE glossed, guard consequence stated, re-read gap sentence, Database property, UPDATE 1, misconception 2 condition, q1 a, q5 c. Tech r2: 'in one way' dropped, BeginTransactionAsync as one way, q5 b."
+  },
+  "open_questions": [
+    "Outline item 1 says SaveChangesAsync 'uses the default unless code asks for another'; with Npgsql the transaction EF Core begins is explicitly READ COMMITTED, whatever default_transaction_isolation says (technical review round 1). Lesson says 'under Read Committed'; owner may reword the outline item."
+  ],
+  "repo_changes_needed": []
+}

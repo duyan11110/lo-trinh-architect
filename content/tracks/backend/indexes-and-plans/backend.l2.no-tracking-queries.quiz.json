@@ -1,0 +1,314 @@
+{
+  "lesson": "backend.l2.no-tracking-queries",
+  "stage": 2,
+  "questions": [
+    {
+      "id": "backend.l2.no-tracking-queries.q1",
+      "type": "single",
+      "bloom": "understand",
+      "difficulty": 2,
+      "skills": ["backend.ef.performance"],
+      "section_ref": 4,
+      "question": {
+        "en": "`GET /api/v1/orders/{id}` loads the order with `FindForReadingAsync`, which adds `AsNoTracking()` to the same query `FindAsync` runs. Compared with `FindAsync`, what does PostgreSQL do differently for this request?",
+        "vi": "`GET /api/v1/orders/{id}` nạp đơn bằng `FindForReadingAsync`, tức cùng truy vấn mà `FindAsync` chạy nhưng thêm `AsNoTracking()`. So với `FindAsync`, PostgreSQL làm gì khác đi cho request này?"
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "It runs the query faster, because it skips the tracking step",
+          "vi": "Nó chạy truy vấn nhanh hơn, vì bỏ qua bước tracking",
+          "misconception": "`AsNoTracking()` makes the database run the query faster."
+        },
+        {
+          "id": "b",
+          "en": "Nothing: it receives the same SQL and does the same work",
+          "vi": "Không gì cả: nó nhận cùng câu SQL và làm cùng một việc"
+        },
+        {
+          "id": "c",
+          "en": "It reads the order without taking the row lock it would take",
+          "vi": "Nó đọc đơn mà không lấy row lock như lẽ ra phải lấy"
+        },
+        {
+          "id": "d",
+          "en": "It returns only the `orders` row and leaves out `order_items`",
+          "vi": "Nó chỉ trả dòng `orders` và bỏ qua `order_items`"
+        }
+      ],
+      "answer": ["b"],
+      "explanation": {
+        "en": {
+          "correct": "`AsNoTracking()` changes what EF Core does with the rows after they arrive: no snapshot, nothing kept in the change tracker. The SQL sent to PostgreSQL is the same, so the database does the same work.",
+          "a": "Faster is what `AsNoTracking()` is known for, so crediting the database is natural. But the saving is inside the api process; the command log shows the same SQL either way.",
+          "c": "Row locks are a real way reads and writes differ in PostgreSQL, so this sounds related. But neither query takes a row lock; the SQL is a plain `SELECT` in both cases.",
+          "d": "Leaving something out sounds like a way to do less work. But `Include(o => o.Items)` is in both queries, so both read `order_items`; `AsNoTracking()` does not touch what is fetched."
+        },
+        "vi": {
+          "correct": "`AsNoTracking()` đổi việc EF Core làm với các dòng sau khi chúng về tới api: không snapshot, không giữ gì trong change tracker. Câu SQL gửi tới PostgreSQL vẫn như cũ, nên database làm cùng một việc.",
+          "a": "`AsNoTracking()` nổi tiếng là giúp nhanh hơn, nên nghĩ công đó thuộc về database là tự nhiên. Nhưng phần tiết kiệm nằm trong process của api; log lệnh cho thấy cùng câu SQL trong cả hai trường hợp.",
+          "c": "Row lock đúng là một điểm khác nhau giữa đọc và ghi trong PostgreSQL, nên nghe có liên quan. Nhưng cả hai truy vấn đều không lấy row lock; câu SQL là một `SELECT` thường trong cả hai trường hợp.",
+          "d": "Bỏ bớt thứ gì đó nghe như cách để làm ít việc hơn. Nhưng cả hai truy vấn đều có `Include(o => o.Items)`, nên đều đọc `order_items`; `AsNoTracking()` không đụng tới dữ liệu được lấy."
+        }
+      }
+    },
+    {
+      "id": "backend.l2.no-tracking-queries.q2",
+      "type": "truefalse",
+      "bloom": "understand",
+      "difficulty": 2,
+      "skills": ["backend.ef.performance"],
+      "section_ref": 6,
+      "question": {
+        "en": "Statement: an endpoint that loads 500 orders with a tracked query only to return them as JSON pays nothing for tracking, because it never calls `SaveChangesAsync`.",
+        "vi": "Nhận định: một endpoint nạp 500 đơn bằng truy vấn có tracking chỉ để trả chúng về dưới dạng JSON thì không tốn gì cho tracking, vì nó không bao giờ gọi `SaveChangesAsync`."
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "True, because the change tracker only starts work when `SaveChangesAsync` compares the entities.",
+          "vi": "Đúng, vì change tracker chỉ bắt đầu làm việc khi `SaveChangesAsync` so sánh các entity.",
+          "polarity": "true",
+          "misconception": "Tracking costs nothing when I never call `SaveChangesAsync`."
+        },
+        {
+          "id": "b",
+          "en": "True, because EF Core notices the endpoint has no `SaveChangesAsync` call and skips tracking.",
+          "vi": "Đúng, vì EF Core nhận ra endpoint không gọi `SaveChangesAsync` nên bỏ qua tracking.",
+          "polarity": "true"
+        },
+        {
+          "id": "c",
+          "en": "False, because each order's snapshot is taken while the query loads, whether or not anything is saved later.",
+          "vi": "Sai, vì snapshot của từng đơn được chụp ngay lúc truy vấn nạp dữ liệu, dù sau đó có lưu gì hay không.",
+          "polarity": "false"
+        },
+        {
+          "id": "d",
+          "en": "False, because a tracked query makes PostgreSQL send more data for each of the 500 rows.",
+          "vi": "Sai, vì truy vấn có tracking khiến PostgreSQL gửi nhiều dữ liệu hơn cho mỗi dòng trong 500 dòng.",
+          "polarity": "false"
+        }
+      ],
+      "answer": ["c"],
+      "explanation": {
+        "en": {
+          "correct": "The change tracker takes each entity's snapshot before handing it to your code, so the time and memory are spent during loading. Skipping `SaveChangesAsync` only skips the comparison.",
+          "a": "The comparison does happen in `SaveChangesAsync`, so it is easy to think all the work is there. But the comparison needs a snapshot to compare with, and that is taken at load time.",
+          "b": "It would be convenient if EF Core could see ahead, which makes this tempting. But a query cannot know what the code will do later; it tracks by default unless you say `AsNoTracking()`.",
+          "d": "The conclusion is right, but the reason is not. The SQL, and so the data PostgreSQL sends, is the same for tracked and untracked queries; the cost is inside the api."
+        },
+        "vi": {
+          "correct": "Change tracker chụp snapshot của từng entity trước khi trao nó cho code của bạn, nên thời gian và bộ nhớ đã tốn ngay lúc nạp. Không gọi `SaveChangesAsync` chỉ bỏ được bước so sánh.",
+          "a": "Bước so sánh đúng là diễn ra trong `SaveChangesAsync`, nên dễ nghĩ mọi việc nằm ở đó. Nhưng so sánh cần một snapshot để so, và snapshot được chụp lúc nạp.",
+          "b": "Nếu EF Core nhìn trước được thì tiện, nên đáp án này hấp dẫn. Nhưng một truy vấn không thể biết code sẽ làm gì sau đó; mặc định nó có tracking, trừ khi bạn ghi `AsNoTracking()`.",
+          "d": "Kết luận đúng, nhưng lý do sai. Câu SQL, và vì vậy dữ liệu PostgreSQL gửi về, là như nhau cho truy vấn có và không có tracking; chi phí nằm trong api."
+        }
+      }
+    },
+    {
+      "id": "backend.l2.no-tracking-queries.q3",
+      "type": "order",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["backend.ef.performance"],
+      "section_ref": 4,
+      "question": {
+        "en": "`CancelOrderAsync` cancels order 5. Put the steps in order, from the tracked load to the write.",
+        "vi": "`CancelOrderAsync` hủy đơn 5. Sắp xếp các bước theo thứ tự, từ lần nạp có tracking tới lúc ghi."
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "`SaveChangesAsync` compares the order with its snapshot",
+          "vi": "`SaveChangesAsync` so đơn với snapshot của nó"
+        },
+        {
+          "id": "b",
+          "en": "EF Core sends an `UPDATE` for the status that changed",
+          "vi": "EF Core gửi một `UPDATE` cho trạng thái đã đổi"
+        },
+        {
+          "id": "c",
+          "en": "`FindAsync` sends the `SELECT` and gets the order's rows back",
+          "vi": "`FindAsync` gửi `SELECT` và nhận về các dòng của đơn"
+        },
+        {
+          "id": "d",
+          "en": "`order.Cancel()` changes the status of the order object",
+          "vi": "`order.Cancel()` đổi trạng thái của đối tượng đơn"
+        },
+        {
+          "id": "e",
+          "en": "The change tracker keeps the order with a snapshot of its values",
+          "vi": "Change tracker giữ đơn cùng một snapshot các giá trị của nó"
+        }
+      ],
+      "answer": ["c", "e", "d", "a", "b"],
+      "explanation": {
+        "en": {
+          "correct": "The rows arrive, the change tracker keeps the order and its snapshot before your code sees it, `Cancel()` changes the object, and `SaveChangesAsync` compares it with the snapshot and writes only the changed value."
+        },
+        "vi": {
+          "correct": "Các dòng về tới api, change tracker giữ đơn và snapshot của nó trước khi code của bạn thấy đơn, `Cancel()` đổi đối tượng, rồi `SaveChangesAsync` so nó với snapshot và chỉ ghi giá trị đã đổi."
+        }
+      }
+    },
+    {
+      "id": "backend.l2.no-tracking-queries.q4",
+      "type": "single",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["backend.ef.performance"],
+      "section_ref": 5,
+      "question": {
+        "en": "The team adds a staff endpoint that marks an order as paid: it loads the order, calls `order.MarkPaid()`, then `SaveChangesAsync`. Which repository method should it load the order with?",
+        "vi": "Đội thêm một endpoint cho staff để đánh dấu đơn đã thanh toán: nó nạp đơn, gọi `order.MarkPaid()`, rồi `SaveChangesAsync`. Nó nên nạp đơn bằng method nào của repository?"
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "`FindForReadingAsync`, since it is cheaper and the save still sees the change",
+          "vi": "`FindForReadingAsync`, vì nó rẻ hơn và lần lưu vẫn thấy thay đổi",
+          "misconception": "After `AsNoTracking()`, I can still change the order and `SaveChangesAsync` will save it."
+        },
+        {
+          "id": "b",
+          "en": "`FindAsync`, so the change tracker can see what `MarkPaid()` changed",
+          "vi": "`FindAsync`, để change tracker thấy được `MarkPaid()` đã đổi gì"
+        },
+        {
+          "id": "c",
+          "en": "`FindForReadingAsync` first, then `FindAsync` only if the status changed",
+          "vi": "`FindForReadingAsync` trước, rồi `FindAsync` chỉ khi trạng thái đã đổi"
+        },
+        {
+          "id": "d",
+          "en": "Either one, because both methods send exactly the same SQL",
+          "vi": "Cái nào cũng được, vì cả hai method gửi đúng cùng một câu SQL"
+        }
+      ],
+      "answer": ["b"],
+      "explanation": {
+        "en": {
+          "correct": "The endpoint changes the order and saves it, so the order must be tracked. `FindAsync` gives the change tracker a snapshot, and `SaveChangesAsync` writes the status that `MarkPaid()` changed.",
+          "a": "`FindForReadingAsync` is the cheaper load, which is attractive. But the change tracker never knows an untracked order, so `SaveChangesAsync` writes nothing and the order stays unpaid.",
+          "c": "An untracked read first mirrors what `Cancel` does, so it looks consistent. But `Cancel` reads first only for its `OrderOwner` check; here there is nothing to check, and changing the untracked copy would still save nothing.",
+          "d": "The two methods do send the same SQL, which makes them look interchangeable. But the difference is after the rows arrive: only the tracked order can be saved."
+        },
+        "vi": {
+          "correct": "Endpoint này đổi đơn rồi lưu, nên đơn phải được tracking. `FindAsync` cho change tracker một snapshot, và `SaveChangesAsync` ghi trạng thái mà `MarkPaid()` đã đổi.",
+          "a": "`FindForReadingAsync` là cách nạp rẻ hơn, nên hấp dẫn. Nhưng change tracker không hề biết đơn không tracking, nên `SaveChangesAsync` không ghi gì và đơn vẫn chưa thanh toán.",
+          "c": "Đọc không tracking trước trông giống cách `Cancel` làm, nên có vẻ nhất quán. Nhưng `Cancel` đọc trước chỉ để kiểm tra `OrderOwner`; ở đây không có gì cần kiểm, và đổi bản không tracking thì vẫn không lưu được gì.",
+          "d": "Hai method đúng là gửi cùng câu SQL, nên trông như dùng thay nhau được. Nhưng khác biệt nằm sau khi dữ liệu về: chỉ đơn có tracking mới lưu được."
+        }
+      }
+    },
+    {
+      "id": "backend.l2.no-tracking-queries.q5",
+      "type": "scenario",
+      "bloom": "evaluate",
+      "difficulty": 4,
+      "skills": ["backend.ef.performance"],
+      "section_ref": 5,
+      "context": {
+        "en": "At stage-2, `OrdersController.Cancel` loads the order untracked with `FindForReadingAsync` for the `OrderOwner` check, then calls `orderService.CancelOrderAsync(id)`, which loads it again with the tracked `FindAsync`. The command log shows two identical `SELECT` statements for every cancel. A teammate wants to cut one of them before the next release, and the team agrees cancelling must stay correct.",
+        "vi": "Ở stage-2, `OrdersController.Cancel` nạp đơn không tracking bằng `FindForReadingAsync` để kiểm tra `OrderOwner`, rồi gọi `orderService.CancelOrderAsync(id)`, method này nạp lại đơn bằng `FindAsync` có tracking. Log lệnh cho thấy hai câu `SELECT` giống hệt nhau mỗi lần hủy. Một đồng đội muốn bỏ bớt một câu trước lần phát hành tới, và cả đội thống nhất việc hủy phải luôn đúng."
+      },
+      "question": {
+        "en": "What should the team do?",
+        "vi": "Đội nên làm gì?"
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "Call `existing.Cancel()` and `SaveChangesAsync` in the controller, skipping `CancelOrderAsync`",
+          "vi": "Gọi `existing.Cancel()` và `SaveChangesAsync` trong controller, bỏ qua `CancelOrderAsync`",
+          "misconception": "After `AsNoTracking()`, I can still change the order and `SaveChangesAsync` will save it."
+        },
+        {
+          "id": "b",
+          "en": "Add `AsNoTracking()` to `FindAsync` as well, so both loads cost less inside the api",
+          "vi": "Thêm `AsNoTracking()` vào cả `FindAsync`, để cả hai lần nạp đều rẻ hơn trong api"
+        },
+        {
+          "id": "c",
+          "en": "Keep both loads: the untracked one serves the check, the tracked one the save",
+          "vi": "Giữ cả hai lần nạp: lần không tracking phục vụ việc kiểm tra, lần có tracking phục vụ việc lưu"
+        },
+        {
+          "id": "d",
+          "en": "Drop the `OrderOwner` check, so only the tracked load inside the service is left",
+          "vi": "Bỏ kiểm tra `OrderOwner`, để chỉ còn lần nạp có tracking trong service"
+        }
+      ],
+      "answer": ["c"],
+      "explanation": {
+        "en": {
+          "correct": "The untracked copy is only read for the check, and the tracked load is the one whose change `SaveChangesAsync` can see. One extra small `SELECT` per cancel is a fair price for a save that works.",
+          "a": "Reusing the order already in hand looks like the obvious saving. But that order is untracked, so `SaveChangesAsync` writes nothing and the order is not cancelled. It would be right only when that order had been loaded tracked.",
+          "b": "Cheaper loads sound good for both. But then no load is tracked, and neither cancelling nor shipping would save anything. `AsNoTracking()` is right when the entity is only read, which is not the case for the service's load.",
+          "d": "It does remove one query. But it lets any signed-in customer cancel another customer's order. Dropping a check is right only when the endpoint is meant to be open to everyone who can call it."
+        },
+        "vi": {
+          "correct": "Bản không tracking chỉ được đọc để kiểm tra, còn lần nạp có tracking là lần mà `SaveChangesAsync` thấy được thay đổi. Thêm một câu `SELECT` nhỏ cho mỗi lần hủy là cái giá hợp lý để lần lưu chạy đúng.",
+          "a": "Dùng lại đơn đang có trong tay trông như cách tiết kiệm hiển nhiên. Nhưng đơn đó không được tracking, nên `SaveChangesAsync` không ghi gì và đơn không bị hủy. Cách này chỉ đúng khi đơn đó đã được nạp có tracking.",
+          "b": "Nạp rẻ hơn cho cả hai nghe có vẻ tốt. Nhưng khi đó không lần nạp nào được tracking, nên cả hủy lẫn giao đều không lưu được gì. `AsNoTracking()` đúng khi entity chỉ được đọc, mà lần nạp trong service thì không phải vậy.",
+          "d": "Cách này đúng là bớt được một truy vấn. Nhưng nó cho mọi khách đã đăng nhập hủy được đơn của khách khác. Bỏ kiểm tra chỉ đúng khi endpoint vốn dành cho mọi người gọi được nó."
+        }
+      }
+    },
+    {
+      "id": "backend.l2.no-tracking-queries.q6",
+      "type": "multi",
+      "bloom": "analyze",
+      "difficulty": 4,
+      "skills": ["backend.ef.performance"],
+      "section_ref": 5,
+      "question": {
+        "en": "Which of these loads in Đơn Hàng can safely return an untracked order? Select all that apply.",
+        "vi": "Những lần nạp nào dưới đây trong Đơn Hàng có thể trả về đơn không tracking mà vẫn an toàn? Chọn tất cả đáp án đúng."
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "The load in `Get`, which turns the order into the response",
+          "vi": "Lần nạp trong `Get`, dùng để biến đơn thành response"
+        },
+        {
+          "id": "b",
+          "en": "The load in `Cancel` that the `OrderOwner` check reads",
+          "vi": "Lần nạp trong `Cancel` mà kiểm tra `OrderOwner` đọc"
+        },
+        {
+          "id": "c",
+          "en": "The load in `CancelOrderAsync`, before `order.Cancel()` runs",
+          "vi": "Lần nạp trong `CancelOrderAsync`, trước khi `order.Cancel()` chạy"
+        },
+        {
+          "id": "d",
+          "en": "The load in `ShipOrderAsync`, since shipping only reads the items",
+          "vi": "Lần nạp trong `ShipOrderAsync`, vì giao hàng chỉ đọc các dòng hàng"
+        },
+        {
+          "id": "e",
+          "en": "A future load that only builds a printable receipt for the customer",
+          "vi": "Một lần nạp sau này chỉ để dựng biên nhận in được cho khách"
+        }
+      ],
+      "answer": ["a", "b", "e"],
+      "explanation": {
+        "en": {
+          "correct": "`Get`, the `OrderOwner` check and a receipt only read the order, so nothing needs to be saved and the snapshot is wasted work. The loads inside `CancelOrderAsync` and `ShipOrderAsync` are followed by a status change and `SaveChangesAsync`, so they must be tracked.",
+          "c": "It is the same order the check just read, so reusing the untracked style looks harmless. But `order.Cancel()` changes it and `SaveChangesAsync` must write that change, which needs tracking.",
+          "d": "Shipping does read the order, so \"only reads\" sounds plausible. But `order.Ship()` changes the status and `SaveChangesAsync` saves it; an untracked order would leave the status unchanged in the database."
+        },
+        "vi": {
+          "correct": "`Get`, kiểm tra `OrderOwner` và biên nhận chỉ đọc đơn, nên không có gì cần lưu và snapshot là việc thừa. Các lần nạp trong `CancelOrderAsync` và `ShipOrderAsync` đều được theo sau bởi một lần đổi trạng thái và `SaveChangesAsync`, nên phải có tracking.",
+          "c": "Đó là cùng đơn mà bước kiểm tra vừa đọc, nên dùng kiểu không tracking có vẻ vô hại. Nhưng `order.Cancel()` đổi đơn và `SaveChangesAsync` phải ghi thay đổi đó, việc này cần tracking.",
+          "d": "Giao hàng đúng là có đọc đơn, nên \"chỉ đọc\" nghe có lý. Nhưng `order.Ship()` đổi trạng thái và `SaveChangesAsync` lưu nó; với đơn không tracking, trạng thái trong database sẽ không đổi."
+        }
+      }
+    }
+  ]
+}

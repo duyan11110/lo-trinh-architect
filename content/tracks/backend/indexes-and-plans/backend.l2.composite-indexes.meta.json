@@ -1,0 +1,196 @@
+{
+  "id": "backend.l2.composite-indexes",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-09-28T23:05:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "A multicolumn B-tree index orders its entries by the first column, then by the next column among entries with equal earlier values.",
+      "kind": "behavior",
+      "version_key": "postgresql",
+      "source_hint": "PostgreSQL 17 docs: 11.3 Multicolumn Indexes; 11.4 Indexes and ORDER BY",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 2,
+      "text": "A multicolumn B-tree index is most efficient with constraints on the leading column(s): equality on the leading column plus a range on the next column limits the portion of the index scanned; a condition on a later column alone does not reduce the portion scanned (PostgreSQL 17 has no skip scan).",
+      "kind": "behavior",
+      "version_key": "postgresql",
+      "source_hint": "PostgreSQL 17 docs: 11.3 Multicolumn Indexes ('the leading (leftmost) columns ... constraints on columns to the right ... do not reduce the portion of the index that has to be scanned')",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 3,
+      "text": "A B-tree index can deliver rows in its sort order, so a query with ORDER BY matching the index order (after equality on the leading column) needs no separate Sort step, and with LIMIT the scan stops after the requested rows.",
+      "kind": "behavior",
+      "version_key": "postgresql",
+      "source_hint": "PostgreSQL 17 docs: 11.4 Indexes and ORDER BY ('especially useful with ORDER BY combined with LIMIT n')",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 4,
+      "text": "PostgreSQL can combine several indexes (bitmap AND/OR) to find matching rows, but then visits the table rows in physical order, losing the indexes' ordering, so an ORDER BY needs a separate sort.",
+      "kind": "behavior",
+      "version_key": "postgresql",
+      "source_hint": "PostgreSQL 17 docs: 11.5 Combining Multiple Indexes",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 5,
+      "text": "At stage-2, DonHangDbContext declares e.HasIndex(o => new { o.CustomerId, o.Id }) on Order; migration ReplaceOrdersCustomerIdIndex drops IX_orders_customer_id and creates IX_orders_customer_id_id on (customer_id, id).",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: DonHang.Infrastructure/DonHangDbContext.cs:49-53; DonHang.Infrastructure/Migrations/20260927102959_ReplaceOrdersCustomerIdIndex.cs",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 6,
+      "text": "Once an index starting with customer_id exists in the model, EF Core does not create its own foreign key index for CustomerId (covered), which is why the migration drops IX_orders_customer_id.",
+      "kind": "behavior",
+      "version_key": "efcore",
+      "source_hint": "EF Core docs: Modeling > Relationships > Conventions, 'Indexes' NOTE (already covered by an existing index); ReplaceOrdersCustomerIdIndex.cs",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 7,
+      "text": "composite-index.sh builds donhang_perf if missing (perf-db.sh --if-missing) and runs composite-index.sql with psql inside the lab (project folder mounted at /repo), unaligned, --echo-queries printing each statement above its result.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: scripts/backend/composite-index.sh:6-17; db/queries/composite-index.sql:13,22,35",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 8,
+      "text": "Captured output: page query = Limit > Index Scan using IX_orders_customer_id_id, Index Cond (customer_id = 7) AND (id > 120000), actual rows=20, no Sort; count(*) customer 7 = Aggregate > Index Only Scan, Index Cond (customer_id = 7), rows=2000.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: outputs/stage-2/scripts/backend/composite-index.txt; live run 2026-09-28 identical",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 9,
+      "text": "Captured output: inside BEGIN..ROLLBACK with IX_orders_customer_id_id dropped and IX_orders_customer_id recreated, the page query plan is Limit > Index Scan using PK_orders, Index Cond (id > 120000), Filter (customer_id = 7), Rows Removed by Filter: 1966.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: outputs/stage-2/scripts/backend/composite-index.txt; db/queries/composite-index.sql:30-42",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 10,
+      "text": "With only a customer_id index and the primary key, the alternative plan for the page is Limit > Sort (top-N) > Bitmap Heap Scan via the customer_id index with Filter id > 120000; on donhang_perf the planner prices it higher than the PK walk.",
+      "kind": "fact",
+      "version_key": "postgresql",
+      "source_hint": "live experiment 2026-09-28 on a temp copy of donhang_perf.orders (PK + index on customer_id) with enable_indexscan = off",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 11,
+      "text": "An Index Only Scan can answer from the index entries alone; table rows are visited only when the visibility map requires it, and Heap Fetches counts those visits (0 here, so no table rows were read).",
+      "kind": "behavior",
+      "version_key": "postgresql",
+      "source_hint": "PostgreSQL 17 docs: 11.9 Index-Only Scans and Covering Indexes; 14.1 Using EXPLAIN",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 12,
+      "text": "PostgreSQL DDL is transactional: DROP INDEX and CREATE INDEX inside BEGIN are undone by ROLLBACK.",
+      "kind": "behavior",
+      "version_key": "postgresql",
+      "source_hint": "PostgreSQL 17 docs: BEGIN / ROLLBACK reference; db/queries/composite-index.sql:28-29 comment; captured output",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 13,
+      "text": "On donhang_perf, EXPLAIN of a query filtering on id alone (WHERE id = 120086) uses Index Scan on PK_orders.",
+      "kind": "fact",
+      "version_key": "postgresql",
+      "source_hint": "live EXPLAIN on donhang_perf 2026-09-28",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 14,
+      "text": "Try it: with LIMIT 100 the first plan is Limit (actual rows=100 loops=1) > Index Scan using IX_orders_customer_id_id (actual rows=100 loops=1), same Index Cond, no Sort (customer 7 has 800 orders after id 120000).",
+      "kind": "fact",
+      "version_key": "postgresql",
+      "source_hint": "live EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF) on donhang_perf 2026-09-28",
+      "needs_verification": true,
+      "section": 7
+    },
+    {
+      "n": 15,
+      "text": "Keeping the single-column index next to the composite one adds work to every write for little or no gain: each insert must add an entry to every index on the table.",
+      "kind": "opinion",
+      "version_key": "postgresql",
+      "source_hint": "PostgreSQL 17 docs: 11.1 Introduction ('keep it synchronized with the table ... overhead to data manipulation'; remove seldom-used indexes)",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 16,
+      "text": "The page query in composite-index.sql is the inner SELECT of the SQL EF Core sends for ListByCustomerAsync, with parameters filled in.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: db/queries/composite-index.sql:1-4; DonHang.Infrastructure/EfOrderRepository.cs ListByCustomerAsync",
+      "needs_verification": true,
+      "section": 8
+    },
+    {
+      "n": 17,
+      "text": "EXPLAIN ANALYZE runs the statement and prints actual rows and loops; COSTS/TIMING/SUMMARY OFF hide estimates, per-node times and total times. Index Cond is checked against index entries (here it bounds the scan); Filter is applied to each row read, Rows Removed by Filter counts failures.",
+      "kind": "behavior",
+      "version_key": "postgresql",
+      "source_hint": "PostgreSQL 17 docs: EXPLAIN reference (ANALYZE, COSTS, TIMING); 14.1.1-14.1.2 Using EXPLAIN (Index Cond vs Filter, Rows Removed by Filter)",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 18,
+      "text": "Misconception 1 symptom: appending EXPLAIN SELECT * FROM orders WHERE id = 120086; to composite-index.sql (after the ROLLBACK) gives Index Scan using PK_orders, Index Cond (id = 120086).",
+      "kind": "fact",
+      "version_key": "postgresql",
+      "source_hint": "live EXPLAIN on donhang_perf 2026-09-28 (see claim 13)",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 19,
+      "text": "WHERE customer_id = 7 AND status = 'paid': the index narrows by customer_id (Index Cond: customer_id = 7) and status, a column outside the index, is applied as Filter on the rows found.",
+      "kind": "behavior",
+      "version_key": "postgresql",
+      "source_hint": "live EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF) on donhang_perf 2026-09-28 (technical review r2); PostgreSQL 17 docs 14.1.1 (Filter)",
+      "needs_verification": true,
+      "section": 6
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "outline_items_missing": [],
+    "beyond_scope": []
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1447,
+    "notes": "Generated. Live run = capture. c10, c14 checked on donhang_perf. Fix-validation: L12 summary 3, L18 situation. R1: c11, c15 suggested_text; one customer_id + id; combine loses order (why); psql, ANALYZE/actual rows/loops/COSTS/TIMING, echo-queries, Index Cond vs Filter (c17); heap gloss; paragraphs split; misc 1 how to run (c18), status; misc 2 (id, customer_id); Try it /repo, first build; ListByCustomerAsync; quiz q3 c. R2: c17 suggested_text, SUMMARY OFF, c19 status."
+  },
+  "open_questions": [
+    "scripts/backend/composite-index.sh:4 says donhang_perf 'needs dotnet' on the host, same stale comment as explain-analyze.sh; the lesson does not quote those lines."
+  ],
+  "repo_changes_needed": []
+}

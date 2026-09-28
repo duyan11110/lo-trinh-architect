@@ -1,0 +1,343 @@
+{
+  "lesson": "backend.l2.optimistic-concurrency",
+  "stage": 2,
+  "questions": [
+    {
+      "id": "backend.l2.optimistic-concurrency.q1",
+      "type": "single",
+      "bloom": "understand",
+      "difficulty": 2,
+      "skills": [
+        "backend.data.concurrency"
+      ],
+      "section_ref": 4,
+      "question": {
+        "en": "At stage-2, a cancel request reads order 5 as `paid` while a ship transaction holds the row. EF Core sends `UPDATE ... WHERE id = 5 AND xmin = <old value>`, and then the ship commits. What happens to the cancel's `UPDATE`?",
+        "vi": "Ở stage-2, một request hủy đọc đơn 5 thấy `paid` trong lúc một giao dịch ship đang giữ dòng đó. EF Core gửi `UPDATE ... WHERE id = 5 AND xmin = <giá trị cũ>`, rồi ship commit. Lệnh `UPDATE` của request hủy ra sao?"
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "It stops waiting, finds the token changed, and changes no row",
+          "vi": "Nó hết chờ, thấy token đã đổi, và không sửa dòng nào"
+        },
+        {
+          "id": "b",
+          "en": "It stops waiting and writes `cancelled` over `shipped`",
+          "vi": "Nó hết chờ và ghi `cancelled` đè lên `shipped`"
+        },
+        {
+          "id": "c",
+          "en": "It fails at once, because the ship's lock blocks it",
+          "vi": "Nó thất bại ngay, vì khóa của ship chặn nó"
+        },
+        {
+          "id": "d",
+          "en": "PostgreSQL rejects it with a `40001` serialization error",
+          "vi": "PostgreSQL từ chối nó với lỗi serialization `40001`"
+        }
+      ],
+      "answer": [
+        "a"
+      ],
+      "explanation": {
+        "en": {
+          "correct": "The `UPDATE` waits for the ship's lock, then checks its `WHERE` again on the newest row. That row has a new `xmin`, so the condition fails and 0 rows change.",
+          "b": "That is exactly what happened in the previous lesson's replay, so it is a natural guess. The difference here is the `xmin` condition: the newest row no longer matches it.",
+          "c": "A lock does get in the way, so failing feels right. But a waiting `UPDATE` waits; it does not fail because of the lock. It fails to match only after the ship commits.",
+          "d": "A refused write sounds like the Repeatable Read error. But the request runs under Read Committed; here the `WHERE` simply matches nothing, and EF Core reports that as a concurrency problem."
+        },
+        "vi": {
+          "correct": "Lệnh `UPDATE` chờ khóa của ship, rồi kiểm lại `WHERE` trên phiên bản mới nhất của dòng. Dòng đó đã có `xmin` mới, nên điều kiện không khớp và không dòng nào bị đổi.",
+          "b": "Đó đúng là điều xảy ra trong bản phát lại ở bài trước, nên đoán vậy là tự nhiên. Điểm khác ở đây là điều kiện `xmin`: dòng mới nhất không còn khớp với nó.",
+          "c": "Khóa đúng là cản đường, nên nghĩ nó thất bại nghe hợp lý. Nhưng lệnh `UPDATE` gặp khóa thì chờ, không thất bại vì khóa. Nó chỉ không khớp sau khi ship commit.",
+          "d": "Lần ghi bị từ chối nghe giống lỗi của Repeatable Read. Nhưng request chạy dưới Read Committed; ở đây `WHERE` chỉ đơn giản là không khớp dòng nào, và EF Core báo điều đó như một vấn đề về ghi đồng thời."
+        }
+      }
+    },
+    {
+      "id": "backend.l2.optimistic-concurrency.q2",
+      "type": "truefalse",
+      "bloom": "understand",
+      "difficulty": 2,
+      "skills": [
+        "backend.data.concurrency"
+      ],
+      "section_ref": 6,
+      "question": {
+        "en": "Statement: while a cancel request is between `FindAsync` and `SaveChangesAsync`, the concurrency token on `Order` keeps other requests from changing order 5.",
+        "vi": "Nhận định: trong lúc một request hủy đang ở giữa `FindAsync` và `SaveChangesAsync`, concurrency token trên `Order` ngăn các request khác sửa đơn 5."
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "True, because the token locks the order while someone is changing it.",
+          "vi": "Đúng, vì token khóa đơn trong lúc có người đang sửa nó.",
+          "polarity": "true",
+          "misconception": "Optimistic concurrency locks the order while someone is changing it."
+        },
+        {
+          "id": "b",
+          "en": "True, because `FindAsync` opens the transaction that `SaveChangesAsync` later commits.",
+          "vi": "Đúng, vì `FindAsync` mở giao dịch mà sau đó `SaveChangesAsync` commit.",
+          "polarity": "true"
+        },
+        {
+          "id": "c",
+          "en": "False, because another request can change order 5 meanwhile; this save then fails.",
+          "vi": "Sai, vì trong lúc đó request khác vẫn sửa được đơn 5, khi ấy bước lưu này mới thất bại.",
+          "polarity": "false"
+        },
+        {
+          "id": "d",
+          "en": "False, because the token only guards against deletes, not updates.",
+          "vi": "Sai, vì token chỉ chặn việc xóa, không chặn việc cập nhật.",
+          "polarity": "false"
+        }
+      ],
+      "answer": [
+        "c"
+      ],
+      "explanation": {
+        "en": {
+          "correct": "Other requests can read and change order 5 freely in the meantime. The token only makes this request's save fail if someone did.",
+          "a": "A guard against overwrites sounds like a lock. But no lock is held between the read and the save; that is what makes the approach optimistic.",
+          "b": "It seems natural that the read starts the work that the save finishes. But `FindAsync` runs as its own statement, and `SaveChangesAsync` opens its own transaction later.",
+          "d": "The conclusion is right, but the reason is not. The token is added to the `WHERE` of every `UPDATE` of an order; that is its main job."
+        },
+        "vi": {
+          "correct": "Trong lúc đó, các request khác vẫn đọc và sửa đơn 5 thoải mái. Token chỉ làm cho bước lưu của request này thất bại nếu đã có ai sửa.",
+          "a": "Một cơ chế chống ghi đè nghe giống một cái khóa. Nhưng không có khóa nào được giữ giữa bước đọc và bước lưu, và chính điều đó làm cách này được gọi là optimistic.",
+          "b": "Dễ nghĩ bước đọc mở đầu công việc mà bước lưu kết thúc. Nhưng `FindAsync` chạy như một câu lệnh riêng, còn `SaveChangesAsync` mở giao dịch của riêng nó sau đó.",
+          "d": "Kết luận đúng nhưng lý do sai. Token được thêm vào `WHERE` của mọi lệnh `UPDATE` trên đơn hàng, đó là việc chính của nó."
+        }
+      }
+    },
+    {
+      "id": "backend.l2.optimistic-concurrency.q3",
+      "type": "multi",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": [
+        "backend.data.concurrency"
+      ],
+      "section_ref": 5,
+      "question": {
+        "en": "The team wants the same guard on `Product`, whose price `PATCH /api/v1/products/{id}` changes. Following how `Order` does it at stage-2, which steps are part of the change? Select all that apply.",
+        "vi": "Đội muốn có cùng cơ chế bảo vệ cho `Product`, loại mà `PATCH /api/v1/products/{id}` đổi giá. Theo cách `Order` làm ở stage-2, những bước nào thuộc thay đổi này? Chọn mọi đáp án đúng."
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "Give `Product` a `uint` property and map it with `IsRowVersion()`",
+          "vi": "Thêm cho `Product` một property `uint` và map nó bằng `IsRowVersion()`"
+        },
+        {
+          "id": "b",
+          "en": "Add a migration, knowing it adds no column to `products`",
+          "vi": "Thêm một migration, biết rằng nó không thêm cột nào vào `products`"
+        },
+        {
+          "id": "c",
+          "en": "Add a `version` column to `products` and increase it in C# on every save",
+          "vi": "Thêm cột `version` vào `products` và tăng nó trong C# mỗi lần lưu",
+          "misconception": "A concurrency token needs a new column added to the `orders` table."
+        },
+        {
+          "id": "d",
+          "en": "Read every product with `SELECT ... FOR UPDATE` before changing it",
+          "vi": "Đọc mọi sản phẩm bằng `SELECT ... FOR UPDATE` trước khi sửa"
+        }
+      ],
+      "answer": [
+        "a",
+        "b"
+      ],
+      "explanation": {
+        "en": {
+          "correct": "`IsRowVersion()` on a `uint` maps the property to `xmin`, which every row already has. The migration records the mapping, and the Npgsql provider writes no SQL for it.",
+          "c": "Many databases need a version column you manage yourself, so this sounds necessary. But PostgreSQL already changes `xmin` on every update; a column of your own would be extra work with nothing gained.",
+          "d": "Locking first is a real way to stop overwrites, so it looks like part of the job. But it is the other approach; the token needs no lock at all."
+        },
+        "vi": {
+          "correct": "`IsRowVersion()` trên một `uint` map property đó vào `xmin`, cột mà dòng nào cũng có sẵn. Migration ghi lại cách map này, và provider Npgsql không sinh câu SQL nào cho nó.",
+          "c": "Nhiều database cần một cột version do bạn tự quản lý, nên bước này nghe như bắt buộc. Nhưng PostgreSQL đã tự đổi `xmin` mỗi lần cập nhật, một cột riêng chỉ thêm việc mà không được gì.",
+          "d": "Khóa trước đúng là một cách chặn ghi đè, nên trông như thuộc việc này. Nhưng đó là cách còn lại, còn token thì không cần khóa nào."
+        }
+      }
+    },
+    {
+      "id": "backend.l2.optimistic-concurrency.q4",
+      "type": "single",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": [
+        "backend.data.concurrency"
+      ],
+      "section_ref": 5,
+      "question": {
+        "en": "The customer's app sends `PATCH /api/v1/orders/5/cancel` and gets `409` with a `type` ending in `concurrent-update`. What should the app do next?",
+        "vi": "App của khách gửi `PATCH /api/v1/orders/5/cancel` và nhận `409` với `type` kết thúc bằng `concurrent-update`. App nên làm gì tiếp?"
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "Fetch order 5 again and ask the customer, showing its new status",
+          "vi": "Lấy lại đơn 5 và hỏi lại khách, kèm trạng thái mới của đơn"
+        },
+        {
+          "id": "b",
+          "en": "Send the same cancel again at once, since the conflict has passed",
+          "vi": "Gửi lại đúng lệnh hủy đó ngay, vì xung đột đã qua"
+        },
+        {
+          "id": "c",
+          "en": "Tell the customer this order can never be cancelled",
+          "vi": "Báo khách rằng đơn này không bao giờ hủy được nữa"
+        },
+        {
+          "id": "d",
+          "en": "Show a generic error, since the API failed to process the request",
+          "vi": "Hiện một lỗi chung, vì API đã xử lý request thất bại"
+        }
+      ],
+      "answer": [
+        "a"
+      ],
+      "explanation": {
+        "en": {
+          "correct": "The cancel was based on a status that is no longer true. Only after reloading does the customer see what changed, for example `shipped`, and decide with the real status.",
+          "b": "Retrying is a reflex for temporary errors, so it is tempting. But a blind resend repeats a choice made on the old status, and it may now be refused, or wrong, for a different reason.",
+          "c": "A `409` about an order sounds like a status rule such as `already-shipped`. But `concurrent-update` only says the order changed; after a reload it may still be cancellable.",
+          "d": "An error status can look like a failure of the server. But the `type` names a specific, expected problem with its own next step; a generic error hides it from the customer."
+        },
+        "vi": {
+          "correct": "Lệnh hủy dựa trên một trạng thái không còn đúng. Chỉ khi tải lại, khách mới thấy điều gì đã đổi, ví dụ `shipped`, và quyết định dựa trên trạng thái thật.",
+          "b": "Thử lại là phản xạ với lỗi tạm thời, nên rất dễ chọn. Nhưng gửi lại mù quáng là lặp lại một lựa chọn dựa trên trạng thái cũ, và giờ nó có thể bị từ chối, hoặc sai, vì một lý do khác.",
+          "c": "Một `409` về đơn hàng nghe giống một quy tắc trạng thái như `already-shipped`. Nhưng `concurrent-update` chỉ nói đơn đã bị đổi, tải lại xong có khi vẫn hủy được.",
+          "d": "Status lỗi dễ bị hiểu là server hỏng. Nhưng `type` gọi tên một vấn đề cụ thể, đã được dự tính, kèm bước tiếp theo rõ ràng, còn lỗi chung thì giấu nó khỏi khách."
+        }
+      }
+    },
+    {
+      "id": "backend.l2.optimistic-concurrency.q5",
+      "type": "scenario",
+      "bloom": "evaluate",
+      "difficulty": 4,
+      "skills": [
+        "backend.data.concurrency"
+      ],
+      "section_ref": 4,
+      "context": {
+        "en": "Đơn Hàng's logs show a few `concurrent-update` answers each week, always a cancel and a ship of the same order within a second. A teammate finds the `409` annoying for customers and proposes a change to `CancelOrderAsync`: catch `DbUpdateConcurrencyException` and call `SaveChangesAsync` again, up to three times, before giving up. Orders are changed by at most two requests at a time, and conflicts stay rare.",
+        "vi": "Log của Đơn Hàng cho thấy mỗi tuần có vài câu trả lời `concurrent-update`, lần nào cũng là một lệnh hủy và một lệnh ship cho cùng một đơn trong vòng một giây. Một đồng đội thấy `409` gây khó chịu cho khách và đề xuất sửa `CancelOrderAsync`: bắt `DbUpdateConcurrencyException` rồi gọi lại `SaveChangesAsync`, tối đa ba lần, trước khi bỏ cuộc. Mỗi đơn chỉ bị tối đa hai request sửa cùng lúc, và xung đột vẫn hiếm."
+      },
+      "question": {
+        "en": "What should the team do?",
+        "vi": "Đội nên làm gì?"
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "Keep the `409` and have the client reload the order before deciding again",
+          "vi": "Giữ `409` và để client tải lại đơn trước khi quyết định lại"
+        },
+        {
+          "id": "b",
+          "en": "Accept the proposal: call `SaveChangesAsync` again up to three times",
+          "vi": "Chấp nhận đề xuất: gọi lại `SaveChangesAsync` tối đa ba lần",
+          "misconception": "When `SaveChangesAsync` throws a concurrency exception, the fix is to call it again."
+        },
+        {
+          "id": "c",
+          "en": "Lock the order with `SELECT ... FOR UPDATE` for every cancel and ship",
+          "vi": "Khóa đơn bằng `SELECT ... FOR UPDATE` cho mọi lệnh hủy và ship"
+        },
+        {
+          "id": "d",
+          "en": "Remove the token, since the save already runs in a transaction",
+          "vi": "Bỏ token đi, vì bước lưu vốn đã chạy trong một giao dịch"
+        }
+      ],
+      "answer": [
+        "a"
+      ],
+      "explanation": {
+        "en": {
+          "correct": "Conflicts are rare and the losing request was based on a stale status, so failing it and letting the customer decide again is both cheap and correct.",
+          "b": "Retrying hides the error, which is what the teammate wants. But the order still holds the old token, so each call sends the same `UPDATE` and fails again. A retry only makes sense when the whole operation is rerun from a fresh read.",
+          "c": "Locking first also stops the overwrite, and the second request would get `already-shipped` instead. It is the better choice when many writers compete for the same row; with rare conflicts between two requests, the token already adds little until one happens.",
+          "d": "The transaction does make each save all or nothing. But it did not stop the lost update in the previous lesson; removing the token only makes sense when no two requests can ever change the same order."
+        },
+        "vi": {
+          "correct": "Xung đột hiếm, và request thua dựa trên một trạng thái cũ, nên để nó thất bại rồi cho khách quyết định lại vừa rẻ vừa đúng.",
+          "b": "Thử lại giấu được lỗi, đúng điều đồng đội muốn. Nhưng đơn vẫn giữ token cũ, nên lần gọi nào cũng gửi cùng lệnh `UPDATE` và lại thất bại. Thử lại chỉ có nghĩa khi cả thao tác được chạy lại từ một lần đọc mới.",
+          "c": "Khóa trước cũng chặn được việc ghi đè, và request thứ hai sẽ nhận `already-shipped`. Đó là lựa chọn tốt hơn khi nhiều bên cùng tranh ghi một dòng, còn khi xung đột hiếm giữa hai request thì token vốn chỉ tốn rất ít cho tới khi có xung đột.",
+          "d": "Giao dịch đúng là làm mỗi lần lưu thành trọn vẹn hoặc không có gì. Nhưng nó không chặn được lost update ở bài trước, bỏ token chỉ hợp lý khi không bao giờ có hai request cùng sửa một đơn."
+        }
+      }
+    },
+    {
+      "id": "backend.l2.optimistic-concurrency.q6",
+      "type": "order",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": [
+        "backend.data.concurrency"
+      ],
+      "section_ref": 4,
+      "question": {
+        "en": "Put the steps of `concurrency-conflict.sh` in order, from the ship's write to the cancel's answer.",
+        "vi": "Xếp theo thứ tự các bước của `concurrency-conflict.sh`, từ lần ghi của ship tới câu trả lời cho lệnh hủy."
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "The ship commits, and order 5 gets a new `xmin`",
+          "vi": "Ship commit, và đơn 5 có `xmin` mới"
+        },
+        {
+          "id": "b",
+          "en": "The API answers `409` with `concurrent-update`",
+          "vi": "API trả `409` với `concurrent-update`"
+        },
+        {
+          "id": "c",
+          "en": "The cancel request reads order 5: `paid`, with the old `xmin`",
+          "vi": "Request hủy đọc đơn 5: `paid`, kèm `xmin` cũ"
+        },
+        {
+          "id": "d",
+          "en": "The ship session updates order 5 and holds the row lock",
+          "vi": "Session ship cập nhật đơn 5 và giữ khóa dòng"
+        },
+        {
+          "id": "e",
+          "en": "The cancel's `UPDATE` changes 0 rows, and `SaveChangesAsync` throws",
+          "vi": "`UPDATE` của lệnh hủy không đổi dòng nào, và `SaveChangesAsync` ném exception"
+        },
+        {
+          "id": "f",
+          "en": "The cancel's `UPDATE ... AND xmin = <old value>` waits for the lock",
+          "vi": "`UPDATE ... AND xmin = <giá trị cũ>` của lệnh hủy chờ khóa"
+        }
+      ],
+      "answer": [
+        "d",
+        "c",
+        "f",
+        "a",
+        "e",
+        "b"
+      ],
+      "explanation": {
+        "en": {
+          "correct": "The read takes no lock, so it happens at once and sees the old `xmin`. The guarded `UPDATE` waits for the ship, finds a new `xmin` after the commit, changes nothing, and the middleware turns the exception into the `409`."
+        },
+        "vi": {
+          "correct": "Bước đọc không lấy khóa, nên chạy ngay và thấy `xmin` cũ. Lệnh `UPDATE` có điều kiện token chờ ship, sau khi ship commit thì gặp `xmin` mới, không đổi gì, và middleware biến exception thành `409`."
+        }
+      }
+    }
+  ]
+}
