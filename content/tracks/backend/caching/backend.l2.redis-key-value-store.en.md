@@ -15,9 +15,9 @@ vocab: [redis, key-value-store, ttl]
 example_tag: stage-2
 versions_used: [redis, docker]
 content_version: 1
-status: reviewed
-approved_by: null
-reviewed_at: "2026-09-28T14:41:17+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-28T19:05:00+07:00"
 ---
 
 ## Before you start
