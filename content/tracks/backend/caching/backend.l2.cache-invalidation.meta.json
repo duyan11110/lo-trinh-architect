@@ -1,0 +1,189 @@
+{
+  "id": "backend.l2.cache-invalidation",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-09-28T15:25:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "Cache invalidation: removing a cached copy when its source data changes, so the next read is a miss and loads the new value.",
+      "kind": "fact",
+      "source_hint": "content/glossary.yaml: cache-invalidation; Microsoft Azure Architecture Center: Cache-Aside pattern, 'Lifetime of cached data' / invalidating",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 2,
+      "text": "StackExchange.Redis IDatabase.KeyDeleteAsync asks Redis to delete the key and its value (against Redis 8 it sends UNLINK, which removes the key like DEL).",
+      "kind": "syntax",
+      "version_key": "stackexchange_redis",
+      "source_hint": "SE.Redis release notes 2.0.571 (KeyDeleteAsync uses UNLINK); Redis docs: commands/unlink, commands/del",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 3,
+      "text": "Redis does not read PostgreSQL or notice changes in the products table: in Đơn Hàng, product:{id} is replaced or removed only by ProductCache or when its TTL expires.",
+      "kind": "behavior",
+      "version_key": "redis",
+      "source_hint": "Redis docs: key expiration (EXPIRE/TTL); cache-aside lesson claim on Redis knowing nothing about PostgreSQL",
+      "needs_verification": true,
+      "section": 2
+    },
+    {
+      "n": 4,
+      "text": "ProductsController.UpdatePrice is PATCH api/v1/products/{id:int} with [Authorize(Policy = \"StaffOnly\")]; it calls products.UpdatePriceAsync(id, request.PriceVnd), answers NotFound() for null, else Ok(ProductDto) with the new price.",
+      "kind": "fact",
+      "version_key": "aspnetcore",
+      "source_hint": "examples/don-hang @ stage-2: DonHang.Api/Controllers/ProductsController.cs:59-70",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 5,
+      "text": "ProductCache.UpdatePriceAsync first awaits inner.UpdatePriceAsync (the save), and only when it returns a product calls RemoveAsync(\"product:{id}\"); for null (no such product) nothing is deleted.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: DonHang.Infrastructure/ProductCache.cs:51-59",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 6,
+      "text": "EfProductRepository.UpdatePriceAsync finds the product with db.Products.FindAsync, sets PriceVnd and awaits SaveChangesAsync; if the save throws, the exception leaves ProductCache.UpdatePriceAsync before RemoveAsync runs.",
+      "kind": "behavior",
+      "version_key": "efcore",
+      "source_hint": "examples/don-hang @ stage-2: DonHang.Infrastructure/EfProductRepository.cs; C# await exception propagation",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 7,
+      "text": "If the key were deleted before the save, a read in between would miss, load the old price from PostgreSQL and SET it into Redis with a new 5-minute TTL.",
+      "kind": "behavior",
+      "source_hint": "ProductCache.cs @ stage-2: FindAsync (miss -> inner.FindAsync -> SetAsync with Ttl); comment at ProductCache.cs:52-53",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 8,
+      "text": "Saving first does not close every gap: if product:{id} is missing (e.g. TTL just ended), a read that loaded the old price before the save can write it after the delete, back until the TTL ends; UpdatePriceAsync takes no lock.",
+      "kind": "behavior",
+      "source_hint": "ProductCache.cs @ stage-2: FindAsync vs UpdatePriceAsync (no shared lock); Redis docs: SET creates the key if missing",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 9,
+      "text": "ProductCache.Ttl is TimeSpan.FromMinutes(5), with the comment that it is the longest a stale copy can live even if a delete is missed; SetAsync stores every copy with this TTL.",
+      "kind": "number",
+      "source_hint": "examples/don-hang @ stage-2: DonHang.Infrastructure/ProductCache.cs:16-18, 78-89",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 10,
+      "text": "RemoveAsync calls KeyDeleteAsync inside try/catch for RedisException or RedisTimeoutException, logs 'Redis delete of {Key} failed; the old copy lives until its TTL ends', and does not rethrow, so the PATCH still answers 200.",
+      "kind": "behavior",
+      "version_key": "stackexchange_redis",
+      "source_hint": "examples/don-hang @ stage-2: DonHang.Infrastructure/ProductCache.cs:91-101; ProductsController.cs:63-70",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 11,
+      "text": "Only changes through ProductCache.UpdatePriceAsync delete the key; a price changed directly in PostgreSQL with psql (PostgreSQL's command-line client) leaves product:{id} in Redis until its TTL ends.",
+      "kind": "behavior",
+      "source_hint": "ProductCache.cs @ stage-2 is the only RemoveAsync caller; PostgreSQL 17 docs: psql (interactive terminal)",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 12,
+      "text": "cache-invalidation.sh: staff token for lan.do@example.com via scripts/lib/keycloak.sh; redis() runs redis-cli (Redis's command-line client) in the redis container; base is the API's /api/v1 URL; curl -w prints the status code.",
+      "kind": "fact",
+      "version_key": "docker",
+      "source_hint": "examples/don-hang @ stage-2: scripts/backend/cache-invalidation.sh:8-33",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 13,
+      "text": "Script output at stage-2: first GET 890000 and 200 with product:3 filled; PATCH answers 200 with 950000; EXISTS product:3 prints 0; the next GET answers 950000 and product:3 holds 950000.",
+      "kind": "behavior",
+      "version_key": "redis",
+      "source_hint": "examples/don-hang @ stage-2: outputs/stage-2/scripts/backend/cache-invalidation.txt",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 14,
+      "text": "Redis EXISTS with one key returns 1 if the key exists and 0 if it does not.",
+      "kind": "syntax",
+      "version_key": "redis",
+      "source_hint": "Redis docs: commands/exists",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 15,
+      "text": "After cache-invalidation.sh ends, `docker compose exec -T redis redis-cli EXISTS product:3` prints 0 unless product 3 was read in between, because the script's final PATCH to 890000 deleted the key again.",
+      "kind": "behavior",
+      "version_key": "docker",
+      "source_hint": "examples/don-hang @ stage-2: scripts/backend/cache-invalidation.sh:33; ProductCache.cs:51-59",
+      "needs_verification": true,
+      "section": 7
+    },
+    {
+      "n": 16,
+      "text": "With a cache in front, keeping a TTL as an upper bound on staleness is worth it even when every update deletes the key, because deletes can be missed (Redis down, a late write, changes outside the API).",
+      "kind": "opinion",
+      "source_hint": "Microsoft Azure Architecture Center: Cache-Aside pattern, 'Lifetime of cached data' and 'Consistency'",
+      "needs_verification": false,
+      "section": 4
+    },
+    {
+      "n": 17,
+      "text": "ProductsController.UpdatePrice does not reference Redis or ProductCache; it only sees IProductRepository, which the DI registration resolves to a ProductCache around EfProductRepository.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: ProductsController.cs:59-70; ServiceCollectionExtensions.cs:40-47",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 18,
+      "text": "The StaffOnly policy (RequireRole(\"staff\")) lets the PATCH through only for a token whose roles include staff.",
+      "kind": "fact",
+      "version_key": "aspnetcore",
+      "source_hint": "examples/don-hang @ stage-2: DonHang.Api/Program.cs:64; lesson backend.l2.role-based-access",
+      "needs_verification": true,
+      "section": 1
+    },
+    {
+      "n": 19,
+      "text": "Only GET /api/v1/products/{id} (ProductsController.Get) reads through ProductCache and asks Redis first; the list GET /api/v1/products reads DonHangDbContext directly.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: DonHang.Api/Controllers/ProductsController.cs:23-57",
+      "needs_verification": true,
+      "section": 6
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "outline_items_missing": [],
+    "beyond_scope": []
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1217,
+    "notes": "Generated; fix-validation 1 (quiz q6 'when'). Round 1: DEL -> 'delete' everywhere (claim 2, UNLINK); claim 3 rephrased; misconception 1 scoped to one-product reads (claim 19); basket sentence; summary 1 scoped; race needs key missing; diagram arrows narrated; ProductCache wiring; psql/redis-cli/curl explained; Ttl comment located; quiz q1 c/d, q4 b, q5 b, q6 correct per review. Round 2: tech minors (misc. 3 symptom, summary 1 scope)."
+  },
+  "open_questions": [],
+  "repo_changes_needed": []
+}

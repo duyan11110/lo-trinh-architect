@@ -1,0 +1,181 @@
+{
+  "id": "backend.l2.cache-stampede",
+  "technical": {
+    "reviewed_at": "2026-09-28T17:05:00+07:00",
+    "reviewer": "claude-opus-5-5 (prompt 04, round 2)",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "not-needed",
+        "evidence": "Definitional: the lesson introduces the term cache-stampede (glossary.yaml term cache-stampede, introduced_in backend.l2.cache-stampede). The mechanism it names is shown by claims 5 and 15."
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "ProductCache.cs@stage-2 l.18: `private static readonly TimeSpan Ttl = TimeSpan.FromMinutes(5);` l.83: `StringSetAsync(key, json, Ttl)`. Lab run: right after cache-stampede.sh, `redis-cli TTL product:3` -> 281 (seconds, <= 300).",
+        "source": "examples/don-hang@stage-2 DonHang.Infrastructure/ProductCache.cs:18,83; lab redis-cli TTL"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "\"When the call returns, the count on the semaphore is decremented. When a thread requests entry and the count is zero, the thread blocks. As threads release the semaphore by calling the ... SemaphoreSlim.Release method, blocked threads can enter.\" and \"A lock with a count of 1 provides mutual exclusion ... Use SemaphoreSlim with a count of 1 instead\". Note same page: \"No guaranteed order ... governs which blocked thread enters the semaphore next.\"",
+        "source": "refs/dotnet-docs docs/standard/threading/semaphore-and-semaphoreslim.md:23; docs/standard/asynchronous-programming-patterns/async-coordination-primitives-advanced.md:36"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "\"SemaphoreSlim provides a WaitAsync method that lets you await entry without blocking a thread\"; \"When the count is zero, WaitAsync enqueues a TaskCompletionSource and returns its task. Release either dequeues a waiter and completes it, or increments the count\".",
+        "source": "refs/dotnet-docs docs/standard/asynchronous-programming-patterns/async-coordination-primitives-advanced.md:17,25"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Code inspection ProductCache.cs@stage-2: without l.31-39, a miss after l.28-29 goes to l.41 `inner.FindAsync(id)` and l.42 `SetAsync` (only if product is not null), so N concurrent misses give N queries and N writes. Each such miss costs one GET (l.67 StringGetAsync) and one SET (l.82 StringSetAsync) on Redis on top of the query; with the lock, request 1 does two GETs. Matches 'a look and a write' in s6. Not executed (needs a code change).",
+        "source": "examples/don-hang@stage-2 DonHang.Infrastructure/ProductCache.cs:25-49,63-88"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Follows from claim 5 and l.28-29: once SetAsync (l.42) has stored the key, a new request's first GetAsync hits and returns before the lock, so the window is expiry/delete until the first SET. The query is the same single-row read whatever the value size (lab log round 1: `SELECT p.id, p.name, p.price_vnd FROM products AS p WHERE p.id = @p LIMIT 1`).",
+        "source": "ProductCache.cs:25-49 @stage-2; api container log, lab run round 1"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Matches ProductCache.cs@stage-2 l.25-49: l.28-29 first GetAsync/return, l.33 GetOrAdd(key, _ => new SemaphoreSlim(1, 1)), l.34 await WaitAsync(), l.38-39 second GetAsync, l.41-43 inner.FindAsync + SetAsync if not null, l.45-48 finally Release(). inner: ServiceCollectionExtensions.cs l.43-45 `services.AddScoped<EfProductRepository>(); services.AddScoped<IProductRepository>(provider => new ProductCache(provider.GetRequiredService<EfProductRepository>(),`.",
+        "source": "examples/don-hang@stage-2 ProductCache.cs:25-49; DonHang.Infrastructure/ServiceCollectionExtensions.cs:43-47"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "ProductCache.cs l.20-21: `// One SemaphoreSlim per key, shared by every request in this api process.` `private static readonly ConcurrentDictionary<string, SemaphoreSlim> Locks = new();` ServiceCollectionExtensions.cs l.44: `services.AddScoped<IProductRepository>(provider => new ProductCache(`.",
+        "source": "examples/don-hang@stage-2 ProductCache.cs:20-21; DonHang.Infrastructure/ServiceCollectionExtensions.cs:43-47"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "\"This collection class is a thread-safe implementation. We recommend that you use it whenever multiple threads might be attempting to access the elements concurrently.\" GetOrAdd race: threadB's pair is added; \"threadA performs a 'Get' and returns the data that was previously added by threadB\" -> all callers get the one stored value, though \"it is not guaranteed that the data that is returned by GetOrAdd is the same data that was created by the thread's valueFactory\".",
+        "source": "refs/dotnet-docs docs/standard/collections/thread-safe/how-to-add-and-remove-items.md:14,33-43"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "\"In a try-finally statement, the finally block runs when control leaves the try block. Control might leave the try block as a result of normal execution, execution of a jump statement (that is, return, break, continue, or goto), or propagation of an exception out of the try block.\"",
+        "source": "refs/dotnet-docs docs/csharp/language-reference/statements/exception-handling-statements.md:147-151"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "scripts/up.sh@stage-2: `docker compose up -d --build --wait`. docker-compose.yml l.102-107: one service `api`, `container_name: donhang-api` (fixed name: one container); no other service runs the api image. deploy/k8s/api.yaml l.6-11: `kind: Deployment`, `name: api`, `replicas: 2`; header comment \"two replicas of the release 1.0.0 image\". Each replica is its own pod/container, so its own process and static Locks.",
+        "source": "examples/don-hang@stage-2 scripts/up.sh; docker-compose.yml:102-107; deploy/k8s/api.yaml:1-11"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Code inspection: Locks static per process (l.21); both replicas use one Redis (round 1: deploy/k8s/api-configmap.yaml l.12, redis.yaml one replica). Conditions: l.42 stores only non-null products; GetAsync l.70-74 turns RedisException/RedisTimeoutException into null, SetAsync l.84-87 swallows write errors -> each waiter's second look misses and queries in turn. Not run on a cluster.",
+        "source": "examples/don-hang@stage-2 ProductCache.cs:21,38-42,63-88; deploy/k8s/api.yaml, api-configmap.yaml:12"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "cache-stampede.sh@stage-2 l.3 \"Runs on the host\"; l.7 `docker compose exec -T redis redis-cli`; l.9 `docker compose logs --no-log-prefix api | grep -c 'FROM products'`; l.11 `redis DEL product:3 >/dev/null # as if its TTL had just run out`; l.17-19 20 URLs with `curl -sS --parallel --parallel-immediate --parallel-max 20`.",
+        "source": "examples/don-hang@stage-2 scripts/backend/cache-stampede.sh:1-22"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "EF Core docs: \"Microsoft.EntityFrameworkCore.Database.Command | Uses of a database command\"; sample \"info: ... RelationalEventId.CommandExecuted[20101] (Microsoft.EntityFrameworkCore.Database.Command)\". DonHang.Api/appsettings.json@stage-2: `\"Microsoft.EntityFrameworkCore\": \"Warning\"`. docker-compose.yml l.127 (service api): `Logging__LogLevel__Microsoft.EntityFrameworkCore.Database.Command: \"Information\"`. Round-1 minor applied in s5 prose.",
+        "source": "refs/efcore-docs entity-framework/core/logging-events-diagnostics/simple-logging.md:143,243; examples/don-hang@stage-2 appsettings.json; docker-compose.yml:124-127"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "outputs/stage-2/scripts/backend/cache-stampede.txt@stage-2 matches the lesson's output block. Re-run on the lab (HEAD 7a131bc = stage-2^{commit}): `20 200` / `queries PostgreSQL ran for them: 1`.",
+        "source": "examples/don-hang@stage-2 outputs/stage-2/scripts/backend/cache-stampede.txt; lab run 2026-09-28"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "ProductCache.cs@stage-2 l.54-58: `var product = await inner.UpdatePriceAsync(id, priceVnd); if (product is not null) await RemoveAsync($\"product:{id}\");` RemoveAsync l.95 `KeyDeleteAsync(key)`.",
+        "source": "examples/don-hang@stage-2 DonHang.Infrastructure/ProductCache.cs:51-58,91-101"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "Behavior, supported by code: expiry still happens (l.82 StringSetAsync(key, json, Ttl)) and a delete follows every successful price update (l.56-57 RemoveAsync); the number of queries in the missing window depends on arrivals (claims 5, 6), and nothing in FindAsync reads Ttl. Kind change opinion -> behavior applied.",
+        "source": "examples/don-hang@stage-2 ProductCache.cs:18,25-49,54-57,82"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "Script l.11 deletes product:3 on every run. Lab: two consecutive runs both printed `20 200` and `queries PostgreSQL ran for them: 1`. A parallel agent was using the lab; no noise observed in these two runs.",
+        "source": "examples/don-hang@stage-2 scripts/backend/cache-stampede.sh:11; lab runs 2026-09-28"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "quote": "both get the same `SemaphoreSlim` for `product:3`, created the first time.",
+        "text": "'created the first time' reads as 'created exactly once'. The docs say GetOrAdd's valueFactory runs outside the dictionary's lock, so two concurrent callers can each create a SemaphoreSlim; only one is stored and both get that one. The claim 9 ledger text is right; the prose adds a guarantee the docs do not give.",
+        "fix": "Replace 'created the first time.' with 'the one the dictionary stored first.'"
+      },
+      {
+        "severity": "minor",
+        "section": "quiz q6",
+        "kind": "quiz",
+        "quote": "two queries per expiry is exactly what the lesson says two copies give",
+        "text": "Explanation d (en and vi 'đúng là điều bài nói hai bản sẽ cho ra') overstates the lesson, which says 'up to two queries arrive' (s5) and 'can send two queries' (summary 5). Key a is still correct; only the explanation wording is too strong.",
+        "fix": "en d: replace 'exactly what the lesson says two copies give' with 'what the lesson says two copies can give, one per copy'. vi d: replace 'đúng là điều bài nói hai bản sẽ cho ra' with 'là điều bài nói hai bản có thể cho ra, mỗi bản một'."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-28T17:30:00+07:00",
+    "reviewer": "claude-opus-5-5 (prompt 05, round 2)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "gap",
+        "quote": "so for a product that exists, and while Redis answers, one query per key is the limit.",
+        "text": "Round 2 adds two conditions without saying why they matter. 'A product that exists' I can rebuild from the code (a null product is not stored, so the next second look misses too). 'While Redis answers' I can only guess: the lesson never says what GetAsync returns when Redis fails. I am not stuck on the main idea, but I stop here.",
+        "fix": "Add a few words after each condition: 'for a product that exists (a missing one is never stored, so each waiter queries in turn)' and 'while Redis answers (if it fails, every second look misses)'; or drop the conditions."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "term",
+        "quote": "because the lab's `docker-compose.yml` turns on its SQL command log for the `api` container",
+        "text": "'The lab' appears nowhere else; I guess it is the example system that scripts/up.sh starts, but the lesson just replaced 'Compose' with scripts/up.sh and now names docker-compose.yml here without linking the two. The sentence also chains three clauses (what product_queries counts, who writes the log, why the log is on); I read it twice.",
+        "fix": "Replace 'the lab's `docker-compose.yml`' with 'the setup `scripts/up.sh` starts', and split the sentence after 'in the `api` container's log'."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "style",
+        "quote": "On a miss, `inner` is the `EfProductRepository` that `ProductCache` holds, the object that sends the query.",
+        "text": "'On a miss, inner is…' made me wonder whether inner is a different object on a hit. It is the same object; only its use is limited to the miss path.",
+        "fix": "Reword to: '`inner` is the `EfProductRepository` that `ProductCache` holds, the object that sends the query; it is only called on a miss.'"
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "'the lab' / docker-compose.yml (section 5, minor)"
+      ],
+      "skipped_steps": [
+        "Section 5: why 'while Redis answers' limits the one-query result."
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

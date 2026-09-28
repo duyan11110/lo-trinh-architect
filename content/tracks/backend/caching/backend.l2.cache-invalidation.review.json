@@ -1,0 +1,168 @@
+{
+  "id": "backend.l2.cache-invalidation",
+  "technical": {
+    "reviewed_at": "2026-09-28T20:30:00+07:00",
+    "reviewer": "claude-opus-5-5 (review-technical, round 2)",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "not-needed",
+        "evidence": "Definition of the vocab term; matches content/glossary.yaml cache-invalidation short_en \"Removing a cached copy when the source data changes, so the next read gets the new value\". Definitional, no external source needed.",
+        "source": "content/glossary.yaml: cache-invalidation"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Round 1 lab run 2026-09-28: `redis-cli MONITOR` during the staff PATCH /api/v1/products/3 (StackExchange.Redis 3.3.1 -> redis 8.10.2) recorded `\"UNLINK\" \"product:3\"` from the api, no DEL. SE.Redis release notes 2.0.571: \"Fix: KeyDeleteAsync could, in some cases, always use DEL (instead of UNLINK)\". Redis UNLINK docs: \"very similar to DEL: it removes the specified keys\". Lesson section 3 now says only \"asks Redis to delete a key and its value\", which holds for both.",
+        "source": "lab run (redis-cli MONITOR, round 1); https://seredis.dev/ReleaseNotes (2.0.571); https://redis.io/docs/latest/commands/unlink/"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Claim now scoped to Đơn Hàng as suggested in round 1. `git grep` at stage-2: product:{id} is written only by ProductCache.SetAsync (StringSetAsync with Ttl) and removed only by ProductCache.RemoveAsync (KeyDeleteAsync). Eviction does not apply in the lab: round 1 `CONFIG GET maxmemory` -> 0 (\"Set maxmemory to zero to specify that you don't want to limit the memory\"). Nothing in the repo links Redis to PostgreSQL.",
+        "source": "examples/don-hang @ stage-2: DonHang.Infrastructure/ProductCache.cs:78-101; https://redis.io/docs/latest/develop/reference/eviction/"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "stage-2 ProductsController.cs:63-70: `[Authorize(Policy = \"StaffOnly\")] [HttpPatch(\"{id:int}\")] public async Task<ActionResult<ProductDto>> UpdatePrice(int id, UpdateProductPriceRequest request) { var product = await products.UpdatePriceAsync(id, request.PriceVnd); if (product is null) return NotFound(); return Ok(new ProductDto(...)); }`; route prefix `[Route(\"api/v1/products\")]` line 14.",
+        "source": "examples/don-hang @ stage-2: DonHang.Api/Controllers/ProductsController.cs:13-15,59-70"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "stage-2 ProductCache.cs:54-58: `var product = await inner.UpdatePriceAsync(id, priceVnd); if (product is not null) await RemoveAsync($\"product:{id}\"); return product;`",
+        "source": "examples/don-hang @ stage-2: DonHang.Infrastructure/ProductCache.cs:51-59"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "stage-2 EfProductRepository.cs:11-18: `var product = await db.Products.FindAsync(id); if (product is null) return null; product.PriceVnd = priceVnd; await db.SaveChangesAsync(); return product;`. ProductCache.cs:56 awaits it with no try/catch, so an exception from SaveChangesAsync propagates before line 57 (RemoveAsync) runs.",
+        "source": "examples/don-hang @ stage-2: DonHang.Infrastructure/EfProductRepository.cs:11-19; ProductCache.cs:54-59"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Code inspection, stage-2 ProductCache.cs:28-43: miss -> lock -> second GetAsync miss -> `inner.FindAsync(id)` (old row, save not yet done) -> `SetAsync(key, product)` which calls `StringSetAsync(key, json, Ttl)` (line 83), Ttl = 5 min (line 18). Comment lines 52-53 states the same.",
+        "source": "examples/don-hang @ stage-2: DonHang.Infrastructure/ProductCache.cs:18,25-49,78-89"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "ProductCache.cs @ stage-2: the old-price read must reach `inner.FindAsync` (line 41), i.e. both GetAsync calls (28, 38) missed, so the key had to be absent — the added condition is correct. UpdatePriceAsync (54-59) never takes `Locks` (only FindAsync, 33-48), so its RemoveAsync can run between that read's FindAsync and SetAsync. Redis SET docs: \"The key is created if it doesn't exist.\" SetAsync writes with Ttl (83), so the copy lives until the TTL ends.",
+        "source": "examples/don-hang @ stage-2: DonHang.Infrastructure/ProductCache.cs:25-59,78-89; https://redis.io/docs/latest/commands/set/"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "stage-2 ProductCache.cs:16-18: `// The longest a stale copy can live, even if a delete below is missed.` `private static readonly TimeSpan Ttl = TimeSpan.FromMinutes(5);`; line 83 `StringSetAsync(key, json, Ttl)` is the only write.",
+        "source": "examples/don-hang @ stage-2: DonHang.Infrastructure/ProductCache.cs:16-18,78-89"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Lab run 2026-09-28, redis container stopped, staff PATCH /api/v1/products/3 {priceVnd:890000} -> `-> 200`. api log: `\"Message\":\"Redis delete of product:3 failed; the old copy lives until its TTL ends\",\"Exception\":\"StackExchange.Redis.RedisConnectionException: No connection is active/available ...` then `PATCH /api/v1/products/3 responded 200`. Code ProductCache.cs:91-101 catches `RedisException or RedisTimeoutException`, no rethrow. Redis restarted, price unchanged.",
+        "source": "lab run: docker compose stop redis + curl PATCH + docker compose logs api; ProductCache.cs:91-101 @ stage-2"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "`git grep KeyDelete stage-2` -> only ProductCache.cs:95 (RemoveAsync), called only from UpdatePriceAsync (57). A psql UPDATE bypasses it, so product:{id} stays until the Ttl set in SetAsync. PostgreSQL 17 psql page: \"psql is a terminal-based front-end to PostgreSQL. It enables you to type in queries interactively, issue them to PostgreSQL, and see the query results.\" — matches \"PostgreSQL's command-line client\".",
+        "source": "examples/don-hang @ stage-2: git grep KeyDelete / RemoveAsync; https://www.postgresql.org/docs/17/app-psql.html"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "cache-invalidation.sh @ stage-2: 8 `base=http://localhost:8080/api/v1`, 9 `source scripts/lib/keycloak.sh`, 10 `redis() { docker compose exec -T redis redis-cli \"$@\"; }`, 12 set_price curl `-X PATCH ... Bearer $staff`, 17 `staff=$(keycloak_access_token lan.do@example.com)`, 20/30 `curl -sS -w '  -> %{http_code}\n'`; committed output shows `-> 200`. Redis docs: \"Overview of redis-cli, the Redis command line interface\".",
+        "source": "examples/don-hang @ stage-2: scripts/backend/cache-invalidation.sh:8-33; outputs/stage-2/scripts/backend/cache-invalidation.txt; https://redis.io/docs/latest/develop/tools/cli/"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "outputs/stage-2/scripts/backend/cache-invalidation.txt @ stage-2 is identical to the lesson's output block: 890000 -> 200, product:3 filled; PATCH `{\"id\":3,\"name\":\"Tai nghe\",\"priceVnd\":950000}  -> 200`; `is product:3 still in Redis? 0`; next GET 950000 -> 200 and product:3 holds 950000.",
+        "source": "examples/don-hang @ stage-2: outputs/stage-2/scripts/backend/cache-invalidation.txt"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "Redis EXISTS docs: \"Returns the number of keys that exist.\" Return: \"Integer reply: the number of keys that exist from those specified as arguments.\" Examples: `EXISTS key1` -> 1, `EXISTS nosuchkey` -> 0.",
+        "source": "https://redis.io/docs/latest/commands/exists/"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "Script line 33 `set_price 890000` is a staff PATCH through ProductCache.UpdatePriceAsync, which deletes product:3 after the save (ProductCache.cs:57). Lab run of the same PATCH to 890000 under MONITOR recorded `\"UNLINK\" \"product:3\"`, so EXISTS returns 0 until a later GET refills it.",
+        "source": "scripts/backend/cache-invalidation.sh:33 @ stage-2; lab run redis-cli MONITOR 2026-09-28"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "Presented as Đơn Hàng's design choice (section 4 \"That is why Đơn Hàng keeps the 5-minute TTL\"), not a universal rule. Matches ProductCache.cs:16-17 `// The longest a stale copy can live, even if a delete below is missed.` The three failure modes are each supported: Redis down (claim 10 lab run), late write with no lock (claim 8), change outside the API (claim 11).",
+        "source": "examples/don-hang @ stage-2: DonHang.Infrastructure/ProductCache.cs:16-18"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "ProductsController.cs depends only on `IProductRepository products` (line 15); comment 59-62 \"this code does not know there is a cache at all\". ServiceCollectionExtensions.cs @ stage-2: `services.AddScoped<IProductRepository>(provider => new ProductCache(provider.GetRequiredService<EfProductRepository>(), ...))`.",
+        "source": "examples/don-hang @ stage-2: ProductsController.cs:15,59-70; DonHang.Infrastructure/ServiceCollectionExtensions.cs:40-47"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "Program.cs:64 @ stage-2 `options.AddPolicy(\"StaffOnly\", policy => policy.RequireRole(\"staff\"));`. Lab run 2026-09-28: token for lan.do@example.com (realmRoles [\"staff\"]) got `-> 200` on PATCH /api/v1/products/3. Role-to-claim mapping was verified live in backend.l2.role-based-access review.",
+        "source": "examples/don-hang @ stage-2: DonHang.Api/Program.cs:64; keycloak/donhang-realm.json:128; lab run"
+      },
+      {
+        "n": 19,
+        "verdict": "verified",
+        "evidence": "ProductsController.cs @ stage-2: List (23-45) builds `IQueryable<Product> query = db.Products;` from DonHangDbContext; Get (51-57) calls `products.FindAsync(id)` on IProductRepository, which ServiceCollectionExtensions.cs:44-47 resolves to ProductCache; FindAsync calls GetAsync (Redis) first (ProductCache.cs:28). Controller comment 11-12: \"The list reads DonHangDbContext directly ... One product at a time goes through IProductRepository.\"",
+        "source": "examples/don-hang @ stage-2: DonHang.Api/Controllers/ProductsController.cs:10-57; ServiceCollectionExtensions.cs:40-47"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "accuracy",
+        "text": "Misconception 3 says the delete-first gap shows \"only when many customers\" read around the PATCH. One read landing between the delete and the save is enough (section 4 paragraph 3 and quiz q3 use a single customer); many readers only make it likely. \"only when many\" states a condition the code does not require.",
+        "quote": "You notice this only when many customers open product 3 around the moment of the `PATCH`",
+        "fix": "\"You notice this when a customer opens product 3 between the delete and the save, which is likely when many customers open it around the moment of the `PATCH`: they see the old price although the `PATCH` answered `200` with the new one.\""
+      },
+      {
+        "severity": "minor",
+        "section": 9,
+        "kind": "accuracy",
+        "text": "Summary line 1 says \"when a price changes, ProductCache deletes the cached copy\"; section 5 (and quiz q5) establish that a price changed with psql deletes nothing. The line was scoped to Đơn Hàng after round 1 (partly this reviewer's own suggested text) but still covers all price changes.",
+        "quote": "In Đơn Hàng, when a price changes, `ProductCache` deletes the cached copy right after the database save",
+        "fix": "\"In Đơn Hàng, when staff change a price through the API, `ProductCache` deletes the cached copy right after the database save, so the next read loads the new price.\""
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-28T21:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (review-junior, round 2)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": "quiz q1",
+        "kind": "quiz",
+        "text": "The explanation for d states a rule the lesson never gives (\"deletes a key whether or not it has a TTL\") and backs it with the script, but in the script product:3 was stored with a 5-minute TTL, so EXISTS printing 0 does not show a key without TTL can be deleted. I can still reject d, but the evidence confuses me.",
+        "quote": "Redis deletes a key whether or not it has a TTL; the script's `EXISTS product:3` printing `0` shows the delete works.",
+        "fix": "Drop the script evidence and point to section 3: \"`KeyDeleteAsync` deletes a key and its value; nothing in the lesson ties deleting to a TTL. The reason to keep the TTL is missed deletes, not the delete itself.\""
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

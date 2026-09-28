@@ -1,0 +1,200 @@
+{
+  "id": "backend.l2.cache-aside",
+  "technical": {
+    "reviewed_at": "2026-09-28T16:40:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "refs/dotnet-docs azure-caching.md:38: \"the cache-aside pattern. For an incoming request, you first query the cache (step #1) for a response. If found, the data is returned immediately. If the data doesn't exist in the cache (known as a cache miss), it's retrieved from a local database ... It's then written to the cache for future requests (step #3)\". maui/accessing-remote-data.md:287 same (\"If the item isn't in the cache, it's read from the data store and added to the cache\").",
+        "source": "refs/dotnet-docs/docs/architecture/cloud-native/azure-caching.md:38; refs/dotnet-docs/docs/architecture/maui/accessing-remote-data.md:287"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "stage-2 ProductsController.cs:52-56: `var product = await products.FindAsync(id); if (product is null) return NotFound(); return Ok(new ProductDto(...))`; List (24-44) uses `IQueryable<Product> query = db.Products;` with the injected DonHangDbContext. UpdatePrice (65-70) also goes through `products`.",
+        "source": "examples/don-hang @ stage-2: DonHang.Api/Controllers/ProductsController.cs:15-70"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "stage-2 ServiceCollectionExtensions.cs:43-47: `services.AddScoped<EfProductRepository>(); services.AddScoped<IProductRepository>(provider => new ProductCache(provider.GetRequiredService<EfProductRepository>(), provider.GetRequiredService<IConnectionMultiplexer>(), provider.GetRequiredService<ILogger<ProductCache>>()));`",
+        "source": "examples/don-hang @ stage-2: DonHang.Infrastructure/ServiceCollectionExtensions.cs:40-47"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "stage-2 ProductCache.cs:27-43: key `$\"product:{id}\"`, `GetAsync(key)`, `if (cached is not null) return cached;`, then `Locks.GetOrAdd` + `WaitAsync`, second `GetAsync(key)`, `inner.FindAsync(id)`, `if (product is not null) await SetAsync(key, product);`. Note: the miss path therefore sends GET twice (see issue on 'straight through').",
+        "source": "examples/don-hang @ stage-2: DonHang.Infrastructure/ProductCache.cs:23-49"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "ProductCache.cs:69 `JsonSerializer.Deserialize<Product>(json.ToString(), JsonSerializerOptions.Web)`. refs configure-options.md:43/46: Web defaults set `PropertyNamingPolicy = JsonNamingPolicy.CamelCase`; `JsonSerializerOptions.Web` in .NET 9+. Live run of cache-aside.sh (2026-09-28): `product:3 in Redis now: {\"id\":3,\"name\":\"Tai nghe\",\"priceVnd\":890000}`; hit request counted 0 queries.",
+        "source": "refs/dotnet-docs/docs/standard/serialization/system-text-json/configure-options.md:43-46; lab run"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "ProductCache.cs:18 `Ttl = TimeSpan.FromMinutes(5)`, :83 `StringSetAsync(key, json, Ttl)`. Live run: `seconds left on product:3: 295` right after the miss; after DEL + one GET, `redis-cli TTL product:3` → 298. Consistent with a 300 s expiry.",
+        "source": "ProductCache.cs:18,78-89 @ stage-2; lab run 2026-09-28"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "EfProductRepository.cs:9 `=> await db.Products.FindAsync(id);`. refs efcore entity-entries.md:315: \"Find first checks if the entity is already tracked, and if so returns the entity immediately. A database query is only made if the entity is not tracked locally.\" Live run: miss counted `queries PostgreSQL ran for it: 1`.",
+        "source": "refs/efcore-docs/entity-framework/core/change-tracking/entity-entries.md:315; EfProductRepository.cs:9 @ stage-2"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "ProductCache.cs:71-75 `catch (Exception ex) when (ex is RedisException or RedisTimeoutException) { logger.LogWarning(...); return null; }`; :85-88 same filter in SetAsync, logs and returns.",
+        "source": "examples/don-hang @ stage-2: DonHang.Infrastructure/ProductCache.cs:61-89"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Live run with redis stopped, api log: `\"Message\":\"Redis read of product:3 failed; reading PostgreSQL instead\",\"Exception\":\"StackExchange.Redis.RedisConnectionException: No connection is active/available to service this operation: GET product:3; UnableToConnect ...` and the script printed `-> 200`, `queries PostgreSQL ran for it: 1`.",
+        "source": "lab run 2026-09-28: scripts/backend/cache-aside.sh + docker compose logs api"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Basic Usage page (docs root redirects 301 to seredis.dev): \"Because the ConnectionMultiplexer does a lot, it is designed to be shared and reused between callers. You should not create a ConnectionMultiplexer per operation. It is fully thread-safe and ready for this usage.\"",
+        "source": "https://stackexchange.github.io/StackExchange.Redis/Basics (→ https://seredis.dev/Basics)"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "stage-2 ServiceCollectionExtensions.cs:33-38: `services.AddSingleton<IConnectionMultiplexer>(_ => { var options = ConfigurationOptions.Parse(redisConfiguration); options.BacklogPolicy = BacklogPolicy.FailFast; return ConnectionMultiplexer.Connect(options); });`. The api image built from this tag is running and answering (lab run 200s).",
+        "source": "examples/don-hang @ stage-2: DonHang.Infrastructure/ServiceCollectionExtensions.cs:28-38"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Configuration page: abortConnect default `true`, \"If true, Connect will not create a connection while no servers are available\"; \"StackExchange.Redis automatically tries to reconnect in the background when the connection is lost ... keeps retrying until the connection has been restored.\" docker-compose.yml @ stage-2: `ConnectionStrings__Redis: \"redis:6379,abortConnect=false\"`. Lab: after redis stop/start the api refilled product:3 with no restart. Round 2 text now says Connect returns a multiplexer, not that the API starts.",
+        "source": "https://seredis.dev/Configuration; docker-compose.yml:112 @ stage-2; lab run 2026-09-28"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "StackExchange.Redis 3.3.1 package API docs (StackExchange.Redis.xml): BacklogPolicy.FailFast: \"failing fast and not attempting to queue and retry when a connection is available again.\"; QueueWhileDisconnected: \"false means to fail ASAP and queue nothing.\" Configuration page: BacklogPolicy \"Determines how commands will be queued (or not) during a disconnect\". Lab: request with redis stopped returned 200 within the script's 1 s sleep window.",
+        "source": "~/.nuget/packages/stackexchange.redis/3.3.1/lib/netstandard2.0/StackExchange.Redis.xml:3532-3550; https://seredis.dev/Configuration"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "outputs/stage-2/scripts/backend/cache-aside.txt matches the lesson's output block; live re-run 2026-09-28 printed the same three answers with counts 1, 0, 1 and `seconds left on product:3: 295`.",
+        "source": "examples/don-hang @ stage-2: outputs/stage-2/scripts/backend/cache-aside.txt; lab run"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "cache-aside.sh:3 \"Runs on the host\"; :10 `docker compose logs --no-log-prefix api | grep -c 'FROM products'`; :14-17 before/after difference; :33-36 `docker compose stop redis` ... `docker compose start redis`, `docker compose up --wait redis`.",
+        "source": "examples/don-hang @ stage-2: scripts/backend/cache-aside.sh:1-36"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "refs efcore simple-logging.md:143 \"Microsoft.EntityFrameworkCore.Database.Command | Uses of a database command\"; :243 sample `info: ... RelationalEventId.CommandExecuted[20101] (Microsoft.EntityFrameworkCore.Database.Command)`. docker-compose.yml @ stage-2 api env: `Logging__LogLevel__Microsoft.EntityFrameworkCore.Database.Command: \"Information\"`.",
+        "source": "refs/efcore-docs/entity-framework/core/logging-events-diagnostics/simple-logging.md:143,243; docker-compose.yml @ stage-2"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "Lab run: `docker compose logs --since <start> api | grep \"Redis read of\"` → 2 lines, each `\"LogLevel\":\"Warning\",\"Category\":\"DonHang.Infrastructure.ProductCache\",\"Message\":\"Redis read of product:3 failed; reading PostgreSQL instead\"` (JSON console format), plus 1 `Redis write of product:3 failed` line. Two read lines because FindAsync calls GetAsync twice on a miss.",
+        "source": "lab run 2026-09-28; ProductCache.cs:28,38,73 @ stage-2"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "refs docker_compose_logs.yaml: `command: docker compose logs`, `short: View output from containers`, `long: Displays log output from services`, `usage: docker compose logs [OPTIONS] [SERVICE...]`. Ran `docker compose logs api` from examples/don-hang (folder with docker-compose.yml): output returned.",
+        "source": "refs/docker-docs/_vendor/github.com/docker/compose/v5/docs/reference/docker_compose_logs.yaml"
+      },
+      {
+        "n": 19,
+        "verdict": "verified",
+        "evidence": "ProductCache.cs:28-42: on a miss FindAsync calls GetAsync (GET), takes the per-key lock, GetAsync again (second GET), then inner.FindAsync (query), then SetAsync (SET). Round 2 text: \"Redis `GET`s first, then the query, then a Redis write\" matches. \"Costs more\" follows from the extra round trips on top of the same query (not timed).",
+        "source": "examples/don-hang @ stage-2: DonHang.Infrastructure/ProductCache.cs:25-49"
+      },
+      {
+        "n": 20,
+        "verdict": "verified",
+        "evidence": "refs maui/accessing-remote-data.md:290 TIP: \"Cache data that's read frequently and changes infrequently.\" azure-caching.md:38: \"Care must be taken to periodically evict cached data so that the system remains timely and consistent.\" Lesson states it as a condition, not a rule.",
+        "source": "refs/dotnet-docs/docs/architecture/maui/accessing-remote-data.md:290; refs/dotnet-docs/docs/architecture/cloud-native/azure-caching.md:38"
+      },
+      {
+        "n": 21,
+        "verdict": "verified",
+        "evidence": "ProductCache.cs:42 `if (product is not null) await SetAsync(key, product);`; ProductsController.cs:55 `if (product is null) return NotFound();`. Lab 2026-09-28: `curl .../api/v1/products/99999` -> 404, then `redis-cli EXISTS product:99999` -> 0.",
+        "source": "examples/don-hang @ stage-2: ProductCache.cs:41-43; ProductsController.cs:54-55; lab run"
+      },
+      {
+        "n": 22,
+        "verdict": "verified",
+        "evidence": "Directory.Packages.props @ stage-2: `<PackageVersion Include=\"StackExchange.Redis\" Version=\"3.3.1\" />`; DonHang.Infrastructure.csproj: `<PackageReference Include=\"StackExchange.Redis\" />`; ProductCache.cs:5 `using StackExchange.Redis;`. Runtime log: `v: 3.3.1.2706`.",
+        "source": "examples/don-hang @ stage-2: Directory.Packages.props; DonHang.Infrastructure/DonHang.Infrastructure.csproj"
+      },
+      {
+        "n": 23,
+        "verdict": "verified",
+        "evidence": "ProductCache.cs:18 `Ttl = TimeSpan.FromMinutes(5)`, :28-29 a non-null GetAsync returns at once, :54-58 UpdatePriceAsync calls RemoveAsync (KeyDeleteAsync) on product:{id}; :71-75 a Redis error makes GetAsync return null (miss). Lab redis: `CONFIG GET maxmemory` -> 0, `maxmemory-policy` -> noeviction, so no eviction removes the key early. Lesson wording omits the Redis-error case but the next paragraph states it.",
+        "source": "examples/don-hang @ stage-2: DonHang.Infrastructure/ProductCache.cs:18,25-29,54-75; lab redis-cli CONFIG GET 2026-09-28"
+      },
+      {
+        "n": 24,
+        "verdict": "verified",
+        "evidence": "cache-aside.sh:8 `redis() { docker compose exec -T redis redis-cli \"$@\"; }`; :12-18 get_product_3: `curl -sS -w '  -> %{http_code}\n' http://localhost:8080/api/v1/products/3` (body then status), `sleep 1`, then `echo \"queries PostgreSQL ran for it: $(( $(product_queries) - before ))\"`; :10 product_queries greps 'FROM products' in `docker compose logs --no-log-prefix api`.",
+        "source": "examples/don-hang @ stage-2: scripts/backend/cache-aside.sh:8-18"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "accuracy",
+        "text": "\"You notice this in the script's first request: before its one query, ProductCache has already asked Redis and come back empty\" - the script output shows the query count (1) and the key written afterwards, but nothing in it shows the Redis GETs; that part is inferred from the code, not observed. The clause \"and after it writes the copy, where with no cache the query would be all\" is also ungrammatical.",
+        "quote": "You notice this in the script's first request: before its one query, `ProductCache` has already asked Redis and come back empty, and after it writes the copy, where with no cache the query would be all.",
+        "fix": "Write: \"You notice this in the script's first request: it costs the same one query a request without a cache would, and `product:3 in Redis now` shows the extra write; the two Redis `GET`s before it are in `FindAsync`.\""
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-28T17:30:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "gap",
+        "text": "'the rest of the Redis setting' implies a setting I already saw, but no Redis setting or connection string is shown before it. `Connect` is also a call I never see: the registration is written as `(...)`.",
+        "quote": "Its comment explains the rest of the Redis setting: `abortConnect=false` lets `Connect` return a multiplexer even while Redis is down",
+        "fix": "Replace 'the rest of the Redis setting' with 'two Redis options', and write '`ConnectionMultiplexer.Connect`, the call inside that `(...)`,' instead of '`Connect`'."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz q6",
+        "kind": "quiz",
+        "text": "In option c, 'when no option is given' made me pause: in a quiz 'option' first reads as an answer option. The context calls them `limit`, `offset` and `maxPriceVnd`, and the lesson calls them query parameters.",
+        "quote": "Cache only the first page with no filter, the one shown when no option is given",
+        "fix": "Write 'the one returned when no query parameter is given' (vi already says 'không truyền tham số nào')."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [
+        "Which 'Redis setting' the ServiceCollectionExtensions comment completes, and where `Connect` is called (section 5)"
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}
