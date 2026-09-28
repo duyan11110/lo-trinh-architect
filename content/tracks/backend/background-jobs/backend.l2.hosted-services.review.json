@@ -1,0 +1,195 @@
+{
+  "id": "backend.l2.hosted-services",
+  "technical": {
+    "reviewed_at": "2026-09-28T21:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "\"In ASP.NET Core, background tasks can be implemented as hosted services. A hosted service is a class with background task logic that implements the IHostedService interface.\" and \"The hosted service is activated once at app startup and gracefully shut down at app shutdown.\"",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/host/hosted-services.md (moniker >= aspnetcore-8.0), lines 16, 76"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "\"BackgroundService is a base class for implementing a long running IHostedService.\" and (moniker >= aspnetcore-10.0) \"ExecuteAsync(CancellationToken) is called on the thread pool to run the background service. The implementation returns a Task that represents the entire lifetime of the background service.\"",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/host/hosted-services.md, 'BackgroundService base class', lines 80-86"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "\"The cancellation token is triggered when IHostedService.StopAsync is called. Your implementation of ExecuteAsync should finish promptly when the cancellation token is fired in order to gracefully shut down the service.\" StopAsync \"is triggered when the host is performing a graceful shutdown.\"",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/host/hosted-services.md, lines 60, 98"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "PeriodicTimer: \"Provides a periodic timer that enables waiting asynchronously for timer ticks.\" (API page, net-10.0). Awaiting an incomplete task suspends \"without blocking a thread\" (async-coordination-primitives.md:23). Round 2: claim text and lesson sentence now say only 'waits asynchronously: no thread is blocked while it waits'; the unsupported 'so requests lose nothing' is gone.",
+        "source": "learn.microsoft.com/dotnet/api/system.threading.periodictimer?view=net-10.0 (WebFetch, round 1); refs/dotnet-docs/docs/standard/asynchronous-programming-patterns/async-coordination-primitives.md:23"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "\"The IServiceScopeFactory is always registered as a singleton\" and \"Scoped services are disposed by the container that created them.\"",
+        "source": "refs/dotnet-docs/docs/core/extensions/dependency-injection/overview.md, lines 160, 169"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "git show stage-2:DonHang.Api/Program.cs: line 27 `builder.Services.AddScoped<OrderService>();`, lines 29-31 lesson comment, line 32 `builder.Services.AddHostedService<NotificationSender>();` (no service registration in between). NotificationSender.cs:10-11 `public sealed class NotificationSender(IServiceScopeFactory scopeFactory, ILogger<NotificationSender> logger) : BackgroundService`.",
+        "source": "examples/don-hang @ stage-2: DonHang.Api/Program.cs, DonHang.Api/Jobs/NotificationSender.cs"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "\"When an application starts running that hosts an implementation of the IHostedService, the corresponding implementation (in this case the BackgroundService or \\\"worker\\\") start running in the same process.\" Live: `docker compose logs api | grep NotificationSender` printed `donhang-api  | {...\"Category\":\"DonHang.Api.Jobs.NotificationSender\",\"Message\":\"Sent notification 31 for order 113\"...}`.",
+        "source": "refs/dotnet-docs/docs/core/extensions/caching.md:181; live lab stage-2, 2026-09-28"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "NotificationSender.cs @ stage-2 line 13 `private static readonly TimeSpan Tick = TimeSpan.FromSeconds(2);`, line 27 `using var timer = new PeriodicTimer(Tick);`, line 28 `while (await timer.WaitForNextTickAsync(stoppingToken))`, line 32 one `SendDueAsync` per iteration.",
+        "source": "examples/don-hang @ stage-2: DonHang.Api/Jobs/NotificationSender.cs"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "\"These hosted services are registered with DI as singletons, through the AddHostedService extension method.\" Plus \"The hosted service is activated once at app startup and gracefully shut down at app shutdown.\"",
+        "source": "refs/dotnet-docs/docs/core/extensions/caching.md:181; refs/aspnetcore-docs/aspnetcore/fundamentals/host/hosted-services.md:76"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "\"DbContext is Not thread-safe. Don't share contexts between threads.\" \"The AddDbContext extension method registers DbContext types with a scoped lifetime by default.\" Repo: ServiceCollectionExtensions.cs:17 `services.AddDbContext<DonHangDbContext>(...)`.",
+        "source": "refs/efcore-docs/entity-framework/core/dbcontext-configuration/index.md, lines 38, 419"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "NotificationSender.cs:49-51 `using var scope = scopeFactory.CreateScope();` then GetRequiredService<NotificationQueue>() and <IEmailSender>(); NotificationQueue.cs:8 `public sealed class NotificationQueue(DonHangDbContext db)`; ServiceCollectionExtensions.cs:25 `services.AddScoped<NotificationQueue>();`.",
+        "source": "examples/don-hang @ stage-2"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "\"Starting in .NET 6, when an exception is thrown from a BackgroundService.ExecuteAsync override, the exception is logged to the current ILogger. By default, the host is stopped when an unhandled exception is encountered.\" The .NET 11 change page confirms StopHost is still \"the default\" for BackgroundServiceExceptionBehavior.",
+        "source": "refs/dotnet-docs/docs/core/compatibility/core-libraries/6.0/hosting-exception-handling.md; .../extensions/11/ihost-runasync-stopasync-throw-backgroundservice-failure.md"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "NotificationSender.cs:30-37: `try { await SendDueAsync(stoppingToken); } catch (Exception ex) when (!stoppingToken.IsCancellationRequested) { logger.LogError(ex, \"Sending notifications failed; trying again in {TickSeconds} s\", Tick.TotalSeconds); }` inside the while loop.",
+        "source": "examples/don-hang @ stage-2: DonHang.Api/Jobs/NotificationSender.cs"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "WaitForNextTickAsync: \"OperationCanceledException: The cancellation token was canceled.\" OperationCanceledException: \"Listeners can optionally throw this exception to ... notify others that it has responded to a cancellation request.\" Claim now says the calls 'can stop early'. Live (net10.0 scratch app, same loop shape, Task.Delay(5000, t) in the round, StopApplication after 1.5 s): 'Application is shutting down...' then Run returned; the round's cancellation escaped the `when` filter.",
+        "source": "learn.microsoft.com/dotnet/api/system.threading.periodictimer.waitfornexttickasync?view=net-10.0 (WebFetch, round 1); refs/dotnet-docs/docs/standard/threading/cancellation-in-managed-threads.md:56; live run 2026-09-28"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "\"ValidateScopes and ValidateOnBuild are enabled by default in the Development environment\" \"When ValidateOnBuild is true, the DI container validates the service configuration at build time. If the service configuration is invalid, the build fails at app startup\". Checks include: \"Scoped services aren't injected into singletons.\" Lab api runs ASPNETCORE_ENVIRONMENT=Development (docker-compose.yml:117).",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/minimal-apis.md:332-334; refs/dotnet-docs/docs/core/extensions/dependency-injection/overview.md:162-165"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "docker-compose.yml @ stage-2 line 117 `ASPNETCORE_ENVIRONMENT: \"Development\"`, line 132 `Logging__Console__FormatterName: \"json\"`; live logs show objects with \"Category\" and \"Message\" fields.",
+        "source": "examples/don-hang @ stage-2: docker-compose.yml; live docker compose logs api"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "Ran scripts/backend/order-email.sh on the running lab: printed `status after the sender's next round: sent`. Then `docker compose logs api | grep NotificationSender`: `donhang-api  | {\"EventId\":0,\"LogLevel\":\"Information\",\"Category\":\"DonHang.Api.Jobs.NotificationSender\",\"Message\":\"Sent notification 30 for order 1\",...}` (and notification 31 for order 113).",
+        "source": "live lab stage-2, 2026-09-28"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "docker compose logs: \"Displays log output from services\"; option `--no-log-prefix` \"Don't print prefix in logs\" (prefix is on by default). Live output: each line starts `donhang-api  |`, the container_name set in docker-compose.yml:107.",
+        "source": "refs/docker-docs/_vendor/github.com/docker/compose/v5/docs/reference/compose_logs.md; live run"
+      },
+      {
+        "n": 19,
+        "verdict": "verified",
+        "evidence": "docker-compose.yml @ stage-2: api service (lines 102-155) has no `restart:` key (grep 'restart' in the file: no match). Compose: \"`no`: The default restart policy. It does not restart the container under any circumstances.\" .NET 6+: \"the exception is logged to the current ILogger. By default, the host is stopped when an unhandled exception is encountered.\"",
+        "source": "examples/don-hang @ stage-2: docker-compose.yml; refs/docker-docs/content/reference/compose-file/services.md:1900; refs/dotnet-docs/docs/core/compatibility/core-libraries/6.0/hosting-exception-handling.md"
+      },
+      {
+        "n": 20,
+        "verdict": "verified",
+        "evidence": "docker-compose.yml @ stage-2 line 117 `ASPNETCORE_ENVIRONMENT: \"Development\"` (api service). \"ValidateScopes and ValidateOnBuild are enabled by default in the Development environment but disabled in other environments.\" \"When ValidateOnBuild is true, the DI container validates the service configuration at build time. If the service configuration is invalid, the build fails at app startup\".",
+        "source": "examples/don-hang @ stage-2: docker-compose.yml; refs/aspnetcore-docs/aspnetcore/fundamentals/minimal-apis.md:332-334"
+      },
+      {
+        "n": 21,
+        "verdict": "verified",
+        "evidence": "No docs sentence found (refs hosted-services.md only notes a try-catch trapping OperationCanceledException). Live, round 3: net10.0 Web app, AddHostedService with the NotificationSender loop shape (PeriodicTimer 2 s, try/catch when (!t.IsCancellationRequested), Task.Delay(5000, t) in the round), StopApplication at 3.5 s mid-round. Output: 'round start', 'Application is shutting down...', then 'RUN RETURNED NORMALLY'; no error logged. Opened for round 3: versions.yaml, en.md s.5, meta claims 14/21.",
+        "source": "live run 2026-09-28 (scratch app, net10.0, Production env); round 2 run also covered Development"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-28T22:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation, round 2: changed parts only)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 3,
+        "kind": "style",
+        "text": "The new clause defining 'host' sits inside the definition, so the sentence has two subjects in a row ('a class the ASP.NET Core host, the object that ..., starts together with the app'). I had to read it twice to find the verb 'starts'. The meaning itself is now clear.",
+        "quote": "a class the ASP.NET Core host, the object that `app.Run()` starts and that also runs Kestrel, starts together with the app and stops when the app shuts down",
+        "fix": "Split into two sentences: 'a class that the ASP.NET Core host starts together with the app and stops when the app shuts down, used to run background work. The host is the object that `app.Run()` starts; it also runs Kestrel.'"
+      },
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "term",
+        "text": "'the container' here means the DI container, but the bullet just above says 'There is no other container' and means a Docker container, and the Try it uses the `api` container. For a moment I read it as Docker checking lifetimes.",
+        "quote": "where the container checks lifetimes when the app is built",
+        "fix": "Write 'the DI container' instead of 'the container' in this sentence."
+      },
+      {
+        "severity": "minor",
+        "section": "backend.l2.hosted-services.q3",
+        "kind": "quiz",
+        "text": "Section 6 says that in the lab (Development) this exact change makes the app refuse to start. The key a says every round would reuse the start-up object, which never happens in the lab. I still pick a by elimination, but I wonder which of the two the question means, and the explanation does not mention the start-up check.",
+        "quote": "Every round would reuse the object created when the app started",
+        "fix": "Add one sentence to the correct explanation: in `Development`, as in the lab, the DI container catches this at start-up and the app refuses to start; elsewhere every round would reuse the one object."
+      },
+      {
+        "severity": "minor",
+        "section": "backend.l2.hosted-services.q1",
+        "kind": "quiz",
+        "text": "Three options start 'It goes on', only a says 'It stops too', so the key can be picked as the odd one out without understanding. The new c and d are plausible, which helps.",
+        "quote": "It stops too, because `NotificationSender` runs inside the `api` process",
+        "fix": "Make one distractor also say it stops, for a wrong reason, e.g. 'It stops too, because the `PeriodicTimer` needs a request to tick'."
+      },
+      {
+        "severity": "minor",
+        "section": "backend.l2.hosted-services.q6",
+        "kind": "quiz",
+        "text": "The key a repeats the team's two goals from the context almost word for word ('shutdown to be quick', 'only real failures'), so it can be picked by matching the words. The explanations of b-d do make me think, so this is small.",
+        "quote": "Keep the filter: shutdown stays quick and the error log holds only real failures",
+        "fix": "Reword a through the mechanism, e.g. 'Keep the filter: the cancellation at shutdown ends the loop without an `LogError`'."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

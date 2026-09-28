@@ -1,0 +1,127 @@
+{
+  "id": "backend.l2.at-least-once-jobs",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-09-28T19:55:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "SendOneAsync awaits email.SendAsync first, then sets Status = \"sent\" and SentAt in memory; if SendAsync throws while shutdown is not requested, the catch calls RecordFailure: pending for a later retry, or failed on the fifth attempt.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: DonHang.Api/Jobs/NotificationSender.cs:61-101",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 2,
+      "text": "SendDueAsync claims up to BatchSize (10) due rows, calls SendOneAsync for each in a foreach, and only then calls queue.CompleteAsync, which saves the round's changes (SaveChangesAsync) and commits.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: NotificationSender.cs:14, 47-59; DonHang.Infrastructure/NotificationQueue.cs:33-37",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 3,
+      "text": "The round runs inside one database transaction: ClaimDueAsync calls BeginTransactionAsync and CompleteAsync calls CommitTransactionAsync.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: DonHang.Infrastructure/NotificationQueue.cs:16-37",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 4,
+      "text": "Committing makes a transaction's changes permanent, rolling back discards them; if the api process dies before the commit, PostgreSQL rolls back the open transaction, so the round's sent is not kept and rows stay pending.",
+      "kind": "behavior",
+      "version_key": "postgresql",
+      "source_hint": "PostgreSQL 17 docs: Transactions (tutorial 3.4); a session ending without COMMIT aborts its transaction",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 5,
+      "text": "After a restart, NotificationSender takes rows still pending (and due) again and sends their emails again, so an email sent before the crash is delivered a second time.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: NotificationQueue.cs:20-27 (status = 'pending' AND next_attempt_at <= now); NotificationSender.cs:25-39",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 6,
+      "text": "A send can fail (throw) after the mail server already accepted the message, e.g. when the reply does not arrive before the client stops waiting; the client cannot tell this from a message that never arrived.",
+      "kind": "behavior",
+      "source_hint": "SMTP client timeouts (MailKit SmtpClient.Timeout); same reasoning as backend.l2.idempotent-endpoints for HTTP",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 7,
+      "text": "Mailpit accepts every email the api sends and shows what arrived; it delivers none to real mailboxes.",
+      "kind": "fact",
+      "version_key": "mailpit",
+      "source_hint": "examples/don-hang @ stage-2: docker-compose.yml:174-186 (mailpit service comment); Mailpit docs",
+      "needs_verification": true,
+      "section": 2
+    },
+    {
+      "n": 8,
+      "text": "With `sent` saved before sending, a crash between the save and the send leaves a sent row that the sender never takes again (it only takes pending rows), so that email is lost: at-most-once.",
+      "kind": "fact",
+      "source_hint": "Reasoning on examples/don-hang @ stage-2: NotificationQueue.cs:20-27",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 9,
+      "text": "A database transaction covers only the changes made in that database; an external SMTP server cannot take part in it, so no order of send and status update makes them succeed or fail together.",
+      "kind": "behavior",
+      "version_key": "postgresql",
+      "source_hint": "PostgreSQL 17 docs: Transactions (atomicity is per database session)",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 10,
+      "text": "Idempotency-Key lets the server recognise a retried POST and return the first order instead of creating a second one.",
+      "kind": "fact",
+      "source_hint": "Prerequisite backend.l2.idempotent-endpoints (approved); examples/don-hang @ stage-2 OrderService.PlaceOrderAsync",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 11,
+      "text": "For order emails a rare duplicate is an acceptable price (a small annoyance) compared with a lost email; when a repeat does real harm, such as a payment, the job must be idempotent, e.g. with a key the receiver checks.",
+      "kind": "opinion",
+      "source_hint": "Design choice recorded in DECISIONS.md (background-jobs outline, point 6)",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 12,
+      "text": "If SendAsync throws during shutdown (stoppingToken cancelled), the catch filters do not match, the exception leaves SendDueAsync before CompleteAsync, and nothing of that round is saved, so the row stays pending.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: NotificationSender.cs:25-39, 47-59, 77; NotificationQueue.cs:33-37",
+      "needs_verification": true,
+      "section": 5
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "outline_items_missing": [],
+    "beyond_scope": []
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1269,
+    "notes": "Generated; fix-validation 1 (L18 situation paragraph). Round 1: tech pass (claim 1 per suggested_text, minors on sec 5 and summary 3 applied); junior: Mailpit glossed, tick/round in sec 1, step (2) in sec 4, ClaimDueAsync + one transaction + commit/rollback moved to sec 5, shutdown path (claim 12), Try it answer wording, q2 option a shortened. Round 2: both pass; junior minor (clause order in sec 5) applied."
+  },
+  "open_questions": [],
+  "repo_changes_needed": []
+}

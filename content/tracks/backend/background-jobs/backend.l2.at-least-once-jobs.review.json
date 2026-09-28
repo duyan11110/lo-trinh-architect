@@ -1,0 +1,109 @@
+{
+  "id": "backend.l2.at-least-once-jobs",
+  "technical": {
+    "reviewed_at": "2026-09-28T20:45:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "NotificationSender.cs @ stage-2 L70-74: `await email.SendAsync(...)` then `notification.Status = \"sent\"; notification.SentAt = DateTimeOffset.UtcNow;` (in memory). L77-79 `catch (Exception ex) when (!stoppingToken.IsCancellationRequested) { RecordFailure(notification, ex); }`. L88-98: `Attempts++`; `if (Attempts >= MaxAttempts) Status = \"failed\"` (MaxAttempts = 5, L19), else NextAttemptAt set, row stays pending. Lesson sec 5 wording matches.",
+        "source": "examples/don-hang @ stage-2: DonHang.Api/Jobs/NotificationSender.cs:19, 65-101"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "NotificationSender.cs @ stage-2 L14 `private const int BatchSize = 10;`; L53-58 `var due = await queue.ClaimDueAsync(BatchSize, stoppingToken); foreach (var notification in due) { await SendOneAsync(...); } await queue.CompleteAsync(stoppingToken);`. NotificationQueue.cs L33-37 CompleteAsync: `await db.SaveChangesAsync(cancellationToken); await db.Database.CommitTransactionAsync(cancellationToken);`. ClaimDueAsync SQL has `LIMIT {batchSize}`.",
+        "source": "examples/don-hang @ stage-2: DonHang.Api/Jobs/NotificationSender.cs:14, 47-59; DonHang.Infrastructure/NotificationQueue.cs:16-37"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "NotificationQueue.cs @ stage-2: ClaimDueAsync begins with `await db.Database.BeginTransactionAsync(cancellationToken);` before the FOR UPDATE SKIP LOCKED query; CompleteAsync ends with `await db.Database.CommitTransactionAsync(cancellationToken);`. Both run on the same scoped DonHangDbContext created per round in SendDueAsync.",
+        "source": "examples/don-hang @ stage-2: DonHang.Infrastructure/NotificationQueue.cs:16-37; DonHang.Api/Jobs/NotificationSender.cs:49-50"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "PG17 COMMIT: \"All changes made by the transaction become visible to others and are guaranteed to be durable if a crash occurs.\" ROLLBACK: \"rolls back the current transaction and causes all the updates made by the transaction to be discarded.\" 53.2.9 Termination: \"For either normal or abnormal termination, any open transaction is rolled back, not committed.\" The round's writes are inside the explicit transaction opened by ClaimDueAsync (claim 3), so rows stay pending.",
+        "source": "https://www.postgresql.org/docs/17/sql-commit.html ; sql-rollback.html ; protocol-flow.html (53.2.9)"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "NotificationQueue.cs @ stage-2 ClaimDueAsync: `WHERE status = 'pending' AND next_attempt_at <= {now} ... FOR UPDATE SKIP LOCKED`. A rolled-back round leaves status 'pending' and next_attempt_at unchanged (already due), so the first round after restart (ExecuteAsync, PeriodicTimer 2 s) claims it and SendOneAsync calls email.SendAsync again. docker-compose.yml has no restart policy on api, so 'starts again' means a manual start, which the lesson does not contradict.",
+        "source": "examples/don-hang @ stage-2: DonHang.Infrastructure/NotificationQueue.cs:20-27; DonHang.Api/Jobs/NotificationSender.cs:25-39"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Inspection of the pinned adapter: MailKitEmailSender.SendAsync @ stage-2 does `using var client = new SmtpClient { Timeout = 10_000 };` then `await client.SendAsync(message, ...)` and only after it `await client.DisconnectAsync(quit: true, ...)`. Any exception after the server accepted the message (reply wait exceeding Timeout, or a failure in the QUIT/disconnect step) surfaces to SendOneAsync as one exception from IEmailSender.SendAsync, indistinguishable there from a message never accepted; SendOneAsync then calls RecordFailure. No lab run (would need a fake SMTP server replacing Mailpit).",
+        "source": "examples/don-hang @ stage-2: DonHang.Infrastructure/MailKitEmailSender.cs:19-33; DonHang.Api/Jobs/NotificationSender.cs:65-81"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Mailpit docs: \"It acts as an SMTP server, provides a modern web interface to view & test intercepted emails.\" Relay/forwarding are opt-in features (SMTP relaying, SMTP forwarding). docker-compose.yml @ stage-2 mailpit service (axllent/mailpit:v1.31.3) sets no relay/forward options; its comment: \"A fake mail server: it accepts every email the api sends over SMTP (mailpit:1025) and delivers none.\"",
+        "source": "https://mailpit.axllent.org/docs/ ; examples/don-hang @ stage-2: docker-compose.yml (mailpit service)"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "ClaimDueAsync @ stage-2 selects only `WHERE status = 'pending' AND next_attempt_at <= {now}`; no other code path in NotificationSender reads rows. A row persisted as 'sent' before a send that never happened is therefore never claimed again, so the email is lost (hypothetical swapped order reasoned on this query).",
+        "source": "examples/don-hang @ stage-2: DonHang.Infrastructure/NotificationQueue.cs:20-27"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "PostgreSQL 17 tutorial 3.4: \"The essential point of a transaction is that it bundles multiple steps into a single, all-or-nothing operation ... if some failure occurs that prevents the transaction from completing, then none of the steps affect the database at all.\" The guarantee is stated for effects on the database only; the SMTP exchange in MailKitEmailSender is a separate network conversation with Mailpit that no COMMIT/ROLLBACK reaches.",
+        "source": "https://www.postgresql.org/docs/17/tutorial-transactions.html"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "OrderService.cs @ stage-2: \"A retry that repeats an Idempotency-Key gets back the order that key created, with Created = false.\" Code: `var earlier = await repository.FindByIdempotencyKeyAsync(idempotencyKey); ... if (earlier is not null) return (earlier, Created: false);`. OrdersController reads the key from `[FromHeader(Name = \"Idempotency-Key\")]`.",
+        "source": "examples/don-hang @ stage-2: DonHang.Domain/OrderService.cs:11-23; DonHang.Api/Controllers/OrdersController.cs:26-45"
+      },
+      {
+        "n": 11,
+        "verdict": "not-needed",
+        "evidence": "Opinion claim, framed in the lesson as Đơn Hàng's own choice (\"Đơn Hàng accepts this.\") with its reason, and the 'must be idempotent' is conditioned on \"When a repeat would do real harm\". Matches outline item 5 wording; the repo comment on SendOneAsync states the same choice (\"at least once, never lost\").",
+        "source": "content/tracks/backend/track.yaml (outline item 5); examples/don-hang @ stage-2: NotificationSender.cs:61-64"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Code inspection @ stage-2: SendOneAsync L77 and ExecuteAsync L34 both catch only `when (!stoppingToken.IsCancellationRequested)`, so with the token cancelled an exception from SendAsync propagates out of SendOneAsync and SendDueAsync, skipping L58 `await queue.CompleteAsync(...)`. SaveChangesAsync is called only in CompleteAsync (NotificationQueue.cs L35), so no change of the round reaches the table; the open transaction is rolled back (claim 4). Row stays pending. No lab run.",
+        "source": "examples/don-hang @ stage-2: DonHang.Api/Jobs/NotificationSender.cs:25-39, 47-59, 65-81; DonHang.Infrastructure/NotificationQueue.cs:33-37"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-28T21:10:00+07:00",
+    "reviewer": "claude-opus-5-5 (review-junior)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "style",
+        "quote": "which keeps it `pending` for a later retry unless this was its fifth attempt, even when the email did arrive.",
+        "text": "Round 2 fixes all read clearly. Only this sentence made me re-read: 'even when the email did arrive' trails after the 'unless' clause, so at first it seemed to belong to the fifth-attempt case.",
+        "fix": "Move the clause forward: '...hands the row to RecordFailure, even when the email did arrive; RecordFailure keeps it pending for a later retry unless this was its fifth attempt.'"
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

@@ -1,0 +1,144 @@
+{
+  "id": "backend.l2.skip-locked-claiming",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-09-28T19:05:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "Program.cs registers NotificationSender with AddHostedService, so every running process of the api hosts its own NotificationSender loop over the same notifications table.",
+      "kind": "fact",
+      "version_key": "aspnetcore",
+      "source_hint": "examples/don-hang @ stage-2: DonHang.Api/Program.cs:32; ASP.NET Core docs: Background tasks with hosted services",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 2,
+      "text": "Changes made by a transaction are not visible to other transactions until it commits, so a second copy that reads the row before the first commits 'sent' still sees 'pending'.",
+      "kind": "behavior",
+      "version_key": "postgresql",
+      "source_hint": "PostgreSQL docs: Transactions (tutorial 3.4) and Concurrency Control 13.2.1 Read Committed; prereq foundation.l1.transaction-intro",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 3,
+      "text": "Inside a transaction, SELECT ... FOR UPDATE locks the rows it returns; other transactions that try to UPDATE, DELETE or SELECT FOR UPDATE those rows are blocked until the locking transaction commits or rolls back.",
+      "kind": "behavior",
+      "version_key": "postgresql",
+      "source_hint": "PostgreSQL docs: SELECT, The Locking Clause; 13.3.2 Row-Level Locks (FOR UPDATE)",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 4,
+      "text": "With SKIP LOCKED, selected rows that cannot be locked immediately are skipped instead of waited for; the docs name queue-like tables with multiple consumers as its use.",
+      "kind": "behavior",
+      "version_key": "postgresql",
+      "source_hint": "PostgreSQL docs: SELECT, The Locking Clause (NOWAIT / SKIP LOCKED)",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 5,
+      "text": "Row-level locks are released when the transaction ends (commit or rollback); they do not affect plain data querying: a SELECT without a locking clause reads a locked row without waiting.",
+      "kind": "behavior",
+      "version_key": "postgresql",
+      "source_hint": "PostgreSQL docs: 13.3.2 Row-Level Locks ('Row-level locks do not affect data querying; they block only writers and lockers to the same row')",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 6,
+      "text": "If the api process stops before its transaction commits, the connection is lost and PostgreSQL rolls the open transaction back, releasing its row locks and leaving the claimed rows pending.",
+      "kind": "behavior",
+      "version_key": "postgresql",
+      "source_hint": "PostgreSQL docs: 3.4 Transactions; prereq foundation.l1.transaction-intro (lost connection leaves none of the block's changes); NotificationQueue.cs:10-15 comment @ stage-2",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 7,
+      "text": "ClaimDueAsync calls db.Database.BeginTransactionAsync, then FromSql with SELECT * FROM notifications WHERE status = 'pending' AND next_attempt_at <= now ORDER BY next_attempt_at, id LIMIT batchSize FOR UPDATE SKIP LOCKED.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: DonHang.Infrastructure/NotificationQueue.cs:16-30",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 8,
+      "text": "NotificationSender passes BatchSize = 10 and its PeriodicTimer ticks every 2 s; one round is ClaimDueAsync, SendOneAsync for each row, then CompleteAsync.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: DonHang.Api/Jobs/NotificationSender.cs:13-14,47-59",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 9,
+      "text": "CompleteAsync calls SaveChangesAsync, which uses the transaction already begun on the DbContext instead of its own, then CommitTransactionAsync commits it.",
+      "kind": "behavior",
+      "version_key": "efcore",
+      "source_hint": "EF Core docs: Transactions (Controlling transactions: BeginTransaction, SaveChanges within it, Commit); NotificationQueue.cs:32-37 @ stage-2",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 10,
+      "text": "skip-locked.sh inserts four demo rows due 2100-01-01; sessions A-D are separate connections (sql helper); A runs in the background. With no real row waiting for a retry it prints: A demo job 1-2, B demo job 3-4, C the lock timeout ERROR plus a CONTEXT line, D all four; a trap deletes the rows.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: scripts/backend/skip-locked.sh; outputs/stage-2/scripts/backend/skip-locked.txt; live run 2026-09-28",
+      "needs_verification": true,
+      "section": 7
+    },
+    {
+      "n": 11,
+      "text": "SET lock_timeout = '1s' makes a statement that waits longer than 1 second for a lock fail with 'canceling statement due to lock timeout'.",
+      "kind": "behavior",
+      "version_key": "postgresql",
+      "source_hint": "PostgreSQL docs: 19.11 Client Connection Defaults, lock_timeout",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 12,
+      "text": "Without SKIP LOCKED, a second copy that claims while the first holds its locks waits, so it stands idle while the first sends its batch.",
+      "kind": "behavior",
+      "version_key": "postgresql",
+      "source_hint": "PostgreSQL docs: SELECT, The Locking Clause (a locking SELECT waits for conflicting row locks unless NOWAIT or SKIP LOCKED); skip-locked.sh session C",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 13,
+      "text": "Claiming a small batch keeps the transaction, and so the time its row locks are held, short; when fewer rows are due than a large batch size, one copy could lock them all while other copies find nothing to claim, and a stopped copy leaves more rows waiting.",
+      "kind": "opinion",
+      "source_hint": "lesson reasoning; prereq foundation.l1.transaction-intro ('keep transactions short')",
+      "needs_verification": false,
+      "section": 4
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "outline_items_missing": [],
+    "beyond_scope": []
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1110,
+    "notes": "Generated; quiz fix-validation 1 (Q04, Q10). Round 1: script intro rewritten (sessions = separate connections, sql helper, & background); row lock scoped to FOR UPDATE; FromSql causal clause dropped; small-batch reason added; Try it condition + CONTEXT line (claim 10 suggested_text); quiz q1 stem, q2 psql removed, q1/q2/q6 correct options reworded. Round 2 (tech pass): claim 13 widened; q2 c 'no row lock'. Junior r2 pass; minors applied (session D wording, Try it reason, q2 c shortened)."
+  },
+  "open_questions": [
+    "Glossary row-lock short_en/short_vi says other transactions 'cannot change or lock' the rows; true of FOR UPDATE only (FOR SHARE/KEY SHARE are weaker). Owner may narrow it (technical review round 1, minor).",
+    "skip-locked.sh demo claim also takes real pending rows due before 2100; owner may narrow it to 'demo job %' at /repo-stage 3 (technical review round 1, minor)."
+  ],
+  "repo_changes_needed": []
+}
