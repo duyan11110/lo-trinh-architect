@@ -474,7 +474,7 @@ void _checkL1516TermsAndBold(String id, String body, ParsedBody parsed, int leve
     }
   }
   final allowed = <String>{...knownVocabTerms, ...vocab};
-  final matches = findTermOccurrences(bodyNoCode, tree.glossary);
+  final matches = findTermOccurrences(bodyNoCode, tree.glossary, lang: lang);
   final reportedTerms = <String>{};
   for (final m in matches) {
     if (allowed.contains(m.term)) continue;

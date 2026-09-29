@@ -124,7 +124,7 @@ Quy tắc theo trạng thái: nhóm Q chỉ chạy khi `.quiz.json` tồn tại 
 
 **A.1 Đếm từ.** Bỏ frontmatter, mọi code block (```…```), mọi dòng H2; thay `[[id]]` bằng một từ; inline code tính là một từ; tách theo khoảng trắng Unicode; số và ký hiệu đứng riêng là từ. Áp dụng cho L05, L07, L12, L13 và `self_check.word_count`.
 
-**A.2 Khớp thuật ngữ (L15, tooltip app).** Với mỗi entry glossary, tập dạng hiển thị = {`en`, `vi`, `aliases`…}, thêm dạng số nhiều tiếng Anh đơn giản (+s/+es, y→ies). So khớp trên văn xuôi đã bỏ code block, inline code và các link `[[id]]`; không phân biệt hoa thường **trừ** token viết HOA toàn bộ ≥ 3 ký tự (`COMMIT`, `GET`) chỉ khớp entry có `en` viết HOA (`DNS`, `TCP`); ưu tiên cụm dài nhất tại một vị trí (`hash map` trước `map`); ranh giới từ Unicode hai phía. Kết quả: danh sách (term, vị trí). L15 báo term ∉ known ∪ vocab; app gắn tooltip cho mọi vị trí.
+**A.2 Khớp thuật ngữ (L15, tooltip app).** Với mỗi entry glossary, tập dạng hiển thị = {`en`, `vi`, `aliases`…} (khi khớp văn bản tiếng Anh — L15 của `.en.md` — bỏ dạng `vi`, để `vi` ngắn như `Service` của `k8s-service` không khớp chữ thường "service"), thêm dạng số nhiều tiếng Anh đơn giản (+s/+es, y→ies). So khớp trên văn xuôi đã bỏ code block, inline code và các link `[[id]]`; không phân biệt hoa thường **trừ** token viết HOA toàn bộ ≥ 3 ký tự (`COMMIT`, `GET`) chỉ khớp entry có `en` viết HOA (`DNS`, `TCP`); ưu tiên cụm dài nhất tại một vị trí (`hash map` trước `map`); ranh giới từ Unicode hai phía. Kết quả: danh sách (term, vị trí). L15 báo term ∉ known ∪ vocab; app gắn tooltip cho mọi vị trí.
 
 **A.3 Chuẩn hóa tiêu đề H2 (L02).** trim → gộp khoảng trắng → `...`→`…` → so sánh không phân biệt hoa thường với bảng tiêu đề theo `lang` và level.
 

@@ -86,6 +86,23 @@ five.
       expect(matches.length, 1);
     });
 
+    test('lang en leaves out the vi form ("Service" of k8s-service)', () {
+      final k8s = [
+        GlossaryEntry(
+            term: 'k8s-service',
+            en: 'Kubernetes Service',
+            viKeep: true,
+            vi: 'Service',
+            shortVi: 'x',
+            shortEn: 'x',
+            introducedIn: 'x.l1.x',
+            aliases: const []),
+      ];
+      const text = 'Each service in Compose. A Kubernetes Service too.';
+      expect(findTermOccurrences(text, k8s, lang: 'en').length, 1);
+      expect(findTermOccurrences(text, k8s, lang: 'vi').length, 2);
+    });
+
     test('simplePlural: y -> ies, s/x/z/ch/sh -> +es, else +s', () {
       expect(simplePlural('policy'), 'policies');
       expect(simplePlural('box'), 'boxes');

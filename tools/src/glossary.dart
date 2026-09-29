@@ -35,15 +35,20 @@ class GlossaryEntry {
         aliases: (m['aliases'] as List?)?.map((e) => e.toString()).toList() ?? [],
       );
 
-  List<String> get forms {
+  /// Display forms to match. With [lang] 'en' the `vi` form is left out: an
+  /// English text never uses it, and a short `vi` (k8s-service → "Service")
+  /// would otherwise match ordinary English words.
+  List<String> formsFor([String? lang]) {
     final set = <String>{};
     if (en.isNotEmpty) set.add(en);
-    if (vi.isNotEmpty) set.add(vi);
+    if (vi.isNotEmpty && lang != 'en') set.add(vi);
     set.addAll(aliases);
     final plural = simplePlural(en);
     if (plural != en) set.add(plural);
     return set.where((f) => f.trim().isNotEmpty).toList();
   }
+
+  List<String> get forms => formsFor();
 }
 
 String simplePlural(String word) {
@@ -91,12 +96,13 @@ String _escapeRegex(String s) => s.replaceAllMapped(
 
 /// A.2 — find every occurrence of a glossary term in [prose] (already run
 /// through [stripForTermMatch] by the caller, or raw — this function strips
-/// code/inline-code/[[id]] itself for safety).
-List<TermMatch> findTermOccurrences(String rawText, List<GlossaryEntry> glossary) {
+/// code/inline-code/[[id]] itself for safety). [lang] 'en' leaves out the
+/// `vi` forms (see [GlossaryEntry.formsFor]).
+List<TermMatch> findTermOccurrences(String rawText, List<GlossaryEntry> glossary, {String? lang}) {
   final text = stripForTermMatch(rawText);
   final candidates = <MapEntry<String, String>>[]; // form -> term
   for (final entry in glossary) {
-    for (final form in entry.forms) {
+    for (final form in entry.formsFor(lang)) {
       candidates.add(MapEntry(form, entry.term));
     }
   }
