@@ -1,0 +1,123 @@
+{
+  "id": "design.l2.adapter-pattern",
+  "technical": {
+    "reviewed_at": "2026-09-29T17:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "not-needed",
+        "evidence": "Definition of the lesson's own vocab term adapter-pattern; matches outline item 1. No versions.yaml docs root covers GoF patterns and the sentence asserts no version-dependent behaviour. The lesson's code exhibits the shape: MailKitEmailSender.cs:18 implements IEmailSender and :22-32 turns one SendAsync into MimeMessage + SmtpClient calls.",
+        "source": "content/tracks/design/track.yaml outline item 1; examples/don-hang @ stage-2: DonHang.Infrastructure/MailKitEmailSender.cs:18-33"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "IEmailSender.cs:6-9 unchanged, no using directives. refs cancellation-in-managed-threads.md:15: \"the object that created the token can use it to request that the operations stop what they are doing.\" refs hosted-services.md:98: \"The cancellation token is triggered when IHostedService.StopAsync is called.\" Repo: NotificationSender.cs:22 comment \"stoppingToken is signalled when the app shuts down\"; :72 passes stoppingToken to email.SendAsync.",
+        "source": "refs/dotnet-docs/docs/standard/threading/cancellation-in-managed-threads.md:15; refs/aspnetcore-docs/aspnetcore/fundamentals/host/hosted-services.md:98; DonHang.Api/Jobs/NotificationSender.cs:22,72 @ stage-2"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "NotificationSender.cs:1-2 usings are only DonHang.Domain and DonHang.Infrastructure; :65 `private async Task SendOneAsync(IEmailSender email, Notification notification, CancellationToken stoppingToken)`; :70 `await email.SendAsync(customer.Email, ...`. `git grep -n -e \"using MailKit\" -e \"using MimeKit\" stage-2 -- \"*.cs\"` hits only MailKitEmailSender.cs:2-4. The only 'MailKit' text in NotificationSender.cs is the comment at :45.",
+        "source": "examples/don-hang @ stage-2: DonHang.Api/Jobs/NotificationSender.cs:1-2, 45, 65-72"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "ServiceCollectionExtensions.cs:26 `services.AddSingleton<IEmailSender>(new MailKitEmailSender(smtp));`. MailKitEmailSender.cs:9-13 SmtpSettings has only `Host` and `Port`. docker-compose.yml:115 `Smtp__Host: \"mailpit\"`; :175-176 \"A fake mail server: it accepts every email the api sends over SMTP (mailpit:1025) and delivers none.\"; :178-179 service `mailpit`, image axllent/mailpit:v1.31.3.",
+        "source": "examples/don-hang @ stage-2: DonHang.Infrastructure/ServiceCollectionExtensions.cs:26; MailKitEmailSender.cs:9-13; docker-compose.yml:115, 175-179"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "MailKitEmailSender.cs:22-32: `new MimeMessage()`; `From.Add(new MailboxAddress(\"Đơn Hàng\", \"orders@donhang.local\"))`; `To.Add(MailboxAddress.Parse(toAddress))`; `Subject = subject`; `Body = new TextPart(\"plain\") { Text = body }`; then `ConnectAsync(...)`, `SendAsync(message, cancellationToken)`, `DisconnectAsync(quit: true, cancellationToken)` on `new SmtpClient { Timeout = 10_000 }`. Lesson code block = lines 15-34, identical.",
+        "source": "examples/don-hang @ stage-2: DonHang.Infrastructure/MailKitEmailSender.cs:15-34"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "MailKit README (WebFetch): \"MailKit is a cross-platform mail client library built on top of MimeKit.\"; \"...before sending them via SMTP.\" Sending example has `using MailKit.Net.Smtp; using MimeKit;`, `var message = new MimeMessage ();`, then `client.Connect(...)`, `client.Send (message)`, `client.Disconnect (true)`. Async forms at pinned 4.18: dotnet build of DonHang.Infrastructure succeeded in round 1 (code unchanged at stage-2).",
+        "source": "https://github.com/jstedfast/MailKit (README); examples/don-hang @ stage-2: DonHang.Infrastructure/MailKitEmailSender.cs:2-4"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "NotificationSender.cs:53 `queue.ClaimDueAsync(BatchSize, stoppingToken)`; :56 SendOneAsync per row; :77-79 `catch (Exception ex) ... RecordFailure(notification, ex)`; :86-100 Attempts++, `>= MaxAttempts` -> failed, else `FirstRetryDelay * Math.Pow(2, notification.Attempts - 1)`. MailKitEmailSender.cs:20-33 has no branch, retry or status logic.",
+        "source": "examples/don-hang @ stage-2: DonHang.Api/Jobs/NotificationSender.cs:47-101; DonHang.Infrastructure/MailKitEmailSender.cs:20-33"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "refs conversions.md:46: \"Three situations always produce an implicit reference conversion: assigning a derived class instance to a base class variable ..., assigning a reference type instance to a variable of an interface the type implements, and assigning any reference type to an `object` variable.\" Run: scratch project referencing DonHang.Infrastructure, `SmtpClient c = new MailKitEmailSender(new SmtpSettings());` -> error CS0029: Cannot implicitly convert type 'DonHang.Infrastructure.MailKitEmailSender' to 'MailKit.Net.Smtp.SmtpClient'.",
+        "source": "refs/dotnet-docs/docs/csharp/fundamentals/types/conversions.md:46; dotnet build (scratch); examples/don-hang @ stage-2: DonHang.Infrastructure/ProductCache.cs:13-14"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "ApiFactory.cs:42-45 `builder.ConfigureTestServices(services => { services.RemoveAll<IEmailSender>(); services.AddSingleton<IEmailSender>(Emails);`, :24 `public FakeEmailSender Emails { get; } = new();`. FakeEmailSender.cs:12-17: `ConcurrentQueue<(string ToAddress, string Subject)> Sent`; SendAsync only `Sent.Enqueue((toAddress, subject)); return Task.CompletedTask;`. Comment :6-8: \"no SMTP server (Mailpit) is needed\".",
+        "source": "examples/don-hang @ stage-2: DonHang.Tests/Integration/ApiFactory.cs:24, 42-45; DonHang.Tests/Integration/FakeEmailSender.cs:6-17"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Run in examples/don-hang with HEAD = stage-2^{commit} = 7a131bc: first command -> DonHang.Infrastructure/MailKitEmailSender.cs:2:using MailKit.Net.Smtp; :3:using MailKit.Security; :4:using MimeKit; (3 lines, nothing else). Second -> DonHang.Infrastructure/MailKitEmailSender.cs:18:public sealed class MailKitEmailSender(SmtpSettings smtp) : IEmailSender and DonHang.Tests/Integration/FakeEmailSender.cs:10:public sealed class FakeEmailSender : IEmailSender (2 lines).",
+        "source": "git grep in examples/don-hang working tree @ stage-2"
+      },
+      {
+        "n": 11,
+        "verdict": "not-needed",
+        "evidence": "Definitional contrast between two vocab terms, matching outline item 4. Holds for this code: ProductCache.cs:13-14 is an IProductRepository wrapping an IProductRepository; MailKitEmailSender.cs:18 is an IEmailSender wrapping an SmtpClient (different type, CS0029 above) with no decision logic (:20-33). No versions.yaml docs root defines GoF patterns.",
+        "source": "track.yaml outline item 4; examples/don-hang @ stage-2: DonHang.Infrastructure/ProductCache.cs:13-14; MailKitEmailSender.cs:18-33"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Supported by code: NotificationSender.cs gets `GetRequiredService<IEmailSender>()` (:51), calls only `email.SendAsync(...)` (:70) and catches any `Exception` (:77), so another IEmailSender implementation needs no change there; the only construction site of MailKitEmailSender is ServiceCollectionExtensions.cs:26. Lesson states it with its reason (\"because it never knew which library was behind the interface\").",
+        "source": "examples/don-hang @ stage-2: DonHang.Api/Jobs/NotificationSender.cs:51, 70, 77; DonHang.Infrastructure/ServiceCollectionExtensions.cs:26"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Lesson s6 gives the concrete condition (tests replace the adapter) and the repo shows it: ApiFactory.cs:44-45 swaps IEmailSender for FakeEmailSender, which never contacts an SMTP server (FakeEmailSender.cs:14-17). Not stated as an unconditional rule.",
+        "source": "examples/don-hang @ stage-2: DonHang.Tests/Integration/ApiFactory.cs:44-45; FakeEmailSender.cs:14-17"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-29T18:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation, round 2)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 2,
+        "kind": "style",
+        "quote": "and a `MimeMessage` for it to send, with sender, recipient and body parts, a type from MimeKit, the library MailKit is built on.",
+        "text": "Round 2: the MimeKit clause is appended after 'body parts', so on first read 'a type from MimeKit' seemed to describe the body parts, not `MimeMessage`. I had to re-read the sentence to attach it correctly. Not blocking.",
+        "fix": "Move the clause next to its noun: 'and a `MimeMessage`, a type from MimeKit, the library MailKit is built on, holding sender, recipient and body parts.'"
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "style",
+        "quote": "// Mailpit in the lab speaks plain SMTP, without TLS.",
+        "text": "Round 2: the prose in section 4 no longer says 'the lab', but this verbatim code comment still does. I can now map it to 'the fake mail server the example system runs in Docker', so it only costs a short pause.",
+        "fix": "Add half a sentence after the code: 'the comment's \"lab\" is the example system running in Docker.'"
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}
