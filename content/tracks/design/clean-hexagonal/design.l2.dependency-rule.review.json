@@ -1,0 +1,121 @@
+{
+  "id": "design.l2.dependency-rule",
+  "technical": {
+    "reviewed_at": "2026-09-29T18:10:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "refs: \"Instead of having business logic depend on data access or other infrastructure concerns, this dependency is inverted: infrastructure and implementation details depend on the Application Core.\" and \"dependencies flow toward the innermost circle... the Application Core has no dependencies on other application layers.\" Round-1 suggested wording applied; consistent with DonHang.Api -> DonHang.Infrastructure (not out of the core). DonHang.Domain@stage-1 names only its own types and .NET (sole using: System.Security.Cryptography).",
+        "source": "refs/dotnet-docs/docs/architecture/modern-web-apps-azure/common-web-application-architectures.md lines 100-106; examples/don-hang@stage-1 DonHang.Domain"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "refs: \"One disadvantage of this traditional layering approach is that compile-time dependencies run from the top to the bottom. That is, the UI layer depends on the BLL, which depends on the DAL. This means that the BLL, which usually holds the most important logic in the application, is dependent on data access implementation details (and often on the existence of a database).\"",
+        "source": "refs/dotnet-docs/docs/architecture/modern-web-apps-azure/common-web-application-architectures.md line 64"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "git show stage-1:DonHang.Infrastructure/DonHang.Infrastructure.csproj → line 11 `<ProjectReference Include=\"..\\DonHang.Domain\\DonHang.Domain.csproj\" />`, the only ProjectReference. git show stage-1:DonHang.Domain/DonHang.Domain.csproj → 10 lines, one PropertyGroup, no ItemGroup. No Directory.Build.props at stage-1; Directory.Packages.props has only PackageVersion items (no GlobalPackageReference).",
+        "source": "examples/don-hang@stage-1"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "OrderService.cs@stage-1: `public sealed class OrderService(IOrderRepository repository, INotifier notifier)`; PlaceOrderAsync: `await repository.AddAsync(order); await repository.SaveChangesAsync();`. IOrderRepository.cs: namespace DonHang.Domain, four members FindAsync(int)→Task<Order?>, ListByCustomerAsync(int)→Task<List<Order>>, AddAsync(Order)→Task, SaveChangesAsync()→Task.",
+        "source": "examples/don-hang@stage-1 DonHang.Domain/OrderService.cs, DonHang.Domain/IOrderRepository.cs"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "EfOrderRepository.cs@stage-1 lines 1-10: `using DonHang.Domain;` `using Microsoft.EntityFrameworkCore;` `public sealed class EfOrderRepository(DonHangDbContext db) : IOrderRepository` `public Task<Order?> FindAsync(int id) => db.Orders.Include(o => o.Items).FirstOrDefaultAsync(o => o.Id == id);`",
+        "source": "examples/don-hang@stage-1 DonHang.Infrastructure/EfOrderRepository.cs"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "ServiceCollectionExtensions.cs:15 `services.AddScoped<IOrderRepository, EfOrderRepository>();`; Program.cs:18-19 `builder.Services.AddDonHangInfrastructure(connectionString); builder.Services.AddScoped<OrderService>();`; OrdersController injects OrderService and Create calls orderService.PlaceOrderAsync.",
+        "source": "examples/don-hang@stage-1 DonHang.Infrastructure/ServiceCollectionExtensions.cs, DonHang.Api/Program.cs, DonHang.Api/Controllers/OrdersController.cs"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Text now equals round-1 suggested_text. DonHang.Domain.csproj@stage-1: one PropertyGroup, no ItemGroup. Round-1 build (SDK 10.0.300) of a Domain class naming an EF Core type and EfOrderRepository: \"error CS0234: The type or namespace name 'EntityFrameworkCore' does not exist in the namespace 'Microsoft'\", same for 'Infrastructure' in 'DonHang'.",
+        "source": "examples/don-hang@stage-1 DonHang.Domain/DonHang.Domain.csproj; local dotnet build (round 1)"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "`git grep -n -e EfOrderRepository -e DonHang.Infrastructure -e EntityFrameworkCore -e Npgsql -e AspNetCore stage-1 -- DonHang.Domain` → no output, exit 1. The only using in DonHang.Domain is `using System.Security.Cryptography;` (PasswordHasher.cs:1).",
+        "source": "examples/don-hang@stage-1"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "git grep at stage-1: `DonHang.Api/DonHang.Api.csproj:12` → DonHang.Domain, `:13` → DonHang.Infrastructure; `DonHang.Tests/DonHang.Tests.csproj:18` → DonHang.Domain.",
+        "source": "examples/don-hang@stage-1"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "`git grep -n \"ProjectReference\" stage-1 -- \"DonHang.*/*.csproj\"` → 4 lines: DonHang.Api.csproj:12, :13, DonHang.Infrastructure.csproj:11, DonHang.Tests.csproj:18. (Working tree currently at stage-2 prints 6 lines; the lesson requires a stage-1 checkout, so the expected result holds.)",
+        "source": "examples/don-hang, git 2.x local run"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "refs: \"Outside of the Application Core, both the UI and the Infrastructure layers depend on the Application Core, but not on one another (necessarily).\" and \"the UI layer project may need to reference the Infrastructure project... the simplest approach is to allow the UI project to reference the Infrastructure project\".",
+        "source": "refs/dotnet-docs/docs/architecture/modern-web-apps-azure/common-web-application-architectures.md lines 106, 186"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "refs line 64: traditional layering makes the BLL \"dependent on data access implementation details\". OrderService must name the interface it calls; if declared in DonHang.Infrastructure, DonHang.Domain needs a ProjectReference to it, and packages flow through that reference (see claim 13 build: Npgsql/EF Core types usable via the ProjectReference alone).",
+        "source": "refs/dotnet-docs/docs/architecture/modern-web-apps-azure/common-web-application-architectures.md line 64; local dotnet build (claim 13)"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "msbuild-props.md: \"Set this property to true to disable implicit ProjectReference items. Disabling implicit project references results in non-transitive behavior\" (transitive by default). Reviewer build, SDK 10.0.300: new project with only <ProjectReference> to stage-1 DonHang.Infrastructure.csproj, class using Microsoft.EntityFrameworkCore.DbContext and Npgsql.NpgsqlConnection -> \"Build succeeded. 0 Error(s)\". (EFCore.Design has PrivateAssets=all and does not flow; EF Core runtime flows via the Npgsql provider.)",
+        "source": "refs/dotnet-docs/docs/core/project-sdk/msbuild-props.md (DisableTransitiveProjectReferences); local dotnet build, scratchpad probe"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "Round-1 reviewer build at stage-1 with the ProjectReference removed from DonHang.Infrastructure.csproj: \"EfOrderRepository.cs(7,62): error CS0246: The type or namespace name 'IOrderRepository' could not be found\" and \"(9,17): error CS0246 ... 'Order'\". Round 2: zero issues; opened versions.yaml, en.md, quiz, meta, stage-1 csproj/cs files, refs common-web-application-architectures.md, msbuild-props.md.",
+        "source": "local dotnet build at stage-1 (round 1)"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-29T18:30:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation, round 2)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": "design.l2.dependency-rule.q1",
+        "kind": "quiz",
+        "text": "Option a is now true of my Try-it result, so the round-1 ambiguity is gone. But it is clearly the longest option and its first half is almost summary line 5 word for word, so I could pick it from wording alone without understanding the rule.",
+        "quote": "That no reference between projects starts at `DonHang.Domain`; every reference that touches it points into it",
+        "fix": "Shorten option a to its first clause, \"That no reference between projects starts at `DonHang.Domain`\", or lengthen one distractor (e.g. c) to similar length."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

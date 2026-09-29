@@ -1,0 +1,165 @@
+{
+  "id": "design.l2.unit-of-work",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-09-30T10:00:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "A unit of work keeps track of everything one business operation changes and writes all of it together at the end, so the operation is saved completely or not at all.",
+      "kind": "fact",
+      "source_hint": "glossary unit-of-work; EF Core docs: DbContext Lifetime, Configuration, and Initialization (unit-of-work)",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 2,
+      "text": "EF Core's DbContext is a unit of work: its change tracker records entities loaded or added through it and their state, and SaveChangesAsync detects changes against the snapshot and writes them.",
+      "kind": "behavior",
+      "version_key": "efcore",
+      "source_hint": "EF Core docs: Change Tracking in EF Core (index); DbContext configuration (unit-of-work)",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 3,
+      "text": "By default, when the provider supports transactions, all changes in a single SaveChanges(Async) call are applied in one transaction; if any change fails, the transaction is rolled back and none is applied.",
+      "kind": "behavior",
+      "version_key": "efcore",
+      "source_hint": "EF Core docs: Saving data, Transactions, Default transaction behavior",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 4,
+      "text": "At stage-1 IOrderRepository declares four methods (FindAsync, ListByCustomerAsync, AddAsync, SaveChangesAsync); SaveChangesAsync takes no argument; no Update method exists in any DonHang.* .cs file.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-1: DonHang.Domain/IOrderRepository.cs:5-11; git grep -n Update -- \"DonHang.*/*.cs\" (no match)",
+      "needs_verification": true,
+      "section": 2
+    },
+    {
+      "n": 5,
+      "text": "CancelOrderAsync loads the order with repository.FindAsync, sets order.Status = \"cancelled\", then calls repository.SaveChangesAsync() without passing the order; PATCH /api/v1/orders/{id}/cancel calls it.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-1: DonHang.Domain/OrderService.cs:29-38; DonHang.Api/Controllers/OrdersController.cs:42-44",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 6,
+      "text": "EfOrderRepository.FindAsync runs a tracked query (db.Orders.Include(o => o.Items).FirstOrDefaultAsync, no AsNoTracking), so the returned Order is tracked by the context; changing Status on it is written as an UPDATE of that row at SaveChangesAsync.",
+      "kind": "behavior",
+      "version_key": "efcore",
+      "source_hint": "examples/don-hang @ stage-1: EfOrderRepository.cs:9-10; EF Core docs: Change Tracking, tracking queries; Basic Save (updating data)",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 7,
+      "text": "EfOrderRepository.SaveChangesAsync is db.SaveChangesAsync(); it saves every change tracked by that DonHangDbContext instance, not only changes to orders or changes made through the repository.",
+      "kind": "behavior",
+      "version_key": "efcore",
+      "source_hint": "examples/don-hang @ stage-1: EfOrderRepository.cs:18; EF Core docs: DbContext.SaveChangesAsync API ('saves all changes made in this context')",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 8,
+      "text": "DonHangDbContext (AddDbContext) and EfOrderRepository (AddScoped) are scoped: one DonHangDbContext per request, received by every class built for that request that asks for a DonHangDbContext; one SaveChangesAsync writes all its tracked changes.",
+      "kind": "behavior",
+      "version_key": "efcore",
+      "source_hint": "examples/don-hang @ stage-1: ServiceCollectionExtensions.cs:14-15; EF Core docs: DbContext configuration, AddDbContext registers a scoped context",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 9,
+      "text": "Declaring SaveChangesAsync on the IOrderRepository port (DonHang.Domain) lets OrderService decide when an operation is finished without naming EF Core.",
+      "kind": "opinion",
+      "source_hint": "outline item 5; design.l2.ports-and-adapters",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 10,
+      "text": "FakeOrderRepository.SaveChangesAsync returns Task.CompletedTask; its FindAsync returns the Order object stored in its dictionary, so the service's change to it is already there and nothing needs saving.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-1: DonHang.Tests/FakeOrderRepository.cs:10,19-26",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 11,
+      "text": "A hand-written unit-of-work class around the DbContext repeats what EF Core does; it pays off when the core coordinates several repositories in one operation and needs one save call that belongs to none of them (else one repository saves changes it does not own).",
+      "kind": "opinion",
+      "source_hint": "outline item 6; .NET microservices guide: infrastructure persistence layer with EF Core (DbContext based on Unit of Work and Repository)",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 12,
+      "text": "With no transaction opened by hand, FindAsync's query and SaveChangesAsync do not run in one transaction; a plain SELECT locks no row, so another request can read and change the order in between (PostgreSQL behavior).",
+      "kind": "behavior",
+      "version_key": "efcore",
+      "source_hint": "EF Core docs: Transactions, default behavior; PostgreSQL docs: explicit locking (plain SELECT takes no row lock); backend.l2.transactions-in-practice",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 13,
+      "text": "Changing an entity this context never loaded (not tracked) and calling SaveChangesAsync writes nothing for it, because the context does not track it.",
+      "kind": "behavior",
+      "version_key": "efcore",
+      "source_hint": "EF Core docs: Tracking vs. No-Tracking Queries; backend.l2.no-tracking-queries",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 14,
+      "text": "At stage-1, git grep -n \"SaveChanges\" -- \"DonHang.*/*.cs\" prints five lines (IOrderRepository.cs:10, OrderService.cs:20 and :35, EfOrderRepository.cs:18, FakeOrderRepository.cs:26); git grep -n \"Update\" with the same pathspec prints nothing.",
+      "kind": "behavior",
+      "version_key": "git",
+      "source_hint": "run in examples/don-hang at stage-1 (verified locally with git grep on the tag); git-grep docs",
+      "needs_verification": true,
+      "section": 7
+    },
+    {
+      "n": 15,
+      "text": "At stage-2, QueuedNotifier stages a notifications row in the request's DonHangDbContext, so the one SaveChangesAsync in PlaceOrderAsync writes the order and its job together.",
+      "kind": "fact",
+      "source_hint": "backend.l2.database-job-queue summary line 2 (approved); only mentioned in Connections, no stage-2 code quoted",
+      "needs_verification": true,
+      "section": 8
+    },
+    {
+      "n": 16,
+      "text": "design.l1.the-repository-layer hid the DbContext behind IOrderRepository's four methods (FindAsync, ListByCustomerAsync, AddAsync, SaveChangesAsync); this lesson explains why SaveChangesAsync needs no argument.",
+      "kind": "fact",
+      "source_hint": "design.l1.the-repository-layer (approved) summary line 2; examples/don-hang @ stage-1: DonHang.Domain/IOrderRepository.cs:5-11",
+      "needs_verification": true,
+      "section": 8
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "outline_items_missing": [],
+    "beyond_scope": []
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1321,
+    "notes": "Round 1 apply-review: claim 8 rephrased (scoped context only for classes asking for it); section 8 'explains the fourth' fixed + claim 16; AsNoTracking and isolation level wording removed (depth_notes); 'generic repository' defined in words; 'commit call' -> 'save call'; fake's FindAsync step added; diagram returns through repository; PlaceOrderAsync named in Try it."
+  },
+  "open_questions": [],
+  "repo_changes_needed": []
+}
