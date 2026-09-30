@@ -1,0 +1,155 @@
+{
+  "id": "design.l2.status-changes-through-methods",
+  "technical": {
+    "reviewed_at": "2026-09-30T23:20:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "git show stage-2:DonHang.Domain/Entities.cs lines 33-36: `public int CustomerId { get; private set; }`, `public DateTimeOffset PlacedAt { get; private set; }`, `public string Status { get; private set; }`, `public List<OrderItem> Items { get; private set; } = [];`.",
+        "source": "examples/don-hang @ stage-2: DonHang.Domain/Entities.cs:33-36"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "refs how-to-implement-a-lightweight-class...: \"Declare the set accessor to be private. The property is settable within the type, but it's immutable to consumers.\" private.md: \"You can access private members only within the body of the class or the struct where you declare them\".",
+        "source": "refs/dotnet-docs/docs/csharp/programming-guide/classes-and-structs/how-to-implement-a-lightweight-class-with-auto-implemented-properties.md; refs/dotnet-docs/docs/csharp/language-reference/keywords/private.md"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Ran dotnet build (SDK 10) on a copy of DonHang.Domain from git archive stage-2 with OrderService.cs:57 `order.Ship();` replaced by `order.Status = \"shipped\";`. Output: `OrderService.cs(57,9): error CS0272: The property or indexer 'Order.Status' cannot be used in this context because the set accessor is inaccessible` — identical to the lesson's text. Docs indexer-access-errors.md lists the same message for CS0272.",
+        "source": "dotnet build (scratchpad dm-a/tr-scm); refs/dotnet-docs/docs/csharp/language-reference/compiler-messages/indexer-access-errors.md"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Entities.cs @ stage-2 lines 75-96 match the claim: MarkPaid throws already-cancelled (==cancelled), already-paid (!=new), sets paid; Cancel throws already-cancelled, already-shipped, sets cancelled; Ship throws already-cancelled, already-shipped, not-paid (!=paid), sets shipped.",
+        "source": "examples/don-hang @ stage-2: DonHang.Domain/Entities.cs:72-96"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "db/schema.sql:23 `CHECK (status IN ('new', 'paid', 'shipped', 'cancelled'))`. Tracing Entities.cs:75-96 over the four values gives exactly new->paid, paid->shipped, new->cancelled, paid->cancelled; every throw precedes the single assignment, so a refusal leaves Status unchanged (OrderTests.cs:101-104 asserts not-paid and Status still \"new\").",
+        "source": "examples/don-hang @ stage-2: db/schema.sql:23; DonHang.Domain/Entities.cs:75-96; DonHang.Tests/Domain/OrderTests.cs:96-105"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "git grep MarkPaid stage-2: only Entities.cs:75 (definition), DonHang.Tests/Domain/OrderTests.cs:44,67,89,111,113, plus the unrelated samples/ OrderEncapsulated. No call in DonHang.Api.",
+        "source": "git -C examples/don-hang grep -n MarkPaid stage-2"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "OrdersController.cs:12 `[Route(\"api/v1/orders\")]`, :91-97 `[Authorize(Policy = \"StaffOnly\")] [HttpPatch(\"{id:int}/ship\")] ... var order = await orderService.ShipOrderAsync(id); return Ok(ToDto(order));`. OrderService.cs:52-61 FindAsync ?? throw KeyNotFoundException, order.Ship(), notifier.Send, SaveChangesAsync. No role or status check in either.",
+        "source": "examples/don-hang @ stage-2: DonHang.Api/Controllers/OrdersController.cs:86-97; DonHang.Domain/OrderService.cs:51-61"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "filters.md: Authorization filters \"Run first.\", \"Determine whether the user is authorized for the request.\", \"Short-circuit the pipeline if the request isn't authorized.\" Program.cs:64 `AddPolicy(\"StaffOnly\", policy => policy.RequireRole(\"staff\"))` (no order input). Captured outputs/stage-2/scripts/backend/staff-only.txt: no token -> 401, customer -> 403, staff -> 200.",
+        "source": "refs/aspnetcore-docs/aspnetcore/mvc/controllers/filters.md; examples/don-hang @ stage-2: DonHang.Api/Program.cs:64, outputs/stage-2/scripts/backend/staff-only.txt"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Entities.cs:92 throws OrderStatusException(Id, \"already-cancelled\", ...); ExceptionHandlingMiddleware.cs:36-40 maps it to 409 with `type: ProblemTypeBase + ex.Code` (base https://donhang.local/problems/). Integration test OrdersApiTests.cs:76-85 confirms the same path end-to-end for staff + not-paid (409, type .../not-paid).",
+        "source": "examples/don-hang @ stage-2: Entities.cs:92; DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs:34-41; DonHang.Tests/Integration/OrdersApiTests.cs:75-86"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Compiled (dotnet build, SDK 10) a probe: `enum ProbeStatus { New, Paid, Shipped, Cancelled }`, a class with `public ProbeStatus Status { get; set; }`, and `if (o.Status == ProbeStatus.Cancelled) o.Status = ProbeStatus.Shipped;` -> Build succeeded, 0 warnings. The type system constrains the value set, not transitions.",
+        "source": "dotnet build of probe in scratchpad dm-a/tr-scm/DonHang.Domain/Probe.cs"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Added `public void ShipNoCheck() { Status = \"shipped\"; }` inside Order (copy of stage-2 Entities.cs) and ran dotnet build -> Build succeeded, 0 warnings. Consistent with private.md: private members are accessible \"within the body of the class\".",
+        "source": "dotnet build (scratchpad dm-a/tr-scm); refs/dotnet-docs/docs/csharp/language-reference/keywords/private.md"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "git -C examples/don-hang grep -n 'Status = \"' stage-2 -- 'DonHang.Domain/*.cs' -> Entities.cs:57 `Status = \"\";`, :69 `\"new\"`, :79 `\"paid\"`, :87 `\"cancelled\"`, :95 `\"shipped\"`. Five lines, none in OrderService.cs. Members: 57 private Order(), 69 public Order(...), 79 MarkPaid, 87 Cancel, 95 Ship.",
+        "source": "git grep at tag stage-2"
+      },
+      {
+        "n": 13,
+        "verdict": "rephrased",
+        "evidence": "Filed as `opinion` but it is factual and too strong. (a) stage-1 had only two status assignments, both in OrderService: PlaceOrderAsync initializer `Status = \"new\"` (:16) and CancelOrderAsync `order.Status = \"cancelled\"` (:34) — not 'several scripts', and no paid/ship change existed. (b) At stage-2 repo scripts still change status outside Order, e.g. scripts/backend/staff-only.sh:11 `UPDATE orders SET status = 'paid' WHERE id = 1`. 'Every status change Đơn Hàng allows' holds only for the application code.",
+        "source": "examples/don-hang @ stage-1: DonHang.Domain/OrderService.cs:16,34; @ stage-2: scripts/backend/staff-only.sh:9-12",
+        "suggested_text": "Reading `Order` alone now tells you every status change the application's code can make, named in business words: mark paid, ship, cancel. At stage-1 the assignments sat as plain lines inside `OrderService`'s methods, with no check of the status they started from."
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "Entities.cs:43-46 `public uint Version { get; private set; }` with comment mapping to xmin; DonHangDbContext.cs:62-65 `e.Property(o => o.Version).IsRowVersion();` (Npgsql maps to xmin, EF Core adds `AND xmin = ...` to the UPDATE); ExceptionHandlingMiddleware.cs:45-50 catches DbUpdateConcurrencyException at save -> 409 concurrent-update. Status methods do not read Version.",
+        "source": "examples/don-hang @ stage-2: DonHang.Domain/Entities.cs:43-46; DonHang.Infrastructure/DonHangDbContext.cs:62-65; DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs:42-51"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Overstated. At stage-1 there were only two status assignments, both in OrderService (PlaceOrderAsync `Status = \"new\"`, CancelOrderAsync `order.Status = \"cancelled\"`); 'several scripts' inflates this. 'Every status change Đơn Hàng allows' ignores that stage-2 repo scripts (scripts/backend/staff-only.sh:11 and others) set orders.status by SQL, bypassing Order. Claim 13 is also mis-kinded as opinion.",
+        "quote": "Reading `Order` alone now tells you every status change Đơn Hàng allows, named in business words: mark paid, ship, cancel. At stage-1 the same knowledge was spread across assignments in several scripts.",
+        "fix": "Replace with: \"Reading `Order` alone now tells you every status change the application's code can make, named in business words: mark paid, ship, cancel. At stage-1 the assignments sat as plain lines inside `OrderService`'s methods, with no check of the status they started from.\" Apply the same wording to summary line 5 and change claim 13 kind to fact."
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "accuracy",
+        "text": "Line 57 is `Status = \"\";` in the private constructor, which Entities.cs:51-54 says exists 'For EF Core only' and whose values EF Core overwrites from the loaded row. It does not give an order its starting status; only line 69 (public constructor, `\"new\"`) does.",
+        "quote": "Lines 57 and 69 are in the two constructors, which give an order its starting status and are the topic of later lessons.",
+        "fix": "Replace with: \"Line 69 is in the public constructor, which gives every new order the status `new`; line 57 is in a private constructor kept for EF Core. Both are the topic of later lessons.\""
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-30T23:45:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "example",
+        "text": "The command's quoting (`\\\"` inside double quotes) works in a bash-like shell but not as typed in PowerShell or cmd, where backslash does not escape a quote. Nothing tells me which shell to use, so on Windows I could get an error or no output and not know whether I did it wrong.",
+        "quote": "Run `git grep -n \"Status = \\\"\" -- \"DonHang.Domain/*.cs\"` to list every line in `DonHang.Domain` that assigns an order status.",
+        "fix": "Add \"in a bash shell (Git Bash on Windows)\" to step 1, or use single quotes around the pattern: `git grep -n 'Status = \"' -- 'DonHang.Domain/*.cs'`."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "text": "Q1: the correct option (a) is the only one that describes two steps and is clearly the longest; I could pick it from its shape without understanding the policy/Ship() split.",
+        "quote": "The policy lets the request in, then `Ship()` refuses and the API answers `409`",
+        "fix": "Shorten option a (e.g. \"The policy passes it; `Ship()` refuses with `409`\") or give option c or d a two-step shape of similar length."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "text": "Q2: the correct option (c) is almost word for word the lesson's sentence in 'Beginners often think', so it can be matched by recall rather than reasoning.",
+        "quote": "False, because an enum limits which values exist, not which one may follow which.",
+        "fix": "Reword option c in terms of the case, e.g. \"False, because code that can assign the property can still assign the shipped value to a cancelled order.\""
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

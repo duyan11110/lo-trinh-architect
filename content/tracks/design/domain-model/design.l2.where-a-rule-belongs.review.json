@@ -1,0 +1,140 @@
+{
+  "id": "design.l2.where-a-rule-belongs",
+  "technical": {
+    "reviewed_at": "2026-10-01T03:10:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "stage-2 OrdersController.cs:91-96 [Authorize(Policy = \"StaffOnly\")] ... ShipOrderAsync(id); return Ok(ToDto(order)); OrderService.cs:54-59 FindAsync ?? throw new KeyNotFoundException; order.Ship(); notifier.Send(order, \"order shipped\"); SaveChangesAsync; Entities.cs:94 if (Status != \"paid\") throw new OrderStatusException(...); ExceptionHandlingMiddleware.cs:36-40 catch (OrderStatusException) -> Status409Conflict.",
+        "source": "examples/don-hang @ stage-2 (git show)"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Entities.cs:90-96 Ship(): cancelled/shipped/Status != \"paid\" each `throw new OrderStatusException(...)`. Entities.cs:61-63 public Order(customerId, items, placedAt): if (items.Count == 0) throw new ArgumentException. OrderService.cs:25 PlaceOrderAsync: `var order = new Order(customerId, items, DateTimeOffset.UtcNow)`. Both checks read only the object's own fields/arguments.",
+        "source": "examples/don-hang @ stage-2: DonHang.Domain/Entities.cs, DonHang.Domain/OrderService.cs"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "OrderService.cs:52-61: FindAsync(orderId) ?? throw KeyNotFoundException; order.Ship(); notifier.Send(order, \"order shipped\"); await repository.SaveChangesAsync(); return order. No reference to Status in the method.",
+        "source": "examples/don-hang @ stage-2: DonHang.Domain/OrderService.cs"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Program.cs:62-64 AddAuthorization(options => options.AddPolicy(\"StaffOnly\", policy => policy.RequireRole(\"staff\"))). policies.md:35 \"An authorization policy consists of one or more requirements...\" filters.md:44-48 authorization filters \"Run first ... Short-circuit the pipeline if the request isn't authorized.\" routing.md:113 \"Apply an authorization policy before UseEndpoints dispatches to the endpoint.\" OrdersController.cs:88-90 comment: 403 for a customer, 401 with no token.",
+        "source": "refs/aspnetcore-docs: security/authorization/policies.md, mvc/controllers/filters.md, fundamentals/routing.md; Program.cs @ stage-2"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "OrdersController.cs:76-82: existing = repository.FindForReadingAsync(id); NotFound if null; AuthorizeAsync(User, existing, \"OrderOwner\"); Forbid() on failure; order = orderService.CancelOrderAsync(id). EfOrderRepository.cs:16 FindForReadingAsync = db.Orders.AsNoTracking()... (read-only copy). `existing` is used only for AuthorizeAsync. OrderService.cs:42-45 CancelOrderAsync: FindAsync, order.Cancel(). Program.cs:65,67 OrderOwner policy + OrderOwnerHandler.",
+        "source": "examples/don-hang @ stage-2: OrdersController.cs, EfOrderRepository.cs, OrderService.cs, Program.cs"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "OrderOwnerHandler.cs:22-33: if (context.User.IsInRole(\"staff\")) Succeed; subject = FindFirstValue(\"sub\"); caller = await customers.FindByIdentitySubjectAsync(subject); if (caller is not null && caller.Id == order.CustomerId) Succeed.",
+        "source": "examples/don-hang @ stage-2: DonHang.Api/Authorization/OrderOwnerHandler.cs"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "OrdersController.cs:93-97 Ship body: ShipOrderAsync(id); return Ok(ToDto(order)). Status appears in OrdersController only at :114 (OrderSummaryDto(o.Id, o.Status, ...)) and :129 (ToDto `order.Status,`), both copies; no comparison (git grep \"Status ==\\|Status !=\" hits only Entities.cs). ExceptionHandlingMiddleware.cs:36-40 catch (OrderStatusException) -> 409. Lesson §5 now reads \"checks `Status`\", matching the round-1 suggested_text.",
+        "source": "examples/don-hang @ stage-2: OrdersController.cs, ExceptionHandlingMiddleware.cs"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "ProductsController.cs:10-12 comment \"The list reads DonHangDbContext directly: it has no rule to apply, only a query to shape.\"; List body: IQueryable<Product> query = db.Products; ... OrderBy/Skip/Take/Select ... ToListAsync().",
+        "source": "examples/don-hang @ stage-2: DonHang.Api/Controllers/ProductsController.cs"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Entities.cs:90 `public void Ship()` (no parameters); DonHang.Domain.csproj has no PackageReference/ProjectReference; role checks found only in DonHang.Api (git grep: OrderOwnerHandler.cs:22 IsInRole, Program.cs:64 RequireRole(\"staff\")).",
+        "source": "examples/don-hang @ stage-2"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "git grep -n Payment stage-2 -- \"DonHang.*/*.cs\" \"db/*\" -> only Entities.cs:107 (class), DonHangDbContext.cs:13,78 (DbSet, mapping) and Migrations/*.Designer.cs / ModelSnapshot. No controller, service or repository touches Payment.",
+        "source": "git grep in examples/don-hang (git 2.46.0.windows.1)"
+      },
+      {
+        "n": 11,
+        "verdict": "not-needed",
+        "evidence": "Kind opinion: the lesson's placement rule, taken from outline items 1-4. Consistent with the code at stage-2 (status rules only in Entities.cs, role checks only in DonHang.Api, per the two git grep runs). No external source governs a design heuristic.",
+        "source": "content/tracks/design/track.yaml outline"
+      },
+      {
+        "n": 12,
+        "verdict": "not-needed",
+        "evidence": "Kind opinion, stated with its condition (\"where rules exist\"); matches outline item 5 and ProductsController.cs:11 comment \"it has no rule to apply\". No official document governs it.",
+        "source": "content/tracks/design/track.yaml outline item 5"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Round 1 run: first grep printed 7 lines, Entities.cs:77,78,85,86,92,93,94; second printed 4: OrderOwnerHandler.cs:22, OrdersController.cs:91, ProductsController.cs:63, Program.cs:64. New annotations checked: OrdersController.cs:91 sits on Ship (PATCH {id}/ship); ProductsController.cs:63 sits on UpdatePrice (PATCH {id}, \"priceVnd\"). Run with git 2.46.0.windows.1, not pinned 2.54; output depends only on tag content.",
+        "source": "execution: git grep / git show in examples/don-hang @ stage-2"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "code",
+        "text": "The 200 comes from Ok(...), not from ToDto; ToDto only builds the OrderDto (OrdersController.cs:96, :126-131). The sentence credits the status code to the wrong call.",
+        "quote": "later the result becomes `200` through `ToDto`",
+        "fix": "Change to: \"later the result becomes `200` with an `OrderDto`, through `Ok(ToDto(order))`.\""
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "text": "q1 explanation b (en+vi) says the controller \"only translates HTTP\", which the reworded summary line 4 now contradicts (the controller also asks for access checks; Create also looks up the caller's customer row). Key and option status are unaffected.",
+        "quote": "But the controller only translates HTTP, and any other caller of `PlaceOrderAsync` would skip the check.",
+        "fix": "Replace \"the controller only translates HTTP\" with \"the controller decides no rule about an order's data\" (vi: \"controller không quyết định quy tắc nào về dữ liệu của đơn\")."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-01T04:00:00+07:00",
+    "reviewer": "review-junior (prompt 05, round 2)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "style",
+        "text": "\"second access check\": I paused to work out what the first one is. For shipping it was StaffOnly, but cancelling does not use StaffOnly, so \"second\" reads as if cancel runs two checks. It is clear once I reach OrderOwnerHandler, but the word sent me back one paragraph.",
+        "quote": "Cancelling adds a second access check.",
+        "fix": "Replace with \"Cancelling uses a different access check, `OrderOwnerHandler`.\""
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "text": "q3 option b says an \"email\", but the lesson only ever says a notification is queued; it never says the notification is an email. I still pick b because it is the only notify option, but the word made me hesitate.",
+        "quote": "Recording that an \"order shipped\" email must go out",
+        "fix": "Change to \"Recording that an \\\"order shipped\\\" notification must go out\" (vi: \"Ghi lại rằng cần gửi một thông báo \\\"order shipped\\\"\")."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

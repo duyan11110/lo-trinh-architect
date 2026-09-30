@@ -1,0 +1,103 @@
+{
+  "id": "design.l2.transaction-script",
+  "technical": {
+    "reviewed_at": "2026-09-30T17:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "unverified",
+        "evidence": "Round 2: wording now 'one method', steps 'typically', 'a script may skip a step' — resolves round-1 minor (fixed order). Still no allowed source defines Transaction Script; refs/dotnet-docs microservice-domain-model.md:42 supports only the 'data holds no rules' half: 'service objects ... capture all the domain or business logic ... uses the data model just as data.' Kind fact, non-blocking.",
+        "source": "refs/dotnet-docs/docs/architecture/microservices/microservice-ddd-cqrs-patterns/microservice-domain-model.md:42-44"
+      },
+      {
+        "n": 2,
+        "verdict": "unverified",
+        "evidence": "Origin is indirectly supported: dotnet docs link 'transaction scripts' to martinfowler.com/eaaCatalog/transactionScript.html, and EF6 testability article cites 'Catalog of Patterns from Patterns of Enterprise Application Architecture'. The book itself is not an allowed source; nothing under refs/ states that 'transaction' in the name means a business operation. Kind history, non-blocking.",
+        "source": "refs/dotnet-docs/.../microservice-domain-model.md:44; refs/efcore-docs/entity-framework/ef6/fundamentals/testing/testability-article.md:959"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "git show stage-1:DonHang.Domain/OrderService.cs lines 29-38: FindAsync(orderId) ?? throw new KeyNotFoundException; order.Status = \"cancelled\"; await repository.SaveChangesAsync(); notifier.Send(order.Id, \"order cancelled\"). No read of order.Status before the assignment.",
+        "source": "examples/don-hang@stage-1 DonHang.Domain/OrderService.cs:29-38"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "git show stage-1:DonHang.Domain/OrderService.cs lines 8-23: if (items.Count == 0) throw new ArgumentException(...); new Order { CustomerId, PlacedAt, Status = \"new\", Items }; AddAsync; SaveChangesAsync; notifier.Send(order.Id, \"order placed\").",
+        "source": "examples/don-hang@stage-1 DonHang.Domain/OrderService.cs:8-23"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Entities.cs@stage-1 25-35: Order has Id, CustomerId, PlacedAt, Status, Items, Customer, each { get; set; }, no method. git grep -i 'shipped|.Status' stage-1 -- '*.cs' (excl. tests): the only status write outside the entity is OrderService.cs:34; OrdersController.cs:55,61 only read Status into DTOs. So 'has no place in Order, so in this design it is written in the script' holds; the round-1 overstatement 'can only live in the script' is gone.",
+        "source": "examples/don-hang@stage-1 DonHang.Domain/Entities.cs:25-35; git grep"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "git grep -i transaction stage-1 -- '*.cs' → no match (no BeginTransaction/TransactionScope). EfOrderRepository.FindAsync = FirstOrDefaultAsync (own query); SaveChangesAsync = db.SaveChangesAsync. EF Core: 'all changes in a single call to SaveChanges are applied in a transaction'; 'You can use the DbContext.Database API to begin, commit, and rollback transactions'; example uses context.Database.BeginTransaction(). No explicit transaction → none spans query + save.",
+        "source": "refs/efcore-docs/entity-framework/core/saving/transactions.md:17,42; execute-insert-update-delete.md:173; EfOrderRepository.cs@stage-1"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "OrderService.cs@stage-1 lines 25-28: '// Deliberately missing a check: an order already `shipped` still gets // cancelled here. `DonHang.Tests` covers `new` but not `shipped` —'.",
+        "source": "examples/don-hang@stage-1 DonHang.Domain/OrderService.cs:25-28"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "dotnet docs: 'if you need to tackle the complexity of a microservice's domain that has a lot of ever-changing business rules, the anemic domain model might be an anti-pattern'. The 'own copy of the check' part follows from the code: Order (Entities.cs:25-35) has no method, so a status check can only be written per caller; CancelOrderAsync has none.",
+        "source": "refs/dotnet-docs/.../microservice-domain-model.md:50; examples/don-hang@stage-1"
+      },
+      {
+        "n": 9,
+        "verdict": "unverified",
+        "evidence": "Round 2: 'the simplest design' → 'a simple design that works well while operations share few rules' — superlative removed, condition kept. dotnet docs support the condition only: 'if your microservice or Bounded Context is very simple (a CRUD service), the anemic domain model ... might be good enough'. 'often clearer' remains hedged opinion with a condition; non-blocking.",
+        "source": "refs/dotnet-docs/docs/architecture/microservices/microservice-ddd-cqrs-patterns/microservice-domain-model.md:46"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Ran: git grep -n \"Status\" stage-1 -- \"DonHang.Domain/*.cs\" → 'DonHang.Domain/Entities.cs:30:    public required string Status { get; set; }', 'DonHang.Domain/OrderService.cs:16:            Status = \"new\",', 'DonHang.Domain/OrderService.cs:34:        order.Status = \"cancelled\";'. Exactly three lines.",
+        "source": "examples/don-hang@stage-1 (git grep)"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "db/schema.sql@stage-1: status CHECK (status IN ('new','paid','shipped','cancelled')). git grep ShipOrder stage-1 → no match. Section 2 no longer names 'paid'; the ledger's value list is wider than the text but still true.",
+        "source": "examples/don-hang@stage-1 db/schema.sql:22-23"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-30T18:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation, round 2)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "quiz",
+        "text": "Round 2, q1 explanation c (rewritten this round): 'atomic' is not in known_vocab and the lesson never uses it. I can still follow the main point (FindAsync is a separate trip, so no transaction covers the method), but I stop on the word. The vi text already says 'tất cả hoặc không gì'.",
+        "quote": "The save may be atomic on its own, but `FindAsync` runs before it",
+        "fix": "Replace 'may be atomic on its own' with 'may be all or nothing on its own', the same wording q5 explanation d uses."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}
