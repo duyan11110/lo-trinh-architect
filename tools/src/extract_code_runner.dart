@@ -1,6 +1,7 @@
 /// `tools/extract-code` — see tools/SPEC.md.
 library extract_code_runner;
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'repo.dart';
@@ -57,7 +58,11 @@ int runExtractCode(List<String> argv) {
 
   final repo = Repo.find();
   final gitRepoPath = repo.path('examples/don-hang');
-  final result = Process.runSync('git', ['-C', gitRepoPath, 'show', '$tag:$path']);
+  // The repo is UTF-8; the system encoding (cp1252 on Windows) would turn
+  // "Bàn phím" into "BÃ n phÃ­m" both reading git's output and writing ours.
+  final result = Process.runSync('git', ['-C', gitRepoPath, 'show', '$tag:$path'],
+      stdoutEncoding: utf8, stderrEncoding: utf8);
+  stdout.encoding = utf8;
   if (result.exitCode != 0) {
     stderr.writeln('git show $tag:$path thất bại: ${result.stderr}');
     return 1;
