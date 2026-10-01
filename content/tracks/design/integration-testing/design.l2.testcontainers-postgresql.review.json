@@ -1,0 +1,142 @@
+{
+  "id": "design.l2.testcontainers-postgresql",
+  "technical": {
+    "reviewed_at": "2026-10-02T00:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "docker-compose.yml@stage-2 l.57-73: `db:` image postgres:17.6-alpine, container_name: donhang-db, ports \"5432:5432\". db/seed.sql header: \"Fixed data for the lab: 8 products, 5 customers (one of whom never ordered), 12 orders.\" INSERTs: products ids 1-8, customers 1-5, orders 1-12.",
+        "source": "examples/don-hang @ stage-2: docker-compose.yml:57-73; db/seed.sql:1-35"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "dotnet.testcontainers.org (WebFetch): \"Testcontainers for .NET is a library to support tests with throwaway instances of Docker containers\"; it \"requires a Docker-API compatible container runtime\". Execution (lab up, unused by the test): docker events showed `container create name=romantic_tesla` then `container destroy name=romantic_tesla` 9 s later; PostgresFixture.DisposeAsync calls container.DisposeAsync().",
+        "source": "https://dotnet.testcontainers.org/ ; reviewer run 2026-10-01; PostgresFixture.cs:33"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "PostgresFixture.cs@stage-2 l.14-17: `new PostgreSqlBuilder(\"postgres:17.6-alpine\").WithDatabase(\"donhang\").WithUsername(\"donhang\").Build();` in a field initializer; l.28 `await container.StartAsync();` in InitializeAsync; l.33 `DisposeAsync() => await container.DisposeAsync()`. Module docs (WebFetch) show `new PostgreSqlBuilder(\"postgres:15.1\").Build()` taking the image in the constructor.",
+        "source": "examples/don-hang @ stage-2: DonHang.Tests/Integration/PostgresFixture.cs:12-33; https://dotnet.testcontainers.org/modules/postgres/"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "docker-compose.yml@stage-2 l.58 `image: postgres:17.6-alpine`; PostgresFixture.cs l.14 `new PostgreSqlBuilder(\"postgres:17.6-alpine\")`. docker ps during the run listed the test container with image postgres:17.6-alpine.",
+        "source": "examples/don-hang @ stage-2: docker-compose.yml:58; PostgresFixture.cs:14"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Testcontainers docs (WebFetch, create_docker_container): \"assign a random host port by using `WithPortBinding(80, true)`\". Execution, lab's donhang-db on 5432 at the same time: `docker ps` -> `romantic_tesla|0.0.0.0:54753->5432/tcp` (session-1 run: 54407). Tests connect only via ConnectionString (no password in code), both pass, so the string carries host, mapped port, db and credentials.",
+        "source": "https://dotnet.testcontainers.org/api/create_docker_container/ ; reviewer run 2026-10-01"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "docker-docs guides/postgresql.md: \"When the container starts, it checks whether the PostgreSQL data directory is empty. If the directory already contains data, PostgreSQL starts immediately without running any initialization. If the directory is empty, the container runs `initdb` ... then executes all scripts in `/docker-entrypoint-initdb.d/`\". PostgresFixture.cs l.14-17: no mount/volume; round-1 run: only an anonymous volume, InitialCreate applied on it. version_key now docker, matching the source.",
+        "source": "refs/docker-docs/content/guides/postgresql.md:410-414; PostgresFixture.cs:14-17; reviewer run 2026-10-01"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "applying.md: \"To apply migrations programmatically, call `context.Database.MigrateAsync()`\". PostgresFixture.cs l.28-30 StartAsync, `await using var db = CreateContext();`, MigrateAsync; l.37-38 CreateContext = new DonHangDbContext(...UseNpgsql(ConnectionString)). Migrations/20260924092625_AddOrderCustomerNavigation.cs l.19 AddForeignKey name \"FK_orders_customers_customer_id\". No migration after InitialCreate calls CreateTable.",
+        "source": "refs/efcore-docs/.../migrations/applying.md:409; examples/don-hang @ stage-2: PostgresFixture.cs:26-38, Migrations/*"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "choosing-a-testing-strategy.md l.60: in-memory \"isn't a relational database\"; l.62: \"Raw SQL is completely unsupported.\"; l.75: queries run \"in .NET over an in-memory collection\". No doc sentence on FK enforcement; settled by execution (round 1): DonHangDbContext on UseInMemoryDatabase (InMemory 10.0.4) saved Order(customerId -1) without error; EfOrderRepositoryTests.SaveChangesAsync_OrderForMissingCustomer_IsRefused passes on PostgreSQL.",
+        "source": "refs/efcore-docs/entity-framework/core/testing/choosing-a-testing-strategy.md:60-75; reviewer run 2026-10-01"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "docker-compose.yml@stage-2 l.67-70 mounts schema/seed/migrations-baseline into docker-entrypoint-initdb.d, plus db-data. migrations-baseline.sql: \"this records InitialCreate as applied\"; \"(Until stage-1 the api did the same at startup, in MigrationBaseline.cs.)\"; stage-1 Program.cs l.60 MigrationBaseline.ApplyIfNeeded. xunit.net: class fixture \"will be created before any of the tests have run, and once all the tests have finished, it will clean up\". Run: 2 tests, one create/destroy.",
+        "source": "examples/don-hang @ stage-2: docker-compose.yml:67-70, db/migrations-baseline.sql:1-5; @ stage-1: DonHang.Api/Program.cs:60; https://xunit.net/docs/shared-context; reviewer run 2026-10-01 (claim 13)"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "DonHang.Tests.csproj@stage-2: comment \"Running this project now needs Docker, not the lab.\"; `<PackageReference Include=\"Testcontainers.PostgreSql\" />`, Testcontainers.Redis, Microsoft.AspNetCore.Mvc.Testing. Directory.Packages.props: Testcontainers.PostgreSql 4.15.0.",
+        "source": "examples/don-hang @ stage-2: DonHang.Tests/DonHang.Tests.csproj:17-25; Directory.Packages.props"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Opinion with stated reasons, supported: testing-with-the-database.md: \"tests which modify data are more problematic, since they may interfere with one another\"; \"we must clean up the database between every test to avoid interference\". Lesson states the cost (data others read, result depends on lab state), not an unconditional rule.",
+        "source": "refs/efcore-docs/entity-framework/core/testing/testing-with-the-database.md:53,112"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "docker_system_events.yaml: \"Use `docker events` to get real-time events from the server\"; \"Using the same filter multiple times is interpreted as a logical `OR`\"; \"Using multiple filters is interpreted as a logical `AND`\"; filters `image=<repository or tag>`, `event=<event action>`; `destroy` listed. Execution printed exactly one create and one destroy line, kept streaming until killed.",
+        "source": "refs/docker-docs/data/cli/engine/docker_system_events.yaml:5,145-163"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Reviewer run 2026-10-01 on stage-2 extract (scratchpad it-a/s2), `dotnet test DonHang.Tests --filter \"FullyQualifiedName~EfOrderRepositoryTests\"`: \"Passed!  - Failed: 0, Passed: 2, Skipped: 0, Total: 2\". docker events (same filters): `container create name=romantic_tesla`, then `container destroy name=romantic_tesla`; no donhang-db line. Default output includes `name=` (docs example `(image=alpine:latest, name=test)`).",
+        "source": "reviewer run 2026-10-01; refs/docker-docs/data/cli/engine/docker_system_events.yaml:260"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Ambiguous pronoun makes a false reading available. The nearest antecedent of 'its' is EfOrderRepositoryTests, which has its own InitializeAsync (IAsyncLifetime, calls database.ResetAsync()) that xUnit runs before EACH test, not once per class (EfOrderRepositoryTests.cs l.14-19). Only PostgresFixture's InitializeAsync/DisposeAsync run once per class.",
+        "quote": "For `EfOrderRepositoryTests`, the test framework calls its `InitializeAsync` once before the first test of that class and its `DisposeAsync` once after the class's last test",
+        "fix": "Name the owner: 'For `EfOrderRepositoryTests`, the test framework calls `PostgresFixture`'s `InitializeAsync` once before the first test of that class and its `DisposeAsync` once after the class's last test; the next lesson shows how.'"
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "Claim 9 now carries xUnit behaviour (class-fixture lifetime) but has no version_key; the lifetime is xUnit-version-dependent (v2 vs v3 IAsyncLifetime differ).",
+        "quote": "xUnit calls a class fixture's InitializeAsync/DisposeAsync once per test class.",
+        "fix": "In the ledger, split the xUnit sentence of claim 9 into its own claim with kind behavior, version_key xunit, source_hint xunit.net/docs/shared-context; keep the repo facts in claim 9."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-01T23:50:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation, round 2)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "gap",
+        "text": "The migrations prereq taught that the MigrationBaseline class, at API startup, marks InitialCreate as applied. Here a SQL file, migrations-baseline.sql, does that. I cannot tell whether these are the same mechanism, two steps, or one replaced the other at stage-2. Not needed for the main idea.",
+        "quote": "Its tables come from `schema.sql`, with `InitialCreate` marked as applied by `migrations-baseline.sql`; the test container's tables come from `MigrateAsync`.",
+        "fix": "Add a few words linking it to the prereq, e.g. 'marked as applied by `migrations-baseline.sql` (the job `MigrationBaseline` did in the migrations lesson)', or simply 'marked as already applied', without naming the file."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "style",
+        "text": "The excerpt has two comment blocks inside the class (above the class and above InitializeAsync). 'The comment's last line' made me re-read to find which comment; I guessed the one above InitializeAsync because it mentions migrations.",
+        "quote": "The comment's last line compares this with how the lab's own database gets its migrations; you can skip it here.",
+        "fix": "Write 'The last line of the comment above `InitializeAsync` (about the migration bundle) compares this with...'."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [
+        "Relation between migrations-baseline.sql (this lesson) and the MigrationBaseline class (migrations prereq)"
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

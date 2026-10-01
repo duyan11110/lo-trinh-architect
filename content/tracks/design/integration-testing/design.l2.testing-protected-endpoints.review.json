@@ -1,0 +1,132 @@
+{
+  "id": "design.l2.testing-protected-endpoints",
+  "technical": {
+    "reviewed_at": "2026-10-02T00:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "verdict": "pass",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Program.cs@stage-2 L42-56 registers only AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer with Authority = Keycloak; OrdersController actions carry [Authorize]. Lab run 2026-10-01: curl GET http://localhost:8080/api/v1/orders/1 without Authorization -> 401, WWW-Authenticate: Bearer.",
+        "source": "examples/don-hang @ stage-2: DonHang.Api/Program.cs, Controllers/OrdersController.cs; curl to lab"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "ApiFactory.cs@stage-2 L46-47 inside ConfigureTestServices: services.AddAuthentication(TestAuthHandler.SchemeName).AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(TestAuthHandler.SchemeName, null); TestAuthHandler.cs L18 SchemeName = \"Test\". Docs: \"The AddAuthentication(IServiceCollection, String) overload sets the DefaultScheme property... Subsequent calls to AddAuthentication override previously configured AuthenticationOptions properties.\" git ls-tree: ApiFactory.cs and TestAuthHandler.cs only under DonHang.Tests/Integration.",
+        "source": "refs/aspnetcore-docs/aspnetcore/security/authentication/social/includes/default-settings.md; examples/don-hang @ stage-2: DonHang.Tests/Integration/ApiFactory.cs, TestAuthHandler.cs"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "security/authentication/index.md (moniker >= aspnetcore-7.0): \"The default scheme is used unless a resource requests a specific scheme.\" and \"Authorization invokes a challenge using the specified authentication schemes, or the default if none is specified.\"",
+        "source": "refs/aspnetcore-docs/aspnetcore/security/authentication/index.md"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "TestAuthHandler.cs L22-29: X-Test-Subject -> new Claim(\"sub\", subject); X-Test-Roles Split(',', RemoveEmptyEntries) -> Claim(\"roles\", role); ClaimsIdentity(claims, SchemeName, nameType: \"sub\", roleType: \"roles\"). Program.cs L54-55: options.MapInboundClaims = false; TokenValidationParameters.RoleClaimType = \"roles\".",
+        "source": "examples/don-hang @ stage-2: DonHang.Tests/Integration/TestAuthHandler.cs, DonHang.Api/Program.cs"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Code: subject.Length == 0 -> AuthenticateResult.NoResult(). Docs: handlers \"Return 'no result' or 'failure' if authentication is unsuccessful\"; \"An authentication challenge is invoked by Authorization when an unauthenticated user requests an endpoint that requires authentication.\" Execution (git archive stage-2, 2026-10-01): OrdersApiTests 5 passed incl. PostOrder_NoCaller_Returns401.",
+        "source": "refs/aspnetcore-docs/aspnetcore/security/authentication/index.md; dotnet test run"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Program.cs@stage-2 L64-65: AddPolicy(\"StaffOnly\", policy => policy.RequireRole(\"staff\")); AddPolicy(\"OrderOwner\", ...AddRequirements(new OrderOwnerRequirement())), no AuthenticationSchemes. OrdersController.cs L91 [Authorize(Policy = \"StaffOnly\")] on Ship (endpoint metadata, evaluated by UseAuthorization before the action); L57-63 Get: loads order, NotFound if null, then authorization.AuthorizeAsync(User, order, \"OrderOwner\"), Forbid() if not Succeeded. OrderOwnerHandler handles OrderOwnerRequirement for Order.",
+        "source": "examples/don-hang @ stage-2: DonHang.Api/Program.cs, Controllers/OrdersController.cs, Authorization/OrderOwnerHandler.cs"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "OrderOwnerHandler.cs L28-29 and OrdersController.CurrentCustomerAsync: User.FindFirstValue(\"sub\") -> customers.FindByIdentitySubjectAsync(subject); DonHangDbContext maps IdentitySubject to column identity_subject. OrdersApiTests.cs L102-109: InsertCustomerAsync adds Customer { ..., IdentitySubject = subject }.",
+        "source": "examples/don-hang @ stage-2: OrderOwnerHandler.cs, OrdersController.cs, DonHangDbContext.cs, OrdersApiTests.cs"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "OrdersApiTests.cs L47-70: customer-binh GETs customer-an's order, customer-an PATCHes /api/v1/orders/{id}/ship of her own order; both Assert.Equal(HttpStatusCode.Forbidden, ...). Execution 2026-10-01 (fresh git archive stage-2, Docker): dotnet test DonHang.Tests --filter FullyQualifiedName~OrdersApiTests -> Passed: 5, Failed: 0.",
+        "source": "dotnet test run on git archive stage-2"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Default scheme in tests is \"Test\" (ApiFactory L46-47) and no test sends an Authorization header, so JwtBearer never validates a token. Execution: OrdersApiTests with env Keycloak__Authority=http://127.0.0.1:1/realms/none (unreachable) -> Passed: 5, Failed: 0.",
+        "source": "examples/don-hang @ stage-2: ApiFactory.cs, OrdersApiTests.cs; dotnet test run"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "IsInRole docs: \"checks whether an identity ... contains a claim of type ClaimsIdentity.RoleClaimType where the value ... is equal to ... role\". Own run 2026-10-01 (net10.0, AddAuthorization + RequireRole(\"staff\")): principal overriding IsInRole, no role claims -> Succeeded True; Claim(\"roles\",\"staff\") with roleType \"roles\" -> True; same claim, default roleType -> False. So RequireRole is decided by IsInRole, which reads the roleType claims.",
+        "source": "https://learn.microsoft.com/dotnet/api/system.security.claims.claimsprincipal.isinrole; console run in scratchpad rolecheck (DefaultAuthorizationService)"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "git grep TestAuthHandler|X-Test-Subject stage-2 -> only DonHang.Tests/Integration/{ApiFactory,OrdersApiTests,TestAuthHandler}.cs; Program.cs registers only AddJwtBearer. Lab 2026-10-01: curl -H X-Test-Subject:customer-an -H X-Test-Roles:staff GET http://localhost:8080/api/v1/orders/1 -> 401 (WWW-Authenticate: Bearer), same as without headers.",
+        "source": "examples/don-hang @ stage-2; curl to lab"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "OrdersApiTests.cs L36-43: PlaceOrderAsync(factory.CreateClient(), productId) -> POST /api/v1/orders, Assert Unauthorized; passes. Had Create() run, CurrentCustomerAsync would return null and Forbid() would give 403, so 401 shows the request stopped before the action. Docs: challenge \"invoked by Authorization when an unauthenticated user requests an endpoint that requires authentication\".",
+        "source": "examples/don-hang @ stage-2: OrdersApiTests.cs, OrdersController.cs; refs security/authentication/index.md"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Own run 2026-10-01 on a fresh git archive stage-2: line 30 of OrderOwnerHandler.cs changed to `if (caller is not null)`; dotnet test DonHang.Tests --filter \"FullyQualifiedName~OrdersApiTests\" -> \"Failed DonHang.Tests.Integration.OrdersApiTests.GetOrder_AnotherCustomersOrder_Returns403 ... Assert.Equal() Failure: Values differ / Expected: Forbidden / Actual:   OK\"; \"Failed: 1, Passed: 4, Total: 5\".",
+        "source": "dotnet test run on modified copy of git archive stage-2"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "Own run 2026-10-01 on fresh git archive stage-2 (appsettings Keycloak:Authority = http://localhost:8180/realms/donhang overridden): Keycloak__Authority=http://127.0.0.1:1/realms/none dotnet test DonHang.Tests --filter \"FullyQualifiedName~OrdersApiTests\" -> \"Passed!  - Failed: 0, Passed: 5, Skipped: 0, Total: 5\". Default scheme in tests is Test; no test sends a bearer token, so JwtBearer never contacts the authority.",
+        "source": "dotnet test run on git archive stage-2 with unreachable Keycloak__Authority"
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "diagram",
+        "quote": "T->>H: GET with X-Test-Subject, X-Test-Roles / H-->>T: no headers: 401 / H->>C: caller with sub and roles claims",
+        "text": "The 401 reply and the continuation to OrdersController.Get are drawn as one linear sequence, so the diagram reads as if the request is refused with 401 and then still reaches the controller. They are alternatives (no X-Test-Subject vs. headers present). Code: HandleAuthenticateAsync returns NoResult() and [Authorize] stops the request before Get; otherwise the caller reaches Get.",
+        "fix": "Wrap the two paths in an alt block: after `T->>H: GET ...` write `alt no X-Test-Subject` / `H-->>T: 401` / `else headers present` / `H->>C: caller with sub and roles claims` / `C->>O: AuthorizeAsync(caller, order)` / `O-->>C: not this customer's order` / `C-->>T: 403` / `end`."
+      }
+    ]
+  },
+  "junior": {
+    "reviewed_at": "2026-10-02T12:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior reader, round 3)",
+    "issues": [
+      {
+        "severity": "major",
+        "section": 2,
+        "kind": "term",
+        "quote": "Real tokens in a test would mean starting Keycloak, loading the realm, creating users and signing each one in first.",
+        "text": "\"realm\" is not in known_vocab and this lesson does not define it. I have only seen it in a prereq summary (\"the realm's metadata document\"), also without a meaning, so I cannot tell what \"loading the realm\" is as a step. The rest of the list (starting Keycloak, creating users, signing in) I can follow.",
+        "fix": "Replace \"loading the realm\" with known words, e.g. \"loading Đơn Hàng's Keycloak settings\", or drop that item from the list."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "realm"
+      ],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "fix-required"
+  }
+}

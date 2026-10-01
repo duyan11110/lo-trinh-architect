@@ -1,0 +1,136 @@
+{
+  "id": "design.l2.resetting-data-between-tests",
+  "technical": {
+    "reviewed_at": "2026-10-01T23:05:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Reviewer's own run on a fresh git archive stage-2 copy, EfOrderRepositoryTests.cs line 17 changed to Task.CompletedTask: 'Microsoft.EntityFrameworkCore.DbUpdateException : An error occurred while saving the entity changes... ---- Npgsql.PostgresException : 23505: duplicate key value violates unique constraint \"IX_customers_email\"', 'Failed: 1, Passed: 1, Total: 2'. Same test alone (--filter FullyQualifiedName~SaveChangesAsync_OrderForMissingCustomer): 'Passed: 1, Total: 1'.",
+        "source": "execution: dotnet test DonHang.Tests on git archive stage-2 (reviewer copy scratchpad/rv-reset)"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "EfOrderRepositoryTests.cs@stage-2 line 74: 'Email = \"test.customer@example.com\"' in InsertCustomerAndProductsAsync, called at line 31 and line 60; line 60 'var (_, penId, _) = await InsertCustomerAndProductsAsync(db);' and line 63 'ProductId = penId' (the missing-customer test needs the product id). InitialCreate migration: name: \"IX_customers_email\", table: \"customers\", column: \"email\", unique: true. Round-1 run: 23505 on IX_customers_email.",
+        "source": "examples/don-hang @ stage-2: DonHang.Tests/Integration/EfOrderRepositoryTests.cs; DonHang.Infrastructure/Migrations/20260923154631_InitialCreate.cs"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "No xunit.net page states the default order (shared-context and running-tests-in-parallel checked). Settled by execution with xunit 2.9.2: probe class with Facts T1..T6 declared in order ran 'T4,T5,T2,T6,T3,T1' (detailed logger: Passed T4_Fourth, T5_Fifth, T2_Second, T6_Sixth, T3_Third, T1_First). Learn 'Order unit tests' (xUnit pivot): 'You implement the ITestCaseOrderer ... to control the order of test cases for a class' and 'it is best practice to avoid ordering unit tests'.",
+        "source": "execution (reviewer probe, stage-2 copy, xunit 2.9.2); refs/dotnet-docs/docs/core/testing/order-unit-tests.md"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "EfOrderRepositoryTests.cs:15-17 ': IClassFixture<PostgresFixture>, IAsyncLifetime' / 'public Task InitializeAsync() => database.ResetAsync();'; OrdersApiTests.cs:13-15 'IClassFixture<ApiFactory>, IAsyncLifetime' / 'InitializeAsync() => factory.Database.ResetAsync();'. xunit.net shared-context: 'xUnit.net creates a new instance of the test class for every test that is run'; 'You can implement IAsyncLifetime to get both an async startup and cleanup method (InitializeAsync and DisposeAsync)'. Execution: class passes 2/2 with the reset, fails 1/2 without it.",
+        "source": "examples/don-hang @ stage-2; https://xunit.net/docs/shared-context; reviewer execution"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "PostgresFixture.cs@stage-2 lines 44-48: 'public async Task ResetAsync()' / 'await using var db = CreateContext();' / 'await db.Database.ExecuteSqlRawAsync(\"TRUNCATE customers, products, orders, order_items, payments, notifications CASCADE\");'. Model snapshot ToTable: customers, notifications, orders, order_items, payments, products (six).",
+        "source": "examples/don-hang @ stage-2: DonHang.Tests/Integration/PostgresFixture.cs; DonHang.Infrastructure/Migrations/DonHangDbContextModelSnapshot.cs"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "PG 17 TRUNCATE: 'removes all rows from a set of tables'; CASCADE: 'Automatically truncate all tables that have foreign-key references to any of the named tables'; CONTINUE IDENTITY: 'Do not change the values of sequences. This is the default.' Model snapshot @stage-2: six ToTable (customers, notifications, orders, order_items, payments, products); all HasForeignKey targets are among them. Round-1 probe: the six-table TRUNCATE without CASCADE succeeds, so CASCADE adds none today.",
+        "source": "https://www.postgresql.org/docs/17/sql-truncate.html; DonHangDbContextModelSnapshot.cs@stage-2; round-1 reviewer probe"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Reasoning claim, hedged ('may clean up nothing'). Execution supports the in-body part: in the no-reset run the DbUpdateException surfaced from InsertCustomerAndProductsAsync (stack: EfOrderRepositoryTests.cs:line 78 <- line 60) and ended the test, so no statement after line 60 ran; any clean-up placed at the end of the body would have been skipped. Resetting in the test class's InitializeAsync runs regardless of how the previous test ended.",
+        "source": "reviewer execution, stage-2 copy (stack trace of SaveChangesAsync_OrderForMissingCustomer_IsRefused)"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "PostgresFixture.cs:40-43 comment 'The id sequences keep counting from where they were, so a test uses the ids its own inserts returned.' EfOrderRepositoryTests.cs: line 31 'var (customerId, penId, bookId) = await InsertCustomerAndProductsAsync(db);', line 41 'orderId = order.Id;', line 79 'return (customer.Id, pen.Id, book.Id);'. Probe: ids 1,2,3 across three resets (no RESTART IDENTITY).",
+        "source": "examples/don-hang @ stage-2; reviewer probe"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "EfOrderRepositoryTests.cs:19 'public Task DisposeAsync() => Task.CompletedTask;'. OrdersApiTests.cs:13-15 'IClassFixture<ApiFactory>, IAsyncLifetime' / 'InitializeAsync() => factory.Database.ResetAsync();'; ApiFactory.cs:22 'public PostgresFixture Database { get; } = new();' (its own fixture). PostgresFixture.cs:37-38 CreateContext returns 'new' DonHangDbContext; 46-48 'await using var db = CreateContext();' + ExecuteSqlRawAsync(\"TRUNCATE ...\"); list has no __EFMigrationsHistory (round-1 probe: 9 rows remain).",
+        "source": "examples/don-hang @ stage-2: DonHang.Tests/Integration/{EfOrderRepositoryTests,OrdersApiTests,ApiFactory,PostgresFixture}.cs"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "xunit.net shared-context: with a class fixture 'xUnit.net will ensure that the fixture instance will be created before any of the tests have run', one instance shared by the class's tests. PostgresFixture builds one PostgreSqlContainer per fixture instance. Execution: without the reset, the second test sees the first test's customer (23505), i.e. rows persist across tests in the same container. Generation-session docker events: one postgres:17.6-alpine create/destroy for the filtered class run.",
+        "source": "https://xunit.net/docs/shared-context; PostgresFixture.cs@stage-2; reviewer execution"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Reviewer run, Try-it steps on stage-2 copy: step 2 → 'Passed ...FindAsync_SavedOrderWithTwoItems_ReadsBothItemsBack [1 s]', 'Failed ...SaveChangesAsync_OrderForMissingCustomer_IsRefused [31 ms]' with DbUpdateException / '23505: duplicate key value violates unique constraint \"IX_customers_email\"'; step 3 → 'Passed!  - Failed: 0, Passed: 1, Total: 1'. Reproduced twice (same failing test).",
+        "source": "execution: dotnet test DonHang.Tests --filter ... (reviewer copy scratchpad/rv-reset)"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "xunit.net Shared Context (fetched 2026-10-01): 'xUnit.net creates a new instance of the test class for every test that is run'; 'You can implement IAsyncLifetime to get both an async startup and cleanup method (InitializeAsync and DisposeAsync).' Round-1 execution: class passes 2/2 with the reset in the test class's InitializeAsync and fails 1/2 without it, consistent with the reset running before each test. Round 2 opened: xunit.net/docs/shared-context, stage-2 sources above, snapshot, refs/efcore-docs (ExecuteSqlRaw).",
+        "source": "https://xunit.net/docs/shared-context; round-1 reviewer execution (stage-2 copy)"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-01T23:30:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "term",
+        "text": "IClassFixture<PostgresFixture> is still never named in the prose. Before you start and the code comment tell me the class shares one PostgresFixture, so I can guess this is how, but nothing connects the name to that idea.",
+        "quote": ": IClassFixture<PostgresFixture>, IAsyncLifetime",
+        "fix": "After 'The comment above the class gives both reasons at once' add: '`IClassFixture<PostgresFixture>` is what gives the class its one shared fixture.'"
+      },
+      {
+        "severity": "minor",
+        "section": "quiz.q4",
+        "kind": "quiz",
+        "text": "Section 5 now says 'the tables and keys the migrations created stay', but option c still says 'schema', a word I do not know. I can still pick c from its first half ('It keeps the tables').",
+        "quote": "It keeps the tables, so the schema from the migrations stays",
+        "fix": "Reword option c (en and vi) as 'It keeps the tables, so what the migrations created stays'."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz.q2",
+        "kind": "quiz",
+        "text": "Explanation d says the tests start from a database 'of their own'. The whole lesson says the tests share one database, so 'their own' briefly made me think each test has one; I had to re-read to see it means the class's container.",
+        "quote": "The tests start from an empty database of their own; the rows that cause trouble are the ones other tests saved.",
+        "fix": "Replace 'an empty database of their own' with 'the empty database in the class's own container'."
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "example",
+        "text": "The fallback for the other order is clear, but it does not name the other test, so I must read its name from the step-2 output and build the filter myself. Doable, just one more guess.",
+        "quote": "If the other test failed on your machine, xUnit picked the other order; run that one alone in step 3 instead.",
+        "fix": "Name it: 'run `FindAsync_SavedOrderWithTwoItems` alone in step 3 instead'."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "IClassFixture",
+        "schema"
+      ],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

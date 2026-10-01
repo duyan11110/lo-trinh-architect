@@ -1,0 +1,141 @@
+{
+  "id": "design.l2.testcontainers-postgresql",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-10-01T20:40:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "The lab's db service is container donhang-db, published on host port 5432, seeded by db/seed.sql with 5 customers, 8 products and 12 orders.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: docker-compose.yml:57-73; db/seed.sql header comment",
+      "needs_verification": true,
+      "section": 2
+    },
+    {
+      "n": 2,
+      "text": "Testcontainers (Testcontainers for .NET 4.15.0) starts a Docker container from test code and removes it when the container object is disposed; it needs a running Docker engine, not the Compose lab.",
+      "kind": "behavior",
+      "version_key": "testcontainers",
+      "source_hint": "dotnet.testcontainers.org (overview, container lifecycle); verified by execution: docker events create/destroy during dotnet test (scratchpad it-a/evidence-tc.txt)",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 3,
+      "text": "PostgresFixture builds a PostgreSqlContainer with new PostgreSqlBuilder(\"postgres:17.6-alpine\").WithDatabase(\"donhang\").WithUsername(\"donhang\").Build(); Build() only creates the description, StartAsync() starts the container, DisposeAsync() disposes it.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: DonHang.Tests/Integration/PostgresFixture.cs:12-33",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 4,
+      "text": "The test image postgres:17.6-alpine is the same image as the db service in docker-compose.yml at stage-2 (image: postgres:17.6-alpine).",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: docker-compose.yml:58; PostgresFixture.cs:14",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 5,
+      "text": "Testcontainers' PostgreSQL module binds container port 5432 to a random free host port assigned when the container starts; GetConnectionString() returns host, mapped port, database, username and password.",
+      "kind": "behavior",
+      "version_key": "testcontainers",
+      "source_hint": "dotnet.testcontainers.org modules/postgres; verified by execution: docker ps showed 0.0.0.0:54407->5432/tcp, docker events ports/5432/tcp=0.0.0.0:0",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 6,
+      "text": "The test container gets none of the lab's init SQL files and no named volume, so it starts with an empty database named donhang (WithDatabase); the postgres image runs docker-entrypoint-initdb.d files only on first start with an empty data directory.",
+      "kind": "behavior",
+      "version_key": "docker",
+      "source_hint": "PostgresFixture.cs:14-17; docker-compose.yml:67-71; postgres image docs (Initialization scripts); verified: InitialCreate applies",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 7,
+      "text": "InitializeAsync: container.StartAsync(), then MigrateAsync through CreateContext() (a DonHangDbContext on ConnectionString), applying every migration incl. InitialCreate; the schema includes FK_orders_customers_customer_id (AddOrderCustomerNavigation).",
+      "kind": "behavior",
+      "version_key": "efcore",
+      "source_hint": "PostgresFixture.cs:26-38; Migrations/20260924092625_AddOrderCustomerNavigation.cs; EF Core docs: applying migrations at runtime",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 8,
+      "text": "EF Core's in-memory provider keeps data in memory, is not relational, runs no SQL and does not enforce foreign keys: SaveChanges accepts an order whose CustomerId names no customer, which PostgreSQL rejects (23503).",
+      "kind": "behavior",
+      "version_key": "efcore",
+      "source_hint": "refs efcore-docs core/testing/choosing-a-testing-strategy.md; reviewer execution (InMemory 10.0.4); EfOrderRepositoryTests.SaveChangesAsync_OrderForMissingCustomer_IsRefused",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 9,
+      "text": "Lab db init scripts: schema.sql, seed.sql, migrations-baseline.sql (records InitialCreate as applied, as MigrationBaseline did until stage-1); db-data volume keeps rows. xUnit calls a class fixture's InitializeAsync/DisposeAsync once per test class.",
+      "kind": "fact",
+      "source_hint": "docker-compose.yml:67-71; db/migrations-baseline.sql:1-13; xunit.net shared-context (IClassFixture, IAsyncLifetime)",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 10,
+      "text": "DonHang.Tests.csproj at stage-2 references Testcontainers.PostgreSql (also Testcontainers.Redis, Microsoft.AspNetCore.Mvc.Testing); its comment says running the project now needs Docker, not the lab.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: DonHang.Tests/DonHang.Tests.csproj:17-25",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 11,
+      "text": "Tests that write to a shared lab database change data other users rely on, and their result depends on that data; a throwaway database avoids both.",
+      "kind": "opinion",
+      "source_hint": "outline misconception 1",
+      "needs_verification": false,
+      "section": 6
+    },
+    {
+      "n": 12,
+      "text": "`docker events --filter image=postgres:17.6-alpine --filter event=create --filter event=destroy` waits and prints one line per matching create or destroy event until stopped.",
+      "kind": "syntax",
+      "version_key": "docker",
+      "source_hint": "refs docker-docs data/cli/engine/docker_system_events.yaml (filters; same key repeated = OR, different keys = AND)",
+      "needs_verification": true,
+      "section": 7
+    },
+    {
+      "n": 13,
+      "text": "In a stage-2 checkout with Docker running, `dotnet test DonHang.Tests --filter \"FullyQualifiedName~EfOrderRepositoryTests\"` passes 2 tests; docker events shows one create and one destroy line for a randomly named postgres:17.6-alpine container.",
+      "kind": "behavior",
+      "version_key": "testcontainers",
+      "source_hint": "verified by execution on git archive stage-2, 2026-10-01 (scratchpad it-a/evidence-tc.txt)",
+      "needs_verification": true,
+      "section": 7
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "outline_items_missing": [],
+    "beyond_scope": [
+      "one sentence that PostgreSqlBuilder is a builder (Build() then StartAsync()), tying to the related lesson design.l2.builder-pattern"
+    ]
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1209,
+    "notes": "Try it verified on git archive stage-2 (2 passed; docker events create + destroy of a random-name postgres:17.6-alpine container). R1: claims 6-9 extended; s4 who calls Initialize/Dispose, init files, provider; s5 IAsyncLifetime/xUnit, CreateContext, csproj quote, schema origin; quiz q2c, q5b, q6. R2: per-class timing, baseline file list, MigrationBaseline link, comment located. R3: PostgresFixture named; claim-9 split not applied (would need a new verdict)."
+  },
+  "open_questions": [],
+  "repo_changes_needed": []
+}
