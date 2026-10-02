@@ -1,0 +1,212 @@
+{
+  "id": "devops.l2.migrations-in-the-pipeline",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-10-03T00:05:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "At stage-1 DonHang.Api/Program.cs ran MigrationBaseline.ApplyIfNeeded(context) and context.Database.Migrate() in a scope right after builder.Build(), on every start; at stage-2 Program.cs has no Migrate() call, only a comment (lines 89-92) that the migrate service does it.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-1 DonHang.Api/Program.cs:54-62; @ stage-2 DonHang.Api/Program.cs:89-93",
+      "needs_verification": true,
+      "section": 2
+    },
+    {
+      "n": 2,
+      "text": "EF Core docs, Apply migrations at runtime: trade-offs include that the app needs elevated rights to change the schema, the SQL is applied without inspection, and an app accessing the database while another migrates it can cause severe issues.",
+      "kind": "fact",
+      "source_hint": "refs/efcore-docs entity-framework/core/managing-schemas/migrations/applying.md#apply-migrations-at-runtime",
+      "needs_verification": true,
+      "section": 4,
+      "version_key": "efcore"
+    },
+    {
+      "n": 3,
+      "text": "EF Core (9 and later, so EF Core 10) protects migration execution with a database-wide lock; the bundle logs 'Acquiring an exclusive lock for migration application.'",
+      "kind": "behavior",
+      "source_hint": "applying.md (Apply migrations at runtime; Uses EF migration locking column); bundle output in local test (scratchpad ci-d)",
+      "needs_verification": true,
+      "section": 4,
+      "version_key": "efcore"
+    },
+    {
+      "n": 4,
+      "text": "EF Core docs prefer a separate migration deployment step when review, least-privilege credentials, coordinated rollout or high availability matter, and say: don't make every application replica run migrations from its entrypoint.",
+      "kind": "fact",
+      "source_hint": "applying.md: Apply migrations at runtime (first paragraph); Containers and deployment jobs",
+      "needs_verification": true,
+      "section": 4,
+      "version_key": "efcore"
+    },
+    {
+      "n": 5,
+      "text": "dotnet ef migrations bundle builds a single-file executable (efbundle by default) that applies migrations not yet applied to the target database, like dotnet ef database update; it runs without the .NET SDK, the EF tools or the source code.",
+      "kind": "behavior",
+      "source_hint": "applying.md: Choose a deployment strategy; Bundles; efbundle",
+      "needs_verification": true,
+      "section": 3,
+      "version_key": "efcore"
+    },
+    {
+      "n": 6,
+      "text": "A framework-dependent bundle (no --self-contained) needs the .NET runtime to run; the migrate stage uses mcr.microsoft.com/dotnet/runtime:10.0, which has the runtime but no SDK.",
+      "kind": "behavior",
+      "source_hint": "EF Core tools reference: dotnet ef migrations bundle (--self-contained); Dockerfile@stage-2:28; .NET container images docs (runtime vs sdk)",
+      "needs_verification": true,
+      "section": 5,
+      "version_key": "efcore"
+    },
+    {
+      "n": 7,
+      "text": "Tested: on a new database built from db/schema.sql, seed.sql and migrations-baseline.sql (InitialCreate recorded), donhang-migrate:stage-2 applies eight migrations then prints Done.; run again it prints 'No migrations were applied. The database is already up to date.' then Done.",
+      "kind": "behavior",
+      "source_hint": "local run, isolated postgres:17.6-alpine + donhang-migrate:stage-2 (scratchpad ci-d/s2db); 9 files in Migrations/ at stage-2",
+      "needs_verification": true,
+      "section": 4,
+      "version_key": "efcore"
+    },
+    {
+      "n": 8,
+      "text": "depends_on condition service_completed_successfully: the dependency must run to successful completion (exit code 0) before the dependent service starts; service_healthy waits for the dependency's healthcheck.",
+      "kind": "syntax",
+      "source_hint": "Docker docs: Compose file reference > services > depends_on (long syntax, condition)",
+      "needs_verification": true,
+      "section": 3,
+      "version_key": "docker"
+    },
+    {
+      "n": 9,
+      "text": "Tested (Compose 2.33): when the service_completed_successfully dependency exits 1, up prints 'service \"migrate\" didn't complete successfully: exit 1' and exits 1; the dependent container is created but never started.",
+      "kind": "behavior",
+      "source_hint": "local test, scratchpad ci-d/cfail compose project; Docker docs depends_on",
+      "needs_verification": true,
+      "section": 4,
+      "version_key": "docker"
+    },
+    {
+      "n": 10,
+      "text": "docker-compose.yml@stage-2: migrate (83-96) builds target migrate, image donhang-migrate:stage-2, command --connection Host=db;…, depends_on db service_healthy; api (136-139) depends_on migrate condition service_completed_successfully.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2 docker-compose.yml:83-99, 133-143",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 11,
+      "text": "DonHang.Api/Dockerfile@stage-2 19-34: stage bundle FROM build runs dotnet tool restore and dotnet ef migrations bundle --project DonHang.Infrastructure --configuration Release --output /bundle/efbundle; stage migrate FROM dotnet/runtime:10.0 copies efbundle, ENTRYPOINT ./efbundle.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2 DonHang.Api/Dockerfile:5-17, 19-34; .config/dotnet-tools.json (dotnet-ef 10.0.12)",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 12,
+      "text": "dotnet tool restore installs the local tools listed in the tool manifest .config/dotnet-tools.json; the bundle's --connection option sets the connection string.",
+      "kind": "syntax",
+      "source_hint": "dotnet docs: dotnet tool restore; EF Core docs applying.md efbundle --connection",
+      "needs_verification": true,
+      "section": 5,
+      "version_key": "efcore"
+    },
+    {
+      "n": 13,
+      "text": "The image job (ci.yml@stage-2:72) builds --target migrate as donhang-migrate:stage-2 and saves it with the api image into images.tar (artifact images); staging loads both.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2 .github/workflows/ci.yml:69-83, 97-102",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 14,
+      "text": "Run 36332055445 staging log: 'Container donhang-migrate  Exited' at 16:10:15.31Z, then 'Container donhang-api  Starting' at 16:10:15.31Z and Started at 16:10:15.43Z.",
+      "kind": "fact",
+      "source_hint": "gh run view --job 108656157691 --log -R duyan11110/don-hang",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 15,
+      "text": "scripts/up.sh@stage-2 runs docker compose up -d --build --wait, and the staging job runs docker compose up --detach --no-build --wait web api; both start migrate before api through depends_on.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2 scripts/up.sh, .github/workflows/ci.yml:116-117, docker-compose.yml",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 16,
+      "text": "dotnet ef database update needs the .NET SDK, the EF Core tools and the project source where it runs (EF docs strategy table: Requires SDK and source at execution).",
+      "kind": "fact",
+      "source_hint": "applying.md: Choose a deployment strategy (table), Command-line tools",
+      "needs_verification": true,
+      "section": 6,
+      "version_key": "efcore"
+    },
+    {
+      "n": 17,
+      "text": "docker compose ps --all shows stopped containers with STATUS 'Exited (<code>) …'; docker compose run --rm migrate runs a one-off container of the service with its command and removes it after.",
+      "kind": "syntax",
+      "source_hint": "Docker docs: docker compose ps (--all), docker compose run (--rm)",
+      "needs_verification": true,
+      "section": 7,
+      "version_key": "docker"
+    },
+    {
+      "n": 18,
+      "text": "With migrations already applied, efbundle prints a lock line, 'No migrations were applied. The database is already up to date.' and 'Done.' (local lab donhang-migrate logs and isolated test).",
+      "kind": "behavior",
+      "source_hint": "docker logs donhang-migrate on the owner's machine; scratchpad ci-d/s2db test",
+      "needs_verification": true,
+      "section": 7,
+      "version_key": "efcore"
+    },
+    {
+      "n": 19,
+      "text": "A migration bundle does not provide a way to inspect the SQL it will execute (strategy table: Review SQL before execution = No; use a SQL script for review). In Đơn Hàng, migrate and api both connect as user donhang (docker-compose.yml:93, 111).",
+      "kind": "fact",
+      "source_hint": "applying.md: Choose a deployment strategy (table), Bundles; docker-compose.yml@stage-2:93,111",
+      "needs_verification": true,
+      "section": 4,
+      "version_key": "efcore"
+    },
+    {
+      "n": 20,
+      "text": "Compose command: overrides the image's CMD and is passed as arguments to the ENTRYPOINT, so migrate runs ./efbundle --connection <string>; docker build without --target builds the last stage.",
+      "kind": "syntax",
+      "source_hint": "Docker docs: Compose services command; Dockerfile reference ENTRYPOINT/CMD interaction; docker build --target",
+      "needs_verification": true,
+      "section": 5,
+      "version_key": "docker"
+    },
+    {
+      "n": 21,
+      "text": "The .NET SDK contains the tools to build apps; dotnet ef is not part of it and is installed as a global or local .NET tool (here via .config/dotnet-tools.json and dotnet tool restore); the runtime only runs built apps.",
+      "kind": "fact",
+      "source_hint": "EF Core tools reference (Installing the tools); .NET docs: SDK and runtime overview; Dockerfile@stage-2:24-26",
+      "needs_verification": true,
+      "section": 3,
+      "version_key": "efcore"
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "outline_items_missing": [],
+    "beyond_scope": []
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1258,
+    "notes": "Code: Dockerfile@stage-2 19-34, docker-compose.yml@stage-2 83-96. EF 10 docs: runtime migration has a lock (no corruption claim); separate step preferred. No expand/contract, rollback, idempotent scripts, cluster Job. R1: no SQL review, same db user (19); SDK/runtime, exit code; C# vs generated SQL; renamed column; ENTRYPOINT/command (20); --target; image job; --all/--rm; q1, q5 d, q6 d. R2: SDK bullet (21), what the step solves, q1 a/expl, q6 d."
+  },
+  "open_questions": [
+    "Outline item 1's example ('several copies start at once') is softened for the pinned EF Core 10: the docs say EF 9+ takes a database-wide lock, so concurrent copies no longer corrupt; the lesson cites the docs' remaining reasons and their advice not to make every replica migrate from its entrypoint."
+  ],
+  "repo_changes_needed": []
+}

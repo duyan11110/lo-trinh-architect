@@ -1,0 +1,157 @@
+{
+  "id": "devops.l2.building-images-in-ci",
+  "technical": {
+    "reviewed_at": "2026-10-03T01:30:00+07:00",
+    "reviewer": "claude-opus-5-5 (review-technical, round 3)",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "git show stage-2:.github/workflows/ci.yml lines 63-72: 'image:', 'needs: test', 'runs-on: ubuntu-24.04', 'docker build --file DonHang.Api/Dockerfile --tag donhang-api:stage-2 .', 'docker build --file DonHang.Api/Dockerfile --target migrate --tag donhang-migrate:stage-2 .'. Lesson block lines 59-72 matches character for character. stage-2^{commit} = 7a131bc8.",
+        "source": "examples/don-hang @ stage-2 .github/workflows/ci.yml:59-72"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "git show stage-2:docker-compose.yml lines 102-106: 'api:', 'build:', 'context: .', 'dockerfile: DonHang.Api/Dockerfile', 'image: donhang-api:stage-2' (no target). Lesson block lines 101-106 matches character for character.",
+        "source": "examples/don-hang @ stage-2 docker-compose.yml:101-106"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Using jobs: 'If a job fails or is skipped, all jobs that need it are skipped unless the jobs use a conditional expression that causes the job to continue.' Expressions > Status check functions: 'A default status check of success() is applied unless you include one of these functions.' So staging/publish's `if:` (no status function) still skips when image fails. ci.yml@stage-2:64, 91, 137 confirm the needs lists.",
+        "source": "docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-jobs; docs.github.com/en/actions/reference/workflows-and-actions/expressions"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "`git show stage-2:DonHang.Api/Dockerfile | docker buildx build --call=targets -` printed: 'build', 'bundle', 'migrate', 'final (default)'. buildx build reference: '--target option to specify an intermediate build stage by name as a final stage for the resulting image. The builder skips commands after the target stage.' Dockerfile@stage-2:36-37 'The api's image: the default target, because it is the last stage.' FROM ...aspnet:10.0 AS final.",
+        "source": "docker buildx build --call=targets (Docker 28.0.1 host); refs/docker-docs/data/cli/buildx/docker_buildx_build.yaml:1616-1620"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Dockerfile@stage-2 lines 8-17: COPY global.json Directory.Packages.props; COPY the Domain, Infrastructure, Api .csproj files; RUN dotnet restore DonHang.Api/DonHang.Api.csproj; COPY DonHang.Domain/, DonHang.Infrastructure/, DonHang.Api/; RUN dotnet publish ... --no-restore. No other project is copied before publish.",
+        "source": "examples/don-hang @ stage-2 DonHang.Api/Dockerfile:8-17"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Re-run in scratchpad with SDK 10.0.300: Api references Contracts, context holds only Api/. `dotnet restore Api/Api.csproj` printed 'Skipping project \"...Contracts.csproj\" because it was not found.' and exited 0; `dotnet publish -c Release --no-restore` exited 1 with 'warning MSB9008: The referenced project ..\\Contracts\\Contracts.csproj does not exist.' and 'error CS0246: The type or namespace name 'Contracts' could not be found'.",
+        "source": "execution: scratchpad bic/mref.sh, .NET SDK 10.0.300"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "compose up reference: '--no-build  Don't build an image, even if it's policy'. Run 36332055445 staging log: line 117's `up --no-build` builds only lab ('lab Built'), pulls web/redis/db, and neither builds nor pulls api after 'Loaded image: donhang-api:stage-2'. Note: local mirror is the Compose v5 reference, pinned is 2.33; the run itself confirms the behaviour.",
+        "source": "refs/docker-docs/_vendor/github.com/docker/compose/v5/docs/reference/compose_up.md:53; gh run view --job 108656157691 --log"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "ci.yml@stage-2:90 and :136 `if: github.event_name == 'push' && github.ref == 'refs/heads/master'`; :91 and :137 `needs: [test, image]`; publish (135-166): download-artifact, 'docker load --input images.tar', docker login, 'docker tag donhang-api:stage-2 \"$api\"', 'docker push \"$api\"' - no docker build in the job.",
+        "source": "examples/don-hang @ stage-2 .github/workflows/ci.yml:89-93, 135-166"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Understand GitHub Actions: 'Each job will run inside its own virtual machine runner, or inside a container'; 'Each workflow run executes in a fresh, newly-provisioned virtual machine.' GitHub-hosted runners: 'each GitHub-hosted runner is a new virtual machine (VM) hosted by GitHub.' Run 36332055445 staging log L126-131: had to 'docker load --input images.tar' to get 'Loaded image: donhang-api:stage-2'.",
+        "source": "docs.github.com/en/actions/get-started/understand-github-actions; docs.github.com/en/actions/reference/runners/github-hosted-runners; gh run view --job 108656157691 --log"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "ci.yml@stage-2:77-83 'docker save --output images.tar donhang-api:stage-2 donhang-migrate:stage-2' + upload-artifact name images; 97-102 (staging) and 142-147 (publish) download-artifact name images + 'docker load --input images.tar'. Staging log prints 'Loaded image: donhang-api:stage-2' and 'Loaded image: donhang-migrate:stage-2'.",
+        "source": "examples/don-hang @ stage-2 .github/workflows/ci.yml; gh run view --job 108656157691 --log"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "12factor.net V: 'The twelve-factor app uses strict separation between the build, release, and run stages.' 'The build stage is a transform which converts a code repo into an executable bundle known as a build.' 'The release stage takes the build produced by the build stage and combines it with the deploy's current config.'",
+        "source": "https://12factor.net/build-release-run"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Round 3: section 9 line 4 now carries the same hedge ('Nothing guarantees a rebuild of one commit is the image that was checked'). Run 36332055445: image job L323 'writing image sha256:f8aefb3ca331…'; lab job L1829 'writing image sha256:9ac7d7d03fe9…', both named donhang-api:stage-2. Same commit 7a131bc8, two IDs. Docker documents reproducible builds (SOURCE_DATE_EPOCH), so only the hedged wording holds.",
+        "source": "gh run view --job 108655886210 / 108655750950 --log -R duyan11110/don-hang; refs/docker-docs/content/manuals/build/ci/github-actions/reproducible-builds.md"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Run 36332055445 (push, master, headSha 7a131bc8) staging log: L130 'Loaded image: donhang-api:stage-2', L131 'Loaded image: donhang-migrate:stage-2', L228 'naming to docker.io/library/donhang-lab:stage-0 done', L233 'lab  Built', L238-240 'redis Pulling', 'db Pulling', 'web Pulling'. No build step or pull line for api anywhere in the job log.",
+        "source": "gh run view --job 108656157691 --log -R duyan11110/don-hang"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "image job L323-324: '#21 writing image sha256:f8aefb3ca33165e996d769df538bc609df4ee…', '#21 naming to docker.io/library/donhang-api:stage-2 done'. lab job L1829-1830: '#45 writing image sha256:9ac7d7d03fe9e381a10d7822dff41d01f0c078…', '#45 naming to docker.io/library/donhang-api:stage-2 done'.",
+        "source": "gh run view --job 108655886210 --log; gh run view --job 108655750950 --log -R duyan11110/don-hang"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "scripts/up.sh@stage-2:16 'docker compose up -d --build --wait'; ci.yml@stage-2 job lab: 'run: ./scripts/up.sh', then capture-output.sh --all. Round 3: lab has no needs and no upload-artifact; the only upload-artifact is in image (L80); staging/publish need [test, image] and download only 'images', so nothing from lab reaches them. lab/Dockerfile@stage-2: 'The lab box: the LinuxServer OpenSSH server image plus… tools'; capture-output.sh runs scripts via lab-run.sh by default.",
+        "source": "examples/don-hang @ stage-2 scripts/up.sh:16, .github/workflows/ci.yml:238-266"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "docker image ls reference: 'An image will be listed more than once if it has multiple repository names or tags. This single image (identifiable by its matching IMAGE ID) uses up the SIZE listed only once.' The --no-trunc example shows IMAGE ID values of the form 'sha256:77af4d6b…'. Identity is the ID, not the name.",
+        "source": "refs/docker-docs/data/cli/engine/docker_image_ls.yaml:19-21, 183-185"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "`git grep -n \"donhang-api:stage-2\" stage-2 -- docker-compose.yml .github/workflows/ci.yml` prints exactly four lines: ci.yml:71 (docker build, job image), ci.yml:78 (docker save, job image), ci.yml:163 (docker tag, job publish), docker-compose.yml:106 (image:). No line in staging (89-128).",
+        "source": "execution in examples/don-hang (tag stage-2)"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "compose up reference: '--build  Build images before starting containers'. Lab job (up.sh uses `up --build`) log L1830: 'naming to docker.io/library/donhang-api:stage-2 done', i.e. Compose names the built api image after `image:`.",
+        "source": "refs/docker-docs/_vendor/github.com/docker/compose/v5/docs/reference/compose_up.md:46; gh run view --job 108655750950 --log"
+      },
+      {
+        "n": 19,
+        "verdict": "verified",
+        "evidence": "ci.yml@stage-2:119-120 'Ask for the products through Caddy': 'curl --fail --silent --show-error --retry 30 --retry-delay 2 --retry-all-errors http://localhost:8080/api/v1/products'. Executed curl 8.9.0 with --fail on a 404: 'curl: (22) The requested URL returned error: 404', exit=22. GitHub workflow syntax: bash steps run as 'bash --noprofile --norc -eo pipefail {0}', so a non-zero exit fails the step. Staging log L503 runs this step after 'up' (L234).",
+        "source": "examples/don-hang @ stage-2 .github/workflows/ci.yml:119-120; local curl run; docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax; gh run view --job 108656157691 --log"
+      },
+      {
+        "n": 20,
+        "verdict": "verified",
+        "evidence": "docker image tag reference: 'Create a tag TARGET_IMAGE that refers to SOURCE_IMAGE' (aliases: docker image tag, docker tag). ci.yml@stage-2:161-165: api=\"ghcr.io/duyan11110/donhang-api:sha-$GITHUB_SHA\"; 'docker tag donhang-api:stage-2 \"$api\"'; then 'docker push \"$api\"'. No build in the publish job. `grep -n` confirms line 163. Round 3 opened: ci.yml/docker-compose.yml/lab/Dockerfile/capture-output.sh @stage-2; round-2 docs evidence reused (claims unchanged).",
+        "source": "refs/docker-docs/data/cli/engine/docker_image_tag.yaml:1-3; examples/don-hang @ stage-2 .github/workflows/ci.yml:159-166"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-03T02:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (review-junior, round 3)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "gap",
+        "text": "Round-2 issues are resolved (q2 d no longer says 'lab box'; section 4 now explains images.tar before staging). New, small: one sentence earlier the prose says '--no-build makes Compose run the loaded image instead', and the code comment says 'none of them builds again'; then staging 'builds only one other image'. The reader pauses to ask how a job run with --no-build builds anything. The point (it never builds api) still comes through, so this does not block.",
+        "quote": "`staging` prints `Loaded image: donhang-api:stage-2` and builds only one other image, the Linux box the lab's scripts run in",
+        "fix": "Add half a sentence saying why --no-build still lets staging build that one image (it is not among the loaded ones), or shorten to '`staging` prints `Loaded image: donhang-api:stage-2` and never builds `api`'."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}
