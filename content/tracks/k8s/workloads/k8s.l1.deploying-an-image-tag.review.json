@@ -1,0 +1,147 @@
+{
+  "id": "k8s.l1.deploying-an-image-tag",
+  "technical": {
+    "reviewed_at": "2026-10-04T14:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Docs: 'The imagePullPolicy for a container and the tag of the image both affect when the kubelet attempts to pull (download) the specified image.' Image names section: the reference carries registry/repository and tag. Code: api-deployment.yaml@stage-2 has only an image reference, no build step; nothing in deploy/k8s builds images.",
+        "source": "refs/kubernetes-website content/en/docs/concepts/containers/images.md (Image pull policy, Image names)"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "GHCR docs (WebFetch summary): 'You can also access public container images anonymously.' Execution 2026-10-03: anonymous GET ghcr.io/token?scope=repository:duyan11110/donhang-api:pull returned a token with no credentials; HEAD /v2/duyan11110/donhang-api/manifests/sha-bb184243e4cafed6ae833ca61710608366214aa5 with it -> 200; tags/list includes that tag and 1.0.0. Lesson states this package is public, not GHCR's default visibility (docs: default is private) - correct.",
+        "source": "https://docs.github.com/packages/working-with-a-github-packages-registry/working-with-the-container-registry; curl to ghcr.io registry API"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Docs: 'if you omit the imagePullPolicy field, and you specify a tag for the container image that isn't :latest, the imagePullPolicy is automatically set to IfNotPresent.' 'The value of imagePullPolicy of the container is always set when the object is first created'. 'IfNotPresent: the image is pulled only if it is not already present locally.' Server dry-run v1.34.11 of a Deployment with image ...:sha-bb184243... and no policy -> IfNotPresent; deploy-api.txt shows IfNotPresent.",
+        "source": "refs/kubernetes-website content/en/docs/concepts/containers/images.md (Default image pull policy); kubectl apply --dry-run=server"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Docs: 'tag ... is :latest, imagePullPolicy is automatically set to Always' and 'you don't specify the tag ... automatically set to Always'. 'Always: every time the kubelet launches a container, the kubelet requests the container runtime to pull the image. The container runtime contacts the registry, resolves the image tag or name to a digest, and downloads any layers that are not already cached locally.' Server dry-run v1.34.11: ':latest -> Always', no tag -> Always.",
+        "source": "refs/kubernetes-website content/en/docs/concepts/containers/images.md (Image pull policy; Default image pull policy); kubectl apply --dry-run=server"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Docs: Always pulls 'every time the kubelet launches a container' (images.md l.93); 'if the image registry were to change the code that the tag on that image represents, you might end up with a mix of Pods running the old and new code' (l.128); IfNotPresent: 'pulled only if it is not already present locally'. R2 §4 text now equals the round-1 suggested_text: running containers keep their image, cached nodes keep their copy, uncached nodes pull, Pods can differ.",
+        "source": "refs/kubernetes-website content/en/docs/concepts/containers/images.md (Image pull policy; digest paragraph)"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "git grep 'image:' stage-2 -- deploy/k8s: no tag latest anywhere (api 1.0.0, postgres:17.6-alpine, keycloak 26.7.4, mailpit v1.31.3, redis 8.10.2-alpine, caddy:2.10.0, kindest/node by digest, migrate 1.0.0, bad-tag sha-000...). api-deployment.yaml@stage-2 line 24 image ghcr.io/duyan11110/donhang-api:sha-bb184243e4cafed6ae833ca61710608366214aa5, line 13 replicas: 2, no imagePullPolicy field.",
+        "source": "examples/don-hang @ stage-2 deploy/k8s/**"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "api-deployment.yaml@stage-2 l.30-38: ConnectionStrings__Default 'Host=db;Database=donhang;Username=donhang' (no password); ConnectionStrings__Redis 'redis:6379,abortConnect=false'; Keycloak__Authority 'http://localhost:8180/realms/donhang'; Keycloak__MetadataAddress 'http://keycloak:8080/...'. Four env vars, one Keycloak address via Service name keycloak. l.28-29: '...every request that needs PostgreSQL fails; k8s/config-and-probes supplies the rest' - the module after workloads in track.yaml. R2 §5 prose matches.",
+        "source": "examples/don-hang @ stage-2 deploy/k8s/lessons/api-deployment.yaml; content/tracks/k8s/track.yaml"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "scripts/up.sh@stage-2 line 16: 'docker compose up -d --build --wait'; docker-compose.yml@stage-2 service api: build context '.', dockerfile 'DonHang.Api/Dockerfile', image donhang-api:stage-2.",
+        "source": "examples/don-hang @ stage-2 scripts/up.sh; docker-compose.yml lines 102-106"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "deploy-api.sh@stage-2 lines 19-44 do exactly that; outputs/stage-2/scripts/k8s/deploy-api.txt at stage-2 is identical to the lesson's output block, ending 'IfNotPresent', '      Now listening on: http://[::]:8080', 'wget: server returned error: HTTP/1.1 500 Internal Server Error'. Code blocks 1 (lines 3-27) and 2 (lines 16-37) match the source at stage-2 character for character.",
+        "source": "examples/don-hang @ stage-2 scripts/k8s/deploy-api.sh; outputs/stage-2/scripts/k8s/deploy-api.txt"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Round 1 live cluster v1.34.11: 'Normal Pulled pod/rv-sd1 Container image \"caddy:2.10.0\" already present on machine'. Docs: 'Normal Pulled ... kubelet Successfully pulled image \"nginx\" in 229.604315ms'; 'Container image \"saadali/simmemleak:latest\" already present on machine'. deploy-api.sh@stage-2 l.10 in_pod uses --image=caddy:2.10.0 in -n donhang. R2: cluster now has the two api Pods on donhang-worker and donhang-worker2, so after step 1 both workers cache the tag. (Events had expired at R2: TTL.)",
+        "source": "refs/kubernetes-website .../container-lifecycle-hooks.md l.135, .../manage-resources-containers.md l.713; kubectl get pods -n donhang -o wide"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "ci.yml@stage-2 l.135-137: 'publish:' / \"if: github.event_name == 'push' && github.ref == 'refs/heads/master'\" / 'needs: [test, image]'. §2 now reads 'for every push to `master` whose tests and image build passed' - exact condition.",
+        "source": "examples/don-hang @ stage-2 .github/workflows/ci.yml"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "deploy-api.sh@stage-2 ends at line 44 with in_pod (kubectl run http-test --rm) GET; no delete of deployment/api after line 13's pre-clean. The Deployment remains.",
+        "source": "examples/don-hang @ stage-2 scripts/k8s/deploy-api.sh"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Docker docs: 'Docker Hub is a public registry that anyone can use, and Docker looks for images on Docker Hub by default.' Kubernetes docs: 'If you don't specify a registry hostname, Kubernetes assumes that you mean the Docker public registry' (images.md l.36), and busybox:1.32.0 is 'Equivalent to docker.io/library/busybox:1.32.0'. So caddy:2.10.0 comes from Docker Hub.",
+        "source": "refs/docker-docs content/get-started/docker-overview.md l.114-116; refs/kubernetes-website content/en/docs/concepts/containers/images.md l.36, l.62"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "deployment.md l.1051: '`type: Available` with `status: \"True\"` means that your Deployment has minimum availability. Minimum availability is dictated by the parameters specified in the deployment strategy.' l.1204 maxUnavailable: 'calculated from percentage by rounding down ... The default value is 25%.' -> 0 of 2, both Pods. kubectl_wait: 'waits until the specified condition is seen in the Status field'; --timeout 'The length of time to wait before giving up.' R3: no issues; opened deployment.md, kubectl_wait/_index.md, quiz q6.",
+        "source": "refs/kubernetes-website content/en/docs/concepts/workloads/controllers/deployment.md l.1051, l.1204; content/en/docs/reference/kubectl/generated/kubectl_wait/_index.md l.29, l.178"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-04T12:00:00+07:00",
+    "reviewer": "review-junior (prompt 05, round 2)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "diagram",
+        "quote": "The kubelet on that node then pulls the image itself, straight from the registry.",
+        "text": "The prose now narrates every arrow except kubelet -> \"Pod api\". I can infer it from what kubelet means (gets a Pod's containers running), so I am not stuck, but the prose stops at the pull.",
+        "fix": "Add a few words to the end of the quoted sentence: \"…straight from the registry, and starts the api container.\""
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "quote": "and a node that has the tag cached keeps using its copy. Only a node without it pulls the new image",
+        "text": "This paragraph comes right after the one about `latest` and `Always`, and does not say which policy it means. Core concepts says `Always` asks the registry every time a container starts, so I paused: does a cached node keep its copy under `Always` too? Misconception 3 and quiz q2 say \"with `IfNotPresent`\", which resolves it.",
+        "fix": "Put \"with `IfNotPresent`,\" in the quoted clause: \"…and, with `IfNotPresent`, a node that has the tag cached keeps using its copy\"."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "gap",
+        "quote": "the script asks one api Pod directly for `/api/v1/products` with `wget`, a command-line HTTP client, from a temporary Pod, since the api has no Service yet.",
+        "text": "I follow \"no Service, so ask a Pod directly\". I do not know why that request has to come from a temporary Pod inside the cluster instead of from my own terminal. I can still read the output.",
+        "fix": "Add half a sentence saying why the request is sent from inside the cluster (for example, what can reach a Pod's IP address)."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "style",
+        "quote": "and two Keycloak addresses, one of them through the Service name `keycloak`.",
+        "text": "\"one of them through the Service name\" makes me wonder what the other one goes through and why there are two. It does not block the point (enough settings to start), but I re-read it.",
+        "fix": "Either say in a few words what the second Keycloak address is for, or drop \"one of them through the Service name `keycloak`\"."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [
+        "§5: why the wget request must come from a temporary Pod inside the cluster rather than from your own terminal."
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

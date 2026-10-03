@@ -1,0 +1,167 @@
+{
+  "id": "k8s.l1.services",
+  "technical": {
+    "reviewed_at": "2026-10-03T23:55:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "service.md:35-40: \"Pods are ephemeral resources (you should not expect that an individual Pod is reliable and durable). Each Pod gets its own IP address ... the set of Pods running in one moment in time could be different from the set of Pods running that application a moment later.\" connect-applications-service.md:74: \"the ReplicaSet inside the Deployment will create new ones, with different IPs.\" Captured output: \"Pod IP addresses that are new: 3 of 3\". (refs mirror is main/v1.37; text unchanged in meaning for 1.34.)",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/services-networking/service.md:35-40; tutorials/services/connect-applications-service.md:72-75; examples/don-hang outputs/stage-2/scripts/k8s/service.txt"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "service.md:66 Service set of Pods \"determined by a selector\"; service.md:115-116: \"Kubernetes assigns this Service an IP address (the cluster IP), that is used by the virtual IP address mechanism.\" kubectl explain service.spec.clusterIP (server v1.34.11): \"Setting this to \\\"None\\\" makes a \\\"headless service\\\" (no virtual IP)\" i.e. the cluster IP is a virtual IP. Creating no Pods: captured output prints only \"service/web created\"; the Service spec has no Pod template field.",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/services-networking/service.md:66,115-116; kubectl explain service.spec.clusterIP (v1.34.3 client, v1.34.11 server)"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "connect-applications-service.md:78-80: \"When created, each Service is assigned a unique IP address (also called clusterIP). This address is tied to the lifespan of the Service, and will not change while the Service is alive.\" kubectl explain service.spec.clusterIP (v1.34.11): \"This field may not be changed through updates unless the type field is also being changed to ExternalName\". Captured output: \"The Service's cluster IP is the same as before: yes\" after all three Pods replaced.",
+        "source": "refs/kubernetes-website/content/en/docs/tutorials/services/connect-applications-service.md:78-80; kubectl explain service.spec.clusterIP; outputs/stage-2/scripts/k8s/service.txt"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "service.md:113: \"The Service targets TCP port 9376 on any Pod with the app.kubernetes.io/name: MyApp label\"; service.md:128: \"A Service can map any incoming port to a targetPort.\" virtual-ips.md:98-101 (iptables mode): \"installs iptables rules which, by default, select a backend Pod at random.\" connect-applications-service.md:81-82: \"communication to the Service will be automatically load-balanced out to some pod that is a member of the Service.\"",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/services-networking/service.md:110-130; reference/networking/virtual-ips.md:95-120"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "service.md:119-121: \"The controller for that Service continuously scans for Pods that match its selector, and then makes any necessary updates to the set of EndpointSlices for the Service.\" Executed `kubectl describe service api -n donhang` (kubectl v1.34.3): lines \"IP:                       10.96.216.108\" and \"Endpoints:                10.244.2.3:8080,10.244.1.3:8080\" (IP:targetPort), matching EndpointSlice api-r5cp6 endpoints.",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/services-networking/service.md:119-121; kubectl describe service api -n donhang (kind cluster donhang)"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "service.md:415-418: \"ClusterIP: Exposes the Service on a cluster-internal IP. Choosing this value makes the Service only reachable from within the cluster. This is the default that is used if you don't explicitly specify a type for a Service.\" Executed `kubectl apply --dry-run=server` of an rv-svc manifest with no type: spec.type returned \"ClusterIP\". See issue on \"from Pods\" wording in section 4.",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/services-networking/service.md:415-418; kubectl apply --dry-run=server (server v1.34.11)"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "git -C examples/don-hang show stage-2:deploy/k8s/lessons/web-service.yaml: name web, namespace donhang, selector app: web, ports - port: 80 targetPort: 80, no type field. Lesson block lines 1-15 identical to source.",
+        "source": "examples/don-hang@stage-2 deploy/k8s/lessons/web-service.yaml"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "service.sh@stage-2 lines 7-15 define web_pod_ips, cluster_ip, fetch_title (kubectl run fetch ... --image=caddy:2.10.0 -- sh -c \"wget -q -O - $1 | grep -o '<title>.*</title>'\"); line 19 applies web-deployment.yaml, line 24 the Service, line 34 deletes -l app=web. Lesson block lines 22-41 identical; output block identical to outputs/stage-2/scripts/k8s/service.txt at stage-2 (tag commit 7a131bc = HEAD).",
+        "source": "examples/don-hang@stage-2 scripts/k8s/service.sh; outputs/stage-2/scripts/k8s/service.txt"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Executed `docker run --rm caddy:2.10.0`: /usr/share/caddy/index.html contains \"<title>Caddy works!</title>\"; /etc/caddy/Caddyfile begins \":80 {\" with \"root * /usr/share/caddy\" and \"file_server\". web-deployment.yaml@stage-2 declares containerPort: 80. Captured fetch via targetPort 80 returned the title.",
+        "source": "docker run caddy:2.10.0 (image default Caddyfile and index.html); examples/don-hang@stage-2 deploy/k8s/lessons/web-deployment.yaml"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "service.sh@stage-2 ends at line 41 with the second fetch_title; no kubectl delete of the Service or Deployment after line 34 (which deletes only Pods). Line 18 deletes a pre-existing Service only before re-applying it.",
+        "source": "examples/don-hang@stage-2 scripts/k8s/service.sh"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "docker-compose.yml@stage-2 pins ipv4_address per service (db 172.28.0.11, api 172.28.0.13, lab 172.28.0.12, ...); web uses network_mode \"service:lab\", so it is reached at the lab box's fixed 172.28.0.12. Lesson qualifies it as \"on the lab's Docker network\", a lab choice, not Compose default, consistent with devops.l1.docker-networks.",
+        "source": "examples/don-hang@stage-2 docker-compose.yml lines 40-55, 70-76, 150-155"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "The docs say a ClusterIP Service is \"only reachable from within the cluster\", which includes the nodes, not only Pods. Executed from kind node donhang-worker: `curl http://10.96.216.108:8080/health` returned HTTP 404 from the api, i.e. the node reached the cluster IP. \"from Pods\" reads as the only allowed origin.",
+        "quote": "Its address can be reached only from inside the cluster: from Pods, not from the browser on your laptop.",
+        "fix": "Replace with: \"Its address can be reached only from inside the cluster, for example from a Pod, not from the browser on your laptop.\""
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-04T00:20:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation, round 1)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "term",
+        "text": "`wget` is a tool name I have not met. The same sentence says what it does (fetches the page at an address), so I can follow, but I would stop for a second to wonder whether I need to know it.",
+        "quote": "fetches the page at the given address with `wget` and prints only its `<title>`",
+        "fix": "Drop the tool name: \"fetches the page at the given address and prints only its `<title>`\"; or add \"(a command-line tool that sends a GET request)\" after `wget`."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "code",
+        "text": "Two script lines are never mentioned in the prose: the `kubectl wait --for=jsonpath=...` line and the `comm -13 <(...) <(...) | wc -l` line. The output tells me what they produce, so the main idea is safe, but I cannot tell what `wait` waits for or how 'new' addresses are counted.",
+        "quote": "kubectl wait --for=jsonpath='{.status.availableReplicas}'=3 deployment/web -n donhang --timeout=120s >/dev/null",
+        "fix": "Add one sentence after the helpers paragraph: \"After the delete, the script waits until the Deployment has three Pods available again, then counts how many Pod addresses were not in the list from before.\""
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "code",
+        "text": "The output has an `EXTERNAL-IP` column showing `<none>`. The prose explains `TYPE` and the `...`, but not this column. It looks related to 'reachable only from inside the cluster', yet nothing confirms that, so I guess.",
+        "quote": "web    ClusterIP   ...          <none>        80/TCP    ...",
+        "fix": "Add to the paragraph after the output: \"`EXTERNAL-IP` is `<none>`: nothing outside the cluster can reach this Service.\" (only if that is accurate; otherwise say the column belongs to a later topic)."
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "term",
+        "text": "I know 'endpoint' as an API endpoint (an HTTP method plus a path). Here `Endpoints` means Pod addresses. The step does say what the line lists, which saves me, but the clash with the meaning I learned is a stumble.",
+        "quote": "Note the `IP` line and the `Endpoints` line, which lists the addresses of the Pods behind the Service.",
+        "fix": "Add \"(not the API endpoints of earlier lessons)\" after \"the `Endpoints` line\"."
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "gap",
+        "text": "Expected result says each Endpoints address ends in `:80`, but the lesson never said the list holds address plus port. I can guess it is `targetPort`, but I am not sure whether it is `port` or `targetPort` (both 80 here).",
+        "quote": "while the `Endpoints` line shows different addresses, each ending in `:80`.",
+        "fix": "Change to \"each ending in `:80`, the `targetPort`\"."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "diagram",
+        "text": "The diagram names the Pods `web-a`, `web-b`, `web-c`, while the prerequisite taught that Pod names are the ReplicaSet name plus a random ending, and the output shows `web-...-...`. Small doubt whether these are real names.",
+        "quote": "S -->|\"targetPort 80\"| A[\"Pod web-a\"]",
+        "fix": "Add to the first prose paragraph after the diagram: \"(the Pod names are shortened)\"."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "text": "q6 explanation for option c brings in 'one Pod cannot share the load'. The lesson says connections are spread across Pods, but never calls this sharing load or argues why one Pod is not enough. It adds an idea right where I am checking my reasoning.",
+        "quote": "But a bare Pod is not replaced when it is lost, and one Pod cannot share the load.",
+        "fix": "Replace \"one Pod cannot share the load\" with \"connections cannot be spread across several Pods\"."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "wget",
+        "Endpoints (kubectl describe field; clashes with known 'endpoint')"
+      ],
+      "skipped_steps": [
+        "Script lines `kubectl wait ...` and `comm -13 ... | wc -l` not described in prose",
+        "`EXTERNAL-IP <none>` column not explained",
+        "Endpoints entries end in `:80` (targetPort) without the lesson saying the list holds a port"
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

@@ -1,0 +1,145 @@
+{
+  "id": "k8s.l1.rolling-updates",
+  "technical": {
+    "reviewed_at": "2026-10-04T01:09:23+07:00",
+    "reviewer": "claude-opus-5-5 (round 3)",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Docs: 'A Deployment's rollout is triggered if and only if the Deployment's Pod template (that is, .spec.template) is changed... Other updates, such as scaling the Deployment, do not trigger a rollout.'; 'the name of the ReplicaSet is always formatted as [DEPLOYMENT-NAME]-[HASH]... The HASH string is the same as the pod-template-hash label'. Execution R2 (rv-ru2, real api manifests renamed): sha- -> 1.0.0 -> sha- -> 1.0.0 left exactly two ReplicaSets; matching old one reused.",
+        "source": "refs/kubernetes-website content/en/docs/concepts/workloads/controllers/deployment.md (Creating; Pod-template-hash label; Updating note); kubectl on kind donhang v1.34.11"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Docs: '.spec.strategy.type can be \"Recreate\" or \"RollingUpdate\". \"RollingUpdate\" is the default value.' and 'The Deployment updates Pods in a rolling update fashion (gradually scale down the old ReplicaSets and scale up the new one)'. Execution: Deployment without strategy -> .spec.strategy {\"rollingUpdate\":{\"maxSurge\":\"25%\",\"maxUnavailable\":\"25%\"},\"type\":\"RollingUpdate\"}; rolling-update.txt 'both versions were ready at the same time: yes'.",
+        "source": "refs/kubernetes-website deployment.md (Strategy; Rolling Update Deployment); kubectl get deploy rv-ru -o jsonpath"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Docs: maxUnavailable 'specifies the maximum number of Pods that can be unavailable during the update process... The default value is 25%.' maxSurge 'specifies the maximum number of Pods that can be created over the desired number of Pods... The default value is 25%.' Execution: applied default shows maxSurge 25%, maxUnavailable 25%.",
+        "source": "refs/kubernetes-website deployment.md (Max Unavailable, Max Surge)"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Docs: maxUnavailable absolute number 'calculated from percentage by rounding down'; maxSurge 'by rounding up' -> 2 replicas: surge 1, unavailable 0. Execution (rv-ru, replicas 2) watch: new 1 (old 2) -> new READY 1 -> old DESIRED 1 -> new DESIRED 2 -> new READY 2 -> old DESIRED 0. Exactly the diagram's five states; rolling-update.txt: most wanted 3.",
+        "source": "refs/kubernetes-website deployment.md (Max Unavailable, Max Surge); kubectl get rs -l app=rv-ru -w --output-watch-events"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "kubectl rollout status reference: \"By default 'rollout status' will watch the status of the latest rollout until it's done.\" Execution: kubectl apply (template change) returned 'configured' in 0.37 s while the new ReplicaSet was at DESIRED 1, READY 0; rollout status then printed 'Waiting for deployment \"rv-ru\" rollout to finish...' lines before 'successfully rolled out'.",
+        "source": "refs/kubernetes-website reference/kubectl/generated/kubectl_rollout/kubectl_rollout_status.md; kubectl on kind donhang"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Docs: '.spec.revisionHistoryLimit ... specifies the number of old ReplicaSets to retain to allow rollback... By default, 10 old ReplicaSets will be kept'. Execution: rv-ru old ReplicaSet at DESIRED 0 still listed after rollout; revisionHistoryLimit 10. Captured output shows the sha- ReplicaSet at 0.",
+        "source": "refs/kubernetes-website deployment.md (Revision History Limit); outputs/stage-2/scripts/k8s/rolling-update.txt"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Probes docs: 'If a container does not provide a particular probe, the kubelet always considers the result as Success.' Deployment docs: minReadySeconds 'defaults to 0 (the Pod will be considered available as soon as it is ready).' Together: no readiness probe -> available once the container runs.",
+        "source": "refs/kubernetes-website concepts/workloads/pods/probes.md; deployment.md (Min Ready Seconds)"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "git show stage-2: api-deployment-1.0.0.yaml lines 4-35 equal api-deployment.yaml lines 7-38 except line 21 'image: ghcr.io/duyan11110/donhang-api:1.0.0' vs line 24 'image: ...:sha-bb184243e4cafed6ae833ca61710608366214aa5'; header comment lines differ; env block identical; no strategy key in either.",
+        "source": "git -C examples/don-hang show stage-2:deploy/k8s/lessons/api-deployment{,-1.0.0}.yaml"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Claim text now matches the script: lines 8-14 delete and re-apply api-deployment.yaml and set old_rs; line 20 applies 1.0.0; lines 26-37 loop with 'sleep 0.2' between kubectl reads of .spec.replicas and .status.readyReplicas; break when old wants 0 and new has 2 ready; lines 42-44 rollout status and get replicasets sorted by .spec.replicas. Lesson block lines 20-44 identical to source.",
+        "source": "git -C examples/don-hang show stage-2:scripts/k8s/rolling-update.sh; outputs/stage-2/scripts/k8s/rolling-update.txt"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Execution: rv-ru on caddy:2.10.0 (RS 7bf8545d5b), applied 2.10.2 (new RS 7c59dc4998), re-applied 2.10.0: watch showed 7bf8545d5b DESIRED 0->1->2 and 7c59dc4998 2->1->0, one Pod at a time; final list had exactly two ReplicaSets. No docs sentence found stating reuse explicitly; settled by execution on server v1.34.11.",
+        "source": "kubectl on kind donhang (server v1.34.11), Deployment rv-ru, deleted afterwards"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "kubectl get reference: '-w, --watch: After listing/getting the requested object, watch for changes.' Execution: kubectl get rs -l app=rv-ru -w printed a new row on every ReplicaSet change until killed.",
+        "source": "refs/kubernetes-website reference/kubectl/generated/kubectl_get/_index.md"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Docs: minReadySeconds 'defaults to 0 (the Pod will be considered available as soon as it is ready)'; neither manifest sets minReadySeconds. 'The pod-template-hash label is added by the Deployment controller to every ReplicaSet that a Deployment creates or adopts... generated by hashing the PodTemplate of the ReplicaSet and using the resulting hash as the label value that is added to the ReplicaSet selector'. Execution: SELECTOR app=api,pod-template-hash=746f868bc9 for RS api-746f868bc9.",
+        "source": "refs/kubernetes-website deployment.md (Min Ready Seconds; Pod-template-hash label); kubectl get rs -n donhang -l app=api -o wide"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "kubectl get reference: --sort-by 'If non-empty, sort list types using this field specification... expressed as a JSONPath expression'. Execution (client v1.34.3): plain 'kubectl get rs' columns NAME DESIRED CURRENT READY AGE; with -o wide also CONTAINERS IMAGES SELECTOR; --sort-by=.spec.replicas listed the six DESIRED 0 rows before the DESIRED 2 row.",
+        "source": "refs/kubernetes-website reference/kubectl/generated/kubectl_get/_index.md; kubectl get replicasets -n donhang -l app=api -o wide --sort-by=.spec.replicas"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "Execution R3 (rv-ru3 = lesson's stage-2 manifests renamed, label app=rv-ru3, image cached; timestamped get rs -w): apply 1.0.0->sha- returned 'configured' at t=0.45 s; old RS rows after that: 1/2/2 at +1.8 s, 1/1/1 at +2.0 s, 0/1/1 at +2.6 s, 0/0/0 at +2.7 s; rollout status done at +2.5 s. So READY > 0 on the replaced RS ~2.7 s after apply, visible in the watch. Matches R2 (~3.0 s). Zero issues this round: opened lesson en.md s.6-7, meta claim 14, quiz q1 en/vi.",
+        "source": "kubectl client v1.34.3 / server v1.34.11 on kind donhang, Deployment rv-ru3 in donhang, deleted afterwards"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-04T20:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation, round 2)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "quote": "For the two api Pods, the Deployment turns these limits into one extra Pod at a time and none missing: the diagram's five steps.",
+        "text": "Both limits are 'about a quarter', yet one becomes 1 and the other 0. The sentence now tells me the Deployment does this, so I can accept 1 and 0 as facts and follow the diagram, but I still paused on why the same 25% gives different numbers.",
+        "fix": "Add a short clause after 'none missing' telling the reader that how the Deployment turns a percentage into whole Pods is not covered here, so the asymmetry reads as intended, not as a typo."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "style",
+        "quote": "With no extra checks in this manifest, a Pod is available as soon as it is ready, so the script's `ready` and section 4's \"available\" mean the same here.",
+        "text": "Section 4 says a Pod is available once its container is running; this says available once ready. I had to re-read both to conclude running, ready and available all coincide here. 'extra checks' and section 4's 'a check of whether the api can actually serve' also look like two different things.",
+        "fix": "Replace 'With no extra checks in this manifest' with 'With no check of whether the api can serve, as in section 4,' so both sentences name the same missing check."
+      },
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "example",
+        "quote": "right after `apply` in step 3 answers `configured`, the watch of step 2 still shows Pods on the ReplicaSet being replaced, for a few more seconds.",
+        "text": "The watch prints ReplicaSet rows with numbers, not Pods. I understood it, but I had to work out that 'shows Pods on' means the `1.0.0` row still has DESIRED or READY above 0.",
+        "fix": "Replace 'still shows Pods on the ReplicaSet being replaced' with 'still prints new rows in which the `1.0.0` ReplicaSet has READY above 0'."
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "example",
+        "quote": "the `DESIRED` of the two ReplicaSets changes one Pod at a time, the `sha-` one going up as the `1.0.0` one goes down.",
+        "text": "The watch in step 2 has no `-o wide`, so it shows no IMAGES column. To tell which row is the `sha-` one I must match names against step 1's output, which the lesson does not say; I could also infer it from which row starts at 0.",
+        "fix": "Add one clause: 'the `sha-` one is the row that starts at 0, the name step 1 listed with the `sha-` image'."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}
