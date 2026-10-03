@@ -15,9 +15,9 @@ vocab: []
 example_tag: stage-2
 versions_used: [dotnet, aspnetcore, xunit]
 content_version: 1
-status: reviewed
-approved_by: null
-reviewed_at: "2026-10-02T00:08:07+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-10-03T16:21:18+07:00"
 ---
 
 ## Before you start
