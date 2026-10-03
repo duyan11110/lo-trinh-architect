@@ -8,6 +8,13 @@ import '../src/markdown_util.dart';
 import '../src/mermaid.dart';
 
 void main() {
+  test('parseSections ignores "## " lines inside a fenced code block', () {
+    const body = '## One\ntext\n```markdown file=CHANGELOG.md\n## [1.0.0]\n- x\n```\n## Two\nmore\n';
+    final parsed = parseSections(body);
+    expect(parsed.sections.map((s) => s.heading), ['One', 'Two']);
+    expect(parsed.sections.first.codeBlocks.length, 1);
+  });
+
   group('A.1 word count', () {
     test('strips frontmatter-free body, code blocks, H2 lines, counts [[id]] and inline code as one word each', () {
       final body = '''

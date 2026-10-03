@@ -111,7 +111,11 @@ class ParsedBody {
 }
 
 ParsedBody parseSections(String body) {
-  final matches = h2HeadingLineRe.allMatches(body).toList();
+  // A "## ..." line inside a fenced block (a quoted CHANGELOG.md, say) is code,
+  // not a section heading.
+  final fences = fencedCodeBlockRe.allMatches(body).toList();
+  bool inFence(int i) => fences.any((f) => i > f.start && i < f.end);
+  final matches = h2HeadingLineRe.allMatches(body).where((m) => !inFence(m.start)).toList();
   final preamble = matches.isEmpty ? body : body.substring(0, matches.first.start);
   final sections = <Section>[];
   for (int k = 0; k < matches.length; k++) {
