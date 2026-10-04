@@ -48,14 +48,14 @@ sequenceDiagram
   participant S as Ship session
   participant DB as PostgreSQL
   participant C as Cancel session
-  S->>DB: BEGIN; SELECT status of order 5
+  S->>DB: BEGIN, SELECT status of order 5
   DB-->>S: paid
-  C->>DB: BEGIN; SELECT status of order 5
+  C->>DB: BEGIN, SELECT status of order 5
   DB-->>C: paid, ship has not committed
   S->>DB: UPDATE to shipped, takes the row lock
   C->>DB: UPDATE to cancelled, waits for the lock
   S->>DB: COMMIT, lock released
-  DB-->>C: UPDATE 1 over shipped; COMMIT
+  DB-->>C: UPDATE 1 over shipped, COMMIT
 ```
 
 Script đóng vai mỗi request bằng một database session: một kết nối đang mở tới PostgreSQL để gửi SQL. Trong tình huống trên, cả hai session chạy dưới Read Committed. Mỗi `SELECT` thấy những gì đã commit lúc chính `SELECT` đó bắt đầu. Cả hai đều chạy trước khi ship commit, nên cả hai thấy `paid`, và hai request làm y như vậy sẽ đều qua được bước kiểm trạng thái.

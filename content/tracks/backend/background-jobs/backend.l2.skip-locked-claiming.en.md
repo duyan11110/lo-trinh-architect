@@ -44,12 +44,12 @@ sequenceDiagram
   participant DB as PostgreSQL
   participant B as Sender in copy B
   participant M as Mailpit
-  A->>DB: BEGIN; due rows FOR UPDATE SKIP LOCKED, LIMIT 10
+  A->>DB: BEGIN, due rows FOR UPDATE SKIP LOCKED, LIMIT 10
   DB-->>A: rows 1-10, now locked by A
-  B->>DB: BEGIN; the same query
+  B->>DB: BEGIN, the same query
   DB-->>B: rows 11-20, skipping 1-10
   A->>M: send rows 1-10
-  A->>DB: save sent; COMMIT, locks released
+  A->>DB: save sent, COMMIT, locks released
 ```
 
 Every running copy of the API hosts its own `NotificationSender`. In the situation above, both copies read with a plain `SELECT` for `pending` rows. Until one of them commits `sent`, the other still sees `pending`, so both sent order 42's email.

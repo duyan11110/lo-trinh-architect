@@ -44,12 +44,12 @@ sequenceDiagram
   participant DB as PostgreSQL
   participant B as Sender in copy B
   participant M as Mailpit
-  A->>DB: BEGIN; due rows FOR UPDATE SKIP LOCKED, LIMIT 10
+  A->>DB: BEGIN, due rows FOR UPDATE SKIP LOCKED, LIMIT 10
   DB-->>A: rows 1-10, now locked by A
-  B->>DB: BEGIN; the same query
+  B->>DB: BEGIN, the same query
   DB-->>B: rows 11-20, skipping 1-10
   A->>M: send rows 1-10
-  A->>DB: save sent; COMMIT, locks released
+  A->>DB: save sent, COMMIT, locks released
 ```
 
 Mỗi bản API đang chạy đều có `NotificationSender` riêng. Trong tình huống trên, cả hai bản đọc các dòng `pending` bằng `SELECT` thường. Chừng nào một bản chưa commit `sent`, bản kia vẫn thấy `pending`, nên cả hai đều gửi email của đơn 42.

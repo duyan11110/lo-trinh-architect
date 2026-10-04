@@ -48,14 +48,14 @@ sequenceDiagram
   participant S as Ship session
   participant DB as PostgreSQL
   participant C as Cancel session
-  S->>DB: BEGIN; SELECT status of order 5
+  S->>DB: BEGIN, SELECT status of order 5
   DB-->>S: paid
-  C->>DB: BEGIN; SELECT status of order 5
+  C->>DB: BEGIN, SELECT status of order 5
   DB-->>C: paid, ship has not committed
   S->>DB: UPDATE to shipped, takes the row lock
   C->>DB: UPDATE to cancelled, waits for the lock
   S->>DB: COMMIT, lock released
-  DB-->>C: UPDATE 1 over shipped; COMMIT
+  DB-->>C: UPDATE 1 over shipped, COMMIT
 ```
 
 The script plays each request as a database session: one open connection to PostgreSQL that sends SQL. In the situation above, both sessions run under Read Committed. Each `SELECT` sees what was committed when that `SELECT` began. Both ran before the ship committed, so both saw `paid`, and two requests doing the same would both pass their status checks.
