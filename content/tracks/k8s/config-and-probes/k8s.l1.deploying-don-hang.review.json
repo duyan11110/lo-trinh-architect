@@ -1,0 +1,151 @@
+{
+  "id": "k8s.l1.deploying-don-hang",
+  "technical": {
+    "reviewed_at": "2026-10-05T00:20:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "stage-2:scripts/k8s/deploy.sh lines 10-59: namespace.yaml; dev-secrets.sh + secrets.sh then `kubectl get secrets -o name`; configmap db-init, keycloak-realm, api-configmap.yaml; db/redis/keycloak/mailpit apply; wait deployment/db; delete+apply migrate, poll phase; api.yaml. outputs/stage-2/scripts/k8s/deploy.txt prints the same section order and is identical to the lesson's output block.",
+        "source": "examples/don-hang stage-2:scripts/k8s/deploy.sh; examples/don-hang/outputs/stage-2/scripts/k8s/deploy.txt"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Run on kind-donhang (kubectl 1.34.3) with temporary ConfigMap rv-cm: first `kubectl apply -f rv-cm.yaml -o name` -> `configmap/rv-cm`; second identical apply -> `configmap/rv-cm`; same apply without -o -> `configmap/rv-cm unchanged`. kubectl apply reference: \"-o, --output string: Output format. One of: (json, yaml, kyaml, name, ...)\". rv-cm deleted afterwards.",
+        "source": "kind-donhang execution; refs/kubernetes-website/content/en/docs/reference/kubectl/generated/kubectl_apply/_index.md"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "\"If you reference a ConfigMap that doesn't exist and you don't mark the reference as `optional`, the Pod won't start.\" Secrets: \"By default, Secrets are required. None of a Pod's containers will start until all non-optional Secrets are available.\" \"If a Pod references a specific key in a non-optional Secret and that Secret does exist, but is missing the named key, the Pod fails during startup.\"",
+        "source": "refs/kubernetes-website/content/en/docs/tasks/configure-pod-container/configure-pod-configmap.md (Restrictions); refs/.../concepts/configuration/secret.md (Optional Secrets)"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "stage-2 manifests: db image postgres:17.6-alpine, redis redis:8.10.2-alpine, keycloak quay.io/keycloak/keycloak:26.7.4, mailpit axllent/mailpit:v1.31.3, each `replicas: 1` plus `kind: Service` with metadata.name db/redis/keycloak/mailpit. stage-2:docker-compose.yml services db/redis/keycloak/mailpit use exactly these four images.",
+        "source": "examples/don-hang stage-2:deploy/k8s/{db,redis,keycloak,mailpit}.yaml; stage-2:docker-compose.yml"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "kubectl wait: \"waits until the specified condition is seen in the Status field of every given resource.\" --timeout: \"The length of time to wait before giving up.\" Deployment: \"`type: Available` with `status: \"True\"` means that your Deployment has minimum availability. Minimum availability is dictated by the parameters specified in the deployment strategy.\" Run: `kubectl wait --for=condition=Available deployment/rv-db --timeout=180s` -> `deployment.apps/rv-db condition met`.",
+        "source": "refs/.../reference/kubectl/generated/kubectl_wait/_index.md; refs/.../concepts/workloads/controllers/deployment.md; kind-donhang execution"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "\"`Never`: Does not automatically restart the terminated container.\" Phases: \"`Succeeded` | All containers in the Pod have terminated in success, and will not be restarted.\" \"`Failed` | All containers in the Pod have terminated, and at least one container has terminated in failure. That is, the container either exited with non-zero status or was terminated by the system, and is not set for automatic restarting.\"",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/workloads/pods/pod-lifecycle.md"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "stage-2:scripts/k8s/deploy.sh 41-56: `kubectl delete pod migrate -n donhang --ignore-not-found`, apply migrate-pod.yaml, `for _ in $(seq 300)` reading `{.status.phase}`, break on Succeeded|Failed, `sleep 1`; `if [ \"$phase\" != Succeeded ]` -> `kubectl logs pod/migrate ... >&2 || true; exit 1`; then apply api.yaml. Code block in lesson matches lines 32-56 character for character.",
+        "source": "examples/don-hang stage-2:scripts/k8s/deploy.sh"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "stage-2:deploy/k8s/migrate/migrate-pod.yaml line 13 `restartPolicy: Never`, line 16 `image: ghcr.io/duyan11110/donhang-migrate:1.0.0`; stage-2:deploy/k8s/api.yaml line 22 `image: ghcr.io/duyan11110/donhang-api:1.0.0`. Lesson now writes the full ghcr name and \"the same tag, `1.0.0`, as the api image\": matches both files.",
+        "source": "examples/don-hang stage-2:deploy/k8s/migrate/migrate-pod.yaml; stage-2:deploy/k8s/api.yaml"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "\"For a Pod that defines an `emptyDir` volume, the volume is created when the Pod is assigned to a node. As the name says, the `emptyDir` volume is initially empty. ... When a Pod is removed from a node for any reason, the data in the `emptyDir` is deleted permanently.\" Note: \"A container crashing does *not* remove a Pod from a node. The data in an `emptyDir` volume is safe across container crashes.\"",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/storage/volumes.md (emptyDir)"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Run: temp Deployment rv-db (postgres:17.6-alpine, emptyDir at /var/lib/postgresql/data, ConfigMap init script 10-a.sql creating t with 1 row). Inserted a 2nd row -> count 2. `kill 1` in container: restartCount 1, count still 2. Deleted the Pod: Deployment created a new Pod, count 1, log again shows `running /docker-entrypoint-initdb.d/10-a.sql`. Objects deleted afterwards.",
+        "source": "kind-donhang execution (rv-db, rv-cm in namespace default); refs/.../concepts/storage/volumes.md"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "stage-2:scripts/k8s/deploy.sh 57-59: `kubectl rollout status deployment/api -n donhang --timeout=300s | tail -n 1`; `# Keycloak is the slowest to start; nothing above waited for it.`; `kubectl wait --for=condition=Available deployment --all -n donhang --timeout=600s`. deploy.txt prints `deployment \"api\" successfully rolled out` then five `condition met` lines. Lesson round 2 names both waits (300 s, 600 s).",
+        "source": "examples/don-hang stage-2:scripts/k8s/deploy.sh; outputs/stage-2/scripts/k8s/deploy.txt"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "\"`ClusterIP`: Exposes the Service on a cluster-internal IP. Choosing this value makes the Service only reachable from within the cluster. This is the default that is used if you don't explicitly specify a `type` for a Service.\" No manifest at stage-2 sets `type`; live `kubectl get services -n donhang`: api, db, keycloak, mailpit, redis all `ClusterIP`, EXTERNAL-IP `<none>`.",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/services-networking/service.md; kind-donhang (read-only)"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "kubectl run ref: --rm \"If true, delete the pod after it exits. Only valid when attaching to the container, e.g. with '--attach' or with '-i/--stdin'.\" Run rv-wget (ns default, caddy:2.10.0, --rm -i --restart=Never): `/usr/bin/wget -> /bin/busybox`, `BusyBox v1.37.0 ... Usage: wget [-cqS] [--spider] [-O FILE]`; Pod gone afterwards. smoke-test.txt shows the JSON body printed via `-O -`.",
+        "source": "refs/.../reference/kubectl/generated/kubectl_run/_index.md; kind-donhang execution (rv-wget, deleted)"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "outputs/stage-2/scripts/k8s/smoke-test.txt is identical to the lesson's second output block (migrate 0/1 Completed; two api 1/1 Running; db, keycloak, mailpit, redis 1/1 Running; 8 products). stage-2:db/seed.sql: \"Fixed data for the lab: 8 products\" with the same ids, names and prices.",
+        "source": "examples/don-hang/outputs/stage-2/scripts/k8s/smoke-test.txt; stage-2:db/seed.sql"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "Read-only on kind-donhang: `kubectl get deployments -n donhang` -> api 2/2, db 1/1, keycloak 1/1, mailpit 1/1, redis 1/1. `kubectl get services -n donhang` -> api, db, keycloak, mailpit, redis, TYPE ClusterIP, EXTERNAL-IP <none>.",
+        "source": "kind-donhang (read-only)"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "stage-2:deploy/k8s/api-configmap.yaml: ConnectionStrings__Redis \"redis:6379,...\", Smtp__Host \"mailpit\", Keycloak__Authority \"http://localhost:8180/realms/donhang\", Keycloak__MetadataAddress \"http://keycloak:8080/...\"; secrets.sh: secret api ConnectionStrings__Default \"Host=db;...\". docker-compose.yml api environment lines 111-123 carry the same hosts (Host=db, redis:6379, mailpit, localhost:8180, keycloak:8080).",
+        "source": "examples/don-hang stage-2:deploy/k8s/api-configmap.yaml; stage-2:scripts/k8s/secrets.sh; stage-2:docker-compose.yml"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "stage-2:docker-compose.yml: service api (lines 102-160) has no `ports:`; lab publishes \"8080:8080\" with comment \"8080 and 8443 belong to the web service\"; web is caddy:2.10.0 with `network_mode: \"service:lab\"`. stage-2:Caddyfile `:8080 { ... handle /api/v1/* { reverse_proxy api:8080 } }`.",
+        "source": "examples/don-hang stage-2:docker-compose.yml; stage-2:Caddyfile"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "Read-only on kind-donhang: `kubectl get pod migrate -n donhang -o jsonpath` -> phase `Succeeded`, containerStatuses[0].state.terminated.reason `Completed`, exitCode 0; `kubectl get pod migrate -n donhang` -> `migrate 0/1 Completed 0 6d5h`. Pod lifecycle: \"`Succeeded` | All containers in the Pod have terminated in success, and will not be restarted.\" Docs examples (pod-failure-policy.md) show `0/1 Completed` for finished Job Pods.",
+        "source": "kind-donhang (read-only); refs/kubernetes-website/content/en/docs/concepts/workloads/pods/pod-lifecycle.md"
+      },
+      {
+        "n": 19,
+        "verdict": "verified",
+        "evidence": "stage-2:scripts/k8s/deploy.sh 50-56: `if [ \"$phase\" != Succeeded ]; then kubectl logs pod/migrate -n donhang >&2 || true; exit 1; fi` then `echo \"== the api\"`, `kubectl apply -f deploy/k8s/api.yaml -o name`. On failure the script exits before api.yaml is applied, so the existing Deployment api is not changed and no rollout starts; its running Pods are untouched. Section 6 sentence and q2 explanations a/b match this; the bundle fact in b is established in devops.l2.migrations-in-the-pipeline.",
+        "source": "examples/don-hang stage-2:scripts/k8s/deploy.sh"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-04T23:55:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "style",
+        "quote": "`kubectl run --rm -i --restart=Never` starts a one-off Pod from the Caddy image, used here only because it contains `wget`, prints what it writes, and deletes it afterwards.",
+        "text": "The inserted clause 'used here only because it contains wget' sits between 'starts' and 'prints ... deletes', so on first read I took 'prints what it writes' as part of the Caddy clause. I had to re-read to see the three verbs belong to kubectl run.",
+        "fix": "Split into two sentences: '`kubectl run --rm -i --restart=Never` starts a one-off Pod, prints what it writes, and deletes it afterwards. It uses the Caddy image only because that image contains `wget`.'"
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

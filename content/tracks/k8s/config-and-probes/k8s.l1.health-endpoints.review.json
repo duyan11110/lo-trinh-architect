@@ -1,0 +1,139 @@
+{
+  "id": "k8s.l1.health-endpoints",
+  "technical": {
+    "reviewed_at": "2026-10-04T12:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "R2 text: \"A Pod's `Running` status only says its containers have started and at least one still runs\". pod-lifecycle.md: \"`Running` | The Pod has been bound to a node, and all of the containers have been created. At least one container is still running\". api Pod has one container, so 'started' holds. R1 run: rv-nodb (Host=db-missing) `1/1 Running`; GET /api/v1/products -> `HTTP/1.1 500 Internal Server Error` (ExceptionHandlingMiddleware@stage-2).",
+        "source": "kubectl run rv-nodb + nc GET (kind donhang); DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs@stage-2; refs/kubernetes-website/content/en/docs/concepts/workloads/pods/pod-lifecycle.md:115"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Program.cs@stage-2 lines 75-80: comment \"Redis is left out on purpose: when it fails, the api still answers from PostgreSQL.\" then `builder.Services.AddHealthChecks()\\n    .AddDbContextCheck<DonHangDbContext>(tags: [\"ready\"]);` — exactly one check registered.",
+        "source": "git -C examples/don-hang show stage-2:DonHang.Api/Program.cs"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "\"AddDbContextCheck registers a health check for a DbContext. ... An overload is available to configure the failure status, tags, and a custom test query.\" / \"The `DbContextHealthCheck` calls EF Core's `CanConnectAsync` method.\"",
+        "source": "refs/aspnetcore-docs/aspnetcore/host-and-deploy/health-checks.md:185,189 (moniker >= aspnetcore-8.0)"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "\"By default, the health checks middleware runs all registered health checks. To run a subset of health checks, provide a function that returns a boolean to the Predicate option.\" Sample: `Predicate = healthCheck => healthCheck.Tags.Contains(\"ready\")` and `Predicate = _ => false`; \"The liveness check filters out all health checks by returning `false` in the HealthCheckOptions.Predicate delegate.\"",
+        "source": "refs/aspnetcore-docs/aspnetcore/host-and-deploy/health-checks.md:132,224; samples/8.x/HealthChecksSample/Snippets/Program.cs:232-241"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Docs: \"The following StatusCodes assignments are the default values used by the middleware\": Healthy=Status200OK, Degraded=Status200OK, Unhealthy=Status503ServiceUnavailable; \"The default response writer writes HealthStatus as a plaintext response\". Run on rv-nodb (nc): /health/ready -> `HTTP/1.1 503 Service Unavailable`, `Content-Type: text/plain`, body `Unhealthy`.",
+        "source": "refs/aspnetcore-docs/aspnetcore/host-and-deploy/health-checks.md:33,140; Snippets/Program.cs:144-154; kind donhang rv-nodb"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "\"The app is considered healthy if it can respond at the health endpoint URL.\" / \"The `/healthz/live` endpoint excludes all checks and reports a `Healthy` status for all calls.\" Run: rv-nodb (no database) /health/live -> `HTTP/1.1 200 OK`, body `Healthy`.",
+        "source": "refs/aspnetcore-docs/aspnetcore/host-and-deploy/health-checks.md:33,226; kind donhang rv-nodb"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "ProductCache.cs@stage-2 GetAsync: `catch (Exception ex) when (ex is RedisException or RedisTimeoutException) { ... return null; }` with comment \"any Redis error counts as a miss: product reads get slower while Redis is down, not broken.\" git grep: ProductCache is the only user of IConnectionMultiplexer in non-test code.",
+        "source": "git -C examples/don-hang show stage-2:DonHang.Infrastructure/ProductCache.cs"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Program.cs@stage-2:123-124 map /health/live and /health/ready with no RequireAuthorization; AddAuthorization (62-66) sets no FallbackPolicy. Run: GETs without any token to api and rv-nodb returned 200/503, never 401.",
+        "source": "git -C examples/don-hang show stage-2:DonHang.Api/Program.cs; kind donhang"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "health.sh@stage-2:6-14 get(): `wget -S -q -O /tmp/body $url 2>/tmp/headers; grep '^  HTTP/' ...; [ -s /tmp/body ] && cat /tmp/body`. Run in caddy:2.10.0 (BusyBox v1.37.0): `wget -S -O - http://<rv-nodb>:8080/health/ready` printed `wget: server returned error: HTTP/1.1 503 Service Unavailable`, rc=1, no body, while nc on the same URL showed body `Unhealthy`.",
+        "source": "git -C examples/don-hang show stage-2:scripts/k8s/health.sh; kind donhang rv-client"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "health.sh@stage-2:5 `image=ghcr.io/duyan11110/donhang-api:1.0.0`; 33-38 `kubectl run api-no-db ... --env='ConnectionStrings__Default=Host=db-missing;...'` then `ip=$(kubectl get pod api-no-db ... {.status.podIP})`. kubectl run labels the Pod only `run=<name>` (rv-nodb: {\"run\":\"rv-nodb\"}); Service api selects `app: api` (api.yaml@stage-2).",
+        "source": "git -C examples/don-hang show stage-2:scripts/k8s/health.sh, stage-2:deploy/k8s/api.yaml; kind donhang"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "outputs/stage-2/scripts/k8s/health.txt is identical to the lesson's output block: api live/ready `HTTP/1.1 200 OK` + `Healthy`; api-no-db live `HTTP/1.1 200 OK` + `Healthy`; ready `HTTP/1.1 503 Service Unavailable` with no body line.",
+        "source": "examples/don-hang/outputs/stage-2/scripts/k8s/health.txt"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Run (name changed to rv-health-try): `kubectl run rv-health-try --rm -i --restart=Never -n donhang --image=caddy:2.10.0 -- wget -q -O - http://api:8080/health/ready` printed `Healthypod \"rv-health-try\" deleted from donhang namespace`, rc=0; the Pod no longer exists afterwards. See issue on the expected-result wording.",
+        "source": "kind donhang, kubectl v1.34.3"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "\"Use a *liveness probe* to describe the liveness of the process, no other checks are run.\" / \"The `/healthz/live` endpoint excludes all checks and reports a `Healthy` status for all calls.\" With Predicate = _ => false no dependency check runs, so a database outage cannot change the answer (confirmed on rv-nodb: 200 Healthy).",
+        "source": "refs/aspnetcore-docs/aspnetcore/host-and-deploy/health-checks.md:203,226"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "service.md: \"`.spec.type` set to ClusterIP (which is also the default for `type`)\". api.yaml@stage-2 Service api has no `type`; kind-config.yaml@stage-2 has nodes only, no extraPortMappings; no deploy/k8s file at stage-2 has Ingress/NodePort/LoadBalancer/hostPort. Live (read-only): `service/api ClusterIP ... <none> 8080/TCP`; `kubectl get ingress -A` -> No resources found; no Service of another type in any namespace.",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/services-networking/service.md:897; git show stage-2:deploy/k8s/{api.yaml,kind-config.yaml}; kind donhang"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "\"After a probe fails `failureThreshold` times in a row, Kubernetes considers that the overall check has failed ... Defaults to 3. ... For the case of a startup or liveness probe, if at least `failureThreshold` probes have failed, Kubernetes treats the container as unhealthy and triggers a restart for that specific container.\" Lesson text 'restarts the container when it keeps failing' matches.",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/workloads/pods/probes.md:260"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "docker-compose.yml@stage-2:146-152 api healthcheck: `test: [\"CMD\", \"bash\", \"-c\", \"exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q Healthy <&3\"]`. First half of the sentence: devops.l1.compose-for-the-api is example_tag stage-1, where docker-compose.yml@stage-1 has db healthcheck `pg_isready` and api `depends_on: db: condition: service_healthy` -> 'waited until db answered as ready' holds.",
+        "source": "git -C examples/don-hang show stage-2:docker-compose.yml, stage-1:docker-compose.yml"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "Re-run R2 (name rv-health-try2): `kubectl run rv-health-try2 --rm -i --restart=Never -n donhang --image=caddy:2.10.0 -- wget -q -O - http://api:8080/health/ready` | od -c -> `Healthypod \"rv-health-try2\" deleted from donhang namespace\n`; afterwards `kubectl get pod rv-health-try2` -> NotFound. Body and deletion message share one line, as the lesson says. Zero issues R2; opened: health-checks.md (aspnetcore-docs), pod-lifecycle.md, probes.md, service.md, repo stage-1/2 files.",
+        "source": "kind donhang, kubectl v1.34.3"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-04T14:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (review-junior)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "text": "q3: the blank sits in a line copied from the code block, so the answer `false` can be copied from section 5 without thinking about what the `Predicate` does.",
+        "quote": "Predicate = _ => ___",
+        "fix": "Ask instead for the `Predicate` of a new endpoint, e.g. one that runs every registered check (`_ => true`), so the reader must apply the rule."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

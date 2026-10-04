@@ -1,0 +1,168 @@
+{
+  "id": "k8s.l1.liveness-probes",
+  "technical": {
+    "reviewed_at": "2026-10-04T07:10:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "pod-lifecycle.md: \"The default value is Always.\" / \"restarts that make replacement containers inside the same Pod and running on the same node\". kubectl explain pod.spec.restartPolicy (server v1.34.11): \"Default to Always.\" Run of rv-liveness (copy of web-liveness-pod.yaml, ns default): IP 10.244.1.39 and node donhang-worker2 unchanged across RESTARTS 1..5; liveness.txt: same uid yes, same IP yes.",
+        "source": "refs/kubernetes-website content/en/docs/concepts/workloads/pods/pod-lifecycle.md (Container restarts); kubectl explain on kind v1.34.11; outputs/stage-2/scripts/k8s/liveness.txt"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "pod-lifecycle.md: \"When the kubelet is handling container restarts according to the configured restart policy, that only applies to restarts that make replacement containers inside the same Pod and running on the same node.\" Same uid after restart (liveness.txt) = same Pod object, so the Pod count a ReplicaSet watches is unchanged.",
+        "source": "refs/kubernetes-website content/en/docs/concepts/workloads/pods/pod-lifecycle.md"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "R2. pod-lifecycle.md: \"Initial crash: Kubernetes attempts an immediate restart\"; \"exponential backoff delay for subsequent restarts\"; \"CrashLoopBackOff state: This indicates that the backoff delay mechanism is currently in effect\". Section 4 now reads \"After the first few restarts it waits before starting it again, and the wait grows each time\", matching the R1 run (restarts 1-4 with no visible wait, CrashLoopBackOff from 2m32s). Summary line 3 updated to match.",
+        "source": "refs/kubernetes-website content/en/docs/concepts/workloads/pods/pod-lifecycle.md; R1 run of rv-liveness on kind v1.34.11"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "probes.md: \"A probe is a diagnostic performed periodically by the kubelet on a container.\" httpGet: \"Performs an HTTP GET request against the Pod's IP address on a specified port and path.\"",
+        "source": "refs/kubernetes-website content/en/docs/concepts/workloads/pods/probes.md (overview; Check mechanisms)"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "probes.md: \"The diagnostic is considered successful if the response has a status code greater than or equal to 200 and less than 400.\" configure-liveness-readiness-startup-probes.md: \"Any code greater than or equal to 200 and less than 400 indicates success. Any other code indicates failure.\" (also seen on v1-34.docs.kubernetes.io). timeoutSeconds: \"Number of seconds after which the probe times out. Defaults to 1 second.\"",
+        "source": "refs/kubernetes-website probes.md; tasks/configure-pod-container/configure-liveness-readiness-startup-probes.md; WebFetch v1-34.docs.kubernetes.io same task page"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "probes.md failureThreshold: \"After a probe fails failureThreshold times in a row ... Defaults to 3. ... For the case of a startup or liveness probe, if at least failureThreshold probes have failed, Kubernetes treats the container as unhealthy and triggers a restart for that specific container.\" kubectl explain (v1.34.11): \"Defaults to 3.\" Run: rv-liveness spec shows failureThreshold 3; event \"Killing: Container web failed liveness probe, will be restarted\".",
+        "source": "refs/kubernetes-website probes.md (Configuration fields); kubectl explain pod.spec.containers.livenessProbe.failureThreshold on kind v1.34.11"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "probes.md: \"The liveness probe passes when the app itself is healthy, but the readiness probe additionally checks that each required back-end service is available.\" Caution: \"Incorrect implementation of liveness probes can lead to cascading failures.\" Lesson states it conditionally (\"If it checked the database...\").",
+        "source": "refs/kubernetes-website probes.md (When should you use a readiness probe?; Liveness probe caution)"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "git show stage-2:deploy/k8s/lessons/web-liveness-pod.yaml: name web-liveness, image caddy:2.10.0, livenessProbe httpGet path /healthz port 80. Run of the same manifest renamed rv-liveness: event \"Unhealthy: Liveness probe failed: HTTP probe failed with statuscode: 404\" (x17); container Running 1/1 between kills.",
+        "source": "examples/don-hang@stage-2 deploy/k8s/lessons/web-liveness-pod.yaml; run on kind v1.34.11"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "git show stage-2:scripts/k8s/liveness.sh lines 12-35 match the block; lines 36-47 print Unhealthy/Killing events (sort -u), delete the Pod, and grep `kubectl describe deployment api` for Liveness|Readiness, as the prose says. show() and pod_field() defined on lines 6-7 as described.",
+        "source": "examples/don-hang@stage-2 scripts/k8s/liveness.sh"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "glossary uid.md: \"Every object created over the whole lifetime of a Kubernetes cluster has a distinct UID.\" pod-lifecycle.md: a replacement Pod \"would have a different .metadata.uid from the old Pod.\"",
+        "source": "refs/kubernetes-website content/en/docs/reference/glossary/uid.md; pod-lifecycle.md (Pods and fault recovery)"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Lesson output block is identical to outputs/stage-2/scripts/k8s/liveness.txt line for line. Independent run reproduces Killing/Unhealthy messages verbatim.",
+        "source": "examples/don-hang/outputs/stage-2/scripts/k8s/liveness.txt"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "api.yaml@stage-2 lines 45-48: livenessProbe httpGet path /health/live port 8080, no other fields. Read-only run now: `kubectl describe deployment api -n donhang | grep -E 'Liveness|Readiness'` -> \"Liveness: http-get http://:8080/health/live delay=0s timeout=1s period=10s #success=1 #failure=3\".",
+        "source": "examples/don-hang@stage-2 deploy/k8s/api.yaml; kubectl describe on kind donhang"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "R2. Section 7 now uses the R1 suggested_text. R1 run `kubectl get pod rv-liveness -w` on kind v1.34.11: RESTARTS 1-4 at 31s, 61s, 91s, 2m2s (~30 s apart), first CrashLoopBackOff at 2m32s, next start at 3m14s (gap 42 s, growing). Five minutes covers that.",
+        "source": "run of rv-liveness (copy of web-liveness-pod.yaml) on kind donhang, server v1.34.11"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "glossary/event.md: Event is \"A Kubernetes object that describes state changes or notable occurrences in the cluster.\" \"Events have a limited retention time\". liveness.txt and R1 run: \"Unhealthy: Liveness probe failed: HTTP probe failed with statuscode: 404\", \"Killing: Container web failed liveness probe, will be restarted\". R2 run of rv-wait: `kubectl get events --field-selector involvedObject.name=rv-wait` lists Scheduled/Pulled/Created/Started for that Pod.",
+        "source": "refs/kubernetes-website content/en/docs/reference/glossary/event.md; outputs/stage-2/scripts/k8s/liveness.txt; run on kind donhang"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "kubectl_wait: \"waits until the specified condition is seen in the Status field of every given resource\"; example `kubectl wait --for=condition=Ready pod/busybox1`. R2 run on kind v1.34.11: Pod rv-wait (caddy:2.10.0, no probes) -> \"pod/rv-wait condition met\"; conditions Ready=True ContainersReady=True; containerStatuses started=true ready=true. Pod deleted.",
+        "source": "refs/kubernetes-website content/en/docs/reference/kubectl/generated/kubectl_wait/_index.md; run on kind donhang (ns default)"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "kubectl get flags: \"-w, --watch: After listing/getting the requested object, watch for changes.\" The command keeps running until interrupted; lesson says Ctrl+C. R1 run of `kubectl get pod rv-liveness -w` printed a new line at each RESTARTS/STATUS change.",
+        "source": "refs/kubernetes-website content/en/docs/reference/kubectl/generated/kubectl_get/_index.md; R1 run on kind donhang"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "Wrong cross-reference. Caddy (`caddy:2.10.0`) is first used in k8s.l1.pods (module k8s/why-and-architecture: web-pod.yaml), and again in k8s.l1.manifests-and-kubectl-apply, before k8s/workloads. \"since k8s/workloads\" is false.",
+        "quote": "Caddy is the web server image the lesson Pods have used since k8s/workloads.",
+        "fix": "\"Caddy is the web server image the lesson Pods have used since the Pods lesson.\" (or \"since k8s/why-and-architecture\")."
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "example",
+        "text": "Heading promises 3 minutes (fixed by docs/01 contract) while step 2 asks to watch about five minutes. Consequence of the R1 fix; observed timing needs ~3-5 min to see CrashLoopBackOff and a longer gap.",
+        "quote": "watch for about five minutes",
+        "fix": "Keep the contract heading. Optional: add to step 2 \"(the slow part; the other steps take seconds)\" so the learner is not surprised. No change to the expected result."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-04T08:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "style",
+        "text": "Round 2, new wording. On first read 'the kubelet stops restarting it at once' sounded like it gives up right away; only the next sentence told me it means 'no longer restarts it immediately'. I had to re-read.",
+        "quote": "If the container keeps stopping, the kubelet stops restarting it at once.",
+        "fix": "Replace with 'If the container keeps stopping, the kubelet no longer starts it again right away.'"
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "text": "Kept from round 1 (author chose not to teach probe timing). Prose never says how often the probe runs or how long 'in time' is. Section 7 now promises restarts 'about every 30 seconds'; I can only work that out from the script comment 'Every 10 s' times 3, not from the prose.",
+        "quote": "any other status, or no answer in time, counts as a failure",
+        "fix": "Optional: in section 7's expected result, add '(a probe every 10 seconds, 3 failures in a row)' after 'about every 30 seconds'."
+      },
+      {
+        "severity": "minor",
+        "section": 2,
+        "kind": "example",
+        "text": "Kept from round 1. The situation is understandable and its closing question is answered, but no person is in it and nothing surprises anyone; it reads like a general statement rather than a moment in Đơn Hàng.",
+        "quote": "Sometimes the api process crashes and exits; sometimes it is worse: the process is still there, but stuck, and answers no request at all.",
+        "fix": "Add one sentence with an actor: e.g. a developer sees half of the orders requests time out while `kubectl get pods` shows both api Pods Running."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [
+        "Section 4/7: probe period and timeout never given in prose; 'about every 30 seconds' in Expected result is derivable only from the script comment 'Every 10 s'"
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}
