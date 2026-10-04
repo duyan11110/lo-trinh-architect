@@ -6,7 +6,7 @@ level: 1
 stage: 2
 module: why-and-architecture
 main_path: true
-title: "Every kubectl command is a request to the API server"
+title: "Every kubectl command that reads or changes the cluster is a request to the API server"
 duration_min: 12
 skills: [k8s.basics.kubectl]
 prereqs: [k8s.l1.cluster-nodes-and-control-plane, foundation.l1.http-request-response]

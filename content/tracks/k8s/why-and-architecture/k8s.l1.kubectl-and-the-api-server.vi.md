@@ -6,7 +6,7 @@ level: 1
 stage: 2
 module: why-and-architecture
 main_path: true
-title: "Mỗi lệnh kubectl là một request tới API server"
+title: "Mỗi lệnh kubectl đọc hay thay đổi cluster là một request tới API server"
 duration_min: 12
 skills: [k8s.basics.kubectl]
 prereqs: [k8s.l1.cluster-nodes-and-control-plane, foundation.l1.http-request-response]

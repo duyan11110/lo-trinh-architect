@@ -35,9 +35,9 @@ Trong script, ship commit trước. Lệnh hủy sau đó cũng thành công, v�
 
 ## Khái niệm cốt lõi
 
-- **isolation level** (thiết lập quyết định một transaction thấy gì từ thay đổi của các transaction khác khi nó đang chạy) — thiết lập quyết định một giao dịch thấy được gì từ những thay đổi mà các giao dịch khác làm trong lúc nó đang chạy.
+- **isolation level** (thiết lập quyết định một giao dịch thấy gì từ thay đổi của các giao dịch khác khi nó đang chạy) — thiết lập quyết định một giao dịch thấy được gì từ những thay đổi mà các giao dịch khác làm trong lúc nó đang chạy.
 - Read Committed — isolation level mặc định của PostgreSQL: mỗi câu lệnh chỉ thấy những dòng đã commit trước khi chính câu lệnh đó bắt đầu.
-- **lost update** (hai transaction cùng đọc một giá trị rồi cùng ghi, lần ghi sau lặng lẽ xóa mất lần ghi trước) — hai giao dịch cùng đọc một giá trị rồi cùng ghi, nên lần ghi sau lặng lẽ xóa mất lần ghi trước.
+- **lost update** (hai giao dịch cùng đọc một giá trị rồi cùng ghi, lần ghi sau lặng lẽ xóa mất lần ghi trước) — hai giao dịch cùng đọc một giá trị rồi cùng ghi, nên lần ghi sau lặng lẽ xóa mất lần ghi trước.
 - Repeatable Read — một mức chặt hơn: mọi câu lệnh trong giao dịch thấy database như lúc truy vấn đầu tiên của giao dịch chạy.
 - Lỗi serialization — lỗi có mã (SQLSTATE) `40001` mà PostgreSQL trả về thay vì để một giao dịch Repeatable Read ghi đè lên một thay đổi mới hơn.
 

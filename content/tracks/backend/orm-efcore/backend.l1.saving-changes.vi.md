@@ -33,7 +33,7 @@ Một đồng nghiệp đang đọc `OrderService.PlaceOrderAsync` và thấy ha
 
 - `DonHangDbContext` là class giữ các `DbSet` mà các truy vấn LINQ ở bài trước chạy lên. Một entity là một object C# như `order`, đại diện cho một dòng.
 - change tracker — một danh sách trong bộ nhớ mà `DonHangDbContext` giữ, gồm mọi entity nó đang theo dõi, và những gì đã thay đổi ở mỗi entity kể từ khi nó được tải hoặc được thêm vào. Gọi `AddAsync` đánh dấu một entity là mới trong danh sách này, đưa nó vào trạng thái `Added`; đưa một thay đổi vào danh sách này là điều phần còn lại của bài gọi là staging nó, và không gì được ghi ở đâu cả cho tới khi thay đổi được lưu.
-- `SaveChangesAsync` — lệnh gọi biến mọi thay đổi đã staged trong change tracker thành SQL thật và gửi đi, gói tất cả trong một transaction, theo mặc định: mọi thay đổi đã staged thành công cùng nhau, hoặc không cái nào cả.
+- `SaveChangesAsync` — lệnh gọi biến mọi thay đổi đã staged trong change tracker thành SQL thật và gửi đi, gói tất cả trong một giao dịch (transaction), theo mặc định: mọi thay đổi đã staged thành công cùng nhau, hoặc không cái nào cả.
 - id do database sinh ra — một giá trị khóa chính như `orders.id` mà chính PostgreSQL gán trong lúc `INSERT`, không phải thứ EF Core tự bịa ra trong C#; property `Id` của entity giữ nguyên giá trị mặc định cho tới khi `SaveChangesAsync` chạy và chép lại giá trị database đã sinh ra.
 
 ## Cơ chế hoạt động
@@ -96,7 +96,7 @@ Mỗi cái là một wrapper một dòng quanh lệnh gọi cùng tên của `Do
 ## Người mới hay nghĩ rằng…
 
 - **"`db.Orders.AddAsync(order)` ghi order vào database ngay lập tức."** → Thực ra `AddAsync` chỉ staging entity đó trong change tracker, đánh dấu `Added`; không gì chạm tới PostgreSQL cho tới khi `SaveChangesAsync` chạy. Bạn sẽ nhận ra điều này khi `order.Id` vẫn là `0` ngay sau `AddAsync`, và chỉ trở thành một id thật sau khi `SaveChangesAsync` hoàn tất.
-- **"Nếu một trong nhiều thay đổi đã staged thất bại lúc lưu, những cái đã thành công trước đó vẫn được lưu."** → Thực ra `SaveChangesAsync` gói mọi thay đổi đã staged trong một transaction theo mặc định; nếu một trong số đó thất bại, cả lô bị rollback, kể cả những thay đổi lẽ ra đã tự thành công. Bạn sẽ nhận ra điều này khi một `INSERT` thất bại giữa nhiều cái khác để lại database y hệt như trước khi `SaveChangesAsync` được gọi, không phải cập nhật một phần.
+- **"Nếu một trong nhiều thay đổi đã staged thất bại lúc lưu, những cái đã thành công trước đó vẫn được lưu."** → Thực ra `SaveChangesAsync` gói mọi thay đổi đã staged trong một giao dịch theo mặc định; nếu một trong số đó thất bại, cả lô bị rollback, kể cả những thay đổi lẽ ra đã tự thành công. Bạn sẽ nhận ra điều này khi một `INSERT` thất bại giữa nhiều cái khác để lại database y hệt như trước khi `SaveChangesAsync` được gọi, không phải cập nhật một phần.
 
 ## Thử ngay (3 phút)
 
@@ -121,6 +121,6 @@ Kết quả mong đợi: cả hai đều nêu cùng một id thật — không b
 
 1. `AddAsync` chỉ staging một entity trong change tracker, đánh dấu `Added`; không gì chạm tới database cả.
 2. `SaveChangesAsync` là lệnh gọi biến mọi thay đổi đã staged thành SQL và gửi đi.
-3. Theo mặc định, `SaveChangesAsync` gói mọi thay đổi đã staged trong một transaction: tất cả thành công cùng nhau, hoặc không cái nào cả.
+3. Theo mặc định, `SaveChangesAsync` gói mọi thay đổi đã staged trong một giao dịch: tất cả thành công cùng nhau, hoặc không cái nào cả.
 4. Một id do database sinh ra như `orders.id` được PostgreSQL gán lúc `INSERT`, không phải EF Core tự bịa ra trong C#.
 5. `order.Id` giữ nguyên `0` cho tới khi `SaveChangesAsync` chạy và chép lại id PostgreSQL đã sinh ra.
