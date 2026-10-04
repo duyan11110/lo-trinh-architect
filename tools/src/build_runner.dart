@@ -108,7 +108,8 @@ Future<int> runBuild(List<String> argv) async {
   final gatesDir = Directory(repo.path('content/gates'));
   if (gatesDir.existsSync()) {
     for (final f in gatesDir.listSync()) {
-      if (f is File && f.path.endsWith('.json')) {
+      // gate<N>.review.json sits next to its bank; it is not a bank.
+      if (f is File && f.path.endsWith('.json') && !f.path.endsWith('.review.json')) {
         final data = loadJsonFile(f.path) as Map<String, dynamic>;
         final gateId = data['gate'] as String? ?? p.basenameWithoutExtension(f.path);
         gatesOut[gateId] = data;
