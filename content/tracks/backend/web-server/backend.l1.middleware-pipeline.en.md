@@ -15,9 +15,9 @@ vocab: [middleware, short-circuit]
 example_tag: stage-1
 versions_used: [aspnetcore]
 content_version: 1
-status: reviewed
-approved_by: null
-reviewed_at: "2026-09-25T09:00:00+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-10-04T08:24:28+07:00"
 ---
 
 ## Before you start
@@ -108,7 +108,7 @@ Everything before `await next(context)` runs on the way in; everything after run
 
 ## Try it (3 minutes)
 
-1. From Đơn Hàng's top-level folder, with Docker running and the Flutter SDK installed (Docker starts Đơn Hàng's parts on your machine; `scripts/up.sh` uses both for you), start the lab with `scripts/up.sh`, which runs Đơn Hàng on your machine. Then run `curl -i -X POST http://localhost:8080/api/v1/orders` (`localhost` means your own machine) with no `Authorization` header (`curl` sends the request from the terminal; `-X POST` sets the method, `-i` prints the status line and headers, where you will see `401`).
+1. From Đơn Hàng's top-level folder, with Docker running and the Flutter SDK installed (Docker starts Đơn Hàng's parts on your machine; the Flutter SDK is the toolkit that builds Đơn Hàng's app before it starts; `scripts/up.sh` uses both for you), start the lab with `scripts/up.sh`, which runs Đơn Hàng on your machine. Then run `curl -i -X POST http://localhost:8080/api/v1/orders` (`localhost` means your own machine) with no `Authorization` header (`curl` sends the request from the terminal; `-X POST` sets the method, `-i` prints the status line and headers, where you will see `401`).
 2. Run `docker compose logs api`, which shows what the `api` part of the lab printed while running, and find the line for that request. Why does that line appear even though `Create()` never ran?
 
 Expected result: curl prints `401`; the log line still reads `POST /api/v1/orders responded 401 in ...ms` — `RequestLoggingMiddleware` ran and logged the outcome even though `UseAuthorization` short-circuited the request before `OrdersController.Create()` ever ran.

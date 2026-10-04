@@ -15,7 +15,9 @@ vocab: [setstate]
 example_tag: stage-1
 versions_used: [flutter]
 content_version: 1
-status: reviewed
+status: approved
+approved_by: auto
+reviewed_at: "2026-10-04T08:24:28+07:00"
 ---
 
 ## Before you start
