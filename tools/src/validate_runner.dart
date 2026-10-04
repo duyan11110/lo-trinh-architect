@@ -20,6 +20,7 @@ import 'yaml_json.dart';
 class ValidateArgs {
   String? lessonId;
   String? filePath;
+  String? gatePath; // content/gates/gate<N>.json
   String? moduleArg;
   int? stageArg;
   bool structureOnly = false;
@@ -64,7 +65,9 @@ ValidateArgs parseValidateArgs(List<String> argv) {
         a.manifestStage = int.parse(argv[++i]);
         break;
       default:
-        if (!arg.startsWith('--')) {
+        if (arg.endsWith('.json')) {
+          a.gatePath = arg;
+        } else if (!arg.startsWith('--')) {
           a.lessonId = arg;
         }
         break;
@@ -107,6 +110,12 @@ int runValidate(List<String> argv) {
       print(line);
     }
     return 0;
+  }
+
+  if (args.gatePath != null) {
+    _validateGateMode(repo, tree, sv, args.gatePath!, out);
+    out.printAll();
+    return out.hasErrors ? 1 : 0;
   }
 
   if (args.filePath != null) {
@@ -262,6 +271,18 @@ void _validateFileMode(Repo repo, ValidateArgs args, IssueCollector out) {
     noRepo: args.noRepo,
   );
   validateLesson(input, sv, out);
+}
+
+void _validateGateMode(Repo repo, ContentTree tree, SchemaValidator sv, String path, IssueCollector out) {
+  final file = File(path);
+  if (!file.existsSync()) {
+    out.error(path, 'Q01', 'file không tồn tại: $path');
+    return;
+  }
+  final bank = loadJsonFile(path) as Map<String, dynamic>;
+  final stage = bank['stage'] is int ? bank['stage'] as int : null;
+  validateQuiz(bank['gate'] as String? ?? path, bank, sv, out,
+      QuizValidationContext(isGate: true, gateStage: stage, tree: tree));
 }
 
 void _validateParityMode(Repo repo, ContentTree tree, String id, IssueCollector out) {
