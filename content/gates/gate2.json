@@ -1,0 +1,786 @@
+{
+  "gate": "gate2",
+  "stage": 2,
+  "questions": [
+    {
+      "id": "gate2.q1",
+      "type": "single",
+      "bloom": "remember",
+      "difficulty": 2,
+      "skills": ["backend.auth.oauth2", "backend.auth.oidc"],
+      "track": "backend",
+      "module": "oauth-and-authz",
+      "question": {
+        "en": "A client signs a customer in through Keycloak's code flow with the `openid` scope and gets an access token, an ID token and a refresh token. Which one does it send in `Authorization: Bearer` to call `GET /api/v1/orders`?",
+        "vi": "Một client đăng nhập cho khách qua code flow của Keycloak với scope `openid` và nhận về một access token, một ID token và một refresh token. Để gọi `GET /api/v1/orders`, client gửi token nào trong `Authorization: Bearer`?"
+      },
+      "options": [
+        { "id": "a", "en": "The access token, whose `aud` is `donhang-api`", "vi": "Access token, có `aud` là `donhang-api`" },
+        { "id": "b", "en": "The ID token, since it identifies the customer in `sub`", "vi": "ID token, vì nó cho biết khách là ai qua `sub`", "misconception": "The ID token and the access token are interchangeable, since both are JWTs." },
+        { "id": "c", "en": "The refresh token, since it lives longer than the others", "vi": "Refresh token, vì nó sống lâu hơn hai token kia", "misconception": "A refresh token is just a longer-lived access token that the API also accepts." },
+        { "id": "d", "en": "All three, so the API can pick the one it trusts", "vi": "Cả ba, để API tự chọn token nó tin" }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "The access token is the one meant for the API: Keycloak puts `donhang-api` in its `aud`, and the API accepts only that audience. The ID token is for the app, and the refresh token goes only to Keycloak.",
+          "b": "The ID token does carry the customer's `sub`, which makes it look useful to the API. But its `aud` is the app's `client_id`, so the API, which checks the audience, answers `401`.",
+          "c": "Using the longest-lived token sounds convenient. But the refresh token is only for Keycloak's token endpoint, to get new access tokens; the API answers `401` to it.",
+          "d": "Sending everything feels safe when you are unsure. Only the access token is meant for the API; handing it the ID and refresh tokens gains nothing and spreads tokens to a party that has no use for them."
+        },
+        "vi": {
+          "correct": "Access token là token dành cho API: Keycloak ghi `donhang-api` vào `aud` của nó, và API chỉ nhận đúng audience đó. ID token dành cho app, còn refresh token chỉ gửi cho Keycloak.",
+          "b": "ID token đúng là mang `sub` của khách, nên trông như có ích cho API. Nhưng `aud` của nó là `client_id` của app, nên API, vốn kiểm audience, trả `401`.",
+          "c": "Dùng token sống lâu nhất nghe tiện. Nhưng refresh token chỉ dành cho token endpoint của Keycloak, để lấy access token mới; API trả `401` cho nó.",
+          "d": "Gửi hết cho chắc nghe an toàn khi chưa rõ. Chỉ access token là dành cho API; đưa thêm ID token và refresh token chẳng được gì, lại rải token tới một bên không cần đến chúng."
+        }
+      }
+    },
+    {
+      "id": "gate2.q2",
+      "type": "single",
+      "bloom": "remember",
+      "difficulty": 2,
+      "skills": ["backend.jobs.background", "backend.cache.redis", "backend.api.idempotency"],
+      "track": "backend",
+      "module": "background-jobs",
+      "question": {
+        "en": "A customer places an order with an `Idempotency-Key`, then opens product 3, which was not cached. At stage-2, where does each of these end up: the order's email job, the key, the copy of product 3?",
+        "vi": "Một khách đặt đơn kèm `Idempotency-Key`, rồi mở sản phẩm 3 vốn chưa có trong cache. Ở stage-2, mỗi thứ sau nằm ở đâu: email job của đơn, key, bản sao của sản phẩm 3?"
+      },
+      "options": [
+        { "id": "a", "en": "A `notifications` row in PostgreSQL; a column of the order's row; a `product:3` key in Redis", "vi": "Một dòng `notifications` trong PostgreSQL; một cột của dòng đơn hàng; một key `product:3` trong Redis" },
+        { "id": "b", "en": "A list in the API's memory; a column of the order's row; a `product:3` key in Redis", "vi": "Một danh sách trong bộ nhớ của API; một cột của dòng đơn hàng; một key `product:3` trong Redis", "misconception": "Keeping pending emails in a list in memory works just as well as a table, and it is faster." },
+        { "id": "c", "en": "A `notifications` row in PostgreSQL; a key in Redis with a TTL; a `product:3` key in Redis", "vi": "Một dòng `notifications` trong PostgreSQL; một key trong Redis có TTL; một key `product:3` trong Redis" },
+        { "id": "d", "en": "A `notifications` row in PostgreSQL; a column of the order's row; Redis, in place of the `products` table", "vi": "Một dòng `notifications` trong PostgreSQL; một cột của dòng đơn hàng; Redis, thay cho bảng `products`", "misconception": "Redis is just a faster database, so the products table could move into it." }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "The email job is a `notifications` row written in the order's own transaction, the key is saved in the order's row under a unique index, and Redis holds only a rebuildable copy of product 3 under `product:3`.",
+          "b": "A list in memory sounds faster and simpler. But it is lost when the API restarts and is not written with the order; the `notifications` row is, so the job is never lost and never without its order.",
+          "c": "Redis with a TTL is where Đơn Hàng keeps short-lived copies, so it feels right for a key. But the key is saved with the order, in the same transaction, under a unique index, so two retries cannot both insert.",
+          "d": "Redis serves reads fast, which makes moving the table tempting. But Đơn Hàng keeps every fact in PostgreSQL; `product:3` is only a copy with a 5-minute TTL that the API can rebuild."
+        },
+        "vi": {
+          "correct": "Email job là một dòng `notifications` được ghi trong chính giao dịch của đơn, key được lưu trong dòng của đơn dưới một unique index, còn Redis chỉ giữ một bản sao dựng lại được của sản phẩm 3 dưới key `product:3`.",
+          "b": "Một danh sách trong bộ nhớ nghe nhanh và gọn hơn. Nhưng nó mất khi API khởi động lại và không được ghi cùng đơn; dòng `notifications` thì có, nên job không bao giờ mất và không bao giờ thiếu đơn của nó.",
+          "c": "Redis có TTL là nơi Đơn Hàng giữ bản sao ngắn hạn, nên nghe hợp với một key. Nhưng key được lưu cùng đơn, trong cùng giao dịch, dưới một unique index, để hai lần thử lại không cùng chèn được.",
+          "d": "Redis trả lời đọc rất nhanh, nên chuyển cả bảng sang nghe hấp dẫn. Nhưng Đơn Hàng giữ mọi sự thật trong PostgreSQL; `product:3` chỉ là bản sao có TTL 5 phút mà API dựng lại được."
+        }
+      }
+    },
+    {
+      "id": "gate2.q3",
+      "type": "truefalse",
+      "bloom": "understand",
+      "difficulty": 3,
+      "skills": ["backend.cache.cache-aside", "backend.jobs.background"],
+      "track": "backend",
+      "module": "caching",
+      "question": {
+        "en": "Statement: at stage-2, if Redis is down, product reads fail, and if Mailpit is down, placing an order fails, because the API depends on both.",
+        "vi": "Nhận định: ở stage-2, nếu Redis không chạy thì đọc sản phẩm thất bại, và nếu Mailpit không chạy thì đặt đơn thất bại, vì API phụ thuộc vào cả hai."
+      },
+      "options": [
+        { "id": "a", "en": "True, because any service the API connects to turns its own outage into an error for the request.", "vi": "Đúng, vì dịch vụ nào API kết nối tới mà sập thì request cũng thành lỗi.", "polarity": "true", "misconception": "If Redis is down, the product endpoint has to fail as well." },
+        { "id": "b", "en": "True, because an order counts as placed only once its email has been sent.", "vi": "Đúng, vì một đơn chỉ được tính là đã đặt khi email của nó đã gửi đi.", "polarity": "true", "misconception": "If the email fails, the order was not placed." },
+        { "id": "c", "en": "False, because a Redis error counts as a miss, and placing an order only adds a `pending` row, never calling the mail server.", "vi": "Sai, vì lỗi Redis được tính là miss, còn đặt đơn chỉ thêm một dòng `pending`, không bao giờ gọi mail server.", "polarity": "false" },
+        { "id": "d", "en": "False, because the API retries both Redis and Mailpit with backoff until each one is back.", "vi": "Sai, vì API thử lại cả Redis lẫn Mailpit với backoff cho tới khi từng cái chạy lại.", "polarity": "false" }
+      ],
+      "answer": ["c"],
+      "explanation": {
+        "en": {
+          "correct": "`ProductCache` treats a Redis error as a miss and reads PostgreSQL, so reads get slower, not broken. `PlaceOrderAsync` only saves a `pending` notifications row; `NotificationSender` contacts Mailpit later, outside any request.",
+          "a": "Many dependencies do work that way, and at stage-1 a mail error did turn an order request into a `500`. At stage-2 both paths were built so that these two outages do not reach the request.",
+          "b": "At stage-1 the email was sent inside the order request, which makes this feel true. At stage-2 the order and its email job are saved together, and the email is sent seconds later by the sender.",
+          "d": "Backoff is part of Đơn Hàng, so it is easy to apply it to both. Only failed email jobs are retried with growing waits; a Redis error is simply a miss, and the request reads PostgreSQL at once."
+        },
+        "vi": {
+          "correct": "`ProductCache` coi lỗi Redis là miss và đọc PostgreSQL, nên đọc chậm đi chứ không hỏng. `PlaceOrderAsync` chỉ lưu một dòng notifications `pending`; `NotificationSender` liên lạc với Mailpit sau đó, ngoài mọi request.",
+          "a": "Nhiều phụ thuộc đúng là như vậy, và ở stage-1 một lỗi gửi mail đã biến request đặt đơn thành `500`. Ở stage-2, cả hai đường đều được xây để hai sự cố này không chạm tới request.",
+          "b": "Ở stage-1 email được gửi ngay trong request đặt đơn, nên điều này nghe đúng. Ở stage-2 đơn và email job được lưu cùng nhau, và email do sender gửi vài giây sau.",
+          "d": "Backoff có trong Đơn Hàng, nên dễ đem áp cho cả hai. Chỉ email job thất bại mới được thử lại với thời gian chờ tăng dần; lỗi Redis chỉ đơn giản là miss, và request đọc PostgreSQL ngay."
+        }
+      }
+    },
+    {
+      "id": "gate2.q4",
+      "type": "truefalse",
+      "bloom": "understand",
+      "difficulty": 3,
+      "skills": ["backend.errors.shape", "backend.data.concurrency"],
+      "track": "backend",
+      "module": "api-design",
+      "question": {
+        "en": "Statement: when `PATCH /api/v1/orders/5/cancel` answers `409`, the order's status forbids cancelling, so the app can tell the customer so without reading the body.",
+        "vi": "Nhận định: khi `PATCH /api/v1/orders/5/cancel` trả `409`, trạng thái của đơn không cho hủy, nên app có thể báo khách như vậy mà không cần đọc body."
+      },
+      "options": [
+        { "id": "a", "en": "True, because one status code stands for one kind of error in the API.", "vi": "Đúng, vì trong API mỗi status code ứng với một loại lỗi.", "polarity": "true", "misconception": "Two errors with the same status code are the same error." },
+        { "id": "b", "en": "True, because a clash with another request's change is answered with `500`, not `409`.", "vi": "Đúng, vì va chạm với thay đổi của một request khác được trả `500`, không phải `409`.", "polarity": "true" },
+        { "id": "c", "en": "False, because the `type` also tells `concurrent-update` apart, which asks the client to reload the order and decide again.", "vi": "Sai, vì `type` còn phân biệt `concurrent-update`, loại yêu cầu client tải lại đơn rồi quyết định lại.", "polarity": "false" },
+        { "id": "d", "en": "False, because the app must compare the `title` text to know which error it got.", "vi": "Sai, vì app phải so chữ trong `title` mới biết mình gặp lỗi nào.", "polarity": "false", "misconception": "A client should compare the `title` text to tell one error from another." }
+      ],
+      "answer": ["c"],
+      "explanation": {
+        "en": {
+          "correct": "Cancel can answer `409` with three `type` values: `already-cancelled`, `already-shipped` and `concurrent-update`. The last one means another request changed the order first, so the right reaction is to reload, not to say it cannot be cancelled.",
+          "a": "Treating a status code as the whole answer works when only one problem uses it. Here three problems share `409`, and only `type` tells them apart.",
+          "b": "An unexpected exception does end as `500`, so this sounds plausible. But the middleware catches `DbUpdateConcurrencyException` and answers `409` with the `concurrent-update` type.",
+          "d": "The `title` is readable, which makes it tempting to match. RFC 9457 makes `type` the identifier of a problem; `title` is only an advisory summary for humans."
+        },
+        "vi": {
+          "correct": "Hủy đơn có thể trả `409` với ba giá trị `type`: `already-cancelled`, `already-shipped` và `concurrent-update`. Loại cuối nghĩa là một request khác đã đổi đơn trước, nên phản ứng đúng là tải lại, không phải báo đơn không hủy được.",
+          "a": "Coi status code là toàn bộ câu trả lời thì được khi chỉ một lỗi dùng nó. Ở đây ba lỗi cùng dùng `409`, và chỉ `type` phân biệt được chúng.",
+          "b": "Exception bất ngờ đúng là kết thúc thành `500`, nên ý này nghe hợp lý. Nhưng middleware bắt `DbUpdateConcurrencyException` và trả `409` với type `concurrent-update`.",
+          "d": "`title` dễ đọc, nên dễ bị đem ra so. RFC 9457 lấy `type` làm định danh của lỗi; `title` chỉ là bản tóm tắt tham khảo cho người đọc."
+        }
+      }
+    },
+    {
+      "id": "gate2.q5",
+      "type": "truefalse",
+      "bloom": "understand",
+      "difficulty": 2,
+      "skills": ["backend.jobs.background", "backend.data.concurrency"],
+      "track": "backend",
+      "module": "indexes-and-plans",
+      "question": {
+        "en": "Statement: the single `SaveChangesAsync` that writes an order and its `pending` email job in one transaction also stops a cancel and a ship of that order from overwriting each other.",
+        "vi": "Nhận định: lệnh `SaveChangesAsync` duy nhất ghi đơn và email job `pending` của nó trong một giao dịch cũng ngăn được việc hủy và giao cùng đơn đó ghi đè lên nhau."
+      },
+      "options": [
+        { "id": "a", "en": "True, because a change saved in a transaction cannot be overwritten by another request.", "vi": "Đúng, vì thay đổi đã lưu trong một giao dịch thì request khác không ghi đè được.", "polarity": "true", "misconception": "Because `SaveChangesAsync` uses a transaction, two requests cannot overwrite each other's change." },
+        { "id": "b", "en": "True, because the email job's row keeps the order locked until it has been sent.", "vi": "Đúng, vì dòng email job giữ khóa trên đơn cho tới khi email được gửi.", "polarity": "true" },
+        { "id": "c", "en": "False, because a transaction makes its own writes all or nothing, but does not stop a later write to the same row.", "vi": "Sai, vì giao dịch chỉ khiến các lệnh ghi của chính nó được ghi trọn hoặc không ghi gì, chứ không chặn lệnh ghi sau vào cùng dòng.", "polarity": "false" },
+        { "id": "d", "en": "False, because the order and its email job are saved in two separate transactions.", "vi": "Sai, vì đơn và email job của nó được lưu trong hai giao dịch riêng.", "polarity": "false" }
+      ],
+      "answer": ["c"],
+      "explanation": {
+        "en": {
+          "correct": "One transaction means the order and its email job are written together or not at all. What a transaction sees of others is a separate matter: under Read Committed, a second request can still read the old status and write over a committed change.",
+          "a": "A transaction does protect its writes, which makes this sound complete. It protects them from being half done, not from a later transaction writing the same row after it commits: that is a lost update.",
+          "b": "The job row does point at the order, so a lock sounds plausible. Nothing keeps the order locked after the save commits; the sender locks only `notifications` rows, and only while it claims them.",
+          "d": "Two saves would indeed lose the guarantee, so it is reasonable to check. But `PlaceOrderAsync` calls `SaveChangesAsync` once, after `notifier.Send` has staged the row, so both are written in one transaction."
+        },
+        "vi": {
+          "correct": "Một giao dịch nghĩa là đơn và email job được ghi cùng nhau hoặc không gì cả. Giao dịch thấy gì từ giao dịch khác là chuyện riêng: dưới Read Committed, request thứ hai vẫn đọc được trạng thái cũ và ghi đè lên thay đổi đã commit.",
+          "a": "Giao dịch đúng là bảo vệ các lệnh ghi của nó, nên ý này nghe trọn vẹn. Nó bảo vệ khỏi việc ghi dở dang, không bảo vệ khỏi một giao dịch sau ghi vào cùng dòng khi nó đã commit: đó là lost update.",
+          "b": "Dòng job đúng là trỏ tới đơn, nên một khóa nghe hợp lý. Không gì giữ khóa trên đơn sau khi lệnh lưu commit; sender chỉ khóa dòng `notifications`, và chỉ trong lúc nó nhận việc.",
+          "d": "Hai lần lưu đúng là sẽ mất bảo đảm, nên kiểm lại là hợp lý. Nhưng `PlaceOrderAsync` gọi `SaveChangesAsync` một lần, sau khi `notifier.Send` đã chuẩn bị dòng, nên cả hai được ghi trong một giao dịch."
+        }
+      }
+    },
+    {
+      "id": "gate2.q6",
+      "type": "single",
+      "bloom": "understand",
+      "difficulty": 3,
+      "skills": ["backend.auth.oauth2", "backend.cache.invalidation"],
+      "track": "backend",
+      "module": "oauth-and-authz",
+      "question": {
+        "en": "Đơn Hàng's access tokens last 300 seconds, and its cached products have a 5-minute TTL. Which reason do these two short lifetimes share?",
+        "vi": "Access token của Đơn Hàng sống 300 giây, còn sản phẩm trong cache có TTL 5 phút. Hai thời hạn ngắn này có chung lý do nào?"
+      },
+      "options": [
+        { "id": "a", "en": "Something already handed out cannot always be taken back, so a short life caps how long a stale copy stays in use", "vi": "Thứ đã trao ra không phải lúc nào cũng thu lại được, nên thời hạn ngắn chặn trên thời gian một bản cũ còn được dùng" },
+        { "id": "b", "en": "Both keep memory use low in Keycloak and in Redis, which would fill up with long-lived entries", "vi": "Cả hai giữ bộ nhớ của Keycloak và Redis ở mức thấp, vốn sẽ đầy nếu mục nào cũng sống lâu" },
+        { "id": "c", "en": "Both are needed only without HTTPS; over HTTPS, tokens and copies could safely live for days", "vi": "Cả hai chỉ cần khi không có HTTPS; qua HTTPS, token và bản sao có thể sống nhiều ngày mà vẫn an toàn", "misconception": "Access tokens that last for days are fine as long as every request uses HTTPS." },
+        { "id": "d", "en": "Both make the API ask Keycloak and PostgreSQL again every few minutes, instead of on every request", "vi": "Cả hai khiến API hỏi lại Keycloak và PostgreSQL vài phút một lần, thay vì mỗi request", "misconception": "The API has to ask Keycloak on every request whether the token is still valid." }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "The API cannot recall an access token it would accept, and a cache delete can fail or be overtaken by a late write. In both cases a short lifetime is the upper limit on how long the stale thing can be used.",
+          "b": "Both stores do keep entries in memory, so a memory reason sounds plausible. But the lessons give a different reason: a token or a copy that cannot be withdrawn must not live long.",
+          "c": "HTTPS protects a token on the wire, which makes long tokens feel safe. It does nothing once a token has leaked or a role was removed, and it has nothing to do with a stale product copy.",
+          "d": "Re-checking every few minutes sounds like what expiry does. But the API never asks Keycloak about a token; it checks it with the public keys. Expiry only makes the client fetch a new token, and a product miss read PostgreSQL."
+        },
+        "vi": {
+          "correct": "API không thể thu hồi một access token mà nó vẫn chấp nhận, còn lệnh xóa cache có thể thất bại hoặc bị một lệnh ghi muộn vượt qua. Trong cả hai trường hợp, thời hạn ngắn là giới hạn trên cho việc thứ đã cũ còn được dùng.",
+          "b": "Cả hai nơi đúng là giữ dữ liệu trong bộ nhớ, nên lý do bộ nhớ nghe hợp lý. Nhưng các bài đưa ra lý do khác: token hay bản sao không thu lại được thì không được sống lâu.",
+          "c": "HTTPS bảo vệ token trên đường truyền, nên token dài hạn có vẻ an toàn. Nó không giúp gì khi token đã lộ hay role đã bị gỡ, và chẳng liên quan gì tới bản sao sản phẩm đã cũ.",
+          "d": "Kiểm lại vài phút một lần nghe giống việc hết hạn làm. Nhưng API không bao giờ hỏi Keycloak về token; nó kiểm token bằng public key. Hết hạn chỉ buộc client lấy token mới, và buộc một lần miss sản phẩm đọc PostgreSQL."
+        }
+      }
+    },
+    {
+      "id": "gate2.q7",
+      "type": "single",
+      "bloom": "understand",
+      "difficulty": 2,
+      "skills": ["backend.api.pagination", "backend.data.query-plans"],
+      "track": "backend",
+      "module": "indexes-and-plans",
+      "question": {
+        "en": "On `donhang_perf`, customer 7's next page runs `WHERE customer_id = 7 AND id > 120000 ORDER BY id LIMIT 20`, and the plan stops at the `LIMIT`. Which two things together make that possible?",
+        "vi": "Trên `donhang_perf`, trang kế tiếp của khách 7 chạy `WHERE customer_id = 7 AND id > 120000 ORDER BY id LIMIT 20`, và plan dừng ngay ở `LIMIT`. Hai điều nào cùng nhau làm được việc đó?"
+      },
+      "options": [
+        { "id": "a", "en": "A cursor condition on `id` instead of `OFFSET`, and an index on `(customer_id, id)` read from the cursor", "vi": "Điều kiện cursor trên `id` thay cho `OFFSET`, và một index trên `(customer_id, id)` được đọc từ vị trí cursor" },
+        { "id": "b", "en": "A database cursor the server keeps open between pages, and an index on `customer_id`", "vi": "Một database cursor mà server giữ mở giữa các trang, và một index trên `customer_id`", "misconception": "A cursor means the server keeps a database cursor open between the client's requests." },
+        { "id": "c", "en": "Two separate indexes, one on `customer_id` and one on `id`, used together for the page", "vi": "Hai index riêng, một trên `customer_id` và một trên `id`, được dùng cùng nhau cho trang", "misconception": "Two separate indexes on `customer_id` and on `id` do the same job as one index on both." },
+        { "id": "d", "en": "An index on `(id, customer_id)`, since an index helps any query on either of its columns", "vi": "Một index trên `(id, customer_id)`, vì index giúp mọi truy vấn trên bất kỳ cột nào của nó", "misconception": "An index on `(customer_id, id)` helps any query that filters on either column." }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "The cursor `id > 120000` replaces skipping rows, and the composite index is sorted by `customer_id`, then `id`. So the plan starts at customer 7's first entry after the cursor, reads in `id` order and stops at the `LIMIT`.",
+          "b": "The word cursor suggests a database cursor, which makes this natural to pick. Đơn Hàng keeps nothing between requests: the client sends the last `id` as `after`, and the server filters on it.",
+          "c": "Both columns are indexed that way, so it looks equivalent. But neither index is sorted by `id` within one customer, so the plan must sort that customer's orders or walk `orders` by `id`, discarding other customers' rows.",
+          "d": "Both columns are in this index, which makes it look as good. Column order decides what an index narrows: sorted by `id` first, it cannot jump to customer 7's rows and walks every customer's orders after the cursor."
+        },
+        "vi": {
+          "correct": "Cursor `id > 120000` thay cho việc bỏ qua dòng, và composite index được sắp theo `customer_id`, rồi tới `id`. Nên plan bắt đầu ở mục đầu tiên của khách 7 sau cursor, đọc theo thứ tự `id` và dừng ở `LIMIT`.",
+          "b": "Chữ cursor gợi tới database cursor, nên chọn ý này là tự nhiên. Đơn Hàng không giữ gì giữa các request: client gửi `id` cuối cùng làm `after`, và server lọc theo nó.",
+          "c": "Cả hai cột đều có index theo cách này, nên trông tương đương. Nhưng không index nào được sắp theo `id` trong từng khách, nên plan phải sắp xếp đơn của khách đó hoặc đi dọc `orders` theo `id`, bỏ đi dòng của khách khác.",
+          "d": "Cả hai cột đều nằm trong index này, nên trông tốt như nhau. Thứ tự cột quyết định index thu hẹp được gì: sắp theo `id` trước, nó không nhảy được tới dòng của khách 7 và phải đi qua đơn của mọi khách sau cursor."
+        }
+      }
+    },
+    {
+      "id": "gate2.q8",
+      "type": "multi",
+      "bloom": "understand",
+      "difficulty": 3,
+      "skills": ["backend.cache.redis", "backend.cache.cache-aside", "backend.jobs.reliability", "backend.auth.oidc"],
+      "track": "backend",
+      "module": "caching",
+      "question": {
+        "en": "Two copies of the api share one PostgreSQL, one Redis and one Keycloak. Which statements hold at stage-2? Select all that apply.",
+        "vi": "Hai bản api dùng chung một PostgreSQL, một Redis và một Keycloak. Những nhận định nào đúng ở stage-2? Chọn tất cả ý đúng."
+      },
+      "options": [
+        { "id": "a", "en": "Copy B can answer from a `product:3` that copy A stored in Redis.", "vi": "Bản B có thể trả lời từ `product:3` mà bản A đã cất vào Redis." },
+        { "id": "b", "en": "Each copy's `NotificationSender` claims different `pending` rows, because `SKIP LOCKED` passes over rows the other copy has locked.", "vi": "`NotificationSender` của mỗi bản nhận những dòng `pending` khác nhau, vì `SKIP LOCKED` bỏ qua các dòng bản kia đã khóa." },
+        { "id": "c", "en": "Each copy checks access tokens by itself, with Keycloak's public keys kept in its own memory.", "vi": "Mỗi bản tự kiểm access token, bằng public key của Keycloak giữ trong bộ nhớ của chính nó." },
+        { "id": "d", "en": "When `product:3` expires, the per-key `SemaphoreSlim` lets exactly one PostgreSQL query through across both copies.", "vi": "Khi `product:3` hết hạn, `SemaphoreSlim` theo key cho đúng một truy vấn PostgreSQL đi qua trên cả hai bản." },
+        { "id": "e", "en": "Each copy could keep products in its own `Dictionary` instead of Redis, and both would still see the same copies.", "vi": "Mỗi bản có thể giữ sản phẩm trong một `Dictionary` riêng thay cho Redis, và cả hai vẫn thấy cùng bản sao.", "misconception": "A `Dictionary` inside the API does the same job as Redis, only without an extra container." }
+      ],
+      "answer": ["a", "b", "c"],
+      "explanation": {
+        "en": {
+          "correct": "Redis runs in its own process, so every copy reads the same keys. `FOR UPDATE SKIP LOCKED` lets several senders share one queue without taking the same row. `AddJwtBearer` in each copy downloads Keycloak's public keys and checks every token itself.",
+          "d": "The semaphore does let one request per key through, which makes this tempting. `Locks` is shared only inside one api process, so two copies can send two queries, still far fewer than one per request.",
+          "e": "A `Dictionary` would also be fast and needs no container. But each copy would have its own, so a copy stored by A would be invisible to B, and a delete in one copy would not reach the other."
+        },
+        "vi": {
+          "correct": "Redis chạy trong process riêng, nên mọi bản đọc cùng các key. `FOR UPDATE SKIP LOCKED` cho nhiều sender dùng chung một hàng đợi mà không lấy trùng dòng. `AddJwtBearer` ở mỗi bản tải public key của Keycloak và tự kiểm mọi token.",
+          "d": "Semaphore đúng là chỉ cho một request mỗi key đi qua, nên ý này hấp dẫn. `Locks` chỉ dùng chung trong một process api, nên hai bản có thể gửi hai truy vấn, vẫn ít hơn nhiều so với một truy vấn mỗi request.",
+          "e": "`Dictionary` cũng nhanh và không cần container. Nhưng mỗi bản có một cái riêng, nên bản sao A cất thì B không thấy, và lệnh xóa ở bản này không tới được bản kia."
+        }
+      }
+    },
+    {
+      "id": "gate2.q9",
+      "type": "single",
+      "bloom": "understand",
+      "difficulty": 3,
+      "skills": ["backend.api.idempotency", "backend.jobs.reliability"],
+      "track": "backend",
+      "module": "background-jobs",
+      "question": {
+        "en": "A teammate asks why `POST /api/v1/orders` takes an `Idempotency-Key` against repeats, while `NotificationSender` may send an email twice now and then. Which answer fits?",
+        "vi": "Một đồng đội hỏi vì sao `POST /api/v1/orders` nhận `Idempotency-Key` để chống lặp, trong khi `NotificationSender` thỉnh thoảng được phép gửi một email hai lần. Câu trả lời nào phù hợp?"
+      },
+      "options": [
+        { "id": "a", "en": "A second order does real harm, so a repeat must be recognised by a key; a rare duplicate email is accepted, as no step order gives exactly once", "vi": "Đơn thứ hai gây hại thật, nên lần lặp phải nhận ra được bằng key; email trùng hiếm hoi thì chấp nhận, vì không thứ tự bước nào cho đúng một lần" },
+        { "id": "b", "en": "The email job puts its send and status update in one transaction, so it cannot repeat; only the order needs a key", "vi": "Email job đặt việc gửi và cập nhật trạng thái trong một giao dịch, nên không lặp được; chỉ đơn hàng mới cần key", "misconception": "Putting the send and the status update in one database transaction makes the email go out exactly once." },
+        { "id": "c", "en": "A `POST` that failed did nothing, so a key only matters for clients that time out; the email job never fails that way", "vi": "`POST` đã thất bại thì chưa làm gì, nên key chỉ cần cho client bị timeout; email job không bao giờ hỏng kiểu đó", "misconception": "Retrying a failed POST is always safe, because a request that failed did nothing." },
+        { "id": "d", "en": "The server could compare items to spot a repeated order; the key only saves the server that comparison", "vi": "Server có thể so các món hàng để nhận ra đơn lặp; key chỉ giúp server đỡ phải so như vậy", "misconception": "The server can spot a duplicate order by comparing the items, so the client does not need to send anything extra." }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "Đơn Hàng accepts a rare duplicate email, because no ordering of send and save gives exactly once across Mailpit and PostgreSQL. A second order is not harmless, so the client sends one key per intended order and a retry gets the first order back.",
+          "b": "One transaction sounds like it makes everything all or nothing. But the email leaves through Mailpit, which no PostgreSQL transaction can undo, so a crash after the send can still repeat it.",
+          "c": "A failed request feels like a request that did nothing. A client that times out cannot tell whether its `POST` created the order, and a send can count as failed after Mailpit already accepted the email.",
+          "d": "Comparing items sounds like a way to spot a repeat. But a customer can mean to order the same items twice, so only a key the client creates per intended order tells a retry from a new order."
+        },
+        "vi": {
+          "correct": "Đơn Hàng chấp nhận email trùng hiếm hoi, vì không thứ tự gửi và lưu nào cho đúng một lần giữa Mailpit và PostgreSQL. Đơn thứ hai thì không vô hại, nên client gửi một key cho mỗi đơn định đặt và lần thử lại nhận về đơn đầu tiên.",
+          "b": "Một giao dịch nghe như làm mọi thứ thành tất cả hoặc không gì. Nhưng email đi qua Mailpit, thứ không giao dịch PostgreSQL nào hoàn tác được, nên một sự cố sau khi gửi vẫn có thể làm nó lặp lại.",
+          "c": "Request thất bại nghe như request chưa làm gì. Client bị timeout không biết `POST` của mình đã tạo đơn hay chưa, và một lần gửi có thể bị tính là thất bại sau khi Mailpit đã nhận email.",
+          "d": "So các món hàng nghe như một cách nhận ra lần lặp. Nhưng khách có thể thật sự muốn đặt cùng món hai lần, nên chỉ key do client tạo cho mỗi đơn định đặt mới phân biệt được lần thử lại với đơn mới."
+        }
+      }
+    },
+    {
+      "id": "gate2.q10",
+      "type": "fill",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["backend.api.pagination", "backend.data.query-plans"],
+      "track": "backend",
+      "module": "api-design",
+      "question": {
+        "en": "A cursor page needs a stable order on a unique column, the one that `IX_orders_customer_id_id` keeps sorted within each customer. Complete the line in `ListByCustomerAsync`: `.OrderBy(o => o.___)`",
+        "vi": "Một trang cursor cần thứ tự ổn định trên một cột duy nhất, chính cột mà `IX_orders_customer_id_id` giữ đã sắp xếp trong từng khách. Điền vào dòng trong `ListByCustomerAsync`: `.OrderBy(o => o.___)`"
+      },
+      "answer": ["Id"],
+      "explanation": {
+        "en": {
+          "correct": "`Id` is unique, so pages never overlap or miss a row, and the cursor `o.Id > afterId` compares on the same column. The composite index is sorted by `customer_id`, then `id`, so the plan reads one customer's orders in this order and stops at the `LIMIT`."
+        },
+        "vi": {
+          "correct": "`Id` là duy nhất, nên các trang không chồng nhau và không sót dòng, còn cursor `o.Id > afterId` so trên đúng cột đó. Composite index được sắp theo `customer_id` rồi `id`, nên plan đọc đơn của một khách theo đúng thứ tự này và dừng ở `LIMIT`."
+        }
+      }
+    },
+    {
+      "id": "gate2.q11",
+      "type": "fill",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["backend.jobs.reliability", "backend.jobs.background"],
+      "track": "backend",
+      "module": "background-jobs",
+      "question": {
+        "en": "A row that failed for the fifth time must never be sent again, and a row in its backoff wait must not be taken early. Complete the claim in `NotificationQueue.ClaimDueAsync`: `WHERE status = '___' AND next_attempt_at <= {now}`",
+        "vi": "Dòng đã thất bại lần thứ năm không bao giờ được gửi lại, và dòng đang chờ backoff không được lấy sớm. Điền vào lệnh nhận việc trong `NotificationQueue.ClaimDueAsync`: `WHERE status = '___' AND next_attempt_at <= {now}`"
+      },
+      "answer": ["pending"],
+      "explanation": {
+        "en": {
+          "correct": "The fifth failure sets `status` to `failed`, so filtering on `pending` leaves that row out for good, while `next_attempt_at <= {now}` holds a row back until its backoff wait ends. `FOR UPDATE SKIP LOCKED` at the end of the same query keeps two senders off one row."
+        },
+        "vi": {
+          "correct": "Lần thất bại thứ năm đặt `status` thành `failed`, nên lọc theo `pending` loại dòng đó ra vĩnh viễn, còn `next_attempt_at <= {now}` giữ một dòng lại cho tới khi hết thời gian chờ backoff. `FOR UPDATE SKIP LOCKED` ở cuối cùng truy vấn giữ cho hai sender không lấy chung một dòng."
+        }
+      }
+    },
+    {
+      "id": "gate2.q12",
+      "type": "order",
+      "bloom": "apply",
+      "difficulty": 4,
+      "skills": ["backend.auth.oidc", "backend.auth.access-models", "backend.ef.performance", "backend.data.concurrency"],
+      "track": "backend",
+      "module": "oauth-and-authz",
+      "question": {
+        "en": "Order 1 is `paid`, and its owner cancels it through `PATCH /api/v1/orders/1/cancel`. Arrange what the API does, from the token check to the write.",
+        "vi": "Đơn 1 đang `paid`, và chủ của nó hủy đơn qua `PATCH /api/v1/orders/1/cancel`. Sắp xếp những việc API làm, từ bước kiểm token tới lệnh ghi."
+      },
+      "options": [
+        { "id": "a", "en": "`AuthorizeAsync` checks that customer 1 owns order 1, or is staff", "vi": "`AuthorizeAsync` kiểm khách 1 có sở hữu đơn 1 không, hoặc có phải staff không" },
+        { "id": "b", "en": "`SaveChangesAsync` sends an `UPDATE` with the original `xmin` in its `WHERE`", "vi": "`SaveChangesAsync` gửi một `UPDATE` có giá trị `xmin` ban đầu trong `WHERE`" },
+        { "id": "c", "en": "The API checks the token's signature, `iss`, `aud` and `exp` with Keycloak's public keys in memory", "vi": "API kiểm chữ ký, `iss`, `aud` và `exp` của token bằng public key của Keycloak trong bộ nhớ" },
+        { "id": "d", "en": "`CancelOrderAsync` loads order 1 tracked with `FindAsync`, and `Cancel()` allows the change", "vi": "`CancelOrderAsync` tải đơn 1 có theo dõi bằng `FindAsync`, và `Cancel()` cho phép thay đổi" },
+        { "id": "e", "en": "The controller loads order 1 untracked with `FindForReadingAsync`", "vi": "Controller tải đơn 1 không theo dõi bằng `FindForReadingAsync`" }
+      ],
+      "answer": ["c", "e", "a", "d", "b"],
+      "explanation": {
+        "en": {
+          "correct": "The token is checked before the controller runs, locally, with the keys the API keeps. Ownership depends on the order, so the controller reads an untracked copy and checks it first. Only then does the service load a tracked copy to change, and the save carries the concurrency token."
+        },
+        "vi": {
+          "correct": "Token được kiểm trước khi controller chạy, ngay tại chỗ, bằng các key API đang giữ. Quyền sở hữu phụ thuộc vào đơn, nên controller đọc một bản không theo dõi và kiểm nó trước. Chỉ sau đó service mới tải bản có theo dõi để thay đổi, và lệnh lưu mang theo concurrency token."
+        }
+      }
+    },
+    {
+      "id": "gate2.q13",
+      "type": "order",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["backend.cache.invalidation", "backend.cache.cache-aside"],
+      "track": "backend",
+      "module": "caching",
+      "question": {
+        "en": "Staff change product 3's price with `PATCH /api/v1/products/3`, and right after it 20 requests for product 3 arrive together. Put these events in the order they happen.",
+        "vi": "Staff đổi giá sản phẩm 3 bằng `PATCH /api/v1/products/3`, và ngay sau đó 20 request cho sản phẩm 3 đến cùng lúc. Sắp các sự kiện sau theo đúng thứ tự xảy ra."
+      },
+      "options": [
+        { "id": "a", "en": "That request queries PostgreSQL and stores `product:3` with a 5-minute TTL", "vi": "Request đó truy vấn PostgreSQL và cất `product:3` với TTL 5 phút" },
+        { "id": "b", "en": "`ProductCache` deletes `product:3` from Redis", "vi": "`ProductCache` xóa `product:3` khỏi Redis" },
+        { "id": "c", "en": "The waiting requests look in Redis again and read the new copy", "vi": "Các request đang chờ tìm lại trong Redis và đọc bản sao mới" },
+        { "id": "d", "en": "The new price is saved in PostgreSQL", "vi": "Giá mới được lưu vào PostgreSQL" },
+        { "id": "e", "en": "The requests miss, and one of them takes the key's `SemaphoreSlim`", "vi": "Các request bị miss, và một trong số đó giữ `SemaphoreSlim` của key" }
+      ],
+      "answer": ["d", "b", "e", "a", "c"],
+      "explanation": {
+        "en": {
+          "correct": "Save first, then delete, so the next read loads the new price. The misses meet the per-key lock: one request queries once and stores the copy, and each waiting request looks in Redis again when its turn comes and finds that copy."
+        },
+        "vi": {
+          "correct": "Lưu trước, xóa sau, để lần đọc kế tiếp lấy giá mới. Các lần miss gặp khóa theo key: một request truy vấn một lần và cất bản sao, còn mỗi request đang chờ, khi tới lượt, tìm lại trong Redis và thấy bản sao đó."
+        }
+      }
+    },
+    {
+      "id": "gate2.q14",
+      "type": "multi",
+      "bloom": "apply",
+      "difficulty": 4,
+      "skills": ["backend.errors.shape", "backend.auth.access-models", "backend.api.idempotency"],
+      "track": "backend",
+      "module": "api-design",
+      "question": {
+        "en": "Customer 1 owns orders 1 and 2; order 3 belongs to customer 2. Order 1 has shipped and order 2 is already cancelled. Each request carries customer 1's valid access token. Which ones get `409`? Select all that apply.",
+        "vi": "Khách 1 sở hữu đơn 1 và 2; đơn 3 thuộc khách 2. Đơn 1 đã giao và đơn 2 đã bị hủy. Mỗi request đều mang access token hợp lệ của khách 1. Những request nào nhận `409`? Chọn tất cả ý đúng."
+      },
+      "options": [
+        { "id": "a", "en": "`PATCH /api/v1/orders/1/cancel`", "vi": "`PATCH /api/v1/orders/1/cancel`" },
+        { "id": "b", "en": "`PATCH /api/v1/orders/2/cancel`", "vi": "`PATCH /api/v1/orders/2/cancel`" },
+        { "id": "c", "en": "`PATCH /api/v1/orders/3/cancel`", "vi": "`PATCH /api/v1/orders/3/cancel`" },
+        { "id": "d", "en": "`PATCH /api/v1/orders/2/ship`", "vi": "`PATCH /api/v1/orders/2/ship`" },
+        { "id": "e", "en": "`POST /api/v1/orders` repeating the `Idempotency-Key` of an order customer 1 placed an hour ago", "vi": "`POST /api/v1/orders` lặp lại `Idempotency-Key` của một đơn khách 1 đã đặt một giờ trước" }
+      ],
+      "answer": ["a", "b"],
+      "explanation": {
+        "en": {
+          "correct": "Orders 1 and 2 pass the owner check, then `Order.Cancel()` refuses them, and the middleware answers `409` with `already-shipped` and `already-cancelled` as the `type`.",
+          "c": "A status conflict seems possible for any cancel. Here the `OrderOwner` check runs first on the loaded order, and customer 1 is neither its owner nor staff, so the answer is `403`.",
+          "d": "Order 2 is already cancelled, so a `409` from `Ship()` sounds right. But the `StaffOnly` policy on the ship endpoint runs before the endpoint does, and a customer's token gets `403`.",
+          "e": "A repeated key does sound like a conflict. When the first order already exists, the retry simply gets that order back; the unique index answers `409` only when two requests with the key arrive together."
+        },
+        "vi": {
+          "correct": "Đơn 1 và đơn 2 qua được bước kiểm chủ sở hữu, rồi `Order.Cancel()` từ chối, và middleware trả `409` với `type` là `already-shipped` và `already-cancelled`.",
+          "c": "Xung đột trạng thái nghe như có thể xảy ra với mọi lần hủy. Ở đây bước kiểm `OrderOwner` chạy trước trên đơn đã tải, và khách 1 không phải chủ đơn cũng không phải staff, nên câu trả lời là `403`.",
+          "d": "Đơn 2 đã bị hủy, nên một `409` từ `Ship()` nghe hợp lý. Nhưng policy `StaffOnly` trên endpoint giao hàng chạy trước endpoint, và token của khách nhận `403`.",
+          "e": "Lặp lại key nghe đúng là xung đột. Khi đơn đầu đã tồn tại, lần thử lại chỉ nhận về đơn đó; unique index chỉ gây `409` khi hai request mang cùng key đến cùng lúc."
+        }
+      }
+    },
+    {
+      "id": "gate2.q15",
+      "type": "multi",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["backend.jobs.background", "backend.jobs.reliability"],
+      "track": "backend",
+      "module": "background-jobs",
+      "question": {
+        "en": "Mailpit is down for ten seconds while three customers place orders. Which statements hold at stage-2? Select all that apply.",
+        "vi": "Mailpit ngừng chạy mười giây trong lúc ba khách đặt đơn. Những nhận định nào đúng ở stage-2? Chọn tất cả ý đúng."
+      },
+      "options": [
+        { "id": "a", "en": "Each `POST /api/v1/orders` still answers `201 Created`.", "vi": "Mỗi `POST /api/v1/orders` vẫn trả `201 Created`." },
+        { "id": "b", "en": "Each email job's row stays `pending`, with `attempts` going up and `next_attempt_at` moving later.", "vi": "Dòng của mỗi email job vẫn `pending`, với `attempts` tăng lên và `next_attempt_at` lùi về sau." },
+        { "id": "c", "en": "Each email still goes out, on a later attempt once Mailpit is back.", "vi": "Mỗi email vẫn được gửi đi, ở một lần thử sau khi Mailpit chạy lại." },
+        { "id": "d", "en": "The orders are rolled back, because their emails could not be sent.", "vi": "Các đơn bị hoàn tác, vì email của chúng không gửi được.", "misconception": "If the email fails, the order was not placed." },
+        { "id": "e", "en": "The sender keeps retrying each row at once, in a loop, until Mailpit answers.", "vi": "Sender liên tục thử lại từng dòng ngay lập tức, trong một vòng lặp, cho tới khi Mailpit trả lời.", "misconception": "If sending fails, the most reliable fix is to retry straight away until it works." }
+      ],
+      "answer": ["a", "b", "c"],
+      "explanation": {
+        "en": {
+          "correct": "The request only stages a `pending` row, so it never touches Mailpit. Each failed send keeps the row `pending`, adds one to `attempts` and doubles the wait, 2, 4, 8 seconds, so a ten-second outage ends well before a fifth failure would mark it `failed`.",
+          "d": "At stage-1 a mail error did reach the order request, so this feels familiar. At stage-2 the order and its job are committed together before any send, and a failed send changes only the job row.",
+          "e": "Retrying at once sounds like the fastest way to get the email out. It hammers a mail server that is already failing; Đơn Hàng waits longer after each failure instead."
+        },
+        "vi": {
+          "correct": "Request chỉ chuẩn bị một dòng `pending`, nên không bao giờ chạm tới Mailpit. Mỗi lần gửi thất bại giữ dòng ở `pending`, cộng một vào `attempts` và nhân đôi thời gian chờ, 2, 4, 8 giây, nên sự cố mười giây kết thúc trước khi lần thất bại thứ năm kịp đánh dấu `failed`.",
+          "d": "Ở stage-1 lỗi gửi mail đúng là chạm tới request đặt đơn, nên ý này nghe quen. Ở stage-2 đơn và job được commit cùng nhau trước mọi lần gửi, và lần gửi thất bại chỉ đổi dòng job.",
+          "e": "Thử lại ngay nghe như cách nhanh nhất để email đi được. Nó dồn dập vào một mail server vốn đang lỗi; Đơn Hàng thay vào đó chờ lâu hơn sau mỗi lần thất bại."
+        }
+      }
+    },
+    {
+      "id": "gate2.q16",
+      "type": "single",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["backend.api.versioning", "backend.api.contract"],
+      "track": "backend",
+      "module": "api-design",
+      "question": {
+        "en": "The team must rename `priceVnd` to `price` in product responses, and the Flutter app reads `priceVnd` by name. Which plan keeps the installed app working?",
+        "vi": "Đội phải đổi tên `priceVnd` thành `price` trong response sản phẩm, và app Flutter đọc `priceVnd` theo tên. Kế hoạch nào giữ cho app đã cài vẫn chạy?"
+      },
+      "options": [
+        { "id": "a", "en": "Serve the new shape under `/api/v2/products`, leave `/api/v1/products` unchanged, and let the generated document list both", "vi": "Phục vụ dạng mới dưới `/api/v2/products`, giữ nguyên `/api/v1/products`, và để tài liệu được sinh ra liệt kê cả hai" },
+        { "id": "b", "en": "Rename it in `ProductDto`, since the value stays the same, and edit the OpenAPI document by hand to match", "vi": "Đổi tên trong `ProductDto`, vì giá trị vẫn giữ nguyên, rồi sửa tay tài liệu OpenAPI cho khớp", "misconception": "Renaming a field is safe as long as its value stays the same." },
+        { "id": "c", "en": "Add `/api/v2/products` with the new name, and remove `/api/v1/products` in the same release", "vi": "Thêm `/api/v2/products` với tên mới, và bỏ `/api/v1/products` trong cùng bản phát hành", "misconception": "Once v2 exists, v1 can be removed straight away." },
+        { "id": "d", "en": "Rename it in `ProductDto`, and ask app users to read the change in `/openapi/v1.json` first", "vi": "Đổi tên trong `ProductDto`, và nhờ người dùng app đọc thay đổi trong `/openapi/v1.json` trước" }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "A rename breaks a client that reads the field by name, so the new shape goes under a new version while `/api/v1` stays as it is. The OpenAPI document is generated from controllers and DTOs, and Đơn Hàng's one document lists both versions.",
+          "b": "The price itself does not change, so the rename looks harmless. `Product.fromJson` reads `priceVnd` by name and fails once it is gone; and the document needs no hand edit, because it is generated from the code.",
+          "c": "Publishing v2 is right. Removing v1 at once breaks every app that has not moved yet; an old version is retired on a date announced to its clients.",
+          "d": "The document does describe the new shape, which makes this sound responsible. But the installed app reads JSON with code, not the document, so it still fails on the first response without `priceVnd`."
+        },
+        "vi": {
+          "correct": "Đổi tên làm hỏng client đọc field theo tên, nên dạng mới đi dưới một phiên bản mới trong khi `/api/v1` giữ nguyên. Tài liệu OpenAPI được sinh từ controller và DTO, và tài liệu duy nhất của Đơn Hàng liệt kê cả hai phiên bản.",
+          "b": "Bản thân giá không đổi, nên đổi tên trông vô hại. `Product.fromJson` đọc `priceVnd` theo tên và hỏng khi nó biến mất; còn tài liệu không cần sửa tay, vì nó được sinh từ code.",
+          "c": "Phát hành v2 là đúng. Bỏ v1 ngay làm hỏng mọi app chưa chuyển; phiên bản cũ được gỡ vào một ngày đã báo trước cho các client của nó.",
+          "d": "Tài liệu đúng là mô tả dạng mới, nên cách này nghe có trách nhiệm. Nhưng app đã cài đọc JSON bằng code, không đọc tài liệu, nên nó vẫn hỏng ở response đầu tiên thiếu `priceVnd`."
+        }
+      }
+    },
+    {
+      "id": "gate2.q17",
+      "type": "single",
+      "bloom": "apply",
+      "difficulty": 4,
+      "skills": ["backend.auth.oidc", "backend.auth.access-models"],
+      "track": "backend",
+      "module": "oauth-and-authz",
+      "question": {
+        "en": "A teammate's script signs Lan in through `donhang-app` and sends her ID token, not her access token, with `PATCH /api/v1/orders/5/ship`. Lan has the `staff` role. What does the API answer?",
+        "vi": "Script của một đồng đội đăng nhập cho Lan qua `donhang-app` và gửi ID token của cô, không phải access token, kèm `PATCH /api/v1/orders/5/ship`. Lan có role `staff`. API trả lời gì?"
+      },
+      "options": [
+        { "id": "a", "en": "`401`, because the token's `aud` is not `donhang-api`, so the role check never runs", "vi": "`401`, vì `aud` của token không phải `donhang-api`, nên bước kiểm role không bao giờ chạy" },
+        { "id": "b", "en": "`403`, because the token is valid but an ID token is not allowed to ship orders", "vi": "`403`, vì token hợp lệ nhưng ID token không được phép giao đơn" },
+        { "id": "c", "en": "`200`, because both tokens are JWTs signed by Keycloak and both name Lan in `sub`", "vi": "`200`, vì cả hai token đều là JWT do Keycloak ký và đều ghi Lan trong `sub`", "misconception": "The ID token and the access token are interchangeable, since both are JWTs." },
+        { "id": "d", "en": "`401`, because the API asks Keycloak whether each token is still valid and it says no", "vi": "`401`, vì API hỏi Keycloak xem mỗi token còn hợp lệ không và Keycloak trả lời không", "misconception": "The API has to ask Keycloak on every request whether the token is still valid." }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "The API accepts only tokens addressed to `donhang-api`, and an ID token carries `donhang-app` in `aud`. The token fails authentication, so the `StaffOnly` policy is never reached and the answer is `401`.",
+          "b": "`403` is the answer for a valid token without the right role, which makes it feel close. Here the token is not accepted at all, because the audience check fails first.",
+          "c": "Both are signed JWTs with Lan's `sub`, so they look interchangeable. Their `aud` differs: the ID token is meant for the app, the access token for the API.",
+          "d": "`401` is right, but not for this reason. The API never asks Keycloak about a token; it checks the signature and claims itself, with the public keys it keeps in memory."
+        },
+        "vi": {
+          "correct": "API chỉ nhận token gửi cho `donhang-api`, còn ID token mang `donhang-app` trong `aud`. Token không qua được xác thực, nên policy `StaffOnly` không bao giờ được chạm tới và câu trả lời là `401`.",
+          "b": "`403` là câu trả lời cho token hợp lệ nhưng thiếu role, nên nghe gần đúng. Ở đây token hoàn toàn không được nhận, vì bước kiểm audience thất bại trước.",
+          "c": "Cả hai đều là JWT đã ký mang `sub` của Lan, nên trông như dùng thay nhau được. `aud` của chúng khác nhau: ID token dành cho app, access token dành cho API.",
+          "d": "`401` thì đúng, nhưng không vì lý do này. API không bao giờ hỏi Keycloak về token; nó tự kiểm chữ ký và các claim, bằng public key giữ trong bộ nhớ."
+        }
+      }
+    },
+    {
+      "id": "gate2.q18",
+      "type": "single",
+      "bloom": "apply",
+      "difficulty": 4,
+      "skills": ["backend.data.concurrency", "backend.ef.performance"],
+      "track": "backend",
+      "module": "indexes-and-plans",
+      "question": {
+        "en": "A teammate removes the `xmin` token from `Order` and wraps `CancelOrderAsync` in `BeginTransactionAsync` under Read Committed, from the tracked `FindAsync` to the save. A ship of order 5 commits while the cancel sits between its read and its save. What happens?",
+        "vi": "Một đồng đội bỏ token `xmin` khỏi `Order` và bọc `CancelOrderAsync` trong `BeginTransactionAsync` dưới Read Committed, từ `FindAsync` có theo dõi tới lệnh lưu. Một lần giao đơn 5 commit trong lúc lệnh hủy đang ở giữa bước đọc và bước lưu. Chuyện gì xảy ra?"
+      },
+      "options": [
+        { "id": "a", "en": "The cancel's `UPDATE` goes ahead and order 5 ends `cancelled`, although it was shipped", "vi": "`UPDATE` của lệnh hủy vẫn chạy và đơn 5 kết thúc ở `cancelled`, dù nó đã được giao" },
+        { "id": "b", "en": "The cancel's save fails with `40001`, and the code must catch it and run again", "vi": "Lệnh lưu của lệnh hủy thất bại với `40001`, và code phải bắt lỗi rồi chạy lại" },
+        { "id": "c", "en": "The cancel gets `409` with the `concurrent-update` type, and the client reloads", "vi": "Lệnh hủy nhận `409` với type `concurrent-update`, và client tải lại" },
+        { "id": "d", "en": "The cancel's read saw the database as it was at `BEGIN`, so the ship had to wait for it", "vi": "Bước đọc của lệnh hủy thấy database như lúc `BEGIN`, nên lệnh giao phải chờ nó", "misconception": "Under PostgreSQL's default isolation level, a transaction sees the database as it was when the transaction began." }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "Under Read Committed the cancel read `paid` before the ship committed, and `Cancel()` allowed it. Its `UPDATE` names only the row, which still matches, so it writes `cancelled` over `shipped`: a lost update. A transaction alone does not prevent it.",
+          "b": "`40001` is what a stricter level gives, which is why it comes to mind. Under Read Committed, PostgreSQL lets the second `UPDATE` through on the newest row version.",
+          "c": "This is what stage-2 answers today, so it is easy to expect. It comes from the concurrency token in the `UPDATE`'s `WHERE`, which this change removed.",
+          "d": "Reading the database as of `BEGIN` sounds like what a transaction means. Under Read Committed each statement sees what was committed before that statement began, and a plain read takes no lock that would make the ship wait."
+        },
+        "vi": {
+          "correct": "Dưới Read Committed, lệnh hủy đọc `paid` trước khi lệnh giao commit, và `Cancel()` cho phép. `UPDATE` của nó chỉ nêu dòng, vẫn khớp, nên nó ghi `cancelled` đè lên `shipped`: một lost update. Riêng một giao dịch không ngăn được chuyện này.",
+          "b": "`40001` là thứ một isolation level chặt hơn đưa ra, nên mới nghĩ tới. Dưới Read Committed, PostgreSQL cho `UPDATE` thứ hai chạy trên phiên bản mới nhất của dòng.",
+          "c": "Đây là câu trả lời của stage-2 hiện nay, nên dễ chờ đợi nó. Nó đến từ concurrency token trong `WHERE` của `UPDATE`, thứ mà thay đổi này đã bỏ.",
+          "d": "Đọc database như lúc `BEGIN` nghe đúng nghĩa một giao dịch. Dưới Read Committed, mỗi câu lệnh thấy những gì đã commit trước khi chính câu lệnh đó bắt đầu, và một lệnh đọc thường không giữ khóa nào khiến lệnh giao phải chờ."
+        }
+      }
+    },
+    {
+      "id": "gate2.q19",
+      "type": "single",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["backend.jobs.background", "backend.cache.cache-aside"],
+      "track": "backend",
+      "module": "background-jobs",
+      "question": {
+        "en": "A teammate proposes two changes: give `NotificationSender` a `DonHangDbContext` in its constructor, and register `IConnectionMultiplexer` as scoped so each request gets its own. What do you answer?",
+        "vi": "Một đồng đội đề xuất hai thay đổi: cho `NotificationSender` nhận `DonHangDbContext` qua constructor, và đăng ký `IConnectionMultiplexer` là scoped để mỗi request có một cái riêng. Bạn trả lời thế nào?"
+      },
+      "options": [
+        { "id": "a", "en": "Neither: the sender lives as long as the app and needs a fresh scope each round, and the multiplexer is meant to be shared", "vi": "Không cái nào: sender sống suốt đời app và cần scope mới mỗi vòng, còn multiplexer được làm ra để dùng chung" },
+        { "id": "b", "en": "Both are fine: dependency injection gives each class the lifetime it needs whichever way it is registered", "vi": "Cả hai đều ổn: dependency injection cho mỗi class đúng vòng đời nó cần, đăng ký kiểu nào cũng được" },
+        { "id": "c", "en": "Keep the first, since a controller takes the context the same way; reject the second", "vi": "Giữ cái đầu, vì controller cũng nhận context đúng như thế; bỏ cái sau", "misconception": "The background service can take `DonHangDbContext` in its constructor, just like a controller does." },
+        { "id": "d", "en": "Reject the first; keep the second, since a connection per request keeps requests apart", "vi": "Bỏ cái đầu; giữ cái sau, vì mỗi request một kết nối giúp các request tách biệt" }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "`NotificationSender` is created once, like a singleton, so it keeps no `DonHangDbContext`; each round creates a scope with `IServiceScopeFactory`. StackExchange.Redis builds `ConnectionMultiplexer` to be shared across all requests, so it stays a singleton.",
+          "b": "Dependency injection does manage lifetimes, which makes this sound safe. It does not stop a long-lived class from holding a short-lived one, or a client built to be shared from being created per request.",
+          "c": "A controller does take `DonHangDbContext` in its constructor, because it lives for one request. The sender lives for the app's whole life, so one context would be held across every round.",
+          "d": "One connection per request sounds tidy and isolated. The multiplexer is designed to be shared by all requests; creating one per request throws that design away."
+        },
+        "vi": {
+          "correct": "`NotificationSender` được tạo một lần, như singleton, nên nó không giữ `DonHangDbContext`; mỗi vòng tạo một scope bằng `IServiceScopeFactory`. StackExchange.Redis làm ra `ConnectionMultiplexer` để dùng chung cho mọi request, nên nó vẫn là singleton.",
+          "b": "Dependency injection đúng là quản lý vòng đời, nên ý này nghe an toàn. Nó không ngăn một class sống lâu giữ một thứ sống ngắn, hay một client làm ra để dùng chung bị tạo lại cho từng request.",
+          "c": "Controller đúng là nhận `DonHangDbContext` qua constructor, vì nó chỉ sống một request. Sender sống suốt đời app, nên một context sẽ bị giữ qua mọi vòng.",
+          "d": "Mỗi request một kết nối nghe gọn và tách biệt. Multiplexer được thiết kế để mọi request dùng chung; tạo một cái cho mỗi request là bỏ thiết kế đó đi."
+        }
+      }
+    },
+    {
+      "id": "gate2.q20",
+      "type": "single",
+      "bloom": "analyze",
+      "difficulty": 4,
+      "skills": ["backend.api.idempotency", "backend.jobs.reliability"],
+      "track": "backend",
+      "module": "api-design",
+      "question": {
+        "en": "A customer got two identical 'order placed' emails. `orders` holds two orders with the same items, three seconds apart, each with one `notifications` row, both `sent`. The orders came from a partner client that retries `POST /api/v1/orders` after a timeout. What explains it?",
+        "vi": "Một khách nhận hai email 'order placed' giống hệt nhau. Bảng `orders` có hai đơn cùng món hàng, cách nhau ba giây, mỗi đơn một dòng `notifications`, cả hai đều `sent`. Các đơn đến từ client của một đối tác, client này thử lại `POST /api/v1/orders` khi bị timeout. Điều gì giải thích chuyện này?"
+      },
+      "options": [
+        { "id": "a", "en": "The first response was lost, and the retry carried no `Idempotency-Key`, so the API placed a second order", "vi": "Response đầu bị mất, và lần thử lại không mang `Idempotency-Key`, nên API đặt thêm một đơn thứ hai" },
+        { "id": "b", "en": "The sender crashed after sending and before `CompleteAsync`, so the restarted sender sent the email again", "vi": "Sender sập sau khi gửi và trước `CompleteAsync`, nên sender khởi động lại đã gửi email lần nữa" },
+        { "id": "c", "en": "Two api copies read the same `pending` row, so each one of them sent the email for it", "vi": "Hai bản api cùng đọc một dòng `pending`, nên mỗi bản đều gửi email cho dòng đó" },
+        { "id": "d", "en": "Mailpit accepted the email but the send was counted as failed, and the retry sent it again", "vi": "Mailpit đã nhận email nhưng lần gửi bị tính là thất bại, và lần thử lại gửi nó thêm lần nữa" }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "Two orders, each with its own job, mean two `POST`s each created an order. A client that times out cannot know whether the first one worked; without a key, the API has nothing to tell the retry from a new order.",
+          "b": "A crash between send and save does repeat an email, which fits the symptom. It repeats the email of one row, while the table holds two orders, each with its own row.",
+          "c": "Two copies reading one row is a real way to get a duplicate email. It would give two emails for one order, while here there are two orders; and the claim uses `SKIP LOCKED` to prevent it.",
+          "d": "A send counted as failed after delivery can repeat an email, so this fits part of the symptom. It also explains two emails for one row only, not two orders."
+        },
+        "vi": {
+          "correct": "Hai đơn, mỗi đơn một job, nghĩa là hai lần `POST` mỗi lần đều tạo một đơn. Client bị timeout không thể biết lần đầu có thành công không; thiếu key, API không có gì để phân biệt lần thử lại với một đơn mới.",
+          "b": "Sự cố giữa bước gửi và bước lưu đúng là làm email lặp lại, nên khớp với triệu chứng. Nhưng nó lặp email của một dòng, còn bảng lại có hai đơn, mỗi đơn một dòng riêng.",
+          "c": "Hai bản cùng đọc một dòng đúng là một cách sinh email trùng. Nó cho hai email của một đơn, trong khi ở đây có hai đơn; và lệnh nhận việc dùng `SKIP LOCKED` để chặn chuyện đó.",
+          "d": "Lần gửi bị tính thất bại sau khi đã giao có thể làm email lặp lại, nên khớp một phần triệu chứng. Nó cũng chỉ giải thích hai email cho một dòng, không giải thích hai đơn."
+        }
+      }
+    },
+    {
+      "id": "gate2.q21",
+      "type": "single",
+      "bloom": "analyze",
+      "difficulty": 4,
+      "skills": ["backend.auth.access-models", "backend.auth.oauth2", "backend.cache.invalidation"],
+      "track": "backend",
+      "module": "oauth-and-authz",
+      "question": {
+        "en": "At 10:00 an administrator removes the `staff` role from Lan in Keycloak, and a developer fixes product 3's price straight in PostgreSQL with `psql`. Lan's app keeps renewing her tokens, and product 3 is read all the time. What is the latest each change reaches the API's answers?",
+        "vi": "Lúc 10:00 một quản trị viên gỡ role `staff` của Lan trong Keycloak, và một lập trình viên sửa giá sản phẩm 3 thẳng trong PostgreSQL bằng `psql`. App của Lan liên tục làm mới token, và sản phẩm 3 được đọc liên tục. Muộn nhất là khi nào mỗi thay đổi đến được câu trả lời của API?"
+      },
+      "options": [
+        { "id": "a", "en": "Lan can ship until her current access token expires, by 10:05; the old price can show until `product:3`'s TTL ends, by 10:05", "vi": "Lan giao được đơn tới khi access token hiện tại hết hạn, muộn nhất 10:05; giá cũ còn hiện tới khi TTL của `product:3` hết, muộn nhất 10:05" },
+        { "id": "b", "en": "Both at once, because the API checks tokens with Keycloak and reads prices from PostgreSQL", "vi": "Cả hai ngay lập tức, vì API kiểm token với Keycloak và đọc giá từ PostgreSQL", "misconception": "Removing someone's role in Keycloak blocks them from the API immediately." },
+        { "id": "c", "en": "Lan at once, since the change in Keycloak ends her tokens; the old price until `product:3`'s TTL ends, by 10:05", "vi": "Lan ngay lập tức, vì thay đổi trong Keycloak chấm dứt token của cô; giá cũ tới khi TTL của `product:3` hết, muộn nhất 10:05" },
+        { "id": "d", "en": "Lan until her refresh token expires; the old price until the next `PATCH` of product 3 deletes the key", "vi": "Lan tới khi refresh token của cô hết hạn; giá cũ tới khi lần `PATCH` kế tiếp của sản phẩm 3 xóa key" }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "Roles are copied into a token when Keycloak issues it, so Lan keeps `staff` until her current access token, which lasts 300 seconds, expires; the renewed one has no `staff`. The `psql` change deletes nothing in Redis, so only the 5-minute TTL ends the stale copy.",
+          "b": "Keycloak and PostgreSQL do hold the new facts, which makes this tempting. But the API checks tokens with its public keys and never asks Keycloak, and product reads go to Redis first.",
+          "c": "The change in Keycloak is real, so it feels like it must apply at once. A token already issued keeps the roles it was given until it expires; the API cannot recall it.",
+          "d": "A refresh token lives long, so it seems to carry the old role. But each renewal issues a new access token with the roles Keycloak has then; and the TTL ends the stale copy even if no `PATCH` comes."
+        },
+        "vi": {
+          "correct": "Role được chép vào token lúc Keycloak cấp, nên Lan giữ `staff` tới khi access token hiện tại, vốn sống 300 giây, hết hạn; token mới không còn `staff`. Thay đổi bằng `psql` không xóa gì trong Redis, nên chỉ TTL 5 phút chấm dứt bản sao cũ.",
+          "b": "Keycloak và PostgreSQL đúng là giữ sự thật mới, nên ý này hấp dẫn. Nhưng API kiểm token bằng public key và không bao giờ hỏi Keycloak, còn đọc sản phẩm thì hỏi Redis trước.",
+          "c": "Thay đổi trong Keycloak là thật, nên có cảm giác nó phải có hiệu lực ngay. Token đã cấp giữ nguyên role được trao cho tới khi hết hạn; API không thu hồi được nó.",
+          "d": "Refresh token sống lâu, nên có vẻ nó mang theo role cũ. Nhưng mỗi lần làm mới cấp một access token mới với role Keycloak đang có lúc đó; và TTL chấm dứt bản sao cũ dù không có `PATCH` nào."
+        }
+      }
+    },
+    {
+      "id": "gate2.q22",
+      "type": "single",
+      "bloom": "evaluate",
+      "difficulty": 5,
+      "skills": ["backend.jobs.reliability", "backend.api.idempotency"],
+      "track": "backend",
+      "module": "background-jobs",
+      "question": {
+        "en": "The team plans a refund job built like `NotificationSender`: claim a row, call the payment gateway, then mark the row done. A repeated call would refund the customer twice. What must the design add?",
+        "vi": "Đội lên kế hoạch một job hoàn tiền xây giống `NotificationSender`: nhận một dòng, gọi cổng thanh toán, rồi đánh dấu dòng đã xong. Một lần gọi lặp lại sẽ hoàn tiền cho khách hai lần. Thiết kế phải thêm gì?"
+      },
+      "options": [
+        { "id": "a", "en": "Send the gateway an idempotency key per refund, so a call repeated after a crash refunds only once", "vi": "Gửi cho cổng thanh toán một idempotency key cho mỗi lần hoàn, để lần gọi lặp sau sự cố chỉ hoàn một lần" },
+        { "id": "b", "en": "Mark the row done before calling the gateway, so a crash can never lead to a second call", "vi": "Đánh dấu dòng đã xong trước khi gọi cổng thanh toán, để sự cố không bao giờ dẫn tới lần gọi thứ hai", "misconception": "Marking the row as sent before sending is the safer order, because then nothing is ever sent twice." },
+        { "id": "c", "en": "Put the gateway call and the row update in one database transaction, so both happen exactly once", "vi": "Đặt lần gọi cổng thanh toán và lệnh cập nhật dòng trong một giao dịch database, để cả hai xảy ra đúng một lần", "misconception": "Putting the send and the status update in one database transaction makes the email go out exactly once." },
+        { "id": "d", "en": "Claim the rows with `FOR UPDATE SKIP LOCKED`, so no refund is ever requested twice", "vi": "Nhận dòng bằng `FOR UPDATE SKIP LOCKED`, để không lần hoàn nào bị yêu cầu hai lần" }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "Calling first and marking after is at-least-once: a crash between them repeats the call. When a repeat does harm, the job must be idempotent, with a key the receiver checks, so the gateway refunds once however many times it is asked.",
+          "b": "Marking first does stop repeats, which is why it is tempting. It makes the job at-most-once: a crash after the mark and before the call loses the refund.",
+          "c": "A transaction does make database writes all or nothing. The gateway call happens outside PostgreSQL, so no transaction can undo it or tie it to the row; no order gives exactly once across the two.",
+          "d": "`SKIP LOCKED` does stop two copies from claiming the same row. It does nothing about one copy that calls the gateway and crashes before its commit, leaving the row to be claimed again."
+        },
+        "vi": {
+          "correct": "Gọi trước, đánh dấu sau là at-least-once: sự cố ở giữa làm lần gọi lặp lại. Khi lần lặp gây hại, job phải idempotent, có một key bên nhận kiểm tra, để cổng thanh toán chỉ hoàn một lần dù được gọi bao nhiêu lần.",
+          "b": "Đánh dấu trước đúng là chặn được lặp, nên mới hấp dẫn. Nó biến job thành at-most-once: sự cố sau khi đánh dấu và trước khi gọi làm mất lần hoàn tiền.",
+          "c": "Giao dịch đúng là làm các lệnh ghi database thành tất cả hoặc không gì. Lần gọi cổng thanh toán nằm ngoài PostgreSQL, nên không giao dịch nào hoàn tác được nó hay gắn nó với dòng; không thứ tự nào cho đúng một lần giữa hai bên.",
+          "d": "`SKIP LOCKED` đúng là ngăn hai bản nhận cùng một dòng. Nó không giúp gì khi một bản gọi cổng thanh toán rồi sập trước khi commit, để dòng đó lại được nhận lần nữa."
+        }
+      }
+    },
+    {
+      "id": "gate2.q23",
+      "type": "multi",
+      "bloom": "analyze",
+      "difficulty": 5,
+      "skills": ["backend.data.concurrency", "backend.jobs.reliability", "backend.cache.cache-aside"],
+      "track": "backend",
+      "module": "indexes-and-plans",
+      "question": {
+        "en": "Which of these Đơn Hàng problems happen because several requests or api copies read the same state and each acts on it before any of them has written its result? Select all that apply.",
+        "vi": "Những vấn đề nào sau đây của Đơn Hàng xảy ra vì nhiều request hoặc nhiều bản api cùng đọc một trạng thái và mỗi bên hành động theo nó trước khi bất kỳ bên nào ghi xong kết quả? Chọn tất cả ý đúng."
+      },
+      "options": [
+        { "id": "a", "en": "A cancel and a ship of one order both read `paid`, and the later write wins.", "vi": "Lệnh hủy và lệnh giao của cùng một đơn đều đọc `paid`, và lệnh ghi sau thắng." },
+        { "id": "b", "en": "Two senders read the same `pending` row with a plain `SELECT`, and both send its email.", "vi": "Hai sender đọc cùng một dòng `pending` bằng `SELECT` thường, và cả hai đều gửi email của nó." },
+        { "id": "c", "en": "Many requests miss the same expired key, and each one queries PostgreSQL.", "vi": "Nhiều request cùng miss một key vừa hết hạn, và mỗi request đều truy vấn PostgreSQL." },
+        { "id": "d", "en": "An access token still works for a few minutes after the user logs out at Keycloak.", "vi": "Một access token vẫn dùng được vài phút sau khi người dùng đăng xuất ở Keycloak." },
+        { "id": "e", "en": "An offset page repeats or skips a row when a row before its position is added or removed between two requests.", "vi": "Một trang offset lặp hoặc sót một dòng khi có dòng trước vị trí của nó được thêm hoặc xóa giữa hai request." }
+      ],
+      "answer": ["a", "b", "c"],
+      "explanation": {
+        "en": {
+          "correct": "In each of the three, every actor reads a state, decides from it and acts, while the others did the same before the first result landed. Đơn Hàng answers each with its own guard: the concurrency token, `SKIP LOCKED`, and one loader per key that looks in Redis again.",
+          "d": "A token outliving a logout also looks like stale state. Its cause is lifetime, not concurrency: an issued access token works until it expires because the API cannot recall it.",
+          "e": "A page that repeats a row also comes from changes between reads. But each request reads afresh and acts alone; the offset is counted again from the start, so the shift comes from the counting, not from actors racing on one state."
+        },
+        "vi": {
+          "correct": "Trong cả ba trường hợp, mỗi bên đọc một trạng thái, quyết định theo nó rồi hành động, trong khi các bên kia cũng làm vậy trước khi kết quả đầu tiên kịp ghi. Đơn Hàng chặn mỗi trường hợp bằng một cách riêng: concurrency token, `SKIP LOCKED`, và một bên nạp mỗi key có tìm lại trong Redis.",
+          "d": "Token còn dùng được sau khi đăng xuất cũng trông giống trạng thái cũ. Nguyên nhân của nó là thời hạn, không phải chạy đồng thời: access token đã cấp còn dùng được tới khi hết hạn vì API không thu hồi được nó.",
+          "e": "Trang lặp dòng cũng đến từ thay đổi giữa các lần đọc. Nhưng mỗi request đọc lại từ đầu và hành động một mình; offset được đếm lại từ đầu, nên độ lệch đến từ cách đếm, không phải từ nhiều bên tranh nhau một trạng thái."
+        }
+      }
+    },
+    {
+      "id": "gate2.q24",
+      "type": "single",
+      "bloom": "evaluate",
+      "difficulty": 5,
+      "skills": ["backend.jobs.reliability", "backend.data.concurrency"],
+      "track": "backend",
+      "module": "background-jobs",
+      "question": {
+        "en": "`Order` guards its saves with a concurrency token, while `NotificationQueue` claims rows with `FOR UPDATE SKIP LOCKED`. A teammate wants an `xmin` token on `notifications` instead. Why does the lock fit the job queue better?",
+        "vi": "`Order` bảo vệ lệnh lưu bằng concurrency token, còn `NotificationQueue` nhận dòng bằng `FOR UPDATE SKIP LOCKED`. Một đồng đội muốn thay bằng token `xmin` trên `notifications`. Vì sao khóa hợp với hàng đợi job hơn?"
+      },
+      "options": [
+        { "id": "a", "en": "With a token, both senders would send the email and only the second save would fail; a lock at the claim stops the second one before it sends", "vi": "Với token, cả hai sender đều gửi email và chỉ lệnh lưu thứ hai thất bại; khóa lúc nhận việc chặn sender thứ hai trước khi nó gửi" },
+        { "id": "b", "en": "`xmin` exists only on the `orders` table, so `notifications` would need a new column for its token", "vi": "`xmin` chỉ có trên bảng `orders`, nên `notifications` sẽ cần thêm một cột cho token", "misconception": "A concurrency token needs a new column added to the `orders` table." },
+        { "id": "c", "en": "A concurrency token locks the row while a sender works on it, which would block the other senders", "vi": "Concurrency token khóa dòng trong lúc một sender xử lý nó, việc này sẽ chặn các sender khác", "misconception": "Optimistic concurrency locks the order while someone is changing it." },
+        { "id": "d", "en": "A lock at the claim makes each email go out exactly once, which a token cannot do", "vi": "Khóa lúc nhận việc làm mỗi email được gửi đúng một lần, điều token không làm được" }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "A token is checked only at save time, after the work is done; for an email the work is the send, which cannot be undone. Senders compete for the same rows all the time, so locking at the claim, and skipping locked rows, keeps each row with one sender from the start.",
+          "b": "A new column sounds like part of any token. `xmin` is a system column every PostgreSQL row has, which is why `Order` needed no new column; the issue is when the check happens, not where the value lives.",
+          "c": "If a token locked the row, this would explain the choice. But optimistic concurrency takes no lock: requests read freely, and the losing save fails instead of waiting.",
+          "d": "The lock does stop two senders from sending one row. A crash after the send and before the commit still sends it again, so the job stays at-least-once either way."
+        },
+        "vi": {
+          "correct": "Token chỉ được kiểm lúc lưu, sau khi việc đã làm xong; với email, việc đó là lần gửi, thứ không hoàn tác được. Các sender tranh nhau cùng các dòng liên tục, nên khóa ngay lúc nhận việc, và bỏ qua dòng đã khóa, giữ mỗi dòng cho một sender ngay từ đầu.",
+          "b": "Một cột mới nghe như phần tất yếu của token. `xmin` là cột hệ thống mọi dòng PostgreSQL đều có, nên `Order` không cần thêm cột; vấn đề là lúc nào việc kiểm diễn ra, không phải giá trị nằm ở đâu.",
+          "c": "Nếu token khóa dòng thì đúng là giải thích được lựa chọn này. Nhưng optimistic concurrency không giữ khóa nào: các request đọc tự do, và lệnh lưu thua cuộc thất bại thay vì chờ.",
+          "d": "Khóa đúng là ngăn hai sender gửi cùng một dòng. Sự cố sau khi gửi và trước khi commit vẫn làm email gửi lại, nên job vẫn là at-least-once dù dùng cách nào."
+        }
+      }
+    }
+  ]
+}
