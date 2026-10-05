@@ -173,6 +173,21 @@ skills:
     vi: "Chọn mức test cho từng rủi ro"
     en: "Choosing the test level for each risk"
   prereqs: [design.testing.api]
+- id: design.ddd.entities-values
+  title:
+    vi: "Entity và value object"
+    en: "Entities and value objects"
+  prereqs: [design.domain.entity-behaviour]
+- id: design.ddd.aggregates
+  title:
+    vi: "Aggregate, aggregate root và invariant"
+    en: "Aggregates, aggregate roots and invariants"
+  prereqs: [design.ddd.entities-values]
+- id: design.ddd.domain-events
+  title:
+    vi: "Domain event"
+    en: "Domain events"
+  prereqs: [design.ddd.aggregates, design.patterns.behavior]
 levels:
 - level: 1
   title:
@@ -1522,3 +1537,229 @@ levels:
       - "Integration tests check the real thing, so every unit test should become one."
       - "The pyramid sets fixed percentages that each level of tests must meet."
       depth_notes: "Không nói code coverage, test qua trình duyệt hay contract test — ngoài GĐ2. Không nói CI chạy test ở bước nào — devops/ci-cd. Không nhắc lại cách viết từng loại test — các bài trước."
+- level: 3
+  title:
+    vi: "Level 3"
+    en: "Level 3"
+  modules:
+  - id: ddd-tactical
+    title:
+      vi: "DDD tactical: entity, value object, aggregate, domain event"
+      en: "Tactical DDD: entities, value objects, aggregates, domain events"
+    stage: 3
+    summary:
+      vi: "Phân biệt entity với value object trong Đơn Hàng, gom đơn và các dòng hàng thành một aggregate mà root của nó giữ mọi invariant, và để đơn ghi domain event cho handler xử lý trong cùng một lần lưu."
+      en: "Tell entities from value objects in Đơn Hàng, group an order and its items into an aggregate whose root guards its invariants, and let the order record domain events that handlers act on in the same save."
+    lessons:
+    - id: design.l3.entities-and-identity
+      title:
+        vi: "Entity: vẫn là một thứ dù dữ liệu của nó thay đổi"
+        en: "An entity stays the same thing while its data changes"
+      main_path: true
+      duration_min: 12
+      skills: [design.ddd.entities-values]
+      prereqs: [design.l2.where-a-rule-belongs, backend.l1.efcore-relationships-and-keys]
+      related: [backend.l1.efcore-mapping]
+      vocab: [ddd-entity]
+      example_tag: stage-2
+      example_files:
+      - DonHang.Domain/Entities.cs
+      - DonHang.Domain/OrderService.cs
+      - DonHang.Domain/IOrderRepository.cs
+      outline:
+      - "An entity is an object the business follows over time as one particular thing; what makes two of them the same is their identity, not the rest of their data."
+      - "At stage-2, an `Order` keeps its `Id` while its `Status` moves from `new` to `paid` to `shipped`, and `CancelOrderAsync` finds the order to change by that id alone."
+      - "Two customers with the same full name and city are still two customers in Đơn Hàng, told apart by `Id`: equal data does not make two entities the same."
+      - "`==` on two instances of a C# class compares references unless the class defines its own equality; stage-2 `Order` defines none, so code asking whether two orders are the same compares their `Id` values."
+      - "EF Core calls every class it maps an entity type, `OrderItem` included; whether a class is an entity in the business sense depends on whether the business follows it over time, which a mapping cannot decide."
+      misconceptions:
+      - "Every class EF Core maps, `OrderItem` included, is an entity in the business sense."
+      - "Two orders with the same customer, items and time are the same order."
+      - "A class becomes an entity simply by having an `Id` property."
+      depth_notes: "Không nói value object — design.l3.value-objects; không nói nhóm đối tượng thay đổi cùng nhau — design.l3.aggregates-and-invariants. Không override Equals/GetHashCode cho entity, không bàn id do client sinh (GUID) — ngoài module."
+    - id: design.l3.value-objects
+      title:
+        vi: "Value object: chỉ được nhận ra qua giá trị của nó"
+        en: "A value object is known only by its values"
+      main_path: true
+      duration_min: 13
+      skills: [design.ddd.entities-values]
+      prereqs: [design.l3.entities-and-identity, design.l2.valid-from-construction]
+      related: [foundation.l1.oop-encapsulation]
+      vocab: [value-object]
+      example_tag: stage-3
+      example_files: [DonHang.Domain/Vnd.cs, DonHang.Tests/Domain/VndTests.cs, DonHang.Domain/Entities.cs]
+      outline:
+      - "A value object is defined entirely by its values: it has no id, and two value objects with the same values can replace each other anywhere."
+      - "At stage-2, every amount of money in `DonHang.Domain` is a bare `int` with `Vnd` in its name, so the type accepts a negative amount and lets code add a price to a quantity."
+      - "At stage-3, `Vnd` is a C# record whose constructor refuses a negative amount, and `OrderItem`'s unit price is a `Vnd` instead of an `int`."
+      - "Two `Vnd` values with the same amount are equal, because a record compares its values instead of its reference, as `VndTests` shows."
+      - "A `Vnd` never changes after it is created: adding two amounts returns a new `Vnd`, so code holding one value never sees it change under it."
+      - "Wrapping a primitive pays off when a rule or a unit belongs to the value; wrapping every `int` and `string` adds types without adding any rule."
+      misconceptions:
+      - "A value object is just another name for a C# `struct`."
+      - "Two `Vnd` objects are equal only when they are the same instance in memory."
+      - "A value object may change its own amount through a method, as long as its setter is private."
+      depth_notes: "Không nói EF Core lưu Vnd thế nào — design.l3.storing-value-objects. Không dạy nhiều loại tiền tệ, làm tròn hay thư viện tiền tệ; không chuyển Product/Payment sang Vnd — ngoài module."
+    - id: design.l3.storing-value-objects
+      title:
+        vi: "Value object nằm trong dòng của đối tượng chứa nó, không có bảng riêng"
+        en: "A value object is stored in its owner's row, not its own table"
+      main_path: true
+      duration_min: 12
+      skills: [design.ddd.entities-values]
+      prereqs: [design.l3.value-objects, design.l2.ef-core-and-private-setters]
+      related: [backend.l1.efcore-mapping]
+      vocab: []
+      example_tag: stage-3
+      example_files: [DonHang.Infrastructure/DonHangDbContext.cs, DonHang.Domain/Vnd.cs, DonHang.Api/Dtos.cs]
+      outline:
+      - "A value object has no id, so it never gets its own key: its values are stored in the row of the entity that holds it."
+      - "At stage-3, `DonHangDbContext` gives `OrderItem`'s unit price a value converter: EF Core writes the `Vnd`'s amount into `order_items.unit_price_vnd` and builds a `Vnd` from it when loading."
+      - "The `unit_price_vnd` column keeps the same type as at stage-2: introducing `Vnd` changed the mapping in `DonHangDbContext`, not the database schema."
+      - "Because the converter builds each `Vnd` through its constructor, a negative amount found in the table makes loading fail instead of reaching the code as a valid price."
+      - "The API's JSON keeps `unitPriceVnd` as a plain number: `Vnd` stays inside `DonHang.Domain`, and the DTO still carries an `int`."
+      misconceptions:
+      - "A value object needs its own table, like every class EF Core maps."
+      - "Turning the unit price into a `Vnd` needs a migration that changes the column."
+      - "Once the domain uses `Vnd`, the API's JSON must turn the price into an object with an amount inside."
+      depth_notes: "Không dạy complex type, owned type hay cột JSON cho value object nhiều giá trị — ngoài module. Không nhắc lại mapping cột hay DTO — backend.l1.efcore-mapping, backend.l1.dtos-and-serialization."
+    - id: design.l3.aggregates-and-invariants
+      title:
+        vi: "Aggregate giữ cho invariant luôn đúng sau mọi thay đổi"
+        en: "An aggregate keeps its invariants true after every change"
+      main_path: true
+      duration_min: 14
+      skills: [design.ddd.aggregates]
+      prereqs:
+      - design.l3.entities-and-identity
+      - design.l2.valid-from-construction
+      - design.l2.testing-the-entity
+      related: [foundation.l1.oop-encapsulation, design.l2.where-a-rule-belongs]
+      vocab: [ddd-aggregate, invariant]
+      example_tag: stage-2
+      example_files:
+      - DonHang.Domain/Entities.cs
+      - DonHang.Tests/Domain/OrderTests.cs
+      - DonHang.Api/Controllers/OrdersController.cs
+      outline:
+      - "An invariant is a business rule that must be true whenever the data is saved, such as: an order has at least one item, and every item has a quantity of at least 1."
+      - "An aggregate is a group of objects, such as an order and its items, that changes as one unit, so that the invariants spanning the group hold after every change."
+      - "At stage-2, `Order`'s constructor checks both rules, but `Items` returns the `List<OrderItem>` itself and `OrderItem` has public setters, so code holding an order can empty it or set a quantity to 0 afterwards."
+      - "The constructor also keeps the very list the caller passed in, so clearing that list after `new Order(...)` leaves the order with no items."
+      - "`OrderTests` checks the item rules only at construction; none of its tests changes the items afterwards, which is why the gap stays hidden."
+      - "A rule spanning several objects can be kept only if every change to those objects passes through one place that checks it."
+      misconceptions:
+      - "An aggregate is any set of tables joined by foreign keys."
+      - "Once the constructor has checked the items, the order stays valid for good."
+      - "An invariant is just input validation, moved from the controller into the domain."
+      depth_notes: "Bài chỉ ra lỗ hổng ở stage-2; cách đóng — design.l3.aggregate-root. Không nói ranh giới giữa các aggregate — design.l3.reference-other-aggregates-by-id; không nói concurrency trên aggregate — ngoài module."
+    - id: design.l3.aggregate-root
+      title:
+        vi: "Chỉ aggregate root được thay đổi những gì bên trong aggregate"
+        en: "Only the aggregate root may change what is inside the aggregate"
+      main_path: true
+      duration_min: 14
+      skills: [design.ddd.aggregates]
+      prereqs:
+      - design.l3.aggregates-and-invariants
+      - design.l3.storing-value-objects
+      - design.l2.ef-core-and-private-setters
+      related: [design.l1.the-repository-layer]
+      vocab: [aggregate-root]
+      example_tag: stage-3
+      example_files:
+      - DonHang.Domain/Entities.cs
+      - DonHang.Infrastructure/DonHangDbContext.cs
+      - DonHang.Tests/Domain/OrderTests.cs
+      - DonHang.Domain/IOrderRepository.cs
+      outline:
+      - "The aggregate root is the one entity of an aggregate that outside code holds and calls; every change inside the aggregate goes through the root's methods."
+      - "At stage-3, `Order` copies the items it is given into a private list and exposes them only through a read-only view, so neither the caller nor any other code can add, remove or clear items."
+      - "At stage-3, `OrderItem` gets its values from its constructor and has no public setters, so a quantity can no longer drop to 0 after `Order` has checked it."
+      - "EF Core still loads and saves the items, because it reads and writes the private list behind the read-only view instead of going through the property."
+      - "`IOrderRepository` loads and saves orders together with their items and has no method for an item on its own: outside code reaches an item only through its order."
+      misconceptions:
+      - "A private setter on `Items` already stops other code from changing the items."
+      - "Every entity needs its own repository, so `OrderItem` should get one too."
+      - "Exposing the items as read-only means EF Core can no longer fill them when it loads an order."
+      depth_notes: "Không dạy cách chọn ranh giới aggregate — design.l3.reference-other-aggregates-by-id; không dạy chi tiết property access mode hay cấu hình backing field ngoài collection — ngoài module. Không nhắc lại repository — design.l1.the-repository-layer."
+    - id: design.l3.reference-other-aggregates-by-id
+      title:
+        vi: "Các aggregate trỏ tới nhau bằng id, không giữ cả đối tượng"
+        en: "Aggregates point to each other by id, not by holding the object"
+      main_path: true
+      duration_min: 13
+      skills: [design.ddd.aggregates]
+      prereqs: [design.l3.aggregate-root, backend.l2.projection-queries]
+      related: [backend.l1.efcore-n-plus-one, backend.l2.database-job-queue]
+      vocab: []
+      example_tag: stage-2
+      example_files:
+      - DonHang.Domain/Entities.cs
+      - DonHang.Infrastructure/EfOrderRepository.cs
+      - DonHang.Domain/OrderService.cs
+      outline:
+      - "One aggregate refers to another by its id, so loading or changing one never requires loading the other: `Payment` holds an `OrderId`, and `Order` holds a `CustomerId`."
+      - "Cancelling an order loads the order and its items through `FindAsync`, not the customer: no rule of an order needs the customer's data, so the customer is not part of the order's aggregate."
+      - "At stage-2 `Order` also has a `Customer` navigation, used only for reading, as when `ListByCustomerAsync` selects the customer's name; no use case changes a customer through an order."
+      - "Keeping aggregates small keeps each change small: a use case loads and saves one order with its items, instead of everything that order is connected to."
+      - "Changing one aggregate per save is a guideline, not a law: `PlaceOrderAsync` saves a new order together with its pending `notifications` row, because losing that email job would cost more than coupling the two."
+      misconceptions:
+      - "An `Order` should hold the whole `Customer`, so code can change the customer's details through the order."
+      - "Navigation properties do not belong in a domain model and must all be deleted."
+      - "Referring by id means the database must drop the foreign key between `orders` and `customers`."
+      depth_notes: "Không nói nhất quán giữa các aggregate qua message hay saga — backend/messaging, backend/sagas-and-consistency GĐ3; không nói bounded context — design/ddd-strategic. Không dạy lại navigation hay N+1 — backend.l1.efcore-n-plus-one."
+    - id: design.l3.domain-events
+      title:
+        vi: "Domain event ghi lại điều đã xảy ra, không ra lệnh việc tiếp theo"
+        en: "A domain event records what happened, not what to do next"
+      main_path: true
+      duration_min: 13
+      skills: [design.ddd.domain-events]
+      prereqs: [design.l3.aggregate-root, design.l2.observer-pattern]
+      related: [backend.l2.database-job-queue]
+      vocab: [domain-event]
+      example_tag: stage-3
+      example_files:
+      - DonHang.Domain/DomainEvents.cs
+      - DonHang.Domain/Entities.cs
+      - DonHang.Tests/Domain/OrderTests.cs
+      outline:
+      - "A domain event is a record that something the business cares about has happened, named in the past tense, such as `OrderCancelled`."
+      - "At stage-2, `CancelOrderAsync` and `ShipOrderAsync` each call the order's method and then `notifier.Send`: every use case that changes a status has to remember the reaction itself."
+      - "At stage-3, `Order.Cancel()` adds an `OrderCancelled` event to the order's own list of events only after the change succeeds; a refused change adds none."
+      - "The event says what happened and to which order; it does not say what to do about it, so sending an email is a reaction to the event, not part of it."
+      - "Unlike the C# event in `OrderEvents`, which calls its subscribers the moment it is raised, `Order` only records the event and calls no one."
+      misconceptions:
+      - "A domain event is just a C# `event` declared on the entity."
+      - "Domain events are messages that services send each other through a message broker."
+      - "An event should be named after what must happen next, such as `SendCancellationEmail`."
+      depth_notes: "Không nói ai nhận event và khi nào — design.l3.dispatching-domain-events. Không nói message broker, outbox hay event sourcing — backend/messaging, design/cqrs-event-sourcing GĐ3."
+    - id: design.l3.dispatching-domain-events
+      title:
+        vi: "Domain event tới handler trước khi đơn được lưu"
+        en: "Domain events reach their handlers before the order is saved"
+      main_path: true
+      duration_min: 14
+      skills: [design.ddd.domain-events]
+      prereqs: [design.l3.domain-events, backend.l2.database-job-queue, design.l2.unit-of-work]
+      related: [design.l1.solid-ocp]
+      vocab: []
+      example_tag: stage-3
+      example_files:
+      - DonHang.Domain/OrderService.cs
+      - DonHang.Domain/IDomainEventHandler.cs
+      - DonHang.Domain/NotifyCustomerOnOrderEvents.cs
+      - DonHang.Infrastructure/ServiceCollectionExtensions.cs
+      outline:
+      - "At stage-3, after the order's method returns, the events it recorded are handed to every handler registered for them, and only then does `SaveChangesAsync` run."
+      - "The handler that notifies the customer adds its row through the same `DonHangDbContext` as the order, so the order and that row are still saved in one transaction, as at stage-2."
+      - "A handler that throws stops the use case before anything is saved, so the order's change and the reactions to it are kept or lost together."
+      - "Work a handler does outside the database, such as calling another service, cannot be undone if the save then fails; this module keeps handlers to writes that join the same save."
+      - "Adding a new reaction to a cancelled order means registering one more handler; `Order` and `CancelOrderAsync` stay unchanged."
+      misconceptions:
+      - "Domain event handlers run after the order is saved, so a failing handler cannot affect the order."
+      - "Because the event is handled in the same use case, the email is sent at the moment the order is cancelled."
+      - "With domain events, `OrderService` no longer calls `SaveChangesAsync`, since each handler saves its own work."
+      depth_notes: "Không dạy outbox, message broker hay gửi event sang service khác — backend/messaging GĐ3; không dùng thư viện mediator — ngoài module. Không dạy lại job queue — backend.l2.database-job-queue."
