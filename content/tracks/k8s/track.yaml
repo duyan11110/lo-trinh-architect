@@ -73,6 +73,26 @@ skills:
     vi: "Request và limit tài nguyên"
     en: "Resource requests and limits"
   prereqs: [k8s.basics.cluster-architecture, k8s.config.running-the-system]
+- id: k8s.packaging.helm
+  title:
+    vi: "Helm: chart, values và release"
+    en: "Helm: charts, values and releases"
+  prereqs: [k8s.basics.kubectl, k8s.config.running-the-system]
+- id: k8s.packaging.kustomize
+  title:
+    vi: "Kustomize: một base và overlay cho từng môi trường"
+    en: "Kustomize: one base and an overlay per environment"
+  prereqs: [k8s.basics.kubectl, devops.gitops.change-flow]
+- id: k8s.traffic.routing
+  title:
+    vi: "Đưa request từ ngoài vào cluster: Ingress và Gateway API"
+    en: "Routing outside requests into the cluster: Ingress and Gateway API"
+  prereqs: [k8s.workloads.services]
+- id: k8s.traffic.tls
+  title:
+    vi: "TLS ở cửa vào cluster"
+    en: "TLS at the cluster's entry point"
+  prereqs: [k8s.traffic.routing, devops.secrets.sealing]
 levels:
 - level: 1
   title:
@@ -645,3 +665,232 @@ levels:
       - "A container that uses more CPU than its limit gets killed."
       - "A Pod stuck in `Pending` means its image could not be pulled."
       depth_notes: "Không nói QoS class, eviction khi node thiếu tài nguyên, LimitRange/ResourceQuota (k8s/security-and-policy GĐ3), autoscaling và đo usage bằng metrics-server (GĐ3), tranh luận có nên đặt CPU limit, cách .NET GC đọc memory limit, resources cấp Pod."
+- level: 2
+  title:
+    vi: "Level 2"
+    en: "Level 2"
+  modules:
+  - id: ingress-helm
+    title:
+      vi: "Helm, Ingress, Gateway API và Kustomize"
+      en: "Helm, Ingress, Gateway API and Kustomize"
+    stage: 3
+    summary:
+      vi: "Đọc và render Helm chart, quản lý release, cài phần mềm bên thứ ba từ chart đã ghim qua Argo CD, đưa request từ ngoài vào Đơn Hàng bằng Ingress rồi Gateway API có HTTPS, và chuyển repo cấu hình sang một base với overlay Kustomize cho từng môi trường."
+      en: "Read and render Helm charts, manage releases, install third-party software from a pinned chart through Argo CD, route outside requests into Đơn Hàng with Ingress and then Gateway API over HTTPS, and move the config repository to one base with a Kustomize overlay per environment."
+    lessons:
+    - id: k8s.l2.helm-charts
+      title:
+        vi: "Helm chart sinh manifest từ template và values"
+        en: "A Helm chart renders manifests from templates and values"
+      main_path: true
+      duration_min: 14
+      skills: [k8s.packaging.helm]
+      prereqs:
+      - k8s.l1.deploying-don-hang
+      - devops.l3.promoting-between-environments
+      - k8s.l1.manifests-and-kubectl-apply
+      related: [devops.l3.tofu-modules]
+      vocab: [helm, helm-chart, values-file]
+      example_tag: stage-3
+      example_files:
+      - deploy/helm/lessons/web/Chart.yaml
+      - deploy/helm/lessons/web/values.yaml
+      - deploy/helm/lessons/web/templates/deployment.yaml
+      - scripts/k8s/helm-template.sh
+      outline:
+      - "Helm is a package manager for Kubernetes; a Helm chart is a folder holding `Chart.yaml` (the chart's name and version), `values.yaml` and a `templates/` folder of manifests with placeholders."
+      - "`deploy/helm/lessons/web/templates/deployment.yaml` writes the replica count and the image tag as `{{ .Values.replicas }}` and `{{ .Values.image.tag }}` instead of fixed values."
+      - "`values.yaml` holds the chart's defaults; a values file passed with `-f` overrides the keys it sets, and `--set` overrides both, so one chart can serve several environments."
+      - "`helm template` renders a chart into plain manifests on your machine without contacting any cluster, so you can read and diff exactly what would be applied."
+      - "Templates are text with placeholders, not YAML: a change to a template can produce invalid or unexpected manifests, and only the rendered output shows it."
+      misconceptions:
+      - "Seniors often assume a Helm chart is a kind of container image, or contains one."
+      - "Seniors often assume rendering a chart needs a connection to a cluster."
+      - "Seniors often assume values passed with `--set` are written back into the chart's `values.yaml`."
+      depth_notes: "Không dạy release/upgrade/rollback (bài sau), chart dependency, `_helpers.tpl`, hàm template (`include`, Sprig), schema cho values, chart repository/OCI. Đơn Hàng không viết chart cho chính nó — k8s.l2.config-repo-overlays nêu lý do."
+    - id: k8s.l2.helm-releases
+      title:
+        vi: "Mỗi lần helm upgrade thành một revision của release, quay lui được"
+        en: "Each helm upgrade becomes a release revision you can roll back"
+      main_path: true
+      duration_min: 13
+      skills: [k8s.packaging.helm]
+      prereqs: [k8s.l2.helm-charts, k8s.l1.rollbacks]
+      related: [devops.l3.rollback-by-revert]
+      vocab: [helm-release]
+      example_tag: stage-3
+      example_files: [scripts/k8s/helm-release.sh, deploy/helm/lessons/web/values.yaml]
+      outline:
+      - "`helm install` renders a chart with your values and applies the result as a Helm release: a name in one namespace, here `web` in `helm-lessons`, whose objects Helm tracks together."
+      - "Every `helm upgrade` of that release applies the newly rendered manifests and records a new numbered revision; `helm history` lists the revisions with their status."
+      - "Helm keeps each revision's rendered manifests and values in a Secret in the release's namespace, so the release's history lives in the cluster, not on the machine that ran Helm."
+      - "`helm rollback web 1` applies revision 1's manifests again as a new revision, 3, and keeps revision 2 in the history; like `kubectl rollout undo`, it changes the cluster, not your files."
+      - "`helm uninstall` deletes every object of the release and, by default, its history Secrets too."
+      misconceptions:
+      - "Seniors often assume `helm rollback` deletes the bad revision from the history."
+      - "Seniors often assume Helm keeps track of releases on the laptop that ran `helm install`."
+      - "Seniors often assume a release and a chart version are the same thing."
+      depth_notes: "Không dạy --atomic/--wait, hook của Helm, --reuse-values/--reset-values, cách Helm tính thay đổi khi upgrade, driver lưu trữ khác Secret. Helm trong Argo CD — bài sau. Không dạy lại rollout undo — k8s.l1.rollbacks."
+    - id: k8s.l2.charts-through-argo-cd
+      title:
+        vi: "Argo CD tự cài chart đã ghim phiên bản, nên Helm không có release"
+        en: "Argo CD installs a pinned chart itself, so Helm keeps no release"
+      main_path: true
+      duration_min: 14
+      skills: [k8s.packaging.helm, devops.gitops.sync]
+      prereqs: [k8s.l2.helm-releases, devops.l3.self-heal, devops.l3.argo-cd-applications]
+      related: [devops.l3.pinning-by-content, devops.l3.automated-dependency-updates]
+      vocab: []
+      example_tag: stage-3
+      example_files: [deploy/gitops/config-repo/apps/traefik.yaml, scripts/k8s/traefik-install.sh]
+      outline:
+      - "Traefik, the program that will route outside requests into Đơn Hàng's cluster, is installed from the chart its own project publishes, not from manifests Đơn Hàng writes."
+      - "`apps/traefik.yaml` is an Application whose source is a chart repository, a chart name and an exact chart version; the chart version is not the Traefik version it installs (`appVersion`)."
+      - "The Application holds only the values Đơn Hàng changes; `helm show values` at the pinned chart version lists every key the chart accepts, with its default."
+      - "Argo CD renders the chart itself, as `helm template` does, and syncs the result like a folder of manifests: `helm list -A` shows no release, and going back means reverting the commit."
+      - "A new chart version can change many objects at once; `traefik-install.sh` renders the pinned version and the next one with `helm template` and diffs them, as a review would before the commit."
+      misconceptions:
+      - "Seniors often assume a chart that Argo CD installed can still be upgraded or rolled back with the `helm` command."
+      - "Seniors often assume copying the chart's whole `values.yaml` into the repository is the safest way to configure it."
+      - "Seniors often assume the chart version tells you which version of the software runs."
+      depth_notes: "Không dạy multi-source/`$values`, ApplicationSet, Helm hook trong Argo CD, CRD đi kèm chart và nâng cấp CRD (k8s/operators-and-cluster-lifecycle), cấu hình Traefik ngoài phần routing. Traefik làm gì — hai bài sau. Không dạy lại sync — devops.l3.synced-versus-healthy."
+    - id: k8s.l2.ingress
+      title:
+        vi: "Ingress chỉ là luật định tuyến; phải có controller mới chạy"
+        en: "An Ingress lists routing rules that only a controller carries out"
+      main_path: true
+      duration_min: 14
+      skills: [k8s.traffic.routing]
+      prereqs: [k8s.l2.charts-through-argo-cd, k8s.l1.service-and-dns, devops.l1.reverse-proxy-basics]
+      related: [k8s.l1.services]
+      vocab: [k8s-ingress, ingress-controller]
+      example_tag: stage-3
+      example_files: [deploy/k8s/lessons/api-ingress.yaml, scripts/k8s/ingress.sh]
+      outline:
+      - "A Service without a `type` is reachable only inside the cluster, so something must accept requests from outside and forward them, the job Caddy does in front of the api in Compose."
+      - "An Ingress is a Kubernetes object listing HTTP rules: a host and a path, matched as `Prefix` or `Exact`, each leading to a Service and a port."
+      - "An Ingress does nothing on its own: an Ingress controller, here Traefik's Pods, watches Ingress objects and works as a reverse proxy that applies their rules."
+      - "`ingressClassName: traefik` names the controller that should act on the Ingress; anything beyond the basic rules is set with annotations that each controller defines in its own way."
+      - "`ingress.sh` calls Traefik from your machine before and after applying `api-ingress.yaml`: Traefik answers `404` until the rule exists, then forwards `/api/v1/products` to the api Service."
+      - "Requests from your machine reach Traefik because the staging node publishes ports on it; on a cloud, the controller's Service of type `LoadBalancer` would get an outside address instead."
+      misconceptions:
+      - "Seniors often assume creating an Ingress is enough for Kubernetes to start routing traffic."
+      - "Seniors often assume an Ingress replaces the Service, so the api no longer needs one."
+      - "Seniors often assume an Ingress with annotations behaves the same on any controller."
+      depth_notes: "Không dạy annotation cụ thể của controller, defaultBackend, IngressClass mặc định, LoadBalancer trên máy thật/MetalLB (k8s/bare-metal), Ingress HA. TLS — k8s.l2.tls-at-the-gateway. Ingress này chỉ là manifest minh họa, không vào repo cấu hình."
+    - id: k8s.l2.gateway-api
+      title:
+        vi: "Gateway API tách điểm vào cluster khỏi các route"
+        en: "Gateway API splits the entry point from the routes"
+      main_path: true
+      duration_min: 15
+      skills: [k8s.traffic.routing]
+      prereqs: [k8s.l2.ingress]
+      related: [backend.l2.api-versioning, devops.l3.argo-cd-applications]
+      vocab: [gateway-api, k8s-gateway, httproute]
+      example_tag: stage-3
+      example_files:
+      - deploy/gitops/config-repo/platform/edge/gateway.yaml
+      - deploy/gitops/config-repo/platform/edge/httproutes.yaml
+      - deploy/gitops/config-repo/apps/edge-staging.yaml
+      - scripts/k8s/gateway.sh
+      outline:
+      - "The Ingress API is frozen: it stays available but gets no new features, and the Kubernetes project recommends Gateway API instead, so Đơn Hàng routes its own traffic with Gateway API."
+      - "Gateway API is not built into Kubernetes: its kinds of objects are added by installing them, here together with Traefik, which implements both Ingress and Gateway API."
+      - "A `GatewayClass` names the controller; a Gateway asks it for listeners, each a port, a protocol and an optional hostname; an HTTPRoute attaches to a Gateway through `parentRefs`."
+      - "The split follows roles: whoever runs the platform owns the Gateway, and each team writes HTTPRoutes for its own Services without editing the shared entry point."
+      - "Đơn Hàng's HTTPRoutes send `/api/v1`, `/api/v2` and `/openapi` to the api Service and Keycloak's host to the keycloak Service, the routes Caddy holds in Compose."
+      - "Splitting traffic between backends by weight and matching on headers are part of the HTTPRoute standard; with Ingress they depend on each controller's own annotations."
+      misconceptions:
+      - "Seniors often assume Gateway API is a separate gateway product that replaces the Ingress controller."
+      - "Seniors often assume Ingress is deprecated and will be removed from Kubernetes."
+      - "Seniors often assume an HTTPRoute routes traffic on its own, without a Gateway to attach to."
+      depth_notes: "Không dạy ReferenceGrant, allowedRoutes giữa namespace, GRPCRoute/TLSRoute, filter ngoài redirect, chia traffic để canary (devops GĐ4), công cụ chuyển Ingress sang Gateway API. HTTPS — bài sau."
+    - id: k8s.l2.tls-at-the-gateway
+      title:
+        vi: "HTTPS kết thúc ở Gateway bằng chứng chỉ giữ trong một Secret"
+        en: "HTTPS ends at the Gateway with a certificate kept in a Secret"
+      main_path: true
+      duration_min: 15
+      skills: [k8s.traffic.tls]
+      prereqs:
+      - k8s.l2.gateway-api
+      - devops.l3.sealed-secrets
+      - devops.l1.reverse-proxy-and-tls
+      - backend.l2.validating-provider-tokens
+      related: [foundation.l1.tls-and-https]
+      vocab: []
+      example_tag: stage-3
+      example_files:
+      - deploy/gitops/config-repo/platform/edge/gateway.yaml
+      - scripts/dev-secrets.sh
+      - scripts/devops/seal-secrets.sh
+      - scripts/k8s/gateway-tls.sh
+      outline:
+      - "An HTTPS listener with `tls.mode: Terminate` decrypts requests at the Gateway with the certificate and key in the Secret its `certificateRefs` names; the api Pods behind it get plain HTTP."
+      - "That Secret has type `kubernetes.io/tls` with the keys `tls.crt` and `tls.key`; since it holds a private key, it reaches the config repository only as a SealedSecret."
+      - "In the lab `dev-secrets.sh` creates your own certificate authority in `secrets/` and signs a certificate for Đơn Hàng's hosts with it; `curl --cacert` trusts it, a browser only once told to."
+      - "An HTTPRoute with a `RequestRedirect` filter on the plain HTTP listener answers every request there with a redirect to the HTTPS address."
+      - "Keycloak writes its public address into every token as the issuer, so staging's `KC_HOSTNAME` and the api's `Keycloak__Authority` both change to the HTTPS address behind the Gateway."
+      - "Nothing renews this certificate: once it expires, clients refuse the connection, which is why real clusters let a controller issue and renew certificates."
+      misconceptions:
+      - "Seniors often assume the hop from the Gateway to the api Pods is encrypted too, because the client used HTTPS."
+      - "Seniors often assume a TLS Secret is safe to commit because certificates are public anyway."
+      - "Seniors often assume moving Keycloak behind a new address needs no change on the api's side."
+      depth_notes: "Không dạy cert-manager và gia hạn tự động (k8s/operators-and-cluster-lifecycle), mã hóa giữa các Pod/mTLS (service mesh GĐ4), TLS passthrough, Secret ở namespace khác, HSTS, DonHang.App trên trình duyệt qua Gateway. Không dạy lại TLS — foundation.l1.tls-and-https."
+    - id: k8s.l2.kustomize-overlays
+      title:
+        vi: "Overlay của Kustomize vá một base dùng chung cho từng môi trường"
+        en: "A Kustomize overlay patches a shared base for one environment"
+      main_path: true
+      duration_min: 15
+      skills: [k8s.packaging.kustomize]
+      prereqs: [k8s.l2.helm-charts, devops.l3.promoting-between-environments, k8s.l1.configmaps]
+      related: [devops.l3.tofu-modules]
+      vocab: [kustomize, kustomize-overlay]
+      example_tag: stage-3
+      example_files:
+      - deploy/gitops/config-repo-kustomize/base/kustomization.yaml
+      - deploy/gitops/config-repo-kustomize/envs/staging/kustomization.yaml
+      - deploy/gitops/config-repo-kustomize/envs/production/kustomization.yaml
+      - scripts/k8s/kustomize-render.sh
+      outline:
+      - "Kustomize builds manifests from plain YAML without placeholders: a `kustomization.yaml` lists what to include, and `kubectl kustomize` prints the result, since kubectl has Kustomize built in."
+      - "Đơn Hàng's base holds every manifest once; each overlay, `envs/staging` and `envs/production`, lists the base as a resource and adds only what differs."
+      - "A patch in an overlay names an object by kind and name and gives only the fields to change, such as the api's `replicas`; everything else comes from the base unchanged."
+      - "The `images` field sets an image's tag or digest everywhere that image appears in the rendered output, so an overlay sets the api's and the migration's image in one place."
+      - "`configMapGenerator` builds the api's ConfigMap with a hash of its content in the name and updates every reference, so a changed value changes the Pod template and rolls the Pods."
+      - "`kustomize-render.sh` renders both overlays and diffs the output, showing exactly what separates staging from production."
+      misconceptions:
+      - "Seniors often assume varying manifests per environment needs a template language like Helm's."
+      - "Seniors often assume an overlay is a full copy of the base with some values edited."
+      - "Seniors often assume the hash in a generated ConfigMap's name is noise that is better turned off."
+      depth_notes: "Không dạy component, replacements, namePrefix/namespace của Kustomize, helmCharts trong Kustomize, secretGenerator (Secret đến từ SealedSecret), `kustomize edit`. Chuyển repo cấu hình đang chạy — bài sau."
+    - id: k8s.l2.config-repo-overlays
+      title:
+        vi: "Chuyển repo cấu hình sang một base và overlay cho từng môi trường"
+        en: "Moving the config repository to a base and per-environment overlays"
+      main_path: true
+      duration_min: 14
+      skills: [k8s.packaging.kustomize, devops.gitops.change-flow]
+      prereqs: [k8s.l2.kustomize-overlays, k8s.l2.charts-through-argo-cd, devops.l3.verifying-before-deploy]
+      related: [devops.l3.promoting-between-environments, devops.l3.argo-cd-applications]
+      vocab: []
+      example_tag: stage-3
+      example_files:
+      - scripts/k8s/kustomize-config-repo.sh
+      - deploy/gitops/config-repo-kustomize/envs/production/kustomization.yaml
+      - ".github/workflows/ci.yml"
+      outline:
+      - "Argo CD renders a folder with Kustomize when it finds a `kustomization.yaml` there, so the Application for `envs/staging` needs no change when that folder becomes an overlay."
+      - "`kustomize-config-repo.sh` commits the conversion; Argo CD then finds a difference only in the api's ConfigMap, now generated with a hash, and the api Pods roll once."
+      - "Promotion becomes one change to the `images` entry of `envs/production/kustomization.yaml`, which can name the verified digest just as `api.yaml` did before."
+      - "A change meant for every environment, such as a new probe, is made once in the base; by the same token, one wrong change to the base reaches every environment at its next sync."
+      - "CI renders every overlay and checks the output with kubeconform, since a mistake in the base or in a patch shows only in the rendered manifests."
+      - "Đơn Hàng keeps overlays for its own manifests and charts for software others maintain; a team that installs its app many times with many settings may ship it as a chart instead."
+      misconceptions:
+      - "Seniors often assume switching to Kustomize means changing every Argo CD Application to point at a new tool."
+      - "Seniors often assume overlays remove every way for environments to drift apart."
+      - "Seniors often assume a team has to pick Helm or Kustomize for everything in its cluster."
+      depth_notes: "Không dạy ApplicationSet sinh Application cho mỗi overlay, Kustomize render Helm chart, nhiều cluster (GĐ4). Không dạy lại promotion — devops.l3.promoting-between-environments; xác minh image — devops.l3.verifying-before-deploy."
