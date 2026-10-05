@@ -123,6 +123,31 @@ skills:
     vi: "Form, validator và lỗi từ API"
     en: "Forms, validators and errors from the API"
   prereqs: [frontend.forms.input, frontend.state.riverpod, backend.errors.shape]
+- id: frontend.performance.measuring
+  title:
+    vi: "Đo hiệu năng Flutter trên bản build gần release"
+    en: "Measuring Flutter performance on a release-like build"
+  prereqs: [frontend.flutter.render-pipeline]
+- id: frontend.performance.rendering
+  title:
+    vi: "Giảm việc dựng lại: phạm vi rebuild và danh sách dài"
+    en: "Doing less work per frame: rebuild scope and long lists"
+  prereqs: [frontend.performance.measuring, frontend.state.riverpod]
+- id: frontend.performance.web-loading
+  title:
+    vi: "Kích thước bundle web và thời gian tải lần đầu"
+    en: "Web bundle size and first-load time"
+  prereqs: [frontend.performance.measuring]
+- id: frontend.offline.local-cache
+  title:
+    vi: "Offline-first: đọc bản lưu trên máy trước"
+    en: "Offline-first: reading the saved copy first"
+  prereqs: [frontend.state.riverpod]
+- id: frontend.offline.sync
+  title:
+    vi: "Hàng đợi thao tác offline, đồng bộ lại và xung đột"
+    en: "Offline write queues, syncing and conflicts"
+  prereqs: [frontend.offline.local-cache, frontend.forms.validation]
 levels:
 - level: 1
   title:
@@ -885,3 +910,237 @@ levels:
       - "Once the app validates input, the API can skip its own checks."
       - "After a failed request the form should be cleared so the customer starts again."
       depth_notes: "Không dịch detail của server — bản địa hóa title/detail ngoài GĐ2 (backend.l2.problem-types). Không gắn lỗi vào từng field, không xử lý riêng 401/409, không thử lại. Không dạy lại type — backend.l2.problem-types."
+- level: 3
+  title:
+    vi: "Level 3"
+    en: "Level 3"
+  modules:
+  - id: performance-offline
+    title:
+      vi: "Hiệu năng và offline: đo, dựng lại ít hơn, chạy khi mất mạng"
+      en: "Performance and offline: measure, rebuild less, keep working without the API"
+    stage: 3
+    summary:
+      vi: "Đo DonHang.App trên bản build profile trước khi tối ưu, giới hạn phần widget phải dựng lại, giữ danh sách dài và bundle web nhỏ, rồi cho app vẫn chạy khi API không tới được: hiện bản lưu trên máy, xếp đơn vào hàng đợi, gửi lại an toàn bằng idempotency key và báo cho khách khi server không đồng ý."
+      en: "Measure DonHang.App on a profile build before optimising, limit what a change rebuilds, keep long lists and the web bundle cheap, then keep the app working when the API is unreachable: show the saved copy, queue orders, resend them safely with an idempotency key, and tell the customer when the server disagrees."
+    lessons:
+    - id: frontend.l3.profile-mode
+      title:
+        vi: "Đo trên bản build profile, đừng đo bản debug"
+        en: "Measure a profile build, never a debug build"
+      main_path: true
+      duration_min: 13
+      skills: [frontend.performance.measuring]
+      prereqs: [frontend.l1.build-layout-paint, frontend.l1.render]
+      related: [devops.l2.building-images-in-ci]
+      vocab: [profile-mode, jank]
+      example_tag: stage-2
+      example_files: [scripts/up.sh]
+      outline:
+      - "`flutter run` starts a debug build, which on the web uses a different compiler from release and adds checks, so how fast it feels says little about the app customers get."
+      - "The app the lab serves on `:8081` is a release build, because `scripts/up.sh` runs `flutter build web`, whose default mode is release."
+      - "Profile mode compiles much like release but keeps what performance tools need, so it is the mode to measure in: `flutter run -d chrome --profile`."
+      - "At 60 frames per second each frame's work has about 16 ms; a frame that is not ready in time shows as a visible stutter, called jank."
+      - "In profile mode Flutter adds its build, layout and paint work to the browser's performance recording, so a slow frame can be traced to the phase that took the time."
+      - "Change code for speed only where a profile-mode measurement shows a slow frame; a change that makes code harder to read with no measured gain is a pure cost."
+      misconceptions:
+      - "If the app feels smooth in debug mode, it will be smooth in release, and if it stutters in debug, release will stutter too."
+      - "Jank means the app is slow overall; a fast average frame time rules it out."
+      - "Experienced developers can see what is slow by reading the code, so measuring first is only for beginners."
+      depth_notes: "Không dạy Flutter DevTools từng màn hình, memory profiling hay Web Vitals (→ frontend/stack-and-boundaries GĐ4). Không nói build wasm, renderer, hay số liệu đo cụ thể. Rebuild → frontend.l3.rebuild-scope; bundle → frontend.l3.web-bundle-size."
+    - id: frontend.l3.rebuild-scope
+      title:
+        vi: "Rebuild kéo theo cả cây con: theo dõi provider ở tầng thấp"
+        en: "A rebuild covers the whole subtree: watch providers low in the tree"
+      main_path: true
+      duration_min: 15
+      skills: [frontend.performance.rendering]
+      prereqs:
+      - frontend.l3.profile-mode
+      - frontend.l2.notifier-for-app-state
+      - frontend.l2.overriding-providers-in-tests
+      related: [frontend.l1.setstate-and-rebuilding, frontend.l1.composing-widgets]
+      vocab: []
+      example_tag: stage-3
+      example_files:
+      - DonHang.App/lib/screens/product_list_screen.dart
+      - DonHang.App/test/product_list_rebuild_test.dart
+      - DonHang.App/lib/auth/auth_controller.dart
+      outline:
+      - "When a widget rebuilds, its `build` creates new child widgets, and Flutter rebuilds each child whose new widget is not the very same instance as before, all the way down the subtree."
+      - "A `const` widget is created once by the compiler, so a parent's rebuild hands Flutter the same instance and that child's subtree is skipped, as with `const Center(child: CircularProgressIndicator())`."
+      - "At stage-2 `ProductListScreen` watches `authProvider` inside its own `build`, so signing in or out rebuilds the whole screen, `ProductCatalog` and its tiles included, though only one button changes."
+      - "At stage-3 the sign-in and sign-out button is a small `ConsumerWidget` of its own that watches `authProvider`, so a change of token rebuilds only that button."
+      - "A stage-3 widget test changes the token and checks that `ProductCatalog` is still the same widget instance, which shows the screen's `build` did not run again."
+      misconceptions:
+      - "Any provider change makes Flutter rebuild and repaint the whole app, so where a widget calls ref.watch makes no difference."
+      - "Writing const in front of widgets is a style rule; it has no effect while the app runs."
+      - "Splitting a screen into smaller widgets helps readability only; Flutter rebuilds the same amount either way."
+      depth_notes: "Không nói select, Consumer builder, RepaintBoundary, key hay Element. Không đo bằng công cụ — frontend.l3.profile-mode. Không dạy lại setState, ref.watch/ref.read — frontend.l1.setstate-and-rebuilding, frontend.l2.notifier-for-app-state."
+    - id: frontend.l3.lazy-lists
+      title:
+        vi: "Danh sách dài chỉ dựng những dòng đang thấy"
+        en: "Long lists build only the rows on screen"
+      main_path: true
+      duration_min: 12
+      skills: [frontend.performance.rendering]
+      prereqs: [frontend.l3.rebuild-scope, frontend.l1.responsive-basics]
+      related: [backend.l2.offset-pagination]
+      vocab: []
+      example_tag: stage-3
+      example_files: [DonHang.App/lib/widgets/product_catalog.dart, DonHang.App/test/product_catalog_test.dart]
+      outline:
+      - "`ListView(children: [...])` needs a widget for every item created before the list exists, so its cost grows with the number of items even when only a few fit on screen."
+      - "`ListView.builder` takes an `itemCount` and an `itemBuilder`, and calls the builder only for items in or near the visible area, building more as the user scrolls."
+      - "`ProductCatalog` uses `ListView.builder` on a narrow width and `GridView.builder` on a wide one, so the number of tiles it builds depends on the space, not on how many products there are."
+      - "A stage-3 widget test gives `ProductCatalog` 10 000 products on a narrow screen and finds tiles for the first products only, none for the last one."
+      - "Building lazily keeps the widgets cheap, not the data: all 10 000 products are still in memory, and fetching fewer at a time is the API's paging, a separate decision."
+      misconceptions:
+      - "A list of a few thousand rows is slow in Flutter whatever you do, so long lists always need paging."
+      - "ListView with a children list and ListView.builder do the same work; builder is only shorter to write."
+      - "Once a row has scrolled off screen, its widget stays built in case the user scrolls back."
+      depth_notes: "Không nói itemExtent/prototypeItem, cacheExtent, sliver hay ảnh trong danh sách (sản phẩm không có ảnh). DonHang.App không tải trang tiếp khi cuộn — không dạy infinite scroll. Không dạy lại offset/limit — backend.l2.offset-pagination."
+    - id: frontend.l3.web-bundle-size
+      title:
+        vi: "Trình duyệt phải tải những gì trước khung hình đầu tiên"
+        en: "What the browser downloads before the first frame"
+      main_path: true
+      duration_min: 14
+      skills: [frontend.performance.web-loading]
+      prereqs: [frontend.l3.profile-mode, frontend.l2.deep-links]
+      related: [foundation.l1.http-caching]
+      vocab: [web-bundle, tree-shaking]
+      example_tag: stage-3
+      example_files: [scripts/frontend/web-bundle.sh, deploy/app-web/Caddyfile, scripts/up.sh]
+      outline:
+      - "Before DonHang.App draws anything, the browser downloads its web bundle: the compiled app in `main.dart.js`, Flutter's engine files, fonts and assets, all found under `build/web`."
+      - "`web-bundle.sh` lists the largest files under `DonHang.App/build/web` with their size before and after gzip, so a change in bundle size shows up as a number."
+      - "A release build is tree-shaken: the compiler leaves out Dart code the app never calls, and icons the app never uses are removed from the icon font."
+      - "Text files such as `main.dart.js` shrink a lot when compressed; at stage-3 the `app-web` Caddyfile adds `encode`, so Caddy compresses responses for browsers that accept it."
+      - "Every package added to `pubspec.yaml` can add code to `main.dart.js`, so the bundle size is worth checking whenever a dependency is added."
+      misconceptions:
+      - "A Flutter web app only downloads the Dart code I wrote, so a small app has a small bundle."
+      - "Compressing responses changes the files, so it can break the app."
+      - "Bundle size only matters on slow mobile networks, not for a desktop browser."
+      depth_notes: "Không dạy deferred loading, build wasm, chọn renderer, service worker/PWA hay CDN. Không nêu kích thước cụ thể của engine hay main.dart.js. Header cache HTTP chỉ nhắc — foundation.l1.http-caching. Web Vitals → frontend/stack-and-boundaries GĐ4."
+    - id: frontend.l3.offline-first
+      title:
+        vi: "Offline-first: hiện bản lưu trước, làm mới sau"
+        en: "Offline-first: show the saved copy, then refresh it"
+      main_path: true
+      duration_min: 15
+      skills: [frontend.offline.local-cache]
+      prereqs:
+      - frontend.l2.futureprovider-and-asyncvalue
+      - backend.l3.graceful-degradation
+      - backend.l2.cache-aside
+      related: [frontend.l3.rebuild-scope, foundation.l1.http-caching]
+      vocab: [offline-first, local-storage]
+      example_tag: stage-3
+      example_files:
+      - DonHang.App/lib/offline/local_store.dart
+      - DonHang.App/lib/providers.dart
+      - DonHang.App/lib/screens/product_list_screen.dart
+      - DonHang.App/test/offline_products_test.dart
+      outline:
+      - "A screen that shows only what the API returns has nothing to show while the API is unreachable, even if it showed the same list a minute earlier."
+      - "Offline-first means the app reads a copy kept on the device first and uses the network to refresh that copy, so the screen still works without a connection."
+      - "`localStorage` keeps string values by key for one site, survives a page reload and closing the tab, and holds only a limited amount set by the browser."
+      - "At stage-3 DonHang.App saves the product list to `localStorage` after each successful load; on start it shows the saved list at once and asks the API for a fresh one."
+      - "When the fresh load fails, the screen keeps the saved list and says it may be out of date, instead of showing a spinner or an error."
+      - "`localStorage` keeps data, not the app: opening DonHang.App with no network at all also needs the app's own files stored in the browser, which this module leaves out."
+      misconceptions:
+      - "Offline support is just a better error message when the request fails."
+      - "Data saved in localStorage stays correct until the user is back online."
+      - "Once the data is saved in the browser, the whole app works offline, a page reload included."
+      depth_notes: "Không dạy service worker/PWA, IndexedDB hay tính năng offline persistence thử nghiệm của Riverpod 3.0. Không lưu token hay dữ liệu nhạy cảm — bảo mật frontend. Hàng đợi ghi → frontend.l3.offline-order-queue. Không dạy lại cache-aside, TTL."
+    - id: frontend.l3.offline-order-queue
+      title:
+        vi: "Đơn đặt khi mất mạng nằm chờ trong hàng đợi trên máy"
+        en: "Orders placed offline wait in a queue on the device"
+      main_path: true
+      duration_min: 15
+      skills: [frontend.offline.sync]
+      prereqs:
+      - frontend.l3.offline-first
+      - frontend.l2.server-errors-in-forms
+      - backend.l2.idempotent-endpoints
+      - backend.l3.outbox-pattern
+      related: [backend.l3.dual-write]
+      vocab: [offline-queue]
+      example_tag: stage-3
+      example_files:
+      - DonHang.App/lib/offline/order_queue.dart
+      - DonHang.App/lib/api_client.dart
+      - DonHang.App/lib/screens/create_order_screen.dart
+      - DonHang.App/lib/screens/queued_orders_screen.dart
+      outline:
+      - "When the API cannot be reached, an offline-first app can keep a write, such as a new order, in an offline queue on the device and send it later instead of refusing it."
+      - "At stage-3 `ApiClient.createOrder` reports 'no answer from the API' separately: no response at all, or a `502`, `503` or `504` from the proxy in front of it."
+      - "Only 'no answer' puts the order in the queue; a `400` or `409` is the API's answer and is still shown in the form, as at stage-2."
+      - "Each queued order gets its `Idempotency-Key` when it enters the queue and keeps it on every later attempt, so a send whose answer was lost cannot create a second order."
+      - "The queue does on the device what an outbox does on the server: the intent is saved first, where a reload cannot lose it, and delivered afterwards."
+      - "A queued order is not placed yet: the queued orders screen shows it as waiting, with no order number, because only the API assigns one."
+      misconceptions:
+      - "If a request fails, the app should queue it and retry later, whatever the status code was."
+      - "A new Idempotency-Key for each attempt is safer, because the server cannot confuse one attempt with another."
+      - "Once an order is in the local queue, the app can tell the customer it has been placed."
+      depth_notes: "Không nói lúc nào gửi lại, 429/401 — frontend.l3.syncing-the-queue; giá đổi, sản phẩm mất — frontend.l3.sync-conflicts. Chỉ đặt đơn được xếp hàng; không hủy đơn offline. Không dạy lại idempotency key — backend.l2.idempotent-endpoints."
+    - id: frontend.l3.syncing-the-queue
+      title:
+        vi: "Gửi hàng đợi khi có mạng lại: từng đơn, đúng thứ tự, an toàn khi gửi lại"
+        en: "Sending the queue when the connection is back, one order at a time"
+      main_path: true
+      duration_min: 15
+      skills: [frontend.offline.sync]
+      prereqs: [frontend.l3.offline-order-queue, backend.l3.rate-limiting, frontend.l2.notifier-for-app-state]
+      related: [backend.l2.retry-with-backoff, backend.l3.retry-jitter, frontend.l2.route-guards]
+      vocab: []
+      example_tag: stage-3
+      example_files:
+      - DonHang.App/lib/offline/queue_sync.dart
+      - DonHang.App/lib/auth/token_subject.dart
+      - DonHang.App/test/queue_sync_test.dart
+      - scripts/frontend/offline.sh
+      outline:
+      - "At stage-3 DonHang.App sends its queue when it starts, when the browser reports it is back online, and when the customer taps 'Send now', one order at a time, oldest first."
+      - "The browser's online signal only means a network is there, not that the API answers, so each send can still find no answer and leave the order waiting."
+      - "An order leaves the waiting state only after the API has answered: `201` marks it sent with its order number, and a `400` marks it rejected with the problem's `detail`."
+      - "A send with no answer keeps the order waiting with the same `Idempotency-Key`, so if the first attempt did reach the API, the next one gets that same order back."
+      - "A `429` stops the sync until the `Retry-After` time has passed, and a `401` stops it until the customer signs in again, since a page reload loses the in-memory token."
+      - "Each entry records the `sub` of the customer who queued it, and the app sends it only with that customer's token, so another customer signing in on the same browser cannot place it."
+      misconceptions:
+      - "When the browser says it is online again, the API can be reached."
+      - "Sending every queued order at once, in parallel, is faster and just as safe."
+      - "A queued order that keeps failing should be deleted, so the queue does not get stuck."
+      depth_notes: "Không dùng Background Sync API hay service worker. Không backoff/jitter phía app — chỉ dừng và chờ lần kích hoạt sau. Không dạy lại rate limiting, Retry-After — backend.l3.rate-limiting. Xung đột giá → frontend.l3.sync-conflicts."
+    - id: frontend.l3.sync-conflicts
+      title:
+        vi: "Khi server không đồng ý với điều khách đã thấy lúc offline"
+        en: "When the server disagrees with what the customer saw offline"
+      main_path: true
+      duration_min: 14
+      skills: [frontend.offline.sync]
+      prereqs:
+      - frontend.l3.syncing-the-queue
+      - design.l3.one-way-module-dependencies
+      - backend.l3.eventual-consistency
+      related: [backend.l2.optimistic-concurrency, frontend.l2.server-errors-in-forms]
+      vocab: [sync-conflict, last-write-wins]
+      example_tag: stage-3
+      example_files:
+      - DonHang.App/lib/offline/queue_sync.dart
+      - DonHang.App/lib/screens/queued_orders_screen.dart
+      - DonHang.App/test/queue_sync_test.dart
+      - DonHang.Api/Controllers/OrdersController.cs
+      outline:
+      - "A sync conflict happens when a change made from an offline copy reaches a server whose data has changed since that copy was saved."
+      - "At stage-3 the API takes each item's price from Catalog and ignores the price the app sends, so a queued order is charged the current price, not the one in the saved list."
+      - "After a queued order is sent, DonHang.App compares the prices in the API's answer with the ones the customer saw and says so on the queued orders screen when they differ."
+      - "A queued order for a product that no longer exists gets `400`; it stays on the screen with the API's `detail` until the customer removes it, instead of disappearing."
+      - "Last-write-wins lets the newest write replace what is stored; it suits data only one person edits, not an order, where the server's rules on price must decide."
+      misconceptions:
+      - "A queued order is charged the price the customer saw, since that is what they agreed to."
+      - "Conflicts only happen when two people edit the same record at the same moment."
+      - "Last-write-wins is always safe, because the newest write is the most correct one."
+      depth_notes: "Không dạy CRDT, merge từng field hay hỏi khách chọn bản nào. Không đổi API: không endpoint mới, không giữ giá. Không dạy lại optimistic concurrency, eventual consistency — backend.l2.optimistic-concurrency, backend.l3.eventual-consistency."
