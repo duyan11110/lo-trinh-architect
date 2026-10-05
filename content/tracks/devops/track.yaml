@@ -133,6 +133,21 @@ skills:
     vi: "Module và môi trường trong OpenTofu"
     en: "OpenTofu modules and environments"
   prereqs: [devops.iac.declarative, devops.cd.delivery]
+- id: devops.gitops.pull-model
+  title:
+    vi: "GitOps: trạng thái mong muốn trong Git, agent trong cluster kéo về"
+    en: "GitOps: desired state in Git, pulled by an agent in the cluster"
+  prereqs: [devops.iac.state, k8s.config.running-the-system]
+- id: devops.gitops.sync
+  title:
+    vi: "Sync của Argo CD: trạng thái sync, health, thứ tự và hook"
+    en: "Argo CD sync: sync status, health, order and hooks"
+  prereqs: [devops.gitops.pull-model, k8s.config.probes, devops.cd.db-migrations]
+- id: devops.gitops.change-flow
+  title:
+    vi: "Deploy, quay lui và promote bằng commit"
+    en: "Deploying, rolling back and promoting by commit"
+  prereqs: [devops.gitops.sync, devops.release.publishing, devops.iac.modules-environments]
 levels:
 - level: 1
   title:
@@ -1265,3 +1280,233 @@ levels:
       - "`tofu apply -refresh-only` puts the infrastructure back the way the files describe it."
       - "If `tofu plan` shows a change nobody wrote, someone must have edited the `.tf` files."
       depth_notes: "Không dạy ignore_changes, tofu import. Đồng bộ liên tục từ Git — devops/gitops. Không dựng job drift theo lịch trong CI (CI không tới được state của lab), chỉ nêu ý."
+  - id: gitops
+    title:
+      vi: "GitOps với Argo CD"
+      en: "GitOps with Argo CD"
+    stage: 3
+    summary:
+      vi: "Để Argo CD trong cluster staging kéo manifest từ một repo cấu hình và giữ cluster khớp với nó: đọc trạng thái sync và health, đặt migration đúng thứ tự, deploy, quay lui và promote bằng commit thay vì lệnh kubectl."
+      en: "Let Argo CD in the staging cluster pull manifests from a config repository and keep the cluster matching it: read sync and health status, order the migration, and deploy, roll back and promote by commit instead of kubectl commands."
+    lessons:
+    - id: devops.l3.pull-based-deployment
+      title:
+        vi: "deploy.sh đẩy từ bên ngoài; GitOps để cluster tự kéo từ Git"
+        en: "deploy.sh pushes from outside; GitOps lets the cluster pull from Git"
+      main_path: true
+      duration_min: 13
+      skills: [devops.gitops.pull-model]
+      prereqs:
+      - devops.l3.configuration-drift
+      - k8s.l1.deploying-don-hang
+      - k8s.l1.control-plane-components
+      - devops.l2.deployment-environments
+      related: [k8s.l1.manifests-and-kubectl-apply, devops.l3.infrastructure-as-code]
+      vocab: [gitops, pull-based-deployment]
+      example_tag: stage-2
+      example_files: [scripts/k8s/deploy.sh, ".github/workflows/ci.yml", deploy/k8s/api.yaml]
+      outline:
+      - "At stage-2 someone runs `scripts/k8s/deploy.sh` on a machine with a kubeconfig, and kubectl pushes the manifests to the API server; whoever or whatever deploys must hold credentials that can change the cluster."
+      - "Keeping manifests in Git, as `deploy/k8s/` already does, is not GitOps on its own: nothing checks that the cluster still matches those files after the script has run."
+      - "GitOps keeps a cluster's desired state in a Git repository and runs an agent inside the cluster that pulls it and applies it, so a deploy is a commit, not a command."
+      - "In pull-based deployment the agent works as a control loop: it compares the repository with the live objects again and again, so drift is noticed without anyone running a plan."
+      - "With pull, CI needs write access to the repository instead of credentials for the cluster; the agent needs read access to the repository and rights inside its own cluster."
+      - "Pull adds a component to install, upgrade and watch; for one small cluster that one person deploys, a push script run from CI can be enough."
+      misconceptions:
+      - "Seniors often assume GitOps just means keeping the Kubernetes manifests in Git, which Đơn Hàng already does."
+      - "Seniors often assume a CI job that runs `kubectl apply` after every merge is GitOps."
+      - "Seniors often assume that 'pull' refers to the nodes pulling images from the registry."
+      depth_notes: "Không nói Argo CD cụ thể — bài argo-cd-applications. Không so sánh Argo CD với Flux hay công cụ khác. Không nói nhiều cluster, quyền RBAC chi tiết (k8s/security-and-policy). Không dạy lại drift của OpenTofu — devops.l3.configuration-drift."
+    - id: devops.l3.argo-cd-applications
+      title:
+        vi: "Một Application chỉ cho Argo CD thư mục nào của repo đi vào đâu"
+        en: "An Application tells Argo CD which repository folder goes where"
+      main_path: true
+      duration_min: 14
+      skills: [devops.gitops.pull-model]
+      prereqs: [devops.l3.pull-based-deployment, devops.l3.one-state-per-environment, k8s.l1.namespaces]
+      related: [devops.l3.remote-state-and-locking, devops.l2.cutting-a-release]
+      vocab: [argo-cd, argocd-application, config-repository]
+      example_tag: stage-3
+      example_files:
+      - scripts/devops/argocd-install.sh
+      - deploy/gitops/git-server.yaml
+      - scripts/devops/gitops-repo.sh
+      - deploy/gitops/lessons/staging-manual.yaml
+      outline:
+      - "Argo CD is a GitOps agent that runs as Pods in the namespace `argocd`; Đơn Hàng installs version 3.1 into `donhang-staging` by applying a copy of its install manifest kept under `deploy/argocd/`."
+      - "Argo CD cannot install itself: something outside it, here `scripts/devops/argocd-install.sh`, has to apply it first, and upgrading it means changing that pinned copy."
+      - "Installing Argo CD adds new kinds of objects to the API server, such as `Application`, which kubectl reads and applies like a Deployment."
+      - "An Application names a source, a repository URL, a revision and a folder, and a destination, a cluster and a namespace; `staging-manual.yaml` maps `envs/staging` of the config repository to `donhang`."
+      - "A config repository holds only manifests; Đơn Hàng's lives on a Git server that `gitops-repo.sh` starts inside `donhang-staging`, so the lab needs no account on an outside service."
+      misconceptions:
+      - "Seniors often assume Argo CD builds the images from the application's source code."
+      - "Seniors often assume Argo CD runs on the developer's machine and connects to the cluster, like kubectl."
+      - "Seniors often assume an Application is a running program, like a Deployment's Pods."
+      depth_notes: "Không nói giao diện web và CLI argocd (chỉ kubectl), cài HA, Argo CD tự quản lý chính nó, app of apps, ApplicationSet, Project, quyền repo riêng tư. Trạng thái sync và health — bài sau. Cách thêm object kiểu mới (CRD) — k8s/operators-and-cluster-lifecycle."
+    - id: devops.l3.synced-versus-healthy
+      title:
+        vi: "Synced nghĩa là khớp Git; Healthy mới nghĩa là chạy được"
+        en: "Synced means it matches Git; Healthy means it works"
+      main_path: true
+      duration_min: 14
+      skills: [devops.gitops.sync]
+      prereqs: [devops.l3.argo-cd-applications, k8s.l1.readiness-probes, k8s.l1.rolling-updates]
+      related: [k8s.l1.deploying-don-hang]
+      vocab: [argocd-sync, sync-status, argocd-health-status]
+      example_tag: stage-3
+      example_files:
+      - deploy/gitops/lessons/staging-manual.yaml
+      - scripts/devops/gitops-first-sync.sh
+      - deploy/gitops/config-repo/envs/staging/api.yaml
+      outline:
+      - "Argo CD compares the manifests at the Application's revision with the live objects; its sync status is `Synced` when they match and `OutOfSync` when any object differs or is missing."
+      - "A sync applies the manifests from Git to the cluster; an Application with no sync policy only reports `OutOfSync` and waits until someone starts a sync."
+      - "Health status is separate: right after a sync the api Deployment is `Synced` but `Progressing` until its new Pods are ready, then `Healthy`."
+      - "An Application's health is the worst health among the objects it manages, so one api Pod that never becomes ready keeps the whole Application from `Healthy`."
+      - "Argo CD manages only objects from its folder: the namespace `donhang` and its Secrets, made by OpenTofu's platform layer, are neither reported missing nor changed."
+      - "Argo CD rereads the repository on an interval; `gitops-first-sync.sh` asks for a refresh so the comparison happens at once."
+      misconceptions:
+      - "Seniors often assume `Synced` means the new version is up and serving requests."
+      - "Seniors often assume Argo CD deploys whatever it finds in the repository as soon as it is installed."
+      - "Seniors often assume Argo CD will delete the Secrets in `donhang` because they are not in Git."
+      depth_notes: "Không nói kiểm health tự viết (Lua), trạng thái Suspended/Missing chi tiết, ignoreDifferences, webhook từ Git server. Thứ tự sync và migration — bài ordering-a-sync; sync tự động — devops.l3.deploying-by-commit."
+    - id: devops.l3.ordering-a-sync
+      title:
+        vi: "Sync wave và hook cho migration chạy đúng lúc, không cần script"
+        en: "Sync waves and a hook run the migration at the right moment"
+      main_path: true
+      duration_min: 15
+      skills: [devops.gitops.sync]
+      prereqs:
+      - devops.l3.synced-versus-healthy
+      - devops.l2.migrations-in-the-pipeline
+      - k8s.l1.deploying-don-hang
+      related: [k8s.l1.health-endpoints]
+      vocab: [sync-wave, argocd-hook]
+      example_tag: stage-3
+      example_files:
+      - deploy/gitops/config-repo/envs/staging/migrate-hook.yaml
+      - deploy/gitops/config-repo/envs/staging/api.yaml
+      - deploy/gitops/config-repo/envs/staging/db.yaml
+      - scripts/devops/gitops-order.sh
+      outline:
+      - "`deploy.sh` gets its order from waiting between kubectl commands; with Argo CD no script runs, so the order has to be written into the manifests themselves."
+      - "Within a sync Argo CD orders objects by phase, then by sync wave (lower first, 0 by default), then by kind and name, and moves to the next wave only once the current one is healthy."
+      - "A hook is an object annotated `argocd.argoproj.io/hook` that Argo CD creates during a sync instead of keeping it in place; it may be any kind, and Đơn Hàng's is the migration Pod."
+      - "In Đơn Hàng's staging folder the database and other services are wave 0, the migration hook wave 1 and the api wave 2, so a failed migration stops the sync before the new api is applied."
+      - "`hook-delete-policy: BeforeHookCreation` deletes the previous migration Pod before the next sync creates it again, since two Pods cannot share one name."
+      - "The hook runs on every sync, also when only the api's replicas change, so the migration must be safe to repeat, as the bundle is: it skips migrations the database has recorded."
+      misconceptions:
+      - "Seniors often assume Argo CD applies the files in the order they are listed in the folder."
+      - "Seniors often assume a hook runs only when its own manifest changed."
+      - "Seniors often assume each api replica should migrate at startup now that no script orders the steps."
+      depth_notes: "Không nói Job (k8s GĐ3, sau module này), PostSync/SyncFail hook, hook xóa khi thành công, wave âm, timeout của hook. Không nói migration không downtime (GĐ4). Rollback migration — devops.l3.rollback-by-revert."
+    - id: devops.l3.deploying-by-commit
+      title:
+        vi: "Phiên bản mới tới staging qua một commit đổi tag, không qua lệnh"
+        en: "A new version reaches staging through a commit that changes a tag"
+      main_path: true
+      duration_min: 14
+      skills: [devops.gitops.change-flow]
+      prereqs:
+      - devops.l3.ordering-a-sync
+      - devops.l2.tagging-images-by-commit
+      - devops.l2.pushing-images-from-ci
+      related: [k8s.l1.deploying-an-image-tag, devops.l2.deployment-environments]
+      vocab: [automated-sync]
+      example_tag: stage-3
+      example_files:
+      - deploy/gitops/lessons/staging-auto.yaml
+      - deploy/gitops/config-repo/envs/staging/api.yaml
+      - scripts/devops/gitops-deploy.sh
+      outline:
+      - "With `syncPolicy.automated` Argo CD starts a sync by itself whenever the Application is `OutOfSync`, such as after a commit changes a manifest in its folder."
+      - "Deploying a new api version to staging is a commit that changes the image tag of the api and of the migration hook to a tag CI has already pushed to `ghcr.io`."
+      - "Argo CD does not watch the registry: an image pushed under a new tag reaches the cluster only when a commit names that tag."
+      - "At work the CI job that pushes the image would commit the new tag; in the lab `gitops-deploy.sh` makes that commit, since CI cannot reach the Git server inside your cluster."
+      - "`git log` of `envs/staging` lists every version staging was given, when and by whom, so anyone who can push there can change what runs and the repository must be protected like the cluster."
+      misconceptions:
+      - "Seniors often assume Argo CD notices a new image in the registry and deploys it by itself."
+      - "Seniors often assume GitOps still needs `kubectl apply`, only run by the pipeline instead of a person."
+      - "Seniors often assume pointing staging at `latest` would save writing a commit for every deploy."
+      depth_notes: "Không nói Argo CD Image Updater, webhook, tự commit từ GitHub Actions vào repo cấu hình, ký commit. Thay đổi làm thẳng trên cluster — devops.l3.self-heal. Không dạy lại tag sha- — devops.l2.tagging-images-by-commit."
+    - id: devops.l3.self-heal
+      title:
+        vi: "Self-heal: Argo CD tự gỡ thay đổi làm tay trên cluster"
+        en: "Self-heal: Argo CD undoes changes made to the cluster by hand"
+      main_path: true
+      duration_min: 13
+      skills: [devops.gitops.sync]
+      prereqs:
+      - devops.l3.deploying-by-commit
+      - devops.l3.configuration-drift
+      - devops.l3.tofu-state
+      - k8s.l1.deployments
+      related: [k8s.l1.manifests-and-kubectl-apply]
+      vocab: [self-heal]
+      example_tag: stage-3
+      example_files: [deploy/gitops/config-repo/apps/staging.yaml, scripts/devops/gitops-self-heal.sh]
+      outline:
+      - "Automated sync alone acts on changes in Git; a change made in the cluster, such as `kubectl scale` of the api to 4 replicas, leaves the Application `OutOfSync` but running that way."
+      - "With `selfHeal: true` Argo CD also syncs when the live objects drift from Git, so the api returns to the replicas its manifest declares shortly after the change."
+      - "Unlike OpenTofu, which finds drift only when someone runs a plan, Argo CD compares continuously; with self-heal a hand-made fix lasts only until it is written into Git."
+      - "Removing a manifest from Git deletes its object only when the policy also sets `prune: true`; without it the object keeps running and is shown as needing to be pruned."
+      - "`apps/staging.yaml`, the Application Đơn Hàng keeps, turns on automated sync, self-heal and prune, so the staging namespace's objects from the folder follow Git in both directions."
+      misconceptions:
+      - "Seniors often assume automated sync already reverts any change made with kubectl."
+      - "Seniors often assume deleting a file from the config repository deletes its object from the cluster in every case."
+      - "Seniors often assume self-heal makes emergency fixes with kubectl safe, since Git can catch up later."
+      depth_notes: "Không nói ignoreDifferences cho trường do controller khác sửa (vd autoscaler, k8s GĐ3), timeout self-heal, prune theo từng object, quyền sửa trực tiếp cluster (RBAC — k8s/security-and-policy). Không dạy lại drift của OpenTofu."
+    - id: devops.l3.rollback-by-revert
+      title:
+        vi: "Quay lui với GitOps là git revert, không phải kubectl rollout undo"
+        en: "Rolling back with GitOps is git revert, not kubectl rollout undo"
+      main_path: true
+      duration_min: 14
+      skills: [devops.gitops.change-flow]
+      prereqs: [devops.l3.self-heal, k8s.l1.rollbacks, foundation.l2.git-history-and-recovery]
+      related: [devops.l3.ordering-a-sync]
+      vocab: []
+      example_tag: stage-3
+      example_files: [scripts/devops/gitops-revert.sh, deploy/gitops/config-repo/envs/staging/api.yaml]
+      outline:
+      - "A commit that sets the api's tag to one missing from the registry is synced like any other: the new Pod cannot pull its image, both old api Pods keep serving, and the Application is `Synced` but not `Healthy`."
+      - "With self-heal on, `kubectl rollout undo` does not last: the live Deployment no longer matches Git, so Argo CD applies the bad tag again."
+      - "Argo CD's own rollback to an earlier sync is refused while automated sync is on, so the way back goes through the repository."
+      - "`git revert` adds a commit that undoes the bad one; once it is pushed, Argo CD syncs the previous tag back, and the history keeps both the mistake and its fix."
+      - "A revert restores manifests, not data: migrations a hook has already applied stay in the database, so going back past a schema change needs the older api to work with the newer schema."
+      misconceptions:
+      - "Seniors often assume `kubectl rollout undo` is still the quickest safe fix when Argo CD manages the Deployment."
+      - "Seniors often assume the cleanest rollback is resetting the branch to the last good commit and force-pushing."
+      - "Seniors often assume reverting the deploy commit also rolls the database back."
+      depth_notes: "Không nói migration ngược hay expand/contract (GĐ4), rollback tự động hoặc canary (devops GĐ4), tắt automated sync tạm thời để chữa cháy. Không dạy lại git revert — foundation.l2.git-history-and-recovery."
+    - id: devops.l3.promoting-between-environments
+      title:
+        vi: "Promote lên production là commit chép đúng tag staging đã chạy"
+        en: "Promoting to production is a commit that copies staging's tag"
+      main_path: true
+      duration_min: 13
+      skills: [devops.gitops.change-flow]
+      prereqs:
+      - devops.l3.rollback-by-revert
+      - devops.l3.one-state-per-environment
+      - devops.l2.cutting-a-release
+      related: [devops.l2.deployment-environments, management.l1.code-review-basics]
+      vocab: [environment-promotion]
+      example_tag: stage-3
+      example_files:
+      - deploy/gitops/config-repo/envs/production/api.yaml
+      - deploy/gitops/config-repo/envs/staging/api.yaml
+      - scripts/devops/gitops-promote.sh
+      outline:
+      - "`envs/staging` and `envs/production` each hold a full set of manifests; they differ only in values such as the number of api replicas and the image tag."
+      - "Promotion is a commit to `envs/production` that sets the tag staging already runs, so production gets the very image staging checked, with no rebuild."
+      - "Opening that commit as a pull request lets review and required checks decide when production changes, the role the environment's protection rule played for the CI `staging` job."
+      - "Keeping a full copy per environment means a change meant for both, such as a new probe, must be made twice, and a forgotten copy makes the environments differ unnoticed."
+      - "In the lab nothing syncs production: OpenTofu only plans that cluster, so `gitops-promote.sh` shows the commit and its diff, not a rollout."
+      misconceptions:
+      - "Seniors often assume promoting to production means building the image again from the tagged commit."
+      - "Seniors often assume each environment needs its own long-lived branch, and promoting means merging one branch into the next."
+      - "Seniors often assume staging and production may share one folder as long as they run in different clusters."
+      depth_notes: "Không nói Kustomize/Helm để dựng môi trường từ một base chung (k8s/ingress-helm), một Argo CD quản lý nhiều cluster, promote tự động, canary (GĐ4). Không dạy lại tag phát hành — devops.l2.cutting-a-release."
