@@ -168,6 +168,25 @@ skills:
     vi: "RPO/RTO, kiểm thử khôi phục và diễn tập DR"
     en: "RPO and RTO, restore tests and DR drills"
   prereqs: [devops.backup.postgresql, devops.secrets.sealing, devops.iac.state]
+- id: devops.supply-chain.inputs
+  title:
+    vi: "Ghim và cập nhật mọi đầu vào của bản build"
+    en: "Pinning and updating every input of a build"
+  prereqs: [devops.ci.cache-and-artifacts, devops.release.registry]
+- id: devops.supply-chain.inventory
+  title:
+    vi: "SBOM và quét lỗ hổng cho image"
+    en: "SBOMs and vulnerability scans for images"
+  prereqs: [devops.supply-chain.inputs, devops.ci.quality-gate]
+- id: devops.supply-chain.trust
+  title:
+    vi: "Ký image, provenance và chỉ deploy image đã xác minh"
+    en: "Image signing, provenance and deploying only verified images"
+  prereqs:
+  - devops.supply-chain.inputs
+  - devops.release.publishing
+  - devops.gitops.change-flow
+  - backend.auth.oidc
 levels:
 - level: 1
   title:
@@ -1750,3 +1769,232 @@ levels:
       - "Seniors often assume a reviewed, written recovery plan works without ever being run."
       - "Seniors often assume a backup of the cluster's objects includes the keys needed to read them."
       depth_notes: "Không dạy backup etcd hay Velero (k8s GĐ3), dữ liệu trên PV (k8s/state-and-storage), failover tự động, multi-region, runbook/on-call (devops/incidents GĐ4). Dữ liệu staging khởi tạo lại từ seed, không restore."
+  - id: supply-chain
+    title:
+      vi: "Bảo mật chuỗi cung ứng phần mềm"
+      en: "Software supply chain security"
+    stage: 3
+    summary:
+      vi: "Ghim mọi đầu vào của image bằng hash và để Dependabot đề xuất bản mới, liệt kê thành phần bằng SBOM và quét lỗ hổng, ký image trong CI kèm provenance, và chỉ deploy digest đã xác minh."
+      en: "Pin every input of Đơn Hàng's images by hash and let Dependabot propose updates, list their contents in an SBOM and scan it, sign images with provenance in CI, and deploy only digests that verify."
+    lessons:
+    - id: devops.l3.software-supply-chain
+      title:
+        vi: "Image của bạn phần lớn là code người khác viết"
+        en: "Your image is mostly code you never wrote: the supply chain"
+      main_path: true
+      duration_min: 12
+      skills: [devops.supply-chain.inputs]
+      prereqs:
+      - devops.l2.cutting-a-release
+      - devops.l2.pushing-images-from-ci
+      - devops.l2.dependency-cache
+      - devops.l1.multi-stage-builds
+      related: [devops.l3.deploying-by-commit, devops.l2.image-tags-and-digests]
+      vocab: [software-supply-chain]
+      example_tag: stage-2
+      example_files:
+      - DonHang.Api/Dockerfile
+      - Directory.Packages.props
+      - ".github/workflows/ci.yml"
+      - DonHang.App/pubspec.yaml
+      outline:
+      - "A software supply chain is every input that goes into what you ship, such as packages, base images, build tools and CI actions, plus the steps that turn them into it."
+      - "At stage-2 the api image holds Đơn Hàng's code, the NuGet packages in `Directory.Packages.props`, the packages those depend on, and everything in `mcr.microsoft.com/dotnet/aspnet:10.0`, including OS packages."
+      - "`ci.yml` runs actions written by others, such as `actions/checkout@v4` and `subosito/flutter-action@v2`, as code inside its jobs, with access to what each job has."
+      - "The `publish` job is granted `packages: write`, so any code that job runs could push an image to `ghcr.io` under Đơn Hàng's name."
+      - "Whoever controls one input, a package release, a base image tag or an action tag, can put code into the image without any commit to Đơn Hàng's repository."
+      - "The defences in this module answer three questions: is each input the one you reviewed, what is inside the image and is any of it known to be vulnerable, and was the running image built by your pipeline."
+      misconceptions:
+      - "Seniors often assume supply-chain security means checking the final image for known vulnerabilities."
+      - "Seniors often assume a package from a well-known registry such as nuget.org cannot contain malicious code."
+      - "Seniors often assume a third-party GitHub Action can touch only the files on the runner it runs on."
+      depth_notes: "Chỉ mô tả và vạch rủi ro ở stage-2; cách chống — các bài sau của module. Không nêu tên/ngày vụ tấn công có thật. Không nói lỗ hổng trong code của chính Đơn Hàng (SAST, review bảo mật) hay quyền mặc định của GITHUB_TOKEN theo cài đặt repo."
+    - id: devops.l3.pinning-by-content
+      title:
+        vi: "Ghim mọi đầu vào bằng hash nội dung, không bằng cái tên có thể dời"
+        en: "Pin every input by its content hash, not by a name that can move"
+      main_path: true
+      duration_min: 15
+      skills: [devops.supply-chain.inputs]
+      prereqs:
+      - devops.l3.software-supply-chain
+      - devops.l2.image-tags-and-digests
+      - devops.l3.opentofu-resources
+      - devops.l2.dependency-cache
+      related: [k8s.l1.cluster-nodes-and-control-plane, devops.l1.dockerfile-for-dotnet]
+      vocab: [lock-file, transitive-dependency]
+      example_tag: stage-3
+      example_files:
+      - Directory.Build.props
+      - DonHang.Api/packages.lock.json
+      - DonHang.Api/Dockerfile
+      - ".github/workflows/ci.yml"
+      outline:
+      - "A name such as a version range, an action tag like `@v4` or an image tag like `aspnet:10.0` can lead to different content later; pinning names the content itself, by a hash."
+      - "A lock file records the exact version and a content hash of every package, direct and transitive: `DonHang.App/pubspec.lock` has done so since stage-2, and from stage-3 each .NET project has a `packages.lock.json`."
+      - "CI restores with `dotnet restore --locked-mode` and `flutter pub get --enforce-lockfile`, which fail instead of resolving something new, so a change to the packages must arrive as a reviewed change to a lock file."
+      - "From stage-3 every `uses:` in Đơn Hàng's workflows names a full commit id with the version in a comment, because a tag such as `v4` is a Git tag its owner can move."
+      - "`DonHang.Api/Dockerfile` names its base images by digest, as `kind-config.yaml` already did for the node image, so a rebuild months later starts from the same base layers."
+      - "Pinning stops silent change but also stops fixes from arriving: every update becomes a change someone must make on purpose."
+      misconceptions:
+      - "Seniors often assume a version tag of a GitHub Action such as `v4` always runs the same code."
+      - "Seniors often assume a lock file is generated output that does not belong in Git."
+      - "Seniors often assume a lock file protects against a malicious package, rather than keeping whatever was locked."
+      depth_notes: "Không dạy version range/floating version của NuGet, central transitive pinning, nhiều package source, build tái lập từng bit, ghim gói apt trong Dockerfile. Cập nhật bản ghim — devops.l3.automated-dependency-updates. Không dạy lại digest — devops.l2.image-tags-and-digests."
+    - id: devops.l3.automated-dependency-updates
+      title:
+        vi: "Đầu vào đã ghim cần cập nhật: Dependabot mở pull request đề xuất"
+        en: "Pinned inputs need updates, and Dependabot proposes them as PRs"
+      main_path: true
+      duration_min: 13
+      skills: [devops.supply-chain.inputs]
+      prereqs: [devops.l3.pinning-by-content, devops.l2.quality-gate, devops.l2.semantic-versioning]
+      related: [management.l1.code-review-basics]
+      vocab: [dependabot]
+      example_tag: stage-3
+      example_files: [".github/dependabot.yml", ".github/workflows/ci.yml"]
+      outline:
+      - "Dependabot is a GitHub service that reads `.github/dependabot.yml` and opens a pull request when a newer version of a dependency exists; Đơn Hàng's file covers NuGet, pub, GitHub Actions and Docker base images."
+      - "A Dependabot pull request changes the pin itself, such as a lock file, an action's commit id or a base image digest, so the change is visible in review like any other."
+      - "Each update arrives as a pull request, so it must pass the same CI checks as any other change before it can be merged."
+      - "`groups` combines matching updates into one pull request; Đơn Hàng groups minor and patch updates per ecosystem and checks weekly, so the pull requests stay few enough to read."
+      - "A `cooldown` makes Dependabot wait a set number of days after a release before proposing it, so a malicious release that is found and removed quickly never reaches a pull request."
+      - "Dependabot runs only on GitHub, so the lab cannot run it; its configuration lives in the repository like the workflows."
+      misconceptions:
+      - "Seniors often assume Dependabot only opens pull requests for packages with known vulnerabilities."
+      - "Seniors often assume merging every Dependabot pull request without review is safe, since the bot only proposes official releases."
+      - "Seniors often assume automated updates make pinning pointless, so version ranges would do just as well."
+      depth_notes: "Không dạy Renovate (chưa có trong versions.yaml), auto-merge, Dependabot alerts/security updates chi tiết, registry riêng, cài đặt trong GitHub settings. Không nêu số ngày cooldown như khuyến nghị chung."
+    - id: devops.l3.software-bill-of-materials
+      title:
+        vi: "SBOM liệt kê mọi thành phần thật sự nằm trong image"
+        en: "An SBOM lists every component that is actually inside the image"
+      main_path: true
+      duration_min: 13
+      skills: [devops.supply-chain.inventory]
+      prereqs: [devops.l3.pinning-by-content, devops.l2.building-images-in-ci, devops.l2.workflow-artifacts]
+      related: [devops.l1.multi-stage-builds]
+      vocab: [sbom]
+      example_tag: stage-3
+      example_files: [scripts/devops/sbom.sh, ".github/workflows/ci.yml"]
+      outline:
+      - "A software bill of materials (SBOM) is a machine-readable list of the components inside a piece of software, each with its name, version and kind, such as a NuGet package or an OS package."
+      - "Syft reads a built image and writes its SBOM; `sbom.sh` runs it on the api image and shows OS packages from the base image next to the NuGet packages inside the published app."
+      - "The project files list only the packages Đơn Hàng asked for; the SBOM of the image also shows transitive dependencies and whatever the base image brought."
+      - "Đơn Hàng writes SBOMs in the CycloneDX JSON format, a published standard, so other tools can read the list without the image."
+      - "CI makes the SBOM in the `image` job from the exact image it built and keeps it as an artifact of the run, so the list describes what runs, not what the source declares."
+      - "An SBOM records what is inside, not whether it is safe; it pays off when a new vulnerability is published and you must find which images hold the affected version."
+      misconceptions:
+      - "Seniors often assume `Directory.Packages.props` and `pubspec.lock` together already are the SBOM of the api image."
+      - "Seniors often assume an image that has an SBOM has been checked for vulnerabilities."
+      depth_notes: "Không so sánh chi tiết CycloneDX với SPDX, không dạy VEX, license compliance, SBOM của DonHang.App. Quét lỗ hổng — bài sau. Gắn SBOM vào image trong registry — devops.l3.build-provenance."
+    - id: devops.l3.vulnerability-scanning
+      title:
+        vi: "Kết quả quét lỗ hổng chỉ mới bằng cơ sở dữ liệu đứng sau nó"
+        en: "A vulnerability scan is only as current as its database"
+      main_path: true
+      duration_min: 15
+      skills: [devops.supply-chain.inventory]
+      prereqs:
+      - devops.l3.software-bill-of-materials
+      - devops.l2.quality-gate
+      - devops.l3.automated-dependency-updates
+      related: [devops.l3.restore-testing]
+      vocab: [cve, vulnerability-scanner]
+      example_tag: stage-3
+      example_files: [scripts/devops/scan-image.sh, ".grype.yaml", ".github/workflows/ci.yml"]
+      outline:
+      - "A vulnerability scanner matches each component's name and version against a database of published vulnerabilities, each known by a CVE id, with a severity and, when one exists, the version that fixes it."
+      - "`dotnet restore` checks NuGet packages against known vulnerabilities, but only NuGet packages; Grype scans the whole SBOM, OS packages from the base image included."
+      - "A scan's result depends on the database on the day it runs: the same image can scan clean today and show a critical finding next month, so a scan at build time says nothing about later."
+      - "Đơn Hàng's `image` job fails when Grype finds a High or Critical vulnerability that has a fixed version (`--fail-on high --only-fixed`), so the pipeline blocks only what an update can fix."
+      - "A finding that does not apply to Đơn Hàng is listed in `.grype.yaml` with a comment giving the reason, so the next reader sees why it was accepted instead of finding it silently gone."
+      - "A scanner finds only vulnerabilities already published; it says nothing about a malicious package nobody has reported, which pinning, cooldowns and signatures address."
+      misconceptions:
+      - "Seniors often assume an image that passed the scan in CI stays free of known vulnerabilities while it runs."
+      - "Seniors often assume every finding must be fixed before a release, or the scan is pointless."
+      - "Seniors often assume a clean scan means the image contains no malicious code."
+      depth_notes: "Không dạy reachability analysis, VEX, quét code nguồn (SAST), quét secret, tự dựng DB lỗ hổng. Quét lại định kỳ image đang chạy chỉ nêu ý (không có job theo lịch). Output quét đổi theo ngày — bài không khẳng định số finding."
+    - id: devops.l3.signing-images
+      title:
+        vi: "Chữ ký gắn digest của image với pipeline đã build ra nó"
+        en: "A signature ties an image digest to the pipeline that built it"
+      main_path: true
+      duration_min: 16
+      skills: [devops.supply-chain.trust]
+      prereqs:
+      - devops.l3.software-supply-chain
+      - devops.l2.image-tags-and-digests
+      - backend.l2.validating-provider-tokens
+      - devops.l2.cutting-a-release
+      related: [backend.l2.openid-connect-id-token, devops.l3.sealed-secrets]
+      vocab: [image-signature, cosign, keyless-signing, transparency-log]
+      example_tag: stage-3
+      example_files: [".github/workflows/ci.yml", ".github/workflows/release.yml", scripts/devops/verify-image.sh]
+      outline:
+      - "A digest says exactly which image you have, not who made it: anyone who can push to a name can push another image, and that image's digest is just as valid."
+      - "An image signature is a signature over an image's digest; checking it proves the image is exactly the one the holder of the signing key signed."
+      - "In keyless signing, Cosign in the `publish` job proves the job's identity with an ID token from GitHub, gets a short-lived certificate for that identity, signs, and discards the private key."
+      - "Each keyless signature is recorded in a public transparency log, which lets a verifier confirm the signing happened while the short-lived certificate was valid."
+      - "`release.yml` only adds a version tag to a digest CI already signed, so a release carries CI's signature without signing again."
+      - "Anyone can get a valid keyless signature for their own identity, so `verify-image.sh` accepts only a certificate issued to `ci.yml` on `master` of Đơn Hàng's repository."
+      misconceptions:
+      - "Seniors often assume pinning an image by digest already proves who built it."
+      - "Seniors often assume `cosign verify` passing on any valid signature proves the image came from their own pipeline."
+      - "Seniors often assume giving an already signed image a release tag means signing it again."
+      depth_notes: "Không dạy ký bằng cặp khóa tự quản lý hay KMS, tự dựng hạ tầng ký, ký commit/tag git, chi tiết CA và log của Sigstore. Provenance — devops.l3.build-provenance; chặn image chưa ký khi deploy — devops.l3.verifying-before-deploy."
+    - id: devops.l3.build-provenance
+      title:
+        vi: "Provenance ghi commit và workflow nào đã build ra image"
+        en: "Build provenance records which commit and workflow built an image"
+      main_path: true
+      duration_min: 15
+      skills: [devops.supply-chain.trust]
+      prereqs:
+      - devops.l3.signing-images
+      - devops.l3.software-bill-of-materials
+      - devops.l2.tagging-images-by-commit
+      related: [devops.l2.continuous-integration]
+      vocab: [attestation, build-provenance, slsa]
+      example_tag: stage-3
+      example_files: [".github/workflows/ci.yml", scripts/devops/verify-image.sh]
+      outline:
+      - "An attestation is a signed statement about a digest: a signature says who vouches for an image, an attestation also says what they state about it."
+      - "Build provenance is an attestation of how an image was built: the repository, the commit, the workflow and the event that started the run."
+      - "The `publish` job attests provenance with `actions/attest-build-provenance` for each pushed digest, granted `id-token: write` and `attestations: write`, and stores it in the registry beside the image."
+      - "`verify-image.sh` checks that the provenance names Đơn Hàng's repository and `ci.yml`; the `1.0.0` image, built before stage-3, has no attestation and fails."
+      - "SLSA grades build integrity in levels: provenance exists (Build L1), is signed by a hosted build platform (L2), and comes from a platform that keeps the build's steps away from the signing key (L3); Đơn Hàng's is L2."
+      - "The SBOM from the `image` job is attested the same way, so anyone who holds the digest can fetch a signed list of what the image contains."
+      misconceptions:
+      - "Seniors often assume an image signature already tells them which commit the image was built from."
+      - "Seniors often assume provenance proves the source code at that commit is free of malicious changes."
+      - "Seniors often assume SLSA is a tool you install in the pipeline."
+      depth_notes: "Không dạy SLSA Build L3 (reusable workflow), source track, định dạng in-toto chi tiết, policy theo từng trường provenance. Chặn khi deploy — devops.l3.verifying-before-deploy."
+    - id: devops.l3.verifying-before-deploy
+      title:
+        vi: "Xác minh ngay trên đường deploy, rồi deploy đúng digest đã xác minh"
+        en: "Verify where the deploy happens, then deploy the verified digest"
+      main_path: true
+      duration_min: 15
+      skills: [devops.supply-chain.trust]
+      prereqs: [devops.l3.build-provenance, devops.l3.deploying-by-commit, devops.l2.image-tags-and-digests]
+      related: [k8s.l1.deploying-an-image-tag, devops.l3.self-heal]
+      vocab: []
+      example_tag: stage-3
+      example_files:
+      - scripts/devops/deploy-verified.sh
+      - scripts/devops/verify-image.sh
+      - deploy/gitops/config-repo/envs/staging/api.yaml
+      outline:
+      - "A verification protects nothing unless it sits on the path every deploy takes; in the lab that path is the commit that changes the image in `envs/staging`."
+      - "`deploy-verified.sh` resolves a `sha-` tag to its digest, verifies the signature and provenance of that digest, and only then commits; for the unsigned `1.0.0` it stops before committing anything."
+      - "The commit names the image as `tag@sha256:…`; with a digest present the node pulls by digest, so what runs is what was verified even if the tag is later moved."
+      - "Argo CD 3.1 syncs whatever image a manifest names without checking signatures, so anyone who can push to the config repository can still deploy an unsigned image."
+      - "Enforcing the rule for every Pod needs a check inside the cluster that rejects unverified images when a Pod is created, which this module does not install."
+      - "`deploy-verified.sh` stops when verification cannot complete, such as without network access, instead of deploying unverified; who may bypass it in an emergency must be decided in advance."
+      misconceptions:
+      - "Seniors often assume that once CI signs every image, an unsigned image can no longer be deployed."
+      - "Seniors often assume Argo CD refuses to sync an image whose signature does not verify."
+      - "Seniors often assume a tag that was verified yesterday still names the verified image today."
+      depth_notes: "Không cài admission controller/policy engine (k8s/security-and-policy), không dạy RBAC của repo cấu hình, ký commit, Argo CD Image Updater. Không dạy lại deploy bằng commit — devops.l3.deploying-by-commit."
