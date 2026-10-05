@@ -227,6 +227,21 @@ skills:
     vi: "Nối log với trace bằng trace id"
     en: "Tying logs to traces by their trace id"
   prereqs: [backend.observability.tracing, devops.monitoring.logs]
+- id: backend.resilience.failure-modes
+  title:
+    vi: "Nhận ra cách lỗi của một phụ thuộc lan ra và chọn trước phần được hạ cấp"
+    en: "Recognise how a dependency's failure spreads and choose in advance what degrades"
+  prereqs: [backend.jobs.reliability, backend.cache.cache-aside]
+- id: backend.resilience.call-policies
+  title:
+    vi: "Bọc lời gọi ra ngoài bằng timeout, jitter và circuit breaker"
+    en: "Wrap outgoing calls with timeouts, jitter and a circuit breaker"
+  prereqs: [backend.resilience.failure-modes, backend.sagas.steps]
+- id: backend.resilience.load-limits
+  title:
+    vi: "Giới hạn tải bằng rate limiting và bulkhead"
+    en: "Limit load with rate limiting and bulkheads"
+  prereqs: [backend.resilience.failure-modes, backend.http.middleware]
 levels:
 - level: 1
   title:
@@ -2348,3 +2363,247 @@ levels:
       - "Payments and Notifications are fine as long as their containers are running."
       - "The number of messages in a queue is a counter, so I should read it with `rate()`."
       depth_notes: "Không dạy alert rule hay gửi cảnh báo khi dead-letter queue có message — GĐ4 (devops/incidents); không dạy thời gian chờ của từng message, prefetch, số consumer — ngoài module. Không dạy lại gauge, scrape — devops/monitoring-basics."
+  - id: resilience
+    title:
+      vi: "Resilience: vẫn chạy khi một phụ thuộc hỏng"
+      en: "Resilience: staying up when a dependency fails"
+    stage: 3
+    summary:
+      vi: "Giữ Đơn Hàng trả lời được khi Redis, mail server hay cổng thanh toán chậm hoặc sập: đặt timeout cho mọi lần chờ, chọn trước phần được hạ cấp, rải lần thử lại bằng jitter, bọc lời gọi cổng thanh toán trong resilience pipeline có circuit breaker, và chặn tải bằng rate limiting và bulkhead."
+      en: "Keep Đơn Hàng answering when Redis, the mail server or the payment gateway is slow or down: bound every wait with a timeout, choose in advance what degrades, spread retries with jitter, wrap gateway calls in a resilience pipeline with a circuit breaker, and cap load with rate limits and bulkheads."
+    lessons:
+    - id: backend.l3.slow-dependencies
+      title:
+        vi: "Phụ thuộc chậm gây hại nhiều hơn phụ thuộc đã sập"
+        en: "A slow dependency does more harm than one that is down"
+      main_path: true
+      duration_min: 13
+      skills: [backend.resilience.failure-modes]
+      prereqs: [backend.l2.cache-aside, backend.l2.cache-stampede, foundation.l1.threads-and-async-intro]
+      related: [foundation.l1.tcp-vs-udp, backend.l3.queue-backlog-metrics]
+      vocab: [cascading-failure]
+      example_tag: stage-3
+      example_files:
+      - scripts/backend/slow-dependency.sh
+      - DonHang.Catalog/ProductCache.cs
+      - DonHang.Catalog/CatalogModule.cs
+      - docker-compose.yml
+      outline:
+      - "A dependency that is down usually fails at once, for example with a refused connection, while one that accepts the call but answers late or never keeps the caller waiting."
+      - "A waiting request still holds what it took: async code frees the thread, but the client's connection, the request's memory and any database connection it opened stay taken until the wait ends."
+      - "When requests start waiting faster than they finish, they pile up until a shared limit runs out, and requests that never use the slow dependency start to fail too: a cascading failure."
+      - "Đơn Hàng connects to Redis with `abortConnect=false` and `BacklogPolicy.FailFast`, so while Redis is unreachable each Redis command fails at once and `ProductCache` reads PostgreSQL instead."
+      - "`slow-dependency.sh` reads product 3 with Redis stopped, which answers quickly, then with Redis paused, which keeps the connection open without answering, and the same read takes seconds."
+      misconceptions:
+      - "The worst thing a dependency can do is go down completely."
+      - "With async/await, a request that waits on a slow call costs the server nothing."
+      - "A slow dependency only slows its own feature; the rest of the app is not affected."
+      depth_notes: "Không dạy đặt timeout — backend.l3.timeouts; circuit breaker, bulkhead — các bài sau trong module. Không đo hay cấu hình connection pool của Npgsql. Không dạy lại cache-aside, SemaphoreSlim theo key — backend.l2.cache-aside, backend.l2.cache-stampede."
+    - id: backend.l3.timeouts
+      title:
+        vi: "Timeout quyết định một lời gọi được bắt bạn chờ bao lâu"
+        en: "A timeout decides how long a call may keep you waiting"
+      main_path: true
+      duration_min: 12
+      skills: [backend.resilience.call-policies]
+      prereqs: [backend.l3.slow-dependencies, backend.l2.retry-with-backoff, backend.l2.at-least-once-jobs]
+      related: [design.l2.adapter-pattern, foundation.l1.tcp-vs-udp]
+      vocab: []
+      example_tag: stage-2
+      example_files:
+      - DonHang.Infrastructure/MailKitEmailSender.cs
+      - DonHang.Api/Jobs/NotificationSender.cs
+      - docker-compose.yml
+      outline:
+      - "A timeout is the longest a caller waits for an answer; when it passes, the caller stops waiting and treats the call as failed."
+      - "`MailKitEmailSender` sets `Timeout = 10_000` on MailKit's `SmtpClient`, so a network operation with the mail server that gets no answer for 10 seconds throws, and `NotificationSender` records a failed attempt."
+      - "`NotificationSender` sends the emails of a batch one after another, so one send stuck until its timeout delays every email after it in that batch."
+      - "Each library that talks over the network has its own timeout setting and default: Đơn Hàng sets the SMTP one in code and leaves Redis at the StackExchange.Redis default."
+      - "A timeout ends the wait, not the work: the mail server may still deliver an email whose send timed out, which is why a retry can send it twice."
+      misconceptions:
+      - "Without a timeout, a call to a broken server still fails by itself sooner or later."
+      - "A longer timeout is always safer, because fewer calls end in an error."
+      - "The library's default timeout was chosen for my app, so I never need to look at it."
+      depth_notes: "Không nêu giá trị mặc định cụ thể của từng thư viện. Timeout cho HttpClient qua resilience pipeline — backend.l3.resilience-pipeline. Không dạy lại at-least-once, backoff — backend.l2.at-least-once-jobs, backend.l2.retry-with-backoff."
+    - id: backend.l3.graceful-degradation
+      title:
+        vi: "Với từng phụ thuộc, quyết trước phần nào vẫn chạy khi nó hỏng"
+        en: "Decide for each dependency what still works without it"
+      main_path: true
+      duration_min: 13
+      skills: [backend.resilience.failure-modes]
+      prereqs:
+      - backend.l3.timeouts
+      - backend.l2.cache-aside
+      - k8s.l1.health-endpoints
+      - backend.l2.database-job-queue
+      related: [backend.l3.eventual-consistency, k8s.l1.readiness-probes]
+      vocab: [graceful-degradation]
+      example_tag: stage-2
+      example_files:
+      - DonHang.Api/Program.cs
+      - DonHang.Infrastructure/ProductCache.cs
+      - DonHang.Infrastructure/QueuedNotifier.cs
+      - scripts/backend/cache-aside.sh
+      outline:
+      - "Graceful degradation means that when a dependency fails, the system keeps its most important functions and loses only what needs that dependency, in a way chosen in advance."
+      - "At stage-2 PostgreSQL is required: the `/health/ready` check needs a database connection, so the API reports itself not ready when PostgreSQL is unreachable."
+      - "Redis is optional: `ProductCache` treats any Redis error as a miss and reads PostgreSQL, and `Program.cs` leaves Redis out of the ready check on purpose."
+      - "The mail server is deferred: placing an order only saves a `pending` notification row, so orders keep working while their emails wait for the mail server."
+      - "A fallback moves load somewhere else: with Redis down, every product read becomes a PostgreSQL query, so the fallback is only safe while PostgreSQL can carry that load."
+      misconceptions:
+      - "If any dependency fails, the honest thing is for the whole API to report itself not ready."
+      - "A fallback costs nothing, because it only runs when something is already broken."
+      - "Graceful degradation means catching every exception and returning an empty result."
+      depth_notes: "Không dạy lại cache-aside, health endpoint, job queue — backend.l2.cache-aside, k8s.l1.health-endpoints, backend.l2.database-job-queue. Giới hạn tải dồn lên PostgreSQL — backend.l3.bulkhead. Payments/Notifications khi tách service — backend.l3.eventual-consistency."
+    - id: backend.l3.retry-jitter
+      title:
+        vi: "Jitter rải các lần thử lại để chúng không ập về cùng lúc"
+        en: "Jitter spreads retries so they do not come back in waves"
+      main_path: true
+      duration_min: 12
+      skills: [backend.resilience.call-policies]
+      prereqs:
+      - backend.l3.safe-to-repeat-saga-steps
+      - backend.l2.retry-with-backoff
+      - backend.l3.slow-dependencies
+      related: [backend.l2.cache-stampede, backend.l3.timeouts]
+      vocab: [jitter]
+      example_tag: stage-3
+      example_files:
+      - DonHang.Payments/RefundSender.cs
+      - DonHang.Tests/Payments/RefundSenderTests.cs
+      - scripts/backend/retry-jitter.sh
+      outline:
+      - "When the gateway fails, every refund that failed at that moment gets the same backoff, so they all come due together and reach the recovering gateway in one burst."
+      - "Jitter is a random part added to each wait, so retries that failed together come back spread over a span of time instead of at one moment."
+      - "At stage-3 `RefundSender` picks each wait at random between half of the backoff delay and the full delay, so the waits still grow with every attempt."
+      - "`RefundSenderTests` checks that each computed wait falls inside that range, because a random wait cannot be compared with one exact value."
+      - "`retry-jitter.sh` stops the fake gateway, requests refunds for orders 1, 5 and 10, and prints their next attempt times, which differ although the three refunds failed together."
+      misconceptions:
+      - "Exponential backoff already spreads the retries, so jitter adds nothing."
+      - "Jitter only matters when many servers retry, not for one background job."
+      - "A random wait makes a refund less reliable, since it might wait much longer than planned."
+      depth_notes: "Không dạy các công thức jitter khác hay jitter có sẵn của thư viện resilience; không đổi NotificationSender. Không dạy lại backoff, idempotency key, SKIP LOCKED — backend.l2.retry-with-backoff, backend.l3.safe-to-repeat-saga-steps."
+    - id: backend.l3.resilience-pipeline
+      title:
+        vi: "Resilience pipeline bọc mọi lời gọi qua một HttpClient"
+        en: "A resilience pipeline wraps every call through one HttpClient"
+      main_path: true
+      duration_min: 15
+      skills: [backend.resilience.call-policies]
+      prereqs: [backend.l3.timeouts, backend.l3.retry-jitter, backend.l3.safe-to-repeat-saga-steps]
+      related: [design.l3.anti-corruption-layer, design.l2.decorator-pattern, backend.l3.opentelemetry-sdk]
+      vocab: [resilience-pipeline]
+      example_tag: stage-3
+      example_files:
+      - DonHang.Payments/Program.cs
+      - DonHang.Payments/GatewayRefundClient.cs
+      - Directory.Packages.props
+      - scripts/backend/gateway-slow.sh
+      outline:
+      - "A resilience pipeline is a chain of strategies, such as a timeout or a retry, that every call passes through; Microsoft.Extensions.Http.Resilience attaches one to an `HttpClient` registration."
+      - "At stage-3 Payments registers the `HttpClient` that `GatewayRefundClient` uses with `AddResilienceHandler`, so every gateway call goes through the pipeline and `GatewayRefundClient` holds no timeout code."
+      - "Strategies run in the order they are added: the first one added wraps all the ones after it and sees every call they make."
+      - "The pipeline's timeout strategy ends a gateway call that has no answer within the configured time, and `GatewayRefundClient` reports it as try again later."
+      - "Unlike `AddStandardResilienceHandler`, the pipeline has no retry: `RefundSender` already retries each refund on later rounds, and retries in both layers multiply the calls to a failing gateway."
+      - "`gateway-slow.sh` makes the fake gateway answer late and shows the refund's attempt ending at the timeout while the refund stays `pending`."
+      misconceptions:
+      - "The standard resilience handler fits every client, since it was built for exactly this."
+      - "Retrying inside the call and again from the background job is twice as safe."
+      - "The order in which strategies are added does not matter, because each one works on its own."
+      depth_notes: "Circuit breaker trong pipeline — backend.l3.circuit-breaker. Không dạy IHttpClientFactory chi tiết, hedging, rate limiter phía client — ngoài module. Không dạy lại timeout, backoff, ACL — backend.l3.timeouts, backend.l3.retry-jitter, design.l3.anti-corruption-layer."
+    - id: backend.l3.circuit-breaker
+      title:
+        vi: "Circuit breaker ngừng gọi một phụ thuộc cứ hỏng liên tục"
+        en: "A circuit breaker stops calling a dependency that keeps failing"
+      main_path: true
+      duration_min: 15
+      skills: [backend.resilience.call-policies]
+      prereqs: [backend.l3.resilience-pipeline, backend.l3.slow-dependencies]
+      related: [backend.l3.safe-to-repeat-saga-steps, backend.l3.compensating-action]
+      vocab: [circuit-breaker]
+      example_tag: stage-3
+      example_files:
+      - DonHang.Payments/Program.cs
+      - DonHang.Payments/GatewayRefundClient.cs
+      - DonHang.Tests/Payments/GatewayCircuitBreakerTests.cs
+      - scripts/backend/circuit-breaker.sh
+      outline:
+      - "A circuit breaker watches the outcomes of calls to one dependency and, once too many fail, stops sending calls for a while: they fail at once without reaching the dependency."
+      - "Closed, it lets calls through and counts failures; open, it rejects every call until a break time passes; half-open, it lets a trial call through, which closes it on success or opens it again."
+      - "The breaker in Payments' pipeline opens when the share of failed calls in a time window passes a limit, and only after a minimum number of calls, set low for `RefundSender`'s few calls."
+      - "The breaker is added before the timeout, so an attempt ended by the timeout counts as a failure, like an error or a `5xx` answer; the gateway refusing a refund is a normal answer and does not count."
+      - "While the circuit is open, each due refund fails at once without a call and is scheduled again with backoff, so the gateway gets no calls from Payments while it recovers."
+      - "`circuit-breaker.sh` stops the fake gateway, shows Payments logging that the circuit opened, starts the gateway again and shows the trial call that closes the circuit."
+      misconceptions:
+      - "A circuit breaker is a retry with a limit on the number of tries."
+      - "Once the circuit opens, someone has to close it by hand."
+      - "Any failed answer should open the circuit, including the gateway refusing a refund."
+      - "When the circuit is open, the refunds waiting for the gateway are lost."
+      depth_notes: "Không dạy breaker dùng chung giữa nhiều bản Payments, mở/đóng bằng tay, breaker cho Redis hay RabbitMQ — ngoài module. Không dạy lại pipeline, compensation — backend.l3.resilience-pipeline, backend.l3.compensating-action."
+    - id: backend.l3.rate-limiting
+      title:
+        vi: "Rate limiting giới hạn tần suất một khách được đặt đơn"
+        en: "Rate limiting caps how often one customer may place orders"
+      main_path: true
+      duration_min: 14
+      skills: [backend.resilience.load-limits]
+      prereqs:
+      - backend.l3.graceful-degradation
+      - backend.l1.middleware-pipeline
+      - backend.l2.resource-based-authorization
+      - devops.l1.reverse-proxy-basics
+      related: [foundation.l1.http-status-codes, backend.l2.idempotent-endpoints, backend.l2.cache-stampede]
+      vocab: [rate-limiting]
+      example_tag: stage-3
+      example_files:
+      - DonHang.Api/Program.cs
+      - DonHang.Api/Controllers/OrdersController.cs
+      - scripts/backend/rate-limit.sh
+      outline:
+      - "Rate limiting caps how many requests a client may make in a period, so one client sending too many cannot take the capacity other clients need."
+      - "At stage-3 `POST /api/v1/orders` goes through ASP.NET Core's rate limiting middleware with a fixed window per customer, keyed on the `sub` of the access token."
+      - "A request over the limit is rejected before the controller runs with `429 Too Many Requests` and a `Retry-After` header; the middleware's default rejection status is `503`, so Đơn Hàng sets `429`."
+      - "The limit is per customer, not per client IP address, because behind Caddy every request reaches the API from Caddy's address."
+      - "Each API process keeps its own counts in memory, so with two copies of the API running a customer can place up to twice the limit."
+      - "`rate-limit.sh` places orders as one customer until the API answers `429`, while an order from a second customer still succeeds."
+      misconceptions:
+      - "Limiting by IP address is the simplest fair rule, and it works the same behind a proxy."
+      - "The limit holds across the whole system, however many copies of the API run."
+      - "A limited request should get `503`, since the server is too busy."
+      depth_notes: "Không dạy token bucket, sliding window, limiter phân tán qua Redis hay giới hạn ở Caddy — ngoài module. Giới hạn số request chạy cùng lúc — backend.l3.bulkhead. Không dạy lại middleware, policy — backend.l1.middleware-pipeline, backend.l2.resource-based-authorization."
+    - id: backend.l3.bulkhead
+      title:
+        vi: "Bulkhead không cho một loại việc dùng hết tài nguyên chung"
+        en: "A bulkhead keeps one kind of work from using up shared capacity"
+      main_path: true
+      duration_min: 14
+      skills: [backend.resilience.load-limits]
+      prereqs:
+      - backend.l3.rate-limiting
+      - backend.l3.graceful-degradation
+      - backend.l3.slow-dependencies
+      - backend.l3.payments-service
+      related:
+      - k8s.l1.requests-and-limits
+      - backend.l3.queue-backlog-metrics
+      - design.l3.when-to-extract-a-service
+      vocab: [bulkhead]
+      example_tag: stage-3
+      example_files:
+      - DonHang.Api/Program.cs
+      - DonHang.Api/Controllers/ProductsController.cs
+      - docker-compose.yml
+      - scripts/backend/bulkhead.sh
+      outline:
+      - "A bulkhead splits shared capacity into separate parts, like the sealed compartments of a ship, so a flood of one kind of work fills only its own part."
+      - "At stage-3 Payments and Notifications run as separate processes, so a mail server that hangs ties up Notifications' resources and not the API's."
+      - "Inside the API, product reads and orders use the same database connections, and with Redis down every product read needs one."
+      - "At stage-3 product reads go through a concurrency limiter that lets a set number run at once and queues a few more; any read beyond that is answered `503` at once instead of waiting."
+      - "`bulkhead.sh` stops Redis, sends many product reads at once, and shows some answered `503` while an order placed at the same time succeeds."
+      misconceptions:
+      - "Splitting the system into services is the only way to keep one failure from spreading."
+      - "A bulkhead makes product reads more reliable."
+      - "Rejecting a request at once is worse than letting it wait, because a waiting request succeeds in the end."
+      depth_notes: "Không dạy kích thước connection pool của Npgsql, concurrency limiter của Polly hay giới hạn tài nguyên container — ngoài module; giới hạn theo khách — backend.l3.rate-limiting. Không dạy lại tách service — design.l3.when-to-extract-a-service."
