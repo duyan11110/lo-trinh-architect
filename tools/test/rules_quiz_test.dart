@@ -254,6 +254,19 @@ void main() {
     expect(q10(2), isTrue);
   });
 
+  test('Q16: every single question answered by the same option position warns', () {
+    final allA = quizWith(_fiveDistinctQuestions().map((q) => {...q, 'answer': ['a']}).toList());
+    final out = IssueCollector();
+    validateQuiz('design.l1.golden-lesson', allA, SchemaValidator(realRepo()), out, QuizValidationContext());
+    expect(out.issues.any((i) => i.rule == 'Q16'), isTrue);
+
+    const spread = ['a', 'b', 'c', 'd', 'b'];
+    final mixed = _fiveDistinctQuestions().asMap().entries.map((e) => {...e.value, 'answer': [spread[e.key]]}).toList();
+    final out2 = IssueCollector();
+    validateQuiz('design.l1.golden-lesson', quizWith(mixed), SchemaValidator(realRepo()), out2, QuizValidationContext());
+    expect(out2.issues.any((i) => i.rule == 'Q16'), isFalse);
+  });
+
   test('Q11: fill question missing "___"', () {
     final q = {
       'id': 'design.l1.golden-lesson.q1',

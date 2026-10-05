@@ -67,6 +67,7 @@ Quy tắc theo trạng thái: nhóm Q chỉ chạy khi `.quiz.json` tồn tại 
 - Q13 `skills` của câu ⊄ `skills` của bài (quiz bài). Với gate: mọi skill phải tồn tại và ≥ 2 skill.
 - Q14 gate: số câu mỗi track ∉ [round(100×bài_track/bài_stage) ± 20%] hoặc < 8; thiếu 3–5 câu `scenario` xuyên track.
 - Q15 `order`: thứ tự `options` trong JSON trùng `answer` (chưa xáo).
+- Q16 (W) đáp án đúng của câu single/scenario dồn vào một vị trí: gate > 40% số câu; quiz bài: mọi câu (≥ 4) cùng một vị trí.
 - Q06 và Q13-bài không áp dụng cho gate (câu gate không thuộc một bài).
 
 **Review (R)**

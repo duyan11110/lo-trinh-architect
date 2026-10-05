@@ -124,6 +124,29 @@ void validateQuiz(
   if (ctx.isGate) {
     _validateQ14GateMix(id, questions, out);
   }
+  _warnQ16AnswerPosition(id, questions, ctx.isGate, out);
+}
+
+/// Q16 (W): the correct option of single/scenario questions piles up in one
+/// position — a learner could pass by always picking it. Gate: one position
+/// holds > 40% of them. Lesson quiz: every one of ≥ 4 shares the same position
+/// (3 of 3 alike happens by chance in 1 quiz of 16).
+void _warnQ16AnswerPosition(String id, List<Map<String, dynamic>> questions, bool isGate, IssueCollector out) {
+  final positions = <String, int>{};
+  var n = 0;
+  for (final q in questions) {
+    if (q['type'] != 'single' && q['type'] != 'scenario') continue;
+    final answer = (q['answer'] as List?)?.cast<String>() ?? const [];
+    if (answer.isEmpty) continue;
+    positions[answer.first] = (positions[answer.first] ?? 0) + 1;
+    n++;
+  }
+  if (n == 0) return;
+  final top = positions.entries.reduce((a, b) => a.value >= b.value ? a : b);
+  final skewed = isGate ? top.value > 0.4 * n : n >= 4 && top.value == n;
+  if (skewed) {
+    out.warn(id, 'Q16', 'đáp án đúng dồn vào phương án "${top.key}": ${top.value}/$n câu single/scenario');
+  }
 }
 
 void _validateQuestion(String id, Map<String, dynamic> q, QuizValidationContext ctx, IssueCollector out) {
