@@ -148,6 +148,21 @@ skills:
     vi: "Gỡ lỗi kết nối trong cluster"
     en: "Debugging connections inside a cluster"
   prereqs: [k8s.networking.service-internals, k8s.networking.dns, k8s.security.network-policy]
+- id: k8s.bare-metal.load-balancing
+  title:
+    vi: "Cấp địa chỉ LoadBalancer trên máy tự vận hành"
+    en: "LoadBalancer addresses on machines you run yourself"
+  prereqs: [k8s.networking.service-internals]
+- id: k8s.bare-metal.high-availability
+  title:
+    vi: "Giữ điểm vào và control plane chạy khi mất một node"
+    en: "Keeping the entry point and the control plane up when a node fails"
+  prereqs: [k8s.bare-metal.load-balancing, k8s.traffic.routing, k8s.basics.cluster-architecture]
+- id: k8s.bare-metal.replicated-storage
+  title:
+    vi: "Volume nhân bản giữa các node"
+    en: "Volumes replicated across nodes"
+  prereqs: [k8s.storage.volumes, k8s.storage.data-operations]
 levels:
 - level: 1
   title:
@@ -1607,3 +1622,215 @@ levels:
       - "Seniors often assume a test from any Pod shows what the failing Pod experiences."
       - "Seniors often assume a Service with no matching Pods accepts connections and then hangs."
       depth_notes: "Không dạy tcpdump, đọc iptables/conntrack chi tiết, `kubectl debug node`, image công cụ mạng ngoài versions.yaml, service mesh (GĐ4). Không dạy lại refused/timeout của TCP — foundation.l1.tcp-vs-udp."
+  - id: bare-metal
+    title:
+      vi: "Cluster trên máy tự vận hành: địa chỉ, điểm vào và lưu trữ"
+      en: "Clusters on your own machines: addresses, entry points and storage"
+    stage: 3
+    summary:
+      vi: "Cấp địa chỉ thật cho LoadBalancer Service bằng MetalLB ở layer 2 và hiểu failover của nó, giữ IP client khi cần, chạy điểm vào và control plane sống qua việc mất một node, và biết lưu trữ nhân bản giữa node đổi được gì so với volume của kind."
+      en: "Give LoadBalancer Services real addresses with MetalLB in layer 2 mode and understand its failover, keep client addresses when needed, keep the entry point and the control plane running when a node fails, and know what storage replicated across nodes changes compared with kind's volumes."
+    lessons:
+    - id: k8s.l3.clusters-without-a-cloud
+      title:
+        vi: "Không có cloud thì không ai cấp địa chỉ ngoài hay ổ đĩa mạng"
+        en: "Without a cloud, nobody hands out outside addresses or network disks"
+      main_path: true
+      duration_min: 12
+      skills: [k8s.bare-metal.load-balancing, k8s.bare-metal.replicated-storage]
+      prereqs: [k8s.l3.service-types, k8s.l2.storage-classes, k8s.l3.cni-plugins]
+      related: [k8s.l2.database-in-the-cluster, k8s.l1.cluster-nodes-and-control-plane]
+      vocab: [bare-metal-cluster]
+      example_tag: stage-3
+      example_files: [deploy/k8s/kind-config.yaml, deploy/k8s/lessons/echo-loadbalancer.yaml]
+      outline:
+      - "On a cloud, the provider's own controller gives each LoadBalancer Service an outside address, and its storage service creates disks that a Pod can take with it to another node."
+      - "A bare-metal cluster runs on machines you run yourself, physical or virtual, without that provider: neither job is done until you install components that do it inside the cluster."
+      - "kind shows both gaps: `echo-loadbalancer` stays `<pending>`, and a `standard` volume stays on the node that created it, the limits met in k8s.l3.service-types and k8s.l2.storage-classes."
+      - "kind's node containers share one Docker network named `kind`, which plays the part of the network your own machines would share; the components in this module work on that network."
+      - "Whatever replaces the cloud's part becomes your team's to run: its upgrades, its failures and its capacity, next to the cluster's own."
+      misconceptions:
+      - "Seniors often assume Kubernetes itself hands out outside addresses and network disks, and a cloud only supplies the machines."
+      - "Seniors often assume LoadBalancer Services cannot be used at all outside a cloud."
+      - "Seniors often assume a cluster that works on a cloud behaves the same when moved to a bank's own machines."
+      depth_notes: "Không dạy dựng cluster bằng kubeadm hay distro nhẹ, nâng cấp node (k8s/operators-and-cluster-lifecycle), managed vs tự vận hành (GĐ4), nêu tên dịch vụ cloud. Bài chỉ nêu khoảng trống; từng thành phần — các bài sau."
+    - id: k8s.l3.metallb-address-pools
+      title:
+        vi: "MetalLB cấp địa chỉ cho LoadBalancer Service từ dải bạn giữ"
+        en: "MetalLB gives LoadBalancer Services addresses from a pool you own"
+      main_path: true
+      duration_min: 14
+      skills: [k8s.bare-metal.load-balancing]
+      prereqs: [k8s.l3.clusters-without-a-cloud, k8s.l3.service-types, devops.l1.docker-networks]
+      related: [k8s.l2.ingress, foundation.l1.ip-and-ports]
+      vocab: [metallb]
+      example_tag: stage-3
+      example_files:
+      - scripts/k8s/metallb-install.sh
+      - deploy/k8s/lessons/metallb-pool.yaml
+      - scripts/k8s/metallb-pool.sh
+      outline:
+      - "MetalLB runs inside the cluster as a controller, which picks an address for each LoadBalancer Service, and a speaker Pod on every node, which makes the network deliver that address to a node."
+      - "`metallb-install.sh` applies a pinned copy of the manifest MetalLB's project publishes and waits until the controller and every speaker are ready."
+      - "An `IPAddressPool` lists the addresses MetalLB may hand out; they must sit on the nodes' own network and be used by nothing else, which on a real network means reserving them."
+      - "`metallb-pool.sh` fills `metallb-pool.yaml` with a range from the subnet of Docker's `kind` network and applies it with an `L2Advertisement` naming the pool, which tells the speakers to announce it."
+      - "With the pool in place, `echo-loadbalancer` gets an `EXTERNAL-IP` from it instead of `<pending>`, and keeps its cluster IP and its node port."
+      - "Docker Desktop does not route your machine to the `kind` network, so the script calls that address from a container attached to it; on a real network, any machine on it could."
+      misconceptions:
+      - "Seniors often assume MetalLB is a load balancer that every request passes through, like a cloud's."
+      - "Seniors often assume MetalLB finds free addresses on the network by itself."
+      - "Seniors often assume a LoadBalancer address is reachable from anywhere, like a public cloud address."
+      depth_notes: "Không dạy nhiều pool và chọn pool theo annotation, IPv6, cài MetalLB qua Argo CD, Service chia sẻ một địa chỉ. Layer 2 và failover — bài sau. Staging giữ cổng publish ra host (k8s.l2.ingress), không cài MetalLB. Lab trên `donhang`."
+    - id: k8s.l3.metallb-layer2-mode
+      title:
+        vi: "Ở layer 2, mọi traffic của một địa chỉ đi vào qua đúng một node"
+        en: "In layer 2 mode, one node receives all traffic for an address"
+      main_path: true
+      duration_min: 15
+      skills: [k8s.bare-metal.load-balancing]
+      prereqs: [k8s.l3.metallb-address-pools, k8s.l3.kube-proxy]
+      related: [k8s.l3.pod-network-model, backend.l3.graceful-degradation]
+      vocab: [arp, failover]
+      example_tag: stage-3
+      example_files: [scripts/k8s/metallb-l2.sh]
+      outline:
+      - "On one network, a machine finds who holds an IP address with ARP: it asks every machine on the network, and the holder answers with its hardware (MAC) address, where traffic is then sent."
+      - "In layer 2 mode the speakers choose one node per Service address, and only that node's speaker answers ARP for it; the address is set on no network card."
+      - "All traffic to the address enters through that node, and kube-proxy there forwards each connection to a Pod on any node, so load spreads over Pods but never over several nodes' network links."
+      - "`metallb-l2.sh` shows which node announces `echo-loadbalancer`'s address and the hardware address a client container learned for it, then pauses that node's container."
+      - "The other speakers notice the node has stopped answering and another node takes over the address; connections fail until it does, which makes layer 2 mode a failover, not load balancing."
+      - "MetalLB's other mode announces addresses to the network's routers, which can spread traffic over several nodes; the lab has no such router, so the module uses layer 2 mode only."
+      misconceptions:
+      - "Seniors often assume layer 2 mode spreads incoming traffic across all the nodes."
+      - "Seniors often assume the address moves to another node instantly, with no failed connections."
+      - "Seniors often assume MetalLB adds the address to a network card of the chosen node."
+      depth_notes: "Không dạy mode dùng router và cấu hình router, IPv6, chỉnh thời gian phát hiện node chết, giới hạn node announce theo selector, chế độ IPVS của kube-proxy. externalTrafficPolicy — bài sau. Node lỗi giả lập bằng `docker pause`."
+    - id: k8s.l3.external-traffic-policy
+      title:
+        vi: "externalTrafficPolicy: Local giữ IP client nhưng bỏ qua node không có Pod"
+        en: "externalTrafficPolicy: Local keeps client IPs but skips some nodes"
+      main_path: true
+      duration_min: 14
+      skills: [k8s.bare-metal.load-balancing]
+      prereqs: [k8s.l3.metallb-layer2-mode, k8s.l3.pod-network-model]
+      related: [backend.l3.rate-limiting, backend.l1.structured-logging]
+      vocab: [external-traffic-policy]
+      example_tag: stage-3
+      example_files:
+      - deploy/k8s/lessons/echo-loadbalancer.yaml
+      - deploy/k8s/lessons/echo-loadbalancer-local.yaml
+      - scripts/k8s/external-traffic-policy.sh
+      outline:
+      - "With the default `externalTrafficPolicy: Cluster`, the receiving node may forward outside traffic to a Pod on another node and replaces the source address with its own, so `echo-ip` reports a node's address."
+      - "With `externalTrafficPolicy: Local`, a node sends outside traffic only to the Service's Pods on that same node and keeps the source address, so `echo-ip` reports the client container's address."
+      - "A node with no ready Pod of a `Local` Service has nowhere to send its traffic, so MetalLB's speakers announce the address only from nodes that run a ready Pod of it."
+      - "`external-traffic-policy.sh` calls `echo-loadbalancer` and `echo-loadbalancer-local` from the client container and prints the address `echo-ip` reports for each."
+      - "With `Local` in layer 2 mode only the Pods on the announcing node get traffic, so a Service whose Pods run on several nodes no longer spreads its load over all of them."
+      - "Choose `Local` when the application must see clients' addresses, such as for logs or limits per client, and run Pods on several nodes; otherwise `Cluster` spreads load more evenly."
+      misconceptions:
+      - "Seniors often assume Pods always see the real address of a client outside the cluster."
+      - "Seniors often assume `Local` only makes traffic faster, with no downside."
+      - "Seniors often assume any node can still accept traffic for a `Local` Service, even with none of its Pods."
+      depth_notes: "Không dạy internalTrafficPolicy, healthCheckNodePort, header X-Forwarded-For và PROXY protocol ở gateway, topology-aware routing. Lab trên `donhang`, namespace `network-lessons`. Không dạy lại kube-proxy — k8s.l3.kube-proxy."
+    - id: k8s.l3.highly-available-entry-point
+      title:
+        vi: "Điểm vào sống qua việc mất một node chỉ khi có bản sao ở node khác"
+        en: "The entry point survives a node failure only with replicas elsewhere"
+      main_path: true
+      duration_min: 15
+      skills: [k8s.bare-metal.high-availability]
+      prereqs: [k8s.l3.external-traffic-policy, k8s.l2.ingress, k8s.l2.helm-releases, k8s.l1.deployments]
+      related: [k8s.l2.charts-through-argo-cd, k8s.l2.gateway-api, backend.l3.graceful-degradation]
+      vocab: [single-point-of-failure, high-availability, topology-spread-constraint]
+      example_tag: stage-3
+      example_files:
+      - deploy/k8s/lessons/traefik-ha-values.yaml
+      - deploy/k8s/lessons/echo-ingress.yaml
+      - scripts/k8s/traefik-ha.sh
+      outline:
+      - "A single point of failure is a part whose failure alone stops the system: behind MetalLB, an Ingress controller with one Pod is one, since losing its node stops all outside traffic."
+      - "High availability means removing such parts: here, two or more controller Pods on different nodes behind one address that layer 2 mode moves when a node fails."
+      - "A Deployment with two replicas may place both on one node; a topology spread constraint on `kubernetes.io/hostname` with `maxSkew: 1` and `DoNotSchedule` keeps them on different nodes."
+      - "`traefik-ha.sh` installs Traefik on `donhang` from the chart version staging pins, with `traefik-ha-values.yaml`: two spread replicas and a LoadBalancer Service, then applies `echo-ingress.yaml`."
+      - "The script pauses one worker while calling the address in a loop: some calls fail until MetalLB moves the address and the control plane marks that node's Pods not ready, then all succeed."
+      - "Each replica must carry the whole load alone while the other is down, so its resource requests are sized for all the traffic, not for half of it."
+      misconceptions:
+      - "Seniors often assume a Deployment with two replicas always runs them on two different nodes."
+      - "Seniors often assume a highly available entry point means no request fails when a node dies."
+      - "Seniors often assume MetalLB alone makes the entry point highly available."
+      depth_notes: "Không dạy PodDisruptionBudget và drain node (k8s/operators-and-cluster-lifecycle), pod anti-affinity, taint, HPA, nhiều zone. Staging một node giữ một replica Traefik; không sửa `apps/traefik.yaml`. Không dạy lại Ingress — k8s.l2.ingress."
+    - id: k8s.l3.csi-drivers
+      title:
+        vi: "CSI driver cho một hệ lưu trữ cắm vào mọi cluster Kubernetes"
+        en: "A CSI driver lets a storage system plug into any cluster"
+      main_path: true
+      duration_min: 13
+      skills: [k8s.bare-metal.replicated-storage]
+      prereqs: [k8s.l3.clusters-without-a-cloud, k8s.l2.storage-classes, k8s.l2.scheduled-backups]
+      related: [k8s.l2.reclaim-policy, k8s.l3.cni-plugins]
+      vocab: [csi-driver, volume-snapshot]
+      example_tag: stage-3
+      example_files: [scripts/k8s/csi.sh]
+      outline:
+      - "The Container Storage Interface (CSI) is the standard way for a storage system to plug into Kubernetes: its vendor ships a CSI driver, and any cluster can use it without changing Kubernetes."
+      - "A CSI driver runs as Pods in the cluster: a controller part creates and deletes volumes in the storage system, and a part on every node makes them available to the Pods there."
+      - "A StorageClass names its driver as `provisioner`; `csi.sh` shows that kind's `standard` uses `rancher.io/local-path`, which is not a CSI driver, and that `kubectl get csidrivers` lists none."
+      - "A replicated storage system for your own machines, read in the next lesson, installs its own CSI driver and a StorageClass naming it; claims then ask for it as they asked for `standard`."
+      - "Where a CSI driver supports it, a volume snapshot records a volume's content at one moment and can fill a new claim; it stays in the same storage system, so it is not a backup off the cluster."
+      misconceptions:
+      - "Seniors often assume every StorageClass provisioner is a CSI driver."
+      - "Seniors often assume a volume snapshot is as good as a backup."
+      - "Seniors often assume adding a new storage system means changing or rebuilding Kubernetes."
+      depth_notes: "Không dạy viết CSI driver, sidecar CSI, VolumeSnapshotClass và cài snapshot controller, mở rộng volume, volume CSI tạm. Lab chỉ chạy `csi.sh` trên kind; hệ lưu trữ cụ thể — bài sau. Rook-Ceph không dạy (chưa có trong versions.yaml)."
+    - id: k8s.l3.replicated-volumes
+      title:
+        vi: "Longhorn giữ bản sao của mỗi volume trên nhiều node"
+        en: "Longhorn keeps copies of each volume on several nodes"
+      main_path: true
+      duration_min: 14
+      skills: [k8s.bare-metal.replicated-storage]
+      prereqs: [k8s.l3.csi-drivers, k8s.l2.database-in-the-cluster, backend.l3.read-replicas]
+      related: [k8s.l2.statefulsets, k8s.l2.staging-keeps-its-data, devops.l3.rpo-and-rto]
+      vocab: [longhorn]
+      example_tag: stage-3
+      example_files: [deploy/k8s/bare-metal/longhorn-storageclass.yaml]
+      outline:
+      - "Longhorn turns disk space on the cluster's own nodes into volumes; each volume keeps a copy, called a replica, on several nodes, as many as `numberOfReplicas` in its StorageClass says."
+      - "A write goes to every healthy replica over the network before it counts as done, so a volume survives losing a node, at the cost of slower writes than a local disk."
+      - "When a Pod's node fails, the Pod can start on another node and use the same volume there, which kind's `standard` class cannot do; Longhorn then rebuilds the missing replica on a healthy node."
+      - "Longhorn needs software installed on every node, an iSCSI initiator for its default data engine, which the lab's kind nodes lack, so this lesson reads `longhorn-storageclass.yaml` without installing it."
+      - "A PostgreSQL that already streams its changes to a standby gains little from replicated volumes underneath; they fit stores that keep one copy, like Đơn Hàng's `db` and `rabbitmq` claims."
+      - "All replicas live in the same cluster: deleting the volume, a bad write or losing the cluster reaches every copy, so backups off the cluster are still needed."
+      misconceptions:
+      - "Seniors often assume a replicated volume makes backups unnecessary."
+      - "Seniors often assume a volume replicated over the network writes as fast as a local disk."
+      - "Seniors often assume a database with its own replication should also sit on replicated volumes."
+      depth_notes: "Không cài Longhorn trong lab (chỉ đọc manifest), không dạy UI, backup target, data locality, data engine v2, ReadWriteMany, Rook-Ceph. Staging vẫn dùng `standard`. Không dạy lại StatefulSet — k8s.l2.statefulsets."
+    - id: k8s.l3.control-plane-ha
+      title:
+        vi: "Control plane HA cần quá nửa số member etcd còn sống"
+        en: "A highly available control plane needs a majority of etcd members"
+      main_path: true
+      duration_min: 15
+      skills: [k8s.bare-metal.high-availability]
+      prereqs:
+      - k8s.l3.highly-available-entry-point
+      - k8s.l1.control-plane-components
+      - k8s.l1.kubectl-and-the-api-server
+      - k8s.l3.service-types
+      related: [k8s.l3.metallb-layer2-mode, k8s.l1.cluster-nodes-and-control-plane]
+      vocab: [etcd-quorum]
+      example_tag: stage-3
+      example_files: [deploy/k8s/kind-ha-config.yaml, scripts/k8s/control-plane-ha.sh]
+      outline:
+      - "With its only control-plane node paused, a cluster keeps running its Pods but nothing can change: `control-plane-ha.sh` shows `kubectl` failing while `echo-ip` still answers on its node port."
+      - "A highly available control plane runs the API server, etcd and the other control-plane components on several nodes; kind builds one with three from `kind-ha-config.yaml`, as the cluster `donhang-ha`."
+      - "Clients reach the API servers through one address in front of them: kind adds a load balancer container and writes its address into the kubeconfig; on your own machines you provide that address."
+      - "etcd accepts a change only once a quorum, a majority of its members, has it; with one of three control-plane nodes paused, `kubectl get nodes` still works."
+      - "Pausing a second control-plane node leaves no majority, and `kubectl` requests fail even though one API server is still running."
+      - "Four members need three for a majority, so they survive only one failure, as three do; this is why control planes run an odd number of nodes."
+      misconceptions:
+      - "Seniors often assume the applications stop when the control plane goes down."
+      - "Seniors often assume the control plane keeps working as long as any one API server is up."
+      - "Seniors often assume four control-plane nodes survive more failures than three."
+      depth_notes: "Không dạy dựng control plane bằng kubeadm, thêm/bớt member etcd, backup/restore etcd, nâng cấp (k8s/operators-and-cluster-lifecycle), etcd tách khỏi control plane, công cụ địa chỉ ảo cho API server. Script xóa `donhang-ha` ở cuối."
