@@ -218,6 +218,26 @@ skills:
     vi: "Tách một module thành service: cần gì và khi nào đáng"
     en: "Extracting a module into a service: what it takes and when it pays"
   prereqs: [design.modular.boundaries]
+- id: design.cqrs.read-models
+  title:
+    vi: "Tách đọc khỏi ghi: CQRS và read model"
+    en: "Separating reads from writes: CQRS and read models"
+  prereqs: [design.ddd.domain-events, backend.ef.performance]
+- id: design.event-sourcing.streams
+  title:
+    vi: "Event sourcing: event stream, replay và ghi đồng thời"
+    en: "Event sourcing: streams, replay and concurrent writes"
+  prereqs: [design.cqrs.read-models, design.ddd.aggregates, backend.data.concurrency]
+- id: design.event-sourcing.projections
+  title:
+    vi: "Event projection và snapshot"
+    en: "Event projections and snapshots"
+  prereqs: [design.event-sourcing.streams]
+- id: design.event-sourcing.tradeoffs
+  title:
+    vi: "Quyết khi nào event sourcing đáng giá"
+    en: "Deciding when event sourcing pays off"
+  prereqs: [design.event-sourcing.projections]
 levels:
 - level: 1
   title:
@@ -2223,3 +2243,234 @@ levels:
       - "Extracting a service always makes the system faster, since each part gets its own process."
       - "If a module is not extracted now, splitting it out later will be impossible."
       depth_notes: "Không dạy viết ADR — management/tech-debt-and-adr GĐ3; không bàn đi ngược từ microservice về monolith hay distributed monolith — GĐ4. Không dạy lại replica hay SKIP LOCKED — k8s.l1.deploying-don-hang, backend.l2.skip-locked-claiming."
+  - id: cqrs-event-sourcing
+    title:
+      vi: "CQRS và event sourcing: tách đọc khỏi ghi, lưu điều đã xảy ra"
+      en: "CQRS and event sourcing: separate reads, store what happened"
+    stage: 3
+    summary:
+      vi: "Tách phía đọc khỏi phía ghi của Đơn Hàng, thêm read model lịch sử đơn được cập nhật từ domain event, và đi qua event sourcing trên một đơn hàng mẫu (stream, replay, ghi đồng thời, projection, snapshot) để tự đánh giá vì sao Đơn Hàng giữ Order lưu theo trạng thái."
+      en: "Separate Đơn Hàng's reads from its writes, add a read model for an order's history fed by domain events, and work through event sourcing on a sample order (streams, replay, concurrent writes, projections, snapshots) to judge why Đơn Hàng keeps Order state-based."
+    lessons:
+    - id: design.l3.cqrs
+      title:
+        vi: "CQRS: phía đọc không cần đi qua mô hình canh giữ việc ghi"
+        en: "CQRS: reads need not go through the model that guards writes"
+      main_path: true
+      duration_min: 13
+      skills: [design.cqrs.read-models]
+      prereqs: [backend.l2.projection-queries, design.l3.aggregate-root, design.l2.domain-model]
+      related: [backend.l2.no-tracking-queries, design.l1.the-repository-layer]
+      vocab: [cqrs]
+      example_tag: stage-2
+      example_files:
+      - DonHang.Domain/OrderService.cs
+      - DonHang.Infrastructure/EfOrderRepository.cs
+      - DonHang.Domain/OrderSummary.cs
+      - DonHang.Domain/IOrderRepository.cs
+      outline:
+      - "CQRS separates the code that changes data from the code that reads it, so the reading side can return exactly what a screen needs without passing through the writing side's rules."
+      - "At stage-2 every change to an order goes through `OrderService`, which loads a tracked `Order` and lets its methods check the status rules before `SaveChangesAsync`."
+      - "The order list never builds an `Order`: `ListByCustomerAsync` selects three columns straight into `OrderSummary`, so no rule runs and nothing is tracked."
+      - "Both sides still read the same tables through the same `DonHangDbContext`, and one interface, `IOrderRepository`, still offers both: CQRS can start as a split in the code alone."
+      - "A separate read side pays off when reads need a shape the write side's tables cannot give cheaply; while they can, one model for both is simpler."
+      misconceptions:
+      - "CQRS needs a separate read database kept in sync by messages."
+      - "CQRS and event sourcing come as a pair; you cannot use one without the other."
+      - "Reads should load the `Order` aggregate too, so the domain model stays the only way to reach the data."
+      depth_notes: "Không dạy read model lưu riêng — design.l3.read-model; không nói event sourcing — design.l3.event-sourcing. Không tách IOrderRepository, không dùng thư viện mediator. Không dạy lại projection hay AsNoTracking — backend.l2.projection-queries, backend.l2.no-tracking-queries."
+    - id: design.l3.read-model
+      title:
+        vi: "Read model lưu dữ liệu theo đúng hình dạng một truy vấn cần"
+        en: "A read model stores data in the shape one query needs"
+      main_path: true
+      duration_min: 14
+      skills: [design.cqrs.read-models]
+      prereqs:
+      - design.l3.cqrs
+      - design.l3.dispatching-domain-events
+      - backend.l3.eventual-consistency
+      - backend.l3.compensating-action
+      related: [backend.l2.resource-based-authorization, design.l3.ubiquitous-language]
+      vocab: [read-model]
+      example_tag: stage-3
+      example_files:
+      - DonHang.Infrastructure/RecordOrderStatusHistory.cs
+      - DonHang.Infrastructure/EfOrderHistory.cs
+      - DonHang.Api/Controllers/OrdersController.cs
+      - scripts/design/order-history.sh
+      outline:
+      - "At stage-2 each status change overwrites `orders.status`, so the order's own row keeps no record of when it was cancelled or which statuses it passed through."
+      - "A read model is data stored in the shape one query needs and written from the changes the write side makes, not by the use cases that make them."
+      - "At stage-3 `RecordOrderStatusHistory` handles every domain event `Order` records and adds one `order_status_history` row with the event, the new status and its time; `Order` does not know the table exists."
+      - "The handler adds its row before the same `SaveChangesAsync` that saves the order, so the history never lags behind the order's status, at the cost of one more insert on every change."
+      - "`GET /api/v1/orders/{id}/history` reads that table with a projection into `OrderStatusChange` records and never loads an `Order`."
+      - "Orders placed before stage-3 get only a `placed` row, taken from `orders.placed_at`: the changes in between were overwritten and cannot be recovered."
+      misconceptions:
+      - "A read model always lives in a separate database and lags behind the writes."
+      - "To show an order's history, add a list of changes to `Order` and let its methods fill it."
+      - "The new table can be filled with the full history of existing orders from the data already in `orders`."
+      depth_notes: "Không xây read model ở database khác cập nhật qua consumer — chỉ nêu đánh đổi; event sourcing — design.l3.event-sourcing. Không dạy lại dispatch domain event, projection EF — design.l3.dispatching-domain-events, backend.l2.projection-queries."
+    - id: design.l3.event-sourcing
+      title:
+        vi: "Event sourcing lưu những gì đã xảy ra, không lưu trạng thái hiện tại"
+        en: "Event sourcing saves what happened, not the current state"
+      main_path: true
+      duration_min: 14
+      skills: [design.event-sourcing.streams]
+      prereqs: [design.l3.read-model, design.l3.domain-events, backend.l3.outbox-pattern]
+      related: [design.l3.aggregate-root, backend.l3.message-broker]
+      vocab: [event-sourcing, event-stream, event-store]
+      example_tag: stage-3
+      example_files:
+      - samples/DonHang.Samples/Samples/Design/EventSourcing/EventSourcedOrder.cs
+      - samples/DonHang.Samples/Samples/Design/EventSourcing/InMemoryEventStore.cs
+      - DonHang.Infrastructure/RecordOrderStatusHistory.cs
+      - DonHang.Domain/NotifyCustomerOnOrderEvents.cs
+      outline:
+      - "Event sourcing stores an aggregate as the ordered list of events that happened to it and never stores its current state; the state is computed from those events whenever it is needed."
+      - "Each aggregate's events form one event stream, numbered by version, and an event store only appends to the end of a stream: an event once saved is never updated or deleted."
+      - "In the stage-3 sample `EventSourcedOrder`, a method such as `Cancel()` checks its rule against the current state, then records an `OrderCancelled` event and applies it to its own fields."
+      - "`order_status_history` is not event sourcing: the `orders` row is still the truth, and the history is a read model written beside it."
+      - "The stage-3 outbox is not an event store either: its rows carry only what other services need, such as the customer's email, and no order could be rebuilt from them."
+      misconceptions:
+      - "Keeping every change in a history table next to `orders` is already event sourcing."
+      - "Đơn Hàng's `outbox_messages` already holds every order event, so it can serve as the event store."
+      - "An event store is a message broker such as RabbitMQ that keeps its messages forever."
+      depth_notes: "Không nói nạp lại trạng thái — design.l3.rebuilding-state-from-events; ghi đồng thời — design.l3.stream-concurrency; read model từ event — design.l3.event-projections. Không dạy sản phẩm event store (EventStoreDB, Marten) — ngoài module. Không dạy lại outbox — backend.l3.outbox-pattern."
+    - id: design.l3.rebuilding-state-from-events
+      title:
+        vi: "Đơn lưu theo event được nạp bằng cách áp lại các event của nó"
+        en: "An event-sourced order is loaded by replaying its events"
+      main_path: true
+      duration_min: 14
+      skills: [design.event-sourcing.streams]
+      prereqs:
+      - design.l3.event-sourcing
+      - design.l3.aggregates-and-invariants
+      - design.l2.status-changes-through-methods
+      related: [design.l2.valid-from-construction]
+      vocab: [event-replay]
+      example_tag: stage-3
+      example_files:
+      - samples/DonHang.Samples/Samples/Design/EventSourcing/EventSourcedOrder.cs
+      - samples/DonHang.Samples/Samples/Design/EventSourcing/InMemoryEventStore.cs
+      - samples/DonHang.Samples.Tests/EventSourcingTests.cs
+      outline:
+      - "Loading an event-sourced order reads its stream from the first event and applies each event in order to an empty order; this event replay gives the order's current state."
+      - "Applying an event only sets fields: it checks no rule and never throws, because the event has already happened and its rule was checked when it was recorded."
+      - "Rules still run in the method that records a new event, so `Ship()` on a cancelled order throws before anything is recorded."
+      - "Replaying only the events up to a given version gives the order as it was at that point, which the stage-2 `orders` row cannot do once a change has overwritten it."
+      - "`EventSourcingTests` replays a stream of placed, paid and cancelled and gets a `cancelled` order; replaying it without its last event gives a `paid` one."
+      misconceptions:
+      - "When an event-sourced order is loaded, every past event is checked against today's rules again."
+      - "Replaying events means publishing them through the broker to every consumer again."
+      - "Applying an event should throw when the event would break a rule, to protect the aggregate."
+      depth_notes: "Không nói chụp trạng thái để nạp nhanh — design.l3.snapshots; ghi đồng thời — design.l3.stream-concurrency. Không dạy đổi hình dạng event cũ (upcasting) — chỉ nêu là chi phí ở design.l3.when-not-to-event-source."
+    - id: design.l3.stream-concurrency
+      title:
+        vi: "Hai bên cùng ghi vào một stream: lần nối thêm thứ hai bị từ chối"
+        en: "Two writers to one stream: the second append is refused"
+      main_path: true
+      duration_min: 13
+      skills: [design.event-sourcing.streams]
+      prereqs: [design.l3.rebuilding-state-from-events, backend.l2.optimistic-concurrency]
+      related: [backend.l2.transactions-in-practice]
+      vocab: []
+      example_tag: stage-3
+      example_files:
+      - samples/DonHang.Samples/Samples/Design/EventSourcing/InMemoryEventStore.cs
+      - samples/DonHang.Samples/Samples/Design/EventSourcing/EventSourcedOrder.cs
+      - samples/DonHang.Samples.Tests/EventSourcingTests.cs
+      - DonHang.Infrastructure/DonHangDbContext.cs
+      outline:
+      - "An order loaded from its stream remembers the version it was loaded at, and saving sends only its new events together with that version."
+      - "`InMemoryEventStore` appends only if the stream's last version still equals the one given; otherwise it throws and appends nothing."
+      - "When two writers load order 5 at the same version and both change it, the first append wins and the second is refused instead of acting on a stale state."
+      - "This is optimistic concurrency, as with `xmin` at stage-2: the stream's version number plays the role of the concurrency token."
+      - "The refused writer reloads the stream, now with the other writer's event, and calls its method again, which may now refuse the change, as `EventSourcingTests` shows."
+      misconceptions:
+      - "Since events are only ever appended, two writers can never conflict."
+      - "When the append is refused, just append the same event again at the next version."
+      - "Event sourcing has to lock the stream for as long as a request holds the order."
+      depth_notes: "Không dạy SQL của event store trên database thật hay gộp event xung đột — ngoài module. Không dạy lại optimistic concurrency hay xmin — backend.l2.optimistic-concurrency."
+    - id: design.l3.event-projections
+      title:
+        vi: "Event projection xóa đi được và dựng lại được từ các event"
+        en: "An event projection can be thrown away and rebuilt from the events"
+      main_path: true
+      duration_min: 14
+      skills: [design.event-sourcing.projections]
+      prereqs: [design.l3.stream-concurrency, design.l3.read-model]
+      related: [backend.l3.eventual-consistency, backend.l2.projection-queries]
+      vocab: [event-projection]
+      example_tag: stage-3
+      example_files:
+      - samples/DonHang.Samples/Samples/Design/EventSourcing/OrderProjections.cs
+      - samples/DonHang.Samples.Tests/EventSourcingTests.cs
+      - DonHang.Infrastructure/RecordOrderStatusHistory.cs
+      outline:
+      - "An event projection reads events in the order they were stored and updates a read model from each one; it is the only code that writes that read model."
+      - "The sample runs two projections over the same events: `OrderStatusCounts` keeps how many orders are in each status, and `OrderTimeline` keeps each order's list of changes."
+      - "Each sample projection remembers the position of the last event it applied and catches up from there, so until it runs its read model lags behind the store."
+      - "Because the events are kept, clearing a projection and replaying every event from the start rebuilds it, and `EventSourcingTests` checks that the result equals the live one."
+      - "A projection written after events were stored is filled from all of them, so `OrderTimeline` covers orders that existed before it was written."
+      - "`RecordOrderStatusHistory` is a projection too, but over events that were never kept, which is why orders older than stage-3 show only `placed`."
+      misconceptions:
+      - "A projection's data is as precious as the events and must be protected the same way."
+      - "A read model added later can only show what happened after the day it was added."
+      - "Each projection needs its own copy of the events."
+      depth_notes: "Không dạy projection chạy ở service khác qua broker, xử lý lỗi projection hay thứ tự toàn cục giữa nhiều database — ngoài module. Không dạy lại read model hay projection EF — design.l3.read-model, backend.l2.projection-queries."
+    - id: design.l3.snapshots
+      title:
+        vi: "Snapshot làm nạp nhanh hơn nhưng không thay được các event"
+        en: "A snapshot shortens loading but never replaces the events"
+      main_path: true
+      duration_min: 12
+      skills: [design.event-sourcing.projections]
+      prereqs: [design.l3.event-projections, design.l3.rebuilding-state-from-events]
+      related: [backend.l2.cache-aside]
+      vocab: [event-snapshot]
+      example_tag: stage-3
+      example_files:
+      - samples/DonHang.Samples/Samples/Design/EventSourcing/OrderSnapshots.cs
+      - samples/DonHang.Samples/Samples/Design/EventSourcing/EventSourcedOrder.cs
+      - samples/DonHang.Samples.Tests/EventSourcingTests.cs
+      outline:
+      - "A snapshot saves an aggregate's state at one version, so loading starts from the latest snapshot and replays only the events after it."
+      - "The sample's `OrderSnapshots` saves a snapshot every N events, with N chosen by the caller; loading with or without it gives the same order, as `EventSourcingTests` checks."
+      - "A snapshot is a cache, not a record: the events stay the truth, so deleting every snapshot only makes loading slower."
+      - "When the order's fields change shape, old snapshots can be deleted and rebuilt from the events, while the events themselves must stay readable."
+      - "An order's stream holds a handful of events, so replaying it is already cheap; snapshots pay off only for streams with many events, and before that they are extra code to keep correct."
+      misconceptions:
+      - "Every event-sourced aggregate needs snapshots from the start."
+      - "Once a snapshot is saved, the events before it can be deleted."
+      - "A snapshot is just another name for a projection."
+      depth_notes: "Không dạy chọn N bằng đo đạc hay chụp snapshot ở tiến trình nền — ngoài module. Không dạy lại replay — design.l3.rebuilding-state-from-events; không dạy lại cache — backend.l2.cache-aside."
+    - id: design.l3.when-not-to-event-source
+      title:
+        vi: "Đơn Hàng giữ Order lưu theo trạng thái và ghi lịch sử bên cạnh"
+        en: "Đơn Hàng keeps Order state-based and records its history beside it"
+      main_path: true
+      duration_min: 14
+      skills: [design.event-sourcing.tradeoffs]
+      prereqs: [design.l3.snapshots, management.l2.design-doc, design.l3.subdomains]
+      related: [design.l3.when-to-extract-a-service, design.l3.read-model]
+      vocab: []
+      example_tag: stage-3
+      example_files:
+      - docs/design/order-history-design.md
+      - DonHang.Infrastructure/RecordOrderStatusHistory.cs
+      - DonHang.Domain/Entities.cs
+      outline:
+      - "Event sourcing pays off when the history itself is the business's data, such as when past states must be answered or audited, or when many read models need the same changes."
+      - "Its costs come with it: every query needs a projection, past events must stay readable after the code changes, and the team must learn a different way to store data."
+      - "At stage-3 `order-history-design.md` weighs three ways to show an order's history: event-sourcing `Order`, a read model fed by domain events, and reading `outbox_messages`."
+      - "It chooses the read model: the need is one list per order, while event-sourcing `Order` would change how every stage-3 use case, query and test loads and saves orders."
+      - "It also records what would make the team reconsider, such as a requirement to show what an order looked like at any past moment."
+      - "Event sourcing is chosen per aggregate, not per system: a team can event-source one aggregate whose history matters and keep the others state-based."
+      misconceptions:
+      - "Any system that already has domain events should go all the way to event sourcing."
+      - "Event sourcing is mainly a way to get an audit log for free."
+      - "Once one aggregate is event-sourced, every aggregate in the system has to be."
+      depth_notes: "Không viết ADR — management/tech-debt-and-adr GĐ3. Không dạy đổi hình dạng event cũ (upcasting) hay xóa dữ liệu cá nhân trong event — ngoài module. Không dạy lại read model hay event sourcing — design.l3.read-model, design.l3.event-sourcing. Không nêu tên sách, tác giả."
