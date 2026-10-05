@@ -235,6 +235,25 @@ void main() {
     expect(out.issues.any((i) => i.rule == 'Q10'), isTrue);
   });
 
+  test('Q10 gate: a 60-word context fits stage 0 (40–80) but not stage 2 (80–150)', () {
+    final words = List.filled(60, 'word').join(' ');
+    final q = {
+      'id': 'gate0.q1',
+      'type': 'scenario',
+      'context': {'vi': words, 'en': words},
+      'explanation': <String, dynamic>{},
+    };
+    bool q10(int stage) {
+      final out = IssueCollector();
+      validateQuiz('gate$stage', {'gate': 'gate$stage', 'stage': stage, 'questions': [q]}, SchemaValidator(realRepo()), out,
+          QuizValidationContext(isGate: true, gateStage: stage));
+      return out.issues.any((i) => i.rule == 'Q10');
+    }
+
+    expect(q10(0), isFalse);
+    expect(q10(2), isTrue);
+  });
+
   test('Q11: fill question missing "___"', () {
     final q = {
       'id': 'design.l1.golden-lesson.q1',

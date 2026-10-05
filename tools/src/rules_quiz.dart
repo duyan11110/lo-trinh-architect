@@ -229,7 +229,13 @@ void _validateQuestion(String id, Map<String, dynamic> q, QuizValidationContext 
     final context = q['context'] as Map<String, dynamic>?;
     final ctxEn = context?['en'] as String? ?? '';
     final wc = _wordCount(ctxEn);
-    final range = ctx.isGate ? const [80, 150] : const [40, 150];
+    // prompt 07: cross-track gate scenarios are 80–150 words, except the
+    // short ones of the stage-0 gate (40–80).
+    final range = !ctx.isGate
+        ? const [40, 150]
+        : ctx.gateStage == 0
+            ? const [40, 80]
+            : const [80, 150];
     if (wc < range[0] || wc > range[1]) {
       out.error(id, 'Q10', 'câu $qid: context có $wc từ, phải trong [${range[0]},${range[1]}]');
     }

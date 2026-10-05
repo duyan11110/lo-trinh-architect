@@ -61,7 +61,7 @@ Quy tắc theo trạng thái: nhóm Q chỉ chạy khi `.quiz.json` tồn tại 
 - Q07 phương án chứa "all of the above"/"none of the above"/"tất cả"/"không ý nào".
 - Q08 `single`/`scenario`: độ dài (ký tự EN) phương án đúng lệch > 60% so với trung bình các phương án (lộ đáp án).
 - Q09 `truefalse`: 4 phương án; a,b có `polarity: "true"`, c,d `polarity: "false"`; văn bản EN bắt đầu "True, because"/"False, because", VI "Đúng, vì"/"Sai, vì".
-- Q10 `scenario`: `context` < 40 hoặc > 150 từ; `explanation` của mỗi phương án sai không chứa "when"/"khi" (thiếu điều kiện nó đúng).
+- Q10 `scenario`: `context` < 40 hoặc > 150 từ (gate: 80–150, riêng gate0 40–80 theo prompt 07); `explanation` của mỗi phương án sai không chứa "when"/"khi" (thiếu điều kiện nó đúng).
 - Q11 `fill`: `question` không chứa `___`; `answer` rỗng.
 - Q12 câu trùng ý (Jaccard token > 0.7) trong cùng quiz.
 - Q13 `skills` của câu ⊄ `skills` của bài (quiz bài). Với gate: mọi skill phải tồn tại và ≥ 2 skill.
