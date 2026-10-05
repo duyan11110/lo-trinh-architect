@@ -108,6 +108,26 @@ skills:
     vi: "Sao lưu và vận hành dữ liệu trong cluster"
     en: "Backing up and operating data in a cluster"
   prereqs: [k8s.storage.stateful-workloads, devops.backup.postgresql]
+- id: k8s.security.access
+  title:
+    vi: "Ai được làm gì trên API server: RBAC và ServiceAccount"
+    en: "Who may do what on the API server: RBAC and ServiceAccounts"
+  prereqs: [k8s.basics.kubectl, backend.auth.authorization]
+- id: k8s.security.workload-hardening
+  title:
+    vi: "Cho container chạy ít quyền: securityContext và Pod Security"
+    en: "Running containers with less power: securityContext and Pod Security"
+  prereqs: [k8s.config.running-the-system, k8s.security.access]
+- id: k8s.security.network-policy
+  title:
+    vi: "Giới hạn kết nối giữa các Pod bằng NetworkPolicy"
+    en: "Limiting connections between Pods with NetworkPolicies"
+  prereqs: [k8s.workloads.services, k8s.workloads.labels]
+- id: k8s.security.admission-policy
+  title:
+    vi: "Luật riêng lúc admission: ValidatingAdmissionPolicy"
+    en: "Your own rules at admission: ValidatingAdmissionPolicy"
+  prereqs: [k8s.security.workload-hardening, devops.supply-chain.trust]
 levels:
 - level: 1
   title:
@@ -534,7 +554,7 @@ levels:
       - "Secret values are encrypted, since they look like random text in the YAML."
       - "A Secret manifest is safe to commit to Git because its values are encoded."
       - "Once a value is in a Secret, nobody with kubectl access can see it."
-      depth_notes: "Không nói RBAC giới hạn quyền đọc Secret, cấu hình encryption at rest (k8s/security-and-policy GĐ3), Vault/SOPS/Sealed Secrets/External Secrets (devops/secrets-backup-dr GĐ3), imagePullSecret, Secret dạng file, `stringData`, type khác `Opaque`, xoay vòng mật khẩu."
+      depth_notes: "Không nói RBAC giới hạn quyền đọc Secret, cấu hình encryption at rest (k8s/operators-and-cluster-lifecycle GĐ3; ý ở k8s.l3.roles-and-role-bindings), Vault/SOPS/Sealed Secrets/External Secrets (devops/secrets-backup-dr GĐ3), imagePullSecret, Secret dạng file, `stringData`, type khác `Opaque`, xoay vòng mật khẩu."
     - id: k8s.l1.configmap-files
       title:
         vi: "ConfigMap cũng có thể thành file bên trong container"
@@ -679,7 +699,7 @@ levels:
       - "The request is the most a container is allowed to use."
       - "A container that uses more CPU than its limit gets killed."
       - "A Pod stuck in `Pending` means its image could not be pulled."
-      depth_notes: "Không nói QoS class, eviction khi node thiếu tài nguyên, LimitRange/ResourceQuota (k8s/security-and-policy GĐ3), autoscaling và đo usage bằng metrics-server (GĐ3), tranh luận có nên đặt CPU limit, cách .NET GC đọc memory limit, resources cấp Pod."
+      depth_notes: "Không nói QoS class, eviction khi node thiếu tài nguyên, LimitRange/ResourceQuota (k8s L4 multi-tenant GĐ4), autoscaling và đo usage bằng metrics-server (GĐ3), tranh luận có nên đặt CPU limit, cách .NET GC đọc memory limit, resources cấp Pod."
 - level: 2
   title:
     vi: "Level 2"
@@ -1127,3 +1147,234 @@ levels:
       - "Seniors often assume databases must never run inside Kubernetes."
       - "Seniors often assume a managed database removes the need to test restores."
       depth_notes: "Không nêu tên dịch vụ cloud hay so giá (không có trong versions.yaml), operator PostgreSQL (k8s/operators-and-cluster-lifecycle), managed vs self-hosted cho cả cluster (k8s/managed-vs-selfhosted GĐ4), viết ADR (GĐ4)."
+- level: 3
+  title:
+    vi: "Level 3"
+    en: "Level 3"
+  modules:
+  - id: security-and-policy
+    title:
+      vi: "Bảo mật và chính sách: ai được làm gì, cái gì được chạy"
+      en: "Security and policy: who may do what, and what may run"
+    stage: 3
+    summary:
+      vi: "Đọc và cấp quyền trên API server bằng Role, ClusterRole và ServiceAccount theo nguyên tắc quyền tối thiểu, cho Pod của Đơn Hàng chạy không phải root dưới Pod Security admission, chặn kết nối không cần thiết bằng NetworkPolicy, và thêm luật riêng bằng ValidatingAdmissionPolicy — biết luật đó không thay được việc kiểm chữ ký."
+      en: "Grant and read rights on the API server with Roles, ClusterRoles and ServiceAccounts under least privilege, run Đơn Hàng's Pods as non-root under Pod Security admission, block needless connections with NetworkPolicies, and add your own rule with a ValidatingAdmissionPolicy, knowing it cannot replace a signature check."
+    lessons:
+    - id: k8s.l3.api-request-checks
+      title:
+        vi: "Mọi request tới API server qua xác thực, phân quyền rồi admission"
+        en: "Every API request is authenticated, authorized, then admitted"
+      main_path: true
+      duration_min: 12
+      skills: [k8s.security.access]
+      prereqs:
+      - k8s.l1.kubectl-and-the-api-server
+      - k8s.l1.control-plane-components
+      - backend.l1.protecting-an-endpoint
+      related: [backend.l2.role-based-access, backend.l1.validating-a-jwt]
+      vocab: [admission-controller]
+      example_tag: stage-3
+      example_files: [scripts/k8s/api-request-checks.sh]
+      outline:
+      - "Every request to the API server passes three checks in order: authentication finds out who sent it, authorization decides whether that caller may do this action, and admission controllers inspect the object before etcd stores it."
+      - "Kubernetes keeps no user accounts: a person is whoever a certificate or token the API server trusts names; `kubectl auth whoami` prints the user and groups that kind's kubeconfig signs you in as."
+      - "Credentials the API server cannot verify get `401 Unauthorized`; a known caller without permission gets `403 Forbidden`, which kubectl prints as `Error from server (Forbidden)`."
+      - "`kubectl auth can-i` asks only the authorization step and changes nothing; with `--as` an administrator asks on behalf of another user, as `api-request-checks.sh` does for a user `junior-dev`."
+      - "Authorization sees only who, which verb, which kind of object and which namespace; checks on the object's content, such as which image a Pod runs, belong to admission controllers."
+      misconceptions:
+      - "Seniors often assume Kubernetes keeps a list of users that an administrator adds people to."
+      - "Seniors often assume anyone who can reach the API server's address can change the cluster."
+      - "Seniors often assume authorization can look inside an object, such as refusing Pods that run a certain image."
+      depth_notes: "Không dạy cấp chứng chỉ hay OIDC cho người dùng thật, cấu hình authenticator, webhook authorization, audit log, danh sách admission plugin. Role/RoleBinding — bài sau; admission tự viết — k8s.l3.admission-policies."
+    - id: k8s.l3.roles-and-role-bindings
+      title:
+        vi: "Role liệt kê việc được làm; RoleBinding trao nó cho một người"
+        en: "A Role lists allowed actions; a RoleBinding gives them to someone"
+      main_path: true
+      duration_min: 15
+      skills: [k8s.security.access]
+      prereqs: [k8s.l3.api-request-checks, k8s.l1.secrets, k8s.l1.namespaces, backend.l2.role-based-access]
+      related: [devops.l3.secrets-and-gitops, devops.l3.sealed-secrets]
+      vocab: [k8s-role, role-binding, least-privilege]
+      example_tag: stage-3
+      example_files: [deploy/k8s/lessons/pod-reader-role.yaml, scripts/k8s/rbac-role.sh]
+      outline:
+      - "A Role is a list of rules, each naming API groups, kinds of objects and verbs such as `get`, `list` and `delete`; it allows those actions in its own namespace only."
+      - "A RoleBinding gives a Role to users or groups in the same namespace; RBAC rules only allow, so a caller may do whatever any of its bindings allows, and no rule can deny."
+      - "`rbac-role.sh` binds `pod-reader` to `junior-dev` in `security-lessons`: `kubectl auth can-i` answers yes for listing Pods there, no in `donhang`, and no for Secrets or for deleting Pods."
+      - "Permission to `list` or `watch` Secrets returns their values, not only their names, and permission to create Pods in a namespace lets someone mount any Secret there, so both amount to reading Secrets."
+      - "Encrypting Secrets at rest protects copies of etcd's data, such as a backup; it does nothing against a caller whom RBAC allows to read a Secret through the API server."
+      - "Least privilege means each person or program gets only the actions its work needs, only in the namespaces where it does that work, and nothing granted just in case."
+      misconceptions:
+      - "Seniors often assume a Role can deny one action to someone whom another binding allows."
+      - "Seniors often assume permission to list Secrets shows only their names."
+      - "Seniors often assume encrypting Secrets at rest hides them from anyone using kubectl."
+      - "Seniors often assume someone who cannot read Secrets cannot get at them through a Pod they create."
+      depth_notes: "Không dạy ClusterRole (k8s.l3.cluster-roles), aggregated ClusterRole, verb escalate/bind/impersonate, resourceNames, cách bật encryption at rest (k8s/operators-and-cluster-lifecycle). ServiceAccount làm subject — bài sau."
+    - id: k8s.l3.service-accounts
+      title:
+        vi: "Pod gọi API server dưới danh tính ServiceAccount của nó"
+        en: "A Pod calls the API server as its ServiceAccount"
+      main_path: true
+      duration_min: 13
+      skills: [k8s.security.access]
+      prereqs: [k8s.l3.roles-and-role-bindings, k8s.l1.configmap-files, k8s.l2.config-repo-overlays]
+      related: [backend.l2.validating-provider-tokens]
+      vocab: [service-account]
+      example_tag: stage-3
+      example_files:
+      - deploy/k8s/lessons/token-pods.yaml
+      - scripts/k8s/service-accounts.sh
+      - deploy/gitops/config-repo-kustomize/base/api.yaml
+      outline:
+      - "A ServiceAccount is an identity for programs, kept as an object in a namespace; every namespace has one named `default`, and a Pod that names no ServiceAccount runs as it."
+      - "Unless told otherwise, Kubernetes mounts a token for the Pod's ServiceAccount as a file under `/var/run/secrets/kubernetes.io/serviceaccount/`, and the kubelet replaces it before it expires."
+      - "In RBAC a ServiceAccount is the user `system:serviceaccount:<namespace>:<name>` and can do only what bindings give it; `service-accounts.sh` checks `default` in `security-lessons` with `kubectl auth can-i --as`."
+      - "Anyone who reads that token file, such as an attacker who takes over the container, can call the API server with the ServiceAccount's rights."
+      - "The api, Notifications and Payments never call the API server, so staging's base sets `automountServiceAccountToken: false` on their Pods and `service-accounts.sh` finds no token file in an api Pod."
+      misconceptions:
+      - "Seniors often assume a Pod has no identity on the API server unless someone gives it a ServiceAccount."
+      - "Seniors often assume the `default` ServiceAccount may read everything in its namespace."
+      - "Seniors often assume a token mounted into a Pod is harmless when the application never uses it."
+      depth_notes: "Không dạy TokenRequest API, audience, token cho dịch vụ ngoài cluster, imagePullSecrets trên ServiceAccount, workload identity của cloud. ClusterRole cho ServiceAccount của Argo CD — bài sau."
+    - id: k8s.l3.cluster-roles
+      title:
+        vi: "ClusterRole phủ cả cluster, và Argo CD giữ cái rộng nhất"
+        en: "A ClusterRole spans the cluster, and Argo CD holds the widest one"
+      main_path: true
+      duration_min: 14
+      skills: [k8s.security.access]
+      prereqs: [k8s.l3.service-accounts, devops.l3.self-heal, devops.l3.verifying-before-deploy]
+      related: [devops.l3.argo-cd-applications, devops.l3.deploying-by-commit]
+      vocab: [cluster-role, cluster-role-binding]
+      example_tag: stage-3
+      example_files:
+      - deploy/k8s/lessons/junior-view-binding.yaml
+      - scripts/k8s/cluster-roles.sh
+      - deploy/argocd/install.yaml
+      outline:
+      - "A ClusterRole is a Role without a namespace: it can cover cluster-wide kinds such as nodes and namespaces, and one ClusterRole can be reused in many namespaces."
+      - "A RoleBinding that names a ClusterRole grants it in that binding's namespace only; a ClusterRoleBinding grants it in every namespace at once."
+      - "The built-in ClusterRole `view` reads most objects in a namespace but not Secrets, and `cluster-admin` allows every action; `cluster-roles.sh` binds `view` to `junior-dev` in staging's `donhang`."
+      - "Argo CD's `argocd-application-controller` ServiceAccount is bound to a ClusterRole that allows every verb on every kind, so Argo CD can create any object the config repository holds."
+      - "Under GitOps, write access to the config repository is therefore as powerful as `cluster-admin`; people who only need to look get `view`, and changes reach the cluster through reviewed commits."
+      misconceptions:
+      - "Seniors often assume a RoleBinding to a ClusterRole grants it across the whole cluster."
+      - "Seniors often assume the built-in `view` role lets someone read Secrets."
+      - "Seniors often assume that limiting people's kubectl rights limits what reaches the cluster under GitOps."
+      depth_notes: "Không dạy RBAC riêng của Argo CD (AppProject, argocd-rbac-cm), thu hẹp quyền controller theo namespace, aggregated ClusterRole, đăng nhập người thật vào staging, bảo vệ nhánh repo cấu hình (GĐ4)."
+    - id: k8s.l3.security-context
+      title:
+        vi: "securityContext cho container chạy không phải root, ít quyền hơn"
+        en: "A securityContext runs the container as non-root with fewer powers"
+      main_path: true
+      duration_min: 15
+      skills: [k8s.security.workload-hardening]
+      prereqs:
+      - k8s.l1.deploying-don-hang
+      - devops.l1.multi-stage-builds
+      - foundation.l1.files-and-permissions
+      - k8s.l3.service-accounts
+      related: [devops.l3.software-supply-chain]
+      vocab: [security-context]
+      example_tag: stage-3
+      example_files:
+      - DonHang.Api/Dockerfile
+      - deploy/gitops/config-repo-kustomize/base/api.yaml
+      - deploy/k8s/lessons/root-caddy-pod.yaml
+      - scripts/k8s/security-context.sh
+      outline:
+      - "A container runs as the user its image names, or as root when the image names none; until this module the api image named none, so the api ran as root."
+      - "The .NET images include a non-root user whose numeric ID is in the variable `APP_UID`; the api's Dockerfile now switches to it with `USER $APP_UID`, and `security-context.sh` runs `id` in an api Pod."
+      - "A `securityContext` on a Pod or a container sets how its process runs; with `runAsNonRoot: true` the kubelet refuses to start a container that would run as root, and the Pod shows `CreateContainerConfigError`."
+      - "The kubelet can check only a numeric user: an image whose `USER` is a name, such as `app`, fails `runAsNonRoot` unless `runAsUser` gives the number."
+      - "`allowPrivilegeEscalation: false`, dropping `ALL` capabilities and `seccompProfile: RuntimeDefault` remove kernel powers the process does not need; staging's base sets them with `runAsNonRoot` for the .NET services."
+      misconceptions:
+      - "Seniors often assume a process running as root inside a container cannot hurt anything outside it."
+      - "Seniors often assume `runAsNonRoot: true` switches the container to some non-root user by itself."
+      - "Seniors often assume an image that runs as a named non-root user always passes `runAsNonRoot`."
+      depth_notes: "Không dạy user namespaces, AppArmor/SELinux, profile seccomp tự viết, fsGroup và quyền trên volume, readOnlyRootFilesystem chi tiết. Ép cả namespace theo một mức — bài sau. Không dạy lại Dockerfile — devops.l1.multi-stage-builds."
+    - id: k8s.l3.pod-security-admission
+      title:
+        vi: "Pod Security admission áp một mức bảo mật cho cả namespace"
+        en: "Pod Security admission enforces one security level per namespace"
+      main_path: true
+      duration_min: 15
+      skills: [k8s.security.workload-hardening]
+      prereqs:
+      - k8s.l3.security-context
+      - k8s.l3.api-request-checks
+      - k8s.l1.replicasets
+      - devops.l3.one-state-per-environment
+      related: [devops.l3.tofu-modules]
+      vocab: [pod-security-standards, pod-security-admission]
+      example_tag: stage-3
+      example_files:
+      - deploy/k8s/lessons/restricted-namespace.yaml
+      - scripts/k8s/pod-security.sh
+      - deploy/tofu/modules/donhang-platform/main.tf
+      outline:
+      - "The Pod Security Standards define three levels: `privileged` allows everything, `baseline` blocks known privilege escalations such as `privileged: true`, and `restricted` also requires settings like those of the previous lesson."
+      - "Pod Security admission, built into the API server, reads labels `pod-security.kubernetes.io/<mode>: <level>` on a namespace; `enforce` rejects violating Pods, `warn` returns a warning to the client, `audit` records it."
+      - "`enforce` checks Pods, not the Deployments that create them: a violating Deployment is accepted, its ReplicaSet's Pods are refused, and the reason shows only in the ReplicaSet's events."
+      - "`pod-security.sh` applies a Pod without a securityContext to the `restricted` namespace `pod-security-lessons` and gets a message listing each failed check; the same template in a Deployment produces no Pods."
+      - "Adding `--dry-run=server` to `kubectl label` on an existing namespace lists the running Pods that would violate a level without enforcing it; `pod-security.sh` runs it on staging's `donhang`."
+      - "Staging's `donhang` gets its labels from the OpenTofu module `donhang-platform`: `enforce` at the strictest level that all its Pods pass, `warn` and `audit` at `restricted`."
+      misconceptions:
+      - "Seniors often assume `kubectl apply` fails when a Deployment breaks the namespace's Pod Security level."
+      - "Seniors often assume Pod Security admission changes Pods so that they pass."
+      - "Seniors often assume labelling a namespace `restricted` stops the Pods already running there."
+      depth_notes: "Không dạy AdmissionConfiguration của API server (mặc định, exemptions), PodSecurityPolicy, nhãn `enforce-version`, từng kiểm tra của từng mức. Luật riêng của Đơn Hàng — k8s.l3.admission-policies."
+    - id: k8s.l3.network-policies
+      title:
+        vi: "NetworkPolicy biến kết nối tự do giữa Pod thành danh sách cho phép"
+        en: "A NetworkPolicy turns open Pod traffic into an allow list"
+      main_path: true
+      duration_min: 15
+      skills: [k8s.security.network-policy]
+      prereqs: [k8s.l1.service-and-dns, k8s.l1.labels, k8s.l2.staging-keeps-its-data, k8s.l2.gateway-api]
+      related: [k8s.l1.readiness-probes]
+      vocab: [network-policy]
+      example_tag: stage-3
+      example_files:
+      - deploy/gitops/config-repo-kustomize/base/network-policies.yaml
+      - scripts/k8s/network-policy.sh
+      outline:
+      - "Without NetworkPolicies any Pod can open connections to any other Pod in the cluster, across namespaces: `network-policy.sh` connects from a Pod in `security-lessons` to staging's `db` on port 5432."
+      - "A NetworkPolicy selects Pods by label; once any policy selects a Pod for ingress, only connections that some policy allows reach it, and policies can only add allowed connections."
+      - "The cluster's network plugin carries NetworkPolicies out; with a plugin that lacks support the API server accepts them and nothing is blocked. kind's default plugin, kindnet, enforces them in kind 0.33."
+      - "Staging's base adds one policy that selects every Pod in `donhang` with no ingress rules, isolating them all, then one policy per service naming the Pods or namespaces allowed to connect to it."
+      - "After the commit the same connection to `db` from `security-lessons` fails while the api still reaches `db`; the kubelet's probes keep working because traffic from a Pod's own node is always allowed."
+      misconceptions:
+      - "Seniors often assume Pods in different namespaces cannot reach each other by default."
+      - "Seniors often assume a NetworkPolicy the API server accepted is being enforced."
+      - "Seniors often assume one NetworkPolicy can block a connection that another policy allows."
+      depth_notes: "Không dạy policy egress (phải mở DNS), ipBlock, cách network plugin thực thi và CNI (k8s/networking-deep), AdminNetworkPolicy, mã hóa traffic giữa Pod, service mesh (GĐ4)."
+    - id: k8s.l3.admission-policies
+      title:
+        vi: "ValidatingAdmissionPolicy thêm luật riêng của bạn vào API server"
+        en: "A ValidatingAdmissionPolicy adds your own rule to the API server"
+      main_path: true
+      duration_min: 15
+      skills: [k8s.security.admission-policy]
+      prereqs: [k8s.l3.pod-security-admission, k8s.l3.cluster-roles, devops.l3.verifying-before-deploy]
+      related: [devops.l3.signing-images, devops.l3.pinning-by-content]
+      vocab: [validating-admission-policy, cel, admission-webhook]
+      example_tag: stage-3
+      example_files:
+      - deploy/gitops/config-repo/platform/policies/require-image-digest.yaml
+      - deploy/gitops/config-repo/apps/policies-staging.yaml
+      - scripts/k8s/admission-policy.sh
+      outline:
+      - "A ValidatingAdmissionPolicy holds checks written in CEL that the API server itself evaluates; a ValidatingAdmissionPolicyBinding chooses where it applies and whether a failure denies, warns or only audits."
+      - "Đơn Hàng's policy `require-image-digest` rejects Pods in `donhang` whose image from `ghcr.io/duyan11110/` lacks `@sha256:`, the form `deploy-verified.sh` commits, so a tag that moves cannot reach staging."
+      - "`admission-policy.sh` binds the policy with `Warn` first to list existing Pods that would fail, then with `Deny`, and shows a Pod that names the api image by tag only being refused."
+      - "CEL sees only the request and the object, never the registry, so the policy cannot tell whether a digest was signed: a digest committed without `deploy-verified.sh` still passes."
+      - "Checking signatures at admission needs an admission webhook, a server the API server calls during admission, run by a policy engine; Đơn Hàng installs none, so signatures are still checked on the commit path."
+      - "A webhook adds a dependency: with `failurePolicy: Fail` its outage blocks every Pod it covers, even during recovery; with `Ignore`, unchecked Pods get through while it is down."
+      misconceptions:
+      - "Seniors often assume a custom admission rule always needs a policy engine installed in the cluster."
+      - "Seniors often assume that requiring digests means every running image was verified."
+      - "Seniors often assume a policy that blocks bad Pods costs nothing when it fails."
+      depth_notes: "Không nêu tên/cài policy engine (Kyverno, Gatekeeper chưa có trong versions.yaml), MutatingAdmissionPolicy, paramKind, matchConditions, viết webhook. CEL chỉ ở mức đọc biểu thức trong bài. Không dạy lại ký và xác minh — devops/supply-chain."
