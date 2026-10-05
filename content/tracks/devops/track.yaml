@@ -118,6 +118,21 @@ skills:
     vi: "Log JSON và log tập trung"
     en: "JSON logs and centralized logging"
   prereqs: [backend.errors.logging, devops.monitoring.dashboards]
+- id: devops.iac.declarative
+  title:
+    vi: "Hạ tầng bằng code: provider, resource, plan và apply"
+    en: "Infrastructure as code: providers, resources, plan and apply"
+  prereqs: [k8s.config.running-the-system, devops.ci.quality-gate]
+- id: devops.iac.state
+  title:
+    vi: "State của OpenTofu: dùng chung, khóa, phát hiện drift"
+    en: "OpenTofu state: sharing, locking, detecting drift"
+  prereqs: [devops.iac.declarative, devops.config.secrets]
+- id: devops.iac.modules-environments
+  title:
+    vi: "Module và môi trường trong OpenTofu"
+    en: "OpenTofu modules and environments"
+  prereqs: [devops.iac.declarative, devops.cd.delivery]
 levels:
 - level: 1
   title:
@@ -1021,3 +1036,232 @@ levels:
       - "To find one order's logs quickly, I should put the order id in a Loki label."
       - "`docker compose logs` already keeps every container's logs for good, so a log store adds nothing."
       depth_notes: "Không nói retention, object storage, Loki nhiều instance, collector khác, log trong cluster (k8s GĐ3), nối log với trace (backend/observability GĐ3); không nói alert từ log (GĐ4)."
+- level: 3
+  title:
+    vi: "Level 3"
+    en: "Level 3"
+  modules:
+  - id: iac
+    title:
+      vi: "Infrastructure as code với OpenTofu"
+      en: "Infrastructure as code with OpenTofu"
+    stage: 3
+    summary:
+      vi: "Mô tả cluster kind và những gì nền tảng cần trong đó bằng OpenTofu: đọc plan trước khi apply, giữ state chung có khóa và mã hóa, tách module và môi trường, và phát hiện drift do thay đổi bằng tay."
+      en: "Describe kind clusters and what the platform needs inside them with OpenTofu: read the plan before applying, keep state shared, locked and encrypted, split modules and environments, and detect drift from changes made by hand."
+    lessons:
+    - id: devops.l3.infrastructure-as-code
+      title:
+        vi: "Script tạo cluster một lần không giữ được cluster khớp với file"
+        en: "A script that creates the cluster once cannot keep it matching a file"
+      main_path: true
+      duration_min: 12
+      skills: [devops.iac.declarative]
+      prereqs:
+      - k8s.l1.manifests-and-kubectl-apply
+      - k8s.l1.cluster-nodes-and-control-plane
+      - k8s.l1.deploying-don-hang
+      - devops.l1.why-not-deploy-by-hand
+      related: [k8s.l1.control-plane-components, devops.l2.deployment-environments]
+      vocab: [infrastructure-as-code]
+      example_tag: stage-2
+      example_files:
+      - scripts/k8s/cluster-up.sh
+      - deploy/k8s/kind-config.yaml
+      - scripts/k8s/cluster-down.sh
+      - scripts/k8s/deploy.sh
+      outline:
+      - "Infrastructure as code means describing the machines, clusters and services a system runs on in files kept in Git, and letting a tool create or change them from those files instead of by hand."
+      - "`scripts/k8s/cluster-up.sh` creates the kind cluster `donhang` from `deploy/k8s/kind-config.yaml` only when no cluster of that name exists; otherwise it prints that the cluster already exists."
+      - "Editing `kind-config.yaml` after the cluster exists changes nothing: `cluster-up.sh` never compares the running cluster with the file, so the two can disagree without any warning."
+      - "At stage-2 the only way to apply such an edit is to delete the whole cluster with `scripts/k8s/cluster-down.sh` and create it again, losing every object that ran in it."
+      - "An infrastructure-as-code tool reads the files, compares them with what exists, and shows the changes it would make before it makes them."
+      misconceptions:
+      - "A setup script that is idempotent, safe to run twice, is already infrastructure as code."
+      - "`kind-config.yaml` is in Git, so the running cluster always matches it."
+      - "`kubectl apply` already makes everything declarative, so there is nothing left for another tool to describe."
+      depth_notes: "Không dạy cú pháp OpenTofu — devops.l3.opentofu-resources. Đồng bộ liên tục từ Git — devops/gitops. Không dạy Ansible hay cấu hình bên trong máy. Không dạy lại kubectl apply — k8s.l1.manifests-and-kubectl-apply."
+    - id: devops.l3.opentofu-resources
+      title:
+        vi: "Khối resource khai báo một object; provider biết cách tạo nó"
+        en: "A resource block declares an object; a provider knows how to make it"
+      main_path: true
+      duration_min: 13
+      skills: [devops.iac.declarative]
+      prereqs: [devops.l3.infrastructure-as-code, devops.l2.quality-gate]
+      related: [k8s.l1.cluster-nodes-and-control-plane, devops.l2.dependency-cache]
+      vocab: [opentofu, tofu-resource, tofu-provider]
+      example_tag: stage-3
+      example_files:
+      - deploy/tofu/lessons/first-cluster/main.tf
+      - deploy/tofu/lessons/first-cluster/.terraform.lock.hcl
+      - scripts/devops/tofu-first-cluster.sh
+      - ".github/workflows/ci.yml"
+      outline:
+      - "OpenTofu reads every `.tf` file in one folder as one configuration; in it, each `resource` block declares one object that should exist, by a type such as `kind_cluster` and a local name such as `this`."
+      - "OpenTofu itself knows no system's API: a provider is a plugin that does, and the `kind_cluster` type comes from the `tehcyx/kind` provider, which creates kind clusters through Docker."
+      - "The `required_providers` block names each provider's source and the versions allowed, and `tofu init` downloads a matching provider into the folder's `.terraform` directory."
+      - "`tofu init` writes the exact provider version it chose and its checksums to `.terraform.lock.hcl`; with that file committed, every later `init` installs the same version."
+      - "`tofu validate` checks a configuration's syntax and references without contacting the systems it describes; Đơn Hàng's CI runs it with `tofu fmt -check` for every configuration under `deploy/tofu`."
+      misconceptions:
+      - "OpenTofu has built-in knowledge of kind, Kubernetes and every other system it can manage."
+      - "A version range in `required_providers` is enough for every machine to get the same provider version."
+      - "If `tofu validate` passes, the cluster can certainly be created."
+      depth_notes: "Không dạy chi tiết plan/apply — devops.l3.plan-and-apply; state — devops.l3.tofu-state; biến, output, module — devops.l3.tofu-modules. Không dạy viết provider, không so sánh với công cụ IaC khác."
+    - id: devops.l3.plan-and-apply
+      title:
+        vi: "tofu plan cho thấy mọi thay đổi trước khi tofu apply thực hiện"
+        en: "tofu plan shows every change before tofu apply makes it"
+      main_path: true
+      duration_min: 13
+      skills: [devops.iac.declarative]
+      prereqs: [devops.l3.opentofu-resources, k8s.l1.manifests-and-kubectl-apply]
+      related: [k8s.l1.rolling-updates, devops.l2.quality-gate]
+      vocab: [tofu-plan]
+      example_tag: stage-3
+      example_files:
+      - deploy/tofu/lessons/first-cluster/main.tf
+      - scripts/devops/tofu-first-cluster.sh
+      - scripts/devops/tofu-plan-apply.sh
+      outline:
+      - "`tofu plan` compares the configuration with the objects OpenTofu created earlier and prints the actions it would take without taking any: create (`+`), update in place (`~`), replace (`-/+`) or destroy (`-`)."
+      - "`tofu apply` without a plan file makes a fresh plan, prints it, and acts only after you type `yes`."
+      - "`tofu plan -out=<file>` saves a plan; `tofu apply <file>` then takes exactly the saved actions without asking again."
+      - "Some attributes cannot change on an existing object: changing the node image in `first-cluster` makes the plan replace the whole cluster, so everything running in it is lost."
+      - "A second `tofu apply` with unchanged files reports that no changes are needed, because the real cluster already matches the configuration."
+      misconceptions:
+      - "`tofu plan` already makes the harmless part of the changes; `apply` only finishes the rest."
+      - "A `~` in the plan means the object is deleted and created again."
+      - "The plan I read yesterday is exactly what `tofu apply` will do today."
+      depth_notes: "Không giải thích OpenTofu nhớ object đã tạo bằng gì, kể cả plan đã lưu bị từ chối — devops.l3.tofu-state. Không dạy -target, -replace. Thay đổi làm bằng tay — devops.l3.configuration-drift."
+    - id: devops.l3.tofu-state
+      title:
+        vi: "File state là cách OpenTofu biết object thật nào ứng với khối nào"
+        en: "The state file is how OpenTofu knows which real object is which"
+      main_path: true
+      duration_min: 14
+      skills: [devops.iac.state]
+      prereqs: [devops.l3.plan-and-apply, k8s.l1.kubectl-and-the-api-server, devops.l1.secrets-vs-config]
+      related: [k8s.l1.manifests-and-kubectl-apply, k8s.l1.secrets]
+      vocab: [tofu-state]
+      example_tag: stage-3
+      example_files: [deploy/tofu/lessons/first-cluster/main.tf, scripts/devops/tofu-state.sh, ".gitignore"]
+      outline:
+      - "After each apply OpenTofu writes its state, by default to `terraform.tfstate` in the folder: every resource address, such as `kind_cluster.this`, mapped to the real object and the attributes read back from it."
+      - "A resource whose block is removed from the files but which is still in the state is planned for destruction; `kubectl apply` keeps no such record, so an object whose manifest you delete keeps running."
+      - "Deleting the state file does not make OpenTofu find its objects again: the next plan creates everything anew, and creating a second kind cluster with the same name fails."
+      - "The state holds attribute values in plain text, sensitive ones included: the cluster's `client_key`, enough to administer the whole cluster, is readable in `terraform.tfstate`."
+      - "`tofu apply` refuses a saved plan once the state has changed after the plan was made, because the plan's actions were worked out from the older state."
+      - "Đơn Hàng's `.gitignore` excludes state files: the state must not go into Git, because anyone who can read it can use the credentials in it."
+      misconceptions:
+      - "The state file is just a cache; if I delete it, OpenTofu will find my resources again."
+      - "Marking a value as sensitive keeps it out of the state file."
+      - "Removing a block from the files only makes OpenTofu stop managing that object; the object itself stays."
+      depth_notes: "Không dạy state dùng chung, khóa, mã hóa — devops.l3.remote-state-and-locking. Không dạy tofu import, tofu state mv/rm. Không dạy lại kubectl apply — k8s.l1.manifests-and-kubectl-apply."
+    - id: devops.l3.tofu-modules
+      title:
+        vi: "Module là một thư mục .tf được gọi với giá trị của riêng bạn"
+        en: "A module is a folder of .tf files you call with your own values"
+      main_path: true
+      duration_min: 14
+      skills: [devops.iac.modules-environments]
+      prereqs: [devops.l3.tofu-state, devops.l3.opentofu-resources]
+      related: [design.l3.module-contracts]
+      vocab: [tofu-module, input-variable, output-value]
+      example_tag: stage-3
+      example_files:
+      - deploy/tofu/modules/kind-cluster/main.tf
+      - deploy/tofu/modules/kind-cluster/variables.tf
+      - deploy/tofu/modules/kind-cluster/outputs.tf
+      - deploy/tofu/lessons/moved-into-module/main.tf
+      outline:
+      - "A module is a folder of `.tf` files that another configuration calls with a `module` block; `deploy/tofu/modules/kind-cluster` declares one kind cluster."
+      - "Input variables, declared with `variable` blocks, are a module's parameters, such as the cluster name and the number of workers; the calling `module` block gives their values."
+      - "Output values, declared with `output` blocks, are what a module hands back, such as the API server address, which the caller reads as `module.<name>.<output>`."
+      - "Whatever a module does not take as a variable is the same for every caller: `kind-cluster` fixes the node image, so every environment runs the same Kubernetes version."
+      - "Inside a module a resource's address gains a prefix, such as `module.cluster.kind_cluster.this`, and that is how it appears in plans and in the state."
+      - "Moving an existing resource into a module changes its address, so the plan would destroy and recreate it unless a `moved` block names the old and the new address."
+      misconceptions:
+      - "Putting resources into a module only tidies the files; the plan stays the same."
+      - "A good module turns every setting into a variable, so callers can change anything."
+      - "The caller can read any attribute of a resource inside a module, like any other resource in its folder."
+      depth_notes: "Không dạy module công khai từ registry, count, for_each. Dùng module cho từng môi trường — devops.l3.one-state-per-environment. Không dạy lại state — devops.l3.tofu-state."
+    - id: devops.l3.one-state-per-environment
+      title:
+        vi: "Mỗi môi trường một thư mục và một state riêng"
+        en: "One folder and one state for each environment"
+      main_path: true
+      duration_min: 14
+      skills: [devops.iac.modules-environments]
+      prereqs: [devops.l3.tofu-modules, devops.l2.deployment-environments, k8s.l1.namespaces, k8s.l1.secrets]
+      related: [devops.l3.tofu-state]
+      vocab: [tofu-workspace]
+      example_tag: stage-3
+      example_files:
+      - deploy/tofu/envs/staging/cluster/main.tf
+      - deploy/tofu/envs/production/cluster/main.tf
+      - deploy/tofu/envs/staging/platform/main.tf
+      - scripts/devops/tofu-environments.sh
+      outline:
+      - "`deploy/tofu/envs/staging` and `deploy/tofu/envs/production` call the same `kind-cluster` module with their own values: one node for staging, a control plane and two workers for production."
+      - "Each environment folder is a separate configuration with its own state, so an apply in staging can change only what staging's state records, never production."
+      - "Each environment is split into a `cluster` layer and a `platform` layer for the `donhang` namespace and its Secrets, because the Kubernetes provider can connect only once the cluster exists."
+      - "The `platform` layer reads the `cluster` layer's outputs, such as the API server address, through a `terraform_remote_state` block instead of sharing one state with it."
+      - "OpenTofu workspaces keep several states for one folder; they fit copies that differ only in variable values, while separate folders let environments differ in anything."
+      - "`tofu-environments.sh` applies both layers of staging but only plans production's cluster, so you can read what production would get without running it."
+      misconceptions:
+      - "Keeping staging and production alike means putting both in one configuration with one state."
+      - "A folder per environment means copying all the `.tf` code into each one."
+      - "Splitting the state only makes plans faster; it does not change what one mistake can break."
+      depth_notes: "Không dạy nơi lưu state chung — devops.l3.remote-state-and-locking. Deploy ứng dụng lên cluster staging — devops/gitops. Secret trong platform chỉ là ví dụ; quản lý secret — devops/secrets-backup-dr. Multi-region, multi-account — GĐ4."
+    - id: devops.l3.remote-state-and-locking
+      title:
+        vi: "State dùng chung: một bản cho cả nhóm, khóa lại khi có người chạy"
+        en: "Shared state: one copy for the team, locked while a command runs"
+      main_path: true
+      duration_min: 14
+      skills: [devops.iac.state]
+      prereqs: [devops.l3.one-state-per-environment, devops.l3.tofu-state, backend.l2.skip-locked-claiming]
+      related: [devops.l1.secrets-vs-config]
+      vocab: [state-backend, state-locking]
+      example_tag: stage-3
+      example_files:
+      - deploy/tofu/envs/staging/cluster/backend.tf
+      - scripts/devops/tofu-db.sh
+      - scripts/devops/tofu-lock.sh
+      - scripts/dev-secrets.sh
+      outline:
+      - "A state file on one laptop is invisible to everyone else: a teammate applying from another copy of the repository has no state, so OpenTofu plans to create everything again."
+      - "A backend is where OpenTofu keeps a configuration's state; Đơn Hàng's environments use the `pg` backend, which stores each state in a table of the `donhang_tofu` database in Compose's PostgreSQL."
+      - "OpenTofu holds a lock on the state for as long as a command such as `plan` or `apply` runs; while `tofu apply` waits for `yes` in one terminal, `tofu plan` in another fails because the state is locked."
+      - "By default a command that finds the state locked fails at once; `-lock-timeout=60s` makes it wait up to that long for the lock instead."
+      - "OpenTofu can encrypt the state before it reaches the backend; Đơn Hàng's environments derive the key from a passphrase in `.env`, so the rows in `donhang_tofu` hold no readable credentials."
+      misconceptions:
+      - "Committing `terraform.tfstate` to Git is a fine way to share it with the team."
+      - "If two people apply at the same time, the second apply simply waits for the first one to finish."
+      - "Keeping the state in a database means it is encrypted."
+      depth_notes: "Không dạy backend dịch vụ cloud, force-unlock. Passphrase trong .env chỉ đủ cho lab; quản lý khóa thật — devops/secrets-backup-dr. Không dạy cách pg backend hiện thực khóa."
+    - id: devops.l3.configuration-drift
+      title:
+        vi: "Drift: thay đổi làm bằng tay mà file không hề biết"
+        en: "Drift: a change made by hand that the files know nothing about"
+      main_path: true
+      duration_min: 13
+      skills: [devops.iac.state]
+      prereqs: [devops.l3.remote-state-and-locking, k8s.l1.control-plane-components, k8s.l1.labels]
+      related: [devops.l3.plan-and-apply, k8s.l1.manifests-and-kubectl-apply]
+      vocab: [configuration-drift]
+      example_tag: stage-3
+      example_files: [deploy/tofu/envs/staging/platform/main.tf, scripts/devops/tofu-drift.sh]
+      outline:
+      - "Drift is a difference between real infrastructure and its configuration that was made outside OpenTofu, such as a label added to the staging `donhang` namespace with `kubectl label`."
+      - "Before planning, `tofu plan` refreshes: it reads each resource's current attributes through its provider, so the hand-made label shows up as a change OpenTofu would undo."
+      - "`tofu plan -refresh-only` lists only what changed outside OpenTofu; `tofu apply -refresh-only` records those values in the state and changes no real object."
+      - "OpenTofu does nothing between runs, unlike a Kubernetes control loop: drift stays until someone runs a plan and reads it."
+      - "`tofu plan -detailed-exitcode` exits with 2 when the plan has changes and with 0 when it has none, so a scheduled job can report drift without anyone reading the output."
+      - "When the hand-made change was right, the fix is to write it into the files; applying the unchanged files would remove it."
+      misconceptions:
+      - "Once OpenTofu has applied a change, it keeps the infrastructure that way, like Kubernetes keeps a Deployment's Pods running."
+      - "`tofu apply -refresh-only` puts the infrastructure back the way the files describe it."
+      - "If `tofu plan` shows a change nobody wrote, someone must have edited the `.tf` files."
+      depth_notes: "Không dạy ignore_changes, tofu import. Đồng bộ liên tục từ Git — devops/gitops. Không dựng job drift theo lịch trong CI (CI không tới được state của lab), chỉ nêu ý."
