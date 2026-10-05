@@ -242,6 +242,26 @@ skills:
     vi: "Giới hạn tải bằng rate limiting và bulkhead"
     en: "Limit load with rate limiting and bulkheads"
   prereqs: [backend.resilience.failure-modes, backend.http.middleware]
+- id: backend.tenancy.isolation
+  title:
+    vi: "Tách dữ liệu của từng tenant trong một hệ thống dùng chung"
+    en: "Keeping each tenant's data apart in a shared system"
+  prereqs: [backend.auth.access-models, backend.data.query-plans]
+- id: backend.data.partitioning
+  title:
+    vi: "Chia một bảng lớn theo partition key trong cùng database"
+    en: "Splitting a large table by a partition key inside one database"
+  prereqs: [backend.data.query-plans]
+- id: backend.data.replication
+  title:
+    vi: "Đọc từ read replica mà biết dữ liệu có thể trễ"
+    en: "Reading from a read replica while knowing its data can lag"
+  prereqs: [backend.consistency.distributed]
+- id: backend.data.sharding
+  title:
+    vi: "Chọn shard key, truy vấn xuyên shard và thêm shard"
+    en: "Choosing a shard key, querying across shards and adding shards"
+  prereqs: [backend.data.partitioning, backend.data.replication, backend.tenancy.isolation]
 levels:
 - level: 1
   title:
@@ -2607,3 +2627,208 @@ levels:
       - "A bulkhead makes product reads more reliable."
       - "Rejecting a request at once is worse than letting it wait, because a waiting request succeeds in the end."
       depth_notes: "Không dạy kích thước connection pool của Npgsql, concurrency limiter của Polly hay giới hạn tài nguyên container — ngoài module; giới hạn theo khách — backend.l3.rate-limiting. Không dạy lại tách service — design.l3.when-to-extract-a-service."
+  - id: multitenancy-and-sharding
+    title:
+      vi: "Multi-tenancy, partitioning và sharding"
+      en: "Multi-tenancy, partitioning and sharding"
+    stage: 3
+    summary:
+      vi: "Giữ dữ liệu của nhiều cửa hàng tách nhau bằng bảng chung, schema hay database riêng và row-level security, chia bảng lớn bằng partitioning, gánh việc đọc bằng read replica, rồi chọn shard key, truy vấn xuyên shard và thêm shard mà không phải chuyển phần lớn dữ liệu."
+      en: "Keep many shops' data apart with shared tables, schemas or databases and row-level security, split a large table with partitioning, take reads off the primary with a replica, then choose a shard key, query across shards and add a shard without moving most of the data."
+    lessons:
+    - id: backend.l3.multi-tenancy
+      title:
+        vi: "Một hệ thống phục vụ nhiều cửa hàng mà không cửa hàng nào thấy dữ liệu của nhau"
+        en: "One system can serve many shops that never see each other's data"
+      main_path: true
+      duration_min: 12
+      skills: [backend.tenancy.isolation]
+      prereqs: [backend.l2.resource-based-authorization, backend.l2.validating-provider-tokens]
+      related: [backend.l3.rate-limiting, backend.l3.bulkhead]
+      vocab: [tenant, multi-tenancy, tenant-isolation, noisy-neighbor]
+      example_tag: stage-2
+      example_files: [DonHang.Api/Controllers/OrdersController.cs, DonHang.Api/Authorization/OrderOwnerHandler.cs]
+      outline:
+      - "A tenant is one organisation that uses a system as if it were its own, such as one shop; multi-tenancy means one running system, code and databases, serves many tenants."
+      - "Đơn Hàng's API serves a single shop at stage-3; this module tries multi-shop layouts on separate lab databases and leaves the choice for Đơn Hàng to a later stage."
+      - "Tenant isolation means no request can read or change another tenant's data; one query that forgets its tenant filter is enough to break it."
+      - "`OrdersController` takes the customer from the access token's `sub` claim, never from the request body; a tenant has to be found the same way, from the caller's verified identity."
+      - "Tenants that share a system also share its CPU, database connections and rate limits, so one busy tenant can slow all the others: the noisy-neighbor problem."
+      misconceptions:
+      - "Each shop can send its shop id in a header, and the API filters every query by it."
+      - "If every query in the code filters by shop today, the shops are isolated for good."
+      - "Multi-tenancy means each shop gets its own copy of the application."
+      depth_notes: "Không so cách tách dữ liệu (bảng chung, schema, database) — backend.l3.tenant-isolation-models; không dạy row-level security — backend.l3.row-level-security. Không dạy giới hạn tài nguyên theo tenant hay quyết định đa cửa hàng cho Đơn Hàng — GĐ4."
+    - id: backend.l3.tenant-isolation-models
+      title:
+        vi: "Ranh giới dữ liệu giữa các cửa hàng nằm ở bảng, schema hay database"
+        en: "Where to draw the line between one shop's data and the next"
+      main_path: true
+      duration_min: 16
+      skills: [backend.tenancy.isolation]
+      prereqs: [backend.l3.multi-tenancy, backend.l2.composite-indexes, design.l3.module-owns-its-tables]
+      related: [backend.l3.payments-service, backend.l1.migrations]
+      vocab: [shared-table-tenancy, schema-per-tenant, database-per-tenant]
+      example_tag: stage-3
+      example_files:
+      - db/tenancy/shared-schema.sql
+      - db/tenancy/schema-per-shop.sql
+      - scripts/backend/tenancy-models.sh
+      outline:
+      - "With shared tables, every shop's rows sit in the same `orders` table with a `shop_id` column, so keys and indexes used for one shop's queries start with `shop_id`."
+      - "With a schema per tenant, each shop has a PostgreSQL schema, a named group of tables inside one database, and the session's `search_path` decides which shop's `orders` a query reads."
+      - "With a database per tenant, each shop has its own database; PostgreSQL cannot join tables of two databases in one query, and `tenancy-models.sh` shows the error it gives."
+      - "`tenancy-models.sh` adds one column in each layout: one `ALTER TABLE` with shared tables, one per shop with a schema or a database per shop."
+      - "Going from shared tables towards a database per shop buys stronger isolation and a backup per shop, at the cost of one more set of migrations, connections and monitoring per shop."
+      - "The layouts can be mixed: when one shop is far larger than the rest, it can get its own database while the small shops share tables."
+      misconceptions:
+      - "A schema per shop isolates shops as strongly as a database per shop."
+      - "A database per shop is always the safest choice, so it should be the default."
+      - "Shared tables only need a `shop_id` column; the existing keys and indexes can stay as they are."
+      depth_notes: "Không dạy row-level security — backend.l3.row-level-security; không dạy chuyển một shop sang layout khác, backup/restore theo shop hay chọn layout cho Đơn Hàng — GĐ4. Không dạy lại composite index — backend.l2.composite-indexes."
+    - id: backend.l3.row-level-security
+      title:
+        vi: "Row-level security để PostgreSQL tự lọc dữ liệu theo cửa hàng"
+        en: "Row-level security makes PostgreSQL apply the shop filter itself"
+      main_path: true
+      duration_min: 16
+      skills: [backend.tenancy.isolation]
+      prereqs: [backend.l3.tenant-isolation-models, backend.l2.transactions-in-practice]
+      related: [backend.l2.resource-based-authorization]
+      vocab: [row-level-security]
+      example_tag: stage-3
+      example_files: [db/tenancy/row-level-security.sql, scripts/backend/row-level-security.sh]
+      outline:
+      - "After `ENABLE ROW LEVEL SECURITY` on a table, the `USING` condition of its policies is added to every query on it, and a table with no policy shows such queries no rows at all."
+      - "The table's owner, superusers and roles with `BYPASSRLS` skip the policies; the PostgreSQL image creates `donhang` as a superuser, so the demo switches to a separate role."
+      - "The policy reads the shop from `current_setting('app.shop_id', true)` and turns a missing or empty value into null, so a request that never set its shop sees no rows, not every shop's."
+      - "Pooled connections are reused by later requests, so the shop is set with `SET LOCAL` inside the request's transaction and is gone when that transaction ends."
+      - "A policy for all commands with no `WITH CHECK` uses its `USING` condition for new rows too, so `row-level-security.sh` fails to insert an order for shop 2 while set to shop 1."
+      - "A filter in application code protects only queries that go through that code; row-level security also covers raw SQL, reports and scripts that run as the restricted role."
+      misconceptions:
+      - "Once row-level security is on, every connection is filtered, including the one the API uses today."
+      - "Setting the shop once when a connection opens is enough, because each request gets its own connection."
+      - "With row-level security, the API no longer needs to know which shop the caller belongs to."
+      depth_notes: "Không dạy policy riêng cho từng lệnh, policy RESTRICTIVE, chi phí của policy hay nối row-level security vào EF Core — ngoài module. API Đơn Hàng không bật row-level security ở stage-3. Không dạy lại transaction — backend.l2.transactions-in-practice."
+    - id: backend.l3.table-partitioning
+      title:
+        vi: "Partitioning chia một bảng lớn thành nhiều bảng nhỏ theo một khóa"
+        en: "Partitioning splits one large table into smaller ones by a key"
+      main_path: true
+      duration_min: 16
+      skills: [backend.data.partitioning]
+      prereqs: [backend.l2.indexes-and-plans, backend.l2.composite-indexes]
+      related: [backend.l2.cursor-pagination]
+      vocab: [table-partitioning, partition-key]
+      example_tag: stage-3
+      example_files: [db/partitioning/orders-by-month.sql, scripts/backend/partition-pruning.sh]
+      outline:
+      - "A partitioned table holds no rows itself: PostgreSQL stores each row in the partition whose range of the partition key contains it, here one partition per month of `placed_at`."
+      - "`partition-pruning.sh` copies the 200,000 orders of `donhang_perf` into `orders_by_month`; the plan of a query for one month's orders reads only that month's partition."
+      - "A query with no condition on the partition key, such as one customer's orders, reads every partition, so the key is chosen from the queries the table answers most."
+      - "A primary key or unique constraint on a partitioned table must include the partition key, so `orders_by_month` uses `(id, placed_at)` as its key."
+      - "Removing a month of old orders is detaching or dropping its partition, which avoids the row-by-row work of a large `DELETE`."
+      - "Every partition stays in the same database on the same server, so partitioning does not add the CPU or disk of another machine."
+      misconceptions:
+      - "Partitioning makes every query on the table faster."
+      - "Partitioning spreads a table over several database servers."
+      - "A partitioned table can keep `id` alone as its primary key."
+      depth_notes: "Không dạy partition kiểu list/hash, partition lồng nhau, tự tạo partition tháng mới hay đổi bảng `orders` thật sang partition — ngoài module. Chia qua nhiều server — backend.l3.sharding. Không dạy lại đọc plan — backend.l2.indexes-and-plans."
+    - id: backend.l3.read-replicas
+      title:
+        vi: "Read replica gánh bớt việc đọc nhưng có thể chậm hơn bản chính"
+        en: "A read replica takes reads off the primary but can lag behind it"
+      main_path: true
+      duration_min: 15
+      skills: [backend.data.replication]
+      prereqs: [backend.l3.eventual-consistency, backend.l3.table-partitioning]
+      related: [backend.l2.cache-invalidation, k8s.l1.deploying-don-hang]
+      vocab: [read-replica, replication-lag, read-your-writes]
+      example_tag: stage-3
+      example_files: [docker-compose.yml, scripts/backend/replica-lag.sh]
+      outline:
+      - "A read replica is a second PostgreSQL server that receives the primary's changes as a stream and applies them; it answers queries but refuses every write."
+      - "At stage-3 the Compose profile `replica` adds `db-replica`, and `replica-lag.sh` shows an `UPDATE` sent to it failing because its transactions are read-only."
+      - "Replication is asynchronous by default: the primary commits without waiting for the replica, so the replica can return a value from before a committed change; the delay is replication lag."
+      - "The lab replica waits on purpose before applying changes, so `replica-lag.sh` reads a product's old price on the replica right after the primary commits the new one."
+      - "A request that reads right after its own write, such as showing the order just placed, must read from the primary; this read-your-writes rule decides which reads may go to a replica."
+      - "A replica adds capacity for reads only: every write still goes to the one primary, so growth in writes needs the data split across several servers instead."
+      misconceptions:
+      - "A replica always holds the same data as the primary, since it copies every change."
+      - "Sending every `GET` to a replica is safe, because reads cannot break anything."
+      - "Adding replicas also makes placing orders faster."
+      depth_notes: "Không dạy replication đồng bộ, failover hay nâng replica thành primary — devops/secrets-backup-dr và GĐ4; API Đơn Hàng chưa đọc từ replica. Không dạy lại eventual consistency — backend.l3.eventual-consistency."
+    - id: backend.l3.sharding
+      title:
+        vi: "Sharding chia các dòng qua nhiều database theo shard key"
+        en: "Sharding splits rows across databases by a shard key"
+      main_path: true
+      duration_min: 15
+      skills: [backend.data.sharding]
+      prereqs: [backend.l3.table-partitioning, backend.l3.read-replicas, backend.l3.tenant-isolation-models]
+      related: [design.l3.module-owns-its-tables]
+      vocab: [sharding, database-shard, shard-key, hot-shard]
+      example_tag: stage-3
+      example_files: [db/sharding/shard-skew.sql, scripts/backend/shard-skew.sh]
+      outline:
+      - "Sharding stores each row in one of several databases, usually on separate servers, chosen from the row's shard key; each such database is a shard and holds only its share of the rows."
+      - "Unlike partitions, shards each have their own CPU, disk and connections, so write capacity grows with the number of shards, but no single database sees all the rows."
+      - "`shard-skew.sh` counts the orders of `donhang_perf` per shard for `customer_id % 4` and for `id % 4`: by customer, one shard holds most orders, because customer 1 placed 81% of them."
+      - "A shard holding far more than its share of rows or traffic is a hot shard; one very large customer or tenant makes one however the keys are spread."
+      - "Rows read together should share a shard key: sharding orders and `order_items` by `customer_id` keeps one customer's history on one shard, readable in one query."
+      - "A database per tenant is sharding by tenant: the tenant id is the shard key, and one large shop can be a hot shard by itself."
+      misconceptions:
+      - "Sharding orders by order id is best, because it spreads the orders evenly."
+      - "A hot shard goes away if I add more shards."
+      - "After sharding, the shards still act like one database for joins and transactions."
+      depth_notes: "Không dạy truy vấn thiếu shard key — backend.l3.cross-shard-queries; thêm shard — backend.l3.rebalancing-shards. Không dạy công cụ sharding bên ngoài hay consistent hashing — ngoài module."
+    - id: backend.l3.cross-shard-queries
+      title:
+        vi: "Truy vấn không có shard key phải hỏi mọi shard"
+        en: "A query without the shard key has to ask every shard"
+      main_path: true
+      duration_min: 17
+      skills: [backend.data.sharding]
+      prereqs: [backend.l3.sharding, backend.l2.cursor-pagination, backend.l3.saga, design.l3.read-model]
+      related: [backend.l3.two-phase-commit, backend.l3.timeouts]
+      vocab: [scatter-gather]
+      example_tag: stage-3
+      example_files:
+      - scripts/backend/shard-split.sh
+      - samples/DonHang.Samples/Samples/Data/Sharding/ShardedOrders.cs
+      outline:
+      - "`shard-split.sh` copies `donhang_perf` into two databases by `customer_id % 2`; the lab keeps both on one PostgreSQL server, where real shards would sit on separate servers."
+      - "`ShardedOrders` sends a query for one customer's latest orders to the single shard that customer's id maps to, because the shard key is in the query."
+      - "The latest orders of all customers have no shard key, so `ShardedOrders` asks every shard for its own newest N, merges the lists and keeps the N newest: a scatter-gather."
+      - "Each shard has to return N rows, not N divided by the number of shards, because the newest orders may all sit on one shard."
+      - "A scatter-gather query waits for its slowest shard and fails when any shard is down, so frequent queries without the shard key point to the wrong key or to a separate read model."
+      - "A change to rows on two shards is no longer one transaction; it needs the same tools as a change across two services, such as a saga."
+      misconceptions:
+      - "To get the 10 newest orders from 2 shards, I take the 5 newest from each."
+      - "If one shard is down, a query over all shards still gives a correct answer from the others."
+      - "Two orders on different shards can still be updated in one transaction, as before."
+      depth_notes: "Không dạy phân trang cursor xuyên shard, GROUP BY xuyên shard hay postgres_fdw — ngoài module. Không dạy lại saga, read model — backend.l3.saga, design.l3.read-model."
+    - id: backend.l3.rebalancing-shards
+      title:
+        vi: "Bảng ánh xạ bucket cho thêm shard mà không phải chuyển phần lớn dữ liệu"
+        en: "A shard map lets you add a shard without moving most rows"
+      main_path: true
+      duration_min: 15
+      skills: [backend.data.sharding]
+      prereqs: [backend.l3.sharding, backend.l3.cross-shard-queries]
+      related: [backend.l2.cache-aside]
+      vocab: [shard-map]
+      example_tag: stage-3
+      example_files: [db/sharding/rebalance.sql, scripts/backend/rebalance-shards.sh]
+      outline:
+      - "Rebalancing moves rows between shards when a shard is added or one has grown too large, and every row must stay findable while it moves."
+      - "With `shard = key % N`, going from 4 to 5 shards changes the shard of 4 in every 5 keys; `rebalance-shards.sh` counts the orders of `donhang_perf` that would move."
+      - "A shard map splits keys into a fixed number of buckets, such as `id % 64`, and a table says which shard holds each bucket; adding a shard reassigns some buckets and moves only their rows."
+      - "`rebalance-shards.sh` gives 12 of the 64 buckets to a fifth shard and counts the orders that move: only the rows of those 12 buckets."
+      - "Every query looks up the shard map first, so the map is a dependency of every request, and a bucket being moved must not take writes on two shards at once."
+      - "The number of buckets is fixed when the map is created, and it caps how many shards the data can ever be spread over."
+      misconceptions:
+      - "Adding a fifth shard to `key % 4` moves only the fifth shard's share of the rows."
+      - "Rebalancing is a one-off copy that can run at night while the system works as usual."
+      - "A shard map with 64 buckets lets me grow to any number of shards later."
+      depth_notes: "Không dạy consistent hashing, chia đôi một shard, chuyển dữ liệu trực tuyến từng bước hay công cụ rebalancing — ngoài module. Không dạy lại chọn shard key — backend.l3.sharding."
