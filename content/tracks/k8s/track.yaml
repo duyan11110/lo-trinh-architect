@@ -93,6 +93,21 @@ skills:
     vi: "TLS ở cửa vào cluster"
     en: "TLS at the cluster's entry point"
   prereqs: [k8s.traffic.routing, devops.secrets.sealing]
+- id: k8s.storage.volumes
+  title:
+    vi: "Lưu trữ bền: PersistentVolume, PersistentVolumeClaim và StorageClass"
+    en: "Durable storage: PersistentVolumes, claims and StorageClasses"
+  prereqs: [k8s.config.running-the-system, k8s.basics.cluster-architecture]
+- id: k8s.storage.stateful-workloads
+  title:
+    vi: "Chạy dịch vụ có trạng thái: StatefulSet và headless Service"
+    en: "Running stateful services: StatefulSets and headless Services"
+  prereqs: [k8s.storage.volumes, k8s.workloads.replication, k8s.workloads.services]
+- id: k8s.storage.data-operations
+  title:
+    vi: "Sao lưu và vận hành dữ liệu trong cluster"
+    en: "Backing up and operating data in a cluster"
+  prereqs: [k8s.storage.stateful-workloads, devops.backup.postgresql]
 levels:
 - level: 1
   title:
@@ -894,3 +909,221 @@ levels:
       - "Seniors often assume overlays remove every way for environments to drift apart."
       - "Seniors often assume a team has to pick Helm or Kustomize for everything in its cluster."
       depth_notes: "Không dạy ApplicationSet sinh Application cho mỗi overlay, Kustomize render Helm chart, nhiều cluster (GĐ4). Không dạy lại promotion — devops.l3.promoting-between-environments; xác minh image — devops.l3.verifying-before-deploy."
+  - id: state-and-storage
+    title:
+      vi: "Dữ liệu bền trên Kubernetes: volume, StatefulSet và sao lưu"
+      en: "Durable data on Kubernetes: volumes, StatefulSets and backups"
+    stage: 3
+    summary:
+      vi: "Cho database và RabbitMQ của staging dữ liệu sống qua việc Pod bị thay bằng PersistentVolumeClaim và StatefulSet, biết giới hạn của volume trên kind, sao lưu theo lịch bằng CronJob và cân nhắc chạy database trong cluster hay dùng dịch vụ managed."
+      en: "Give staging's database and RabbitMQ data that survives Pod replacement with PersistentVolumeClaims and StatefulSets, know the limits of kind's volumes, back up on a schedule with a CronJob, and weigh running a database in the cluster against a managed one."
+    lessons:
+    - id: k8s.l2.persistent-volume-claims
+      title:
+        vi: "PersistentVolumeClaim giữ dữ liệu khi Pod bị thay"
+        en: "A PersistentVolumeClaim keeps data when its Pod is replaced"
+      main_path: true
+      duration_min: 14
+      skills: [k8s.storage.volumes]
+      prereqs: [k8s.l1.deploying-don-hang, k8s.l1.configmap-files, devops.l1.volumes]
+      related: [devops.l3.rpo-and-rto]
+      vocab: [persistent-volume, persistent-volume-claim]
+      example_tag: stage-3
+      example_files:
+      - deploy/k8s/db.yaml
+      - deploy/k8s/lessons/data-pvc.yaml
+      - deploy/k8s/lessons/data-writer-pod.yaml
+      - scripts/k8s/pvc.sh
+      outline:
+      - "An `emptyDir` volume is created with its Pod and deleted with it, which is why a replacement `db` Pod from `deploy/k8s/db.yaml` starts with an empty database."
+      - "A PersistentVolume is a piece of storage the cluster knows about; a PersistentVolumeClaim asks for storage of a size and an access mode, and Kubernetes binds it to one PersistentVolume."
+      - "A Pod uses a claim by naming it under `volumes` with `persistentVolumeClaim`; the Pod can be deleted and replaced while the claim and the data on its volume stay."
+      - "`pvc.sh` writes a file through one Pod, deletes that Pod, then reads the same file from a new Pod that mounts the same claim."
+      - "The access mode `ReadWriteOnce` lets one node at a time mount the volume read-write, not one Pod: several Pods on that node can share it."
+      misconceptions:
+      - "Seniors often assume a volume declared inside a Pod keeps its data after the Pod is deleted."
+      - "Seniors often assume `ReadWriteOnce` means only one Pod can ever use the volume."
+      - "Seniors often assume a PersistentVolumeClaim is the storage itself rather than a request for it."
+      depth_notes: "Không dạy StorageClass và PV được tạo ra sao (bài sau), reclaim policy (k8s.l2.reclaim-policy), ReadWriteMany/ReadWriteOncePod, volumeMode Block, mở rộng dung lượng, PV tạo tay. Lab chạy trên cluster `donhang` 3 node, namespace `storage-lessons`. Không dạy lại volume — devops.l1.volumes."
+    - id: k8s.l2.storage-classes
+      title:
+        vi: "StorageClass tạo volume khi cần; volume của kind nằm trên một node"
+        en: "A StorageClass creates volumes on demand; kind's stay on one node"
+      main_path: true
+      duration_min: 14
+      skills: [k8s.storage.volumes]
+      prereqs:
+      - k8s.l2.persistent-volume-claims
+      - k8s.l1.control-plane-components
+      - k8s.l1.cluster-nodes-and-control-plane
+      related: [devops.l3.disaster-recovery-drill]
+      vocab: [storage-class, dynamic-provisioning]
+      example_tag: stage-3
+      example_files: [deploy/k8s/lessons/data-pvc.yaml, scripts/k8s/storage-class.sh]
+      outline:
+      - "A StorageClass names a provisioner, a component that creates a PersistentVolume when a claim asks for one; with this dynamic provisioning nobody creates volumes ahead of time."
+      - "A claim without `storageClassName` gets the cluster's default StorageClass; in a kind cluster that is `standard`, whose provisioner keeps each volume in a folder on one node."
+      - "`standard` binds a claim only once a Pod using it has been scheduled, so the volume is created on the node kube-scheduler chose for that Pod."
+      - "The PersistentVolume records its node, so every later Pod using the claim must run there; `storage-class.sh` marks that node unschedulable and the next Pod stays `Pending`."
+      - "kind's volumes are not copied to another node or out of the cluster: losing the node or deleting the cluster loses the data; replicated storage needs a different provisioner."
+      misconceptions:
+      - "Seniors often assume a volume in a kind cluster lives on the laptop's disk and survives deleting the cluster."
+      - "Seniors often assume a Pod with a persistent volume can be moved to any node, like a Pod without one."
+      - "Seniors often assume every cluster's default StorageClass behaves the way kind's does."
+      depth_notes: "Không dạy CSI, Longhorn/Rook-Ceph và lưu trữ nhân bản giữa node (k8s/bare-metal), volume snapshot, mở rộng volume, tham số riêng của provisioner, cách scheduler chọn node. Reclaim policy — bài sau."
+    - id: k8s.l2.reclaim-policy
+      title:
+        vi: "Xóa claim là xóa dữ liệu, trừ khi reclaim policy giữ lại"
+        en: "Deleting a claim deletes its data unless the policy retains it"
+      main_path: true
+      duration_min: 13
+      skills: [k8s.storage.volumes]
+      prereqs: [k8s.l2.storage-classes, devops.l3.self-heal, k8s.l1.namespaces]
+      related: [devops.l3.restore-testing]
+      vocab: [reclaim-policy]
+      example_tag: stage-3
+      example_files: [deploy/k8s/lessons/retain-storageclass.yaml, scripts/k8s/reclaim-policy.sh]
+      outline:
+      - "A PersistentVolume's reclaim policy decides what happens to it when its claim is deleted; a dynamically provisioned volume takes the policy of its StorageClass, `Delete` for kind's `standard`."
+      - "With `Delete`, deleting the claim deletes the PersistentVolume and the data on it; deleting a namespace deletes the claims in it, so their data goes too."
+      - "With `Retain`, the PersistentVolume and its data stay after the claim is deleted, shown as `Released`, and no new claim is bound to it until someone deals with it by hand."
+      - "`reclaim-policy.sh` deletes one claim from `standard` and one from a StorageClass with `Retain`, then lists the PersistentVolumes that are left."
+      - "Under Argo CD with prune on, removing a claim's manifest from the config repository deletes the claim, and with `Delete` its data, in one commit."
+      misconceptions:
+      - "Seniors often assume deleting a namespace leaves its volumes' data behind for later."
+      - "Seniors often assume a `Released` volume is bound again automatically to the next claim that asks."
+      - "Seniors often assume a `Retain` policy is as good as a backup."
+      depth_notes: "Không dạy cách dọn PV Released để dùng lại (claimRef), finalizer bảo vệ PVC đang dùng, policy Recycle. Claim của StatefulSet — k8s.l2.statefulsets; sao lưu — k8s.l2.scheduled-backups."
+    - id: k8s.l2.statefulsets
+      title:
+        vi: "StatefulSet đưa Pod trở lại với tên cũ trên volume cũ"
+        en: "A StatefulSet brings a Pod back under its old name on its old volume"
+      main_path: true
+      duration_min: 15
+      skills: [k8s.storage.stateful-workloads]
+      prereqs: [k8s.l2.reclaim-policy, k8s.l1.deployments, k8s.l2.config-repo-overlays]
+      related: [backend.l3.read-replicas]
+      vocab: [statefulset]
+      example_tag: stage-3
+      example_files: [deploy/gitops/config-repo-kustomize/base/db.yaml, scripts/k8s/statefulset-db.sh]
+      outline:
+      - "A StatefulSet runs Pods from a template like a Deployment but names them by number, `db-0`, `db-1`; a replacement for `db-0` is again called `db-0`, though it gets a new IP address."
+      - "Its `volumeClaimTemplates` create one claim per Pod, named after the template and the Pod, such as `data-db-0`, and a replacement Pod mounts the claim of the Pod it replaces."
+      - "By default a StatefulSet creates its Pods in order, starting the next only once the one before is running and ready, and removes them in reverse order when scaled down."
+      - "Deleting the StatefulSet or scaling it down leaves its claims and their data in place by default, so scaling back up finds the data again."
+      - "Staging's `db` becomes a StatefulSet with one replica in the base; `statefulset-db.sh` deletes `db-0` and finds the seeded orders still there when it returns."
+      - "Two replicas do not make a replicated database: `db-1` would be a second, empty PostgreSQL server that receives nothing from `db-0`."
+      misconceptions:
+      - "Seniors often assume a StatefulSet with two replicas gives PostgreSQL a standby that takes over."
+      - "Seniors often assume deleting a StatefulSet also deletes the data of its Pods."
+      - "Seniors often assume `db-0` keeps its IP address, since it keeps its name."
+      depth_notes: "Không dạy podManagementPolicy Parallel, updateStrategy/partition, persistentVolumeClaimRetentionPolicy, minReadySeconds. `serviceName` và headless Service — bài sau; nhân bản PostgreSQL thật (operator — k8s/operators-and-cluster-lifecycle)."
+    - id: k8s.l2.headless-services
+      title:
+        vi: "Headless Service cho mỗi Pod của StatefulSet một tên DNS riêng"
+        en: "A headless Service gives each StatefulSet Pod its own DNS name"
+      main_path: true
+      duration_min: 14
+      skills: [k8s.storage.stateful-workloads]
+      prereqs: [k8s.l2.statefulsets, k8s.l1.service-and-dns, backend.l3.message-broker]
+      related: [backend.l3.read-replicas]
+      vocab: [headless-service]
+      example_tag: stage-3
+      example_files: [deploy/gitops/config-repo-kustomize/base/rabbitmq.yaml, scripts/k8s/headless-dns.sh]
+      outline:
+      - "A Service with `clusterIP: None` is headless: it gets no virtual IP address, and its DNS name resolves to the IP addresses of its ready Pods instead."
+      - "A StatefulSet's `serviceName` names a headless Service; each of its Pods then gets a DNS name of the form `<pod>.<service>.<namespace>.svc.cluster.local`, such as `rabbitmq-0.rabbitmq-headless.donhang.svc.cluster.local`."
+      - "`headless-dns.sh` deletes `rabbitmq-0`: the Pod's DNS name stays the same and now resolves to the replacement's new IP address."
+      - "A normal Service fits clients that may use any Pod, as the api uses `rabbitmq`; members of a replicated database or a RabbitMQ cluster must reach one particular member, which needs a name per Pod."
+      - "RabbitMQ keeps its data in a folder named after its node name; `rabbitmq.yaml` builds that name from the Pod's DNS name, so a replacement Pod finds the queues it had."
+      misconceptions:
+      - "Seniors often assume a headless Service spreads connections across its Pods like any other Service."
+      - "Seniors often assume a StatefulSet Pod keeps its IP address because it keeps its name."
+      - "Seniors often assume clients should call `rabbitmq-0` by name even when any Pod would do."
+      depth_notes: "Không dạy cluster RabbitMQ nhiều node, quorum queue nhân bản, bản ghi SRV, publishNotReadyAddresses, cấu hình CoreDNS (k8s/networking-deep). Không dạy lại DNS của Service — k8s.l1.service-and-dns."
+    - id: k8s.l2.staging-keeps-its-data
+      title:
+        vi: "Dữ liệu của staging giờ sống qua việc Pod bị thay"
+        en: "Staging's data now survives a Pod being replaced"
+      main_path: true
+      duration_min: 15
+      skills: [k8s.storage.stateful-workloads, k8s.packaging.kustomize]
+      prereqs:
+      - k8s.l2.headless-services
+      - backend.l3.payments-service
+      - devops.l3.ordering-a-sync
+      - k8s.l2.gateway-api
+      related: [backend.l3.outbox-relay, devops.l3.disaster-recovery-drill]
+      vocab: []
+      example_tag: stage-3
+      example_files:
+      - deploy/gitops/config-repo-kustomize/base/kustomization.yaml
+      - deploy/gitops/config-repo-kustomize/base/payments.yaml
+      - deploy/gitops/config-repo/platform/edge/httproutes.yaml
+      - scripts/k8s/stateful-staging.sh
+      outline:
+      - "`stateful-staging.sh` commits this module's base files: `db` and `rabbitmq` as StatefulSets with claims, and Deployments for `notifications`, `payments` and `fake-gateway`."
+      - "`notifications` and `payments` each migrate their own database with a hook in wave 1, as the api does, before their Deployments are applied in wave 2."
+      - "The HTTPRoute sends `/api/v1/refunds` to the `payments` Service, because Payments, not the api, answers that path, as Caddy routes it in Compose."
+      - "Switching `db` from a Deployment with `emptyDir` to a StatefulSet starts once from an empty claim, so the init scripts seed it; after that a sync or a restart no longer reseeds."
+      - "With `notifications` scaled to 0, the script places an order, deletes `db-0` and `rabbitmq-0`, and finds the order and its waiting message after both Pods return."
+      - "The claims still live on staging's single node: deleting the cluster, as `dr-drill.sh` does, loses them, so the drill still starts from seed data."
+      misconceptions:
+      - "Seniors often assume a sync from Git can wipe and reseed the database once it has a claim."
+      - "Seniors often assume persistent claims protect staging's data from losing the whole cluster."
+      - "Seniors often assume the api must forward refund requests to Payments, since the path starts with `/api/v1`."
+      depth_notes: "Không dạy Keycloak dùng PostgreSQL trên staging (staging giữ start-dev), Tempo/monitoring trong cluster, autoscaling, NetworkPolicy (k8s/security-and-policy). Không dạy lại hook và wave — devops.l3.ordering-a-sync; outbox, saga — backend GĐ3."
+    - id: k8s.l2.scheduled-backups
+      title:
+        vi: "CronJob sao lưu database của staging theo lịch"
+        en: "A CronJob backs up staging's database on a schedule"
+      main_path: true
+      duration_min: 15
+      skills: [k8s.storage.data-operations]
+      prereqs: [k8s.l2.staging-keeps-its-data, devops.l3.logical-backups, devops.l3.restore-testing]
+      related: [devops.l3.rpo-and-rto, devops.l3.ordering-a-sync]
+      vocab: [k8s-job, cronjob]
+      example_tag: stage-3
+      example_files: [deploy/gitops/config-repo-kustomize/base/db-backup.yaml, scripts/k8s/db-backup.sh]
+      outline:
+      - "A Job runs a Pod until it exits successfully, retrying a failed run up to `backoffLimit` times; unlike a Deployment, it does not start the Pod again after it succeeds."
+      - "A CronJob creates a new Job each time its cron `schedule` comes round; `db-backup` runs `pg_dump -Fc` for `donhang`, `donhang_notifications` and `donhang_payments` into the claim `db-backups`."
+      - "`concurrencyPolicy: Forbid` skips a run while the previous Job is still running, so two backups never write to the claim at once."
+      - "`db-backup.sh` starts a Job from the CronJob at once with `kubectl create job --from`, waits for it, then copies the new dumps to `backups/staging/` on your machine."
+      - "The claim `db-backups` sits on the same node as `data-db-0` and fails with it; a backup counts only once it is copied off the cluster and a restore of it has been tested."
+      - "A failed run shows only as a failed Job in `kubectl get jobs`; nobody hears of it unless something watches for it."
+      misconceptions:
+      - "Seniors often assume a backup written to a volume in the cluster survives losing the cluster."
+      - "Seniors often assume a CronJob keeps retrying a failed backup until it works."
+      - "Seniors often assume a Job starts its Pod again after it succeeds, as a Deployment would."
+      depth_notes: "Không dạy volume snapshot (k8s/bare-metal), Velero, backup etcd (k8s/operators-and-cluster-lifecycle), timeZone, startingDeadlineSeconds, completions/parallelism, alert khi Job lỗi (GĐ4). Migration vẫn là hook Pod. Không dạy lại pg_dump — devops.l3.logical-backups."
+    - id: k8s.l2.database-in-the-cluster
+      title:
+        vi: "Chạy PostgreSQL trong cluster thì việc vận hành nó là của bạn"
+        en: "Running PostgreSQL in the cluster makes running it your job"
+      main_path: true
+      duration_min: 13
+      skills: [k8s.storage.data-operations]
+      prereqs:
+      - k8s.l2.scheduled-backups
+      - devops.l3.point-in-time-recovery
+      - devops.l3.disaster-recovery-drill
+      - backend.l3.read-replicas
+      related: [devops.l3.rpo-and-rto]
+      vocab: [managed-database]
+      example_tag: stage-3
+      example_files:
+      - deploy/gitops/config-repo-kustomize/base/db.yaml
+      - deploy/gitops/config-repo-kustomize/base/redis.yaml
+      - deploy/gitops/config-repo-kustomize/base/db-backup.yaml
+      outline:
+      - "A StatefulSet gives PostgreSQL a stable name and its own volume, nothing more: replicas, switching to a standby, point-in-time recovery and version upgrades stay work someone builds and practises."
+      - "A managed database is a database server that a provider runs for you outside the cluster, with backups and a standby offered as settings; apps in the cluster reach it by address like any outside server."
+      - "A managed database trades control for less work: the provider decides some server settings and when maintenance happens, and the data lives on the provider's machines."
+      - "A managed database usually fits a team on a cloud with nobody to run databases; running one in the cluster fits when no such service exists, such as on a bank's own machines, or data must stay on them."
+      - "Đơn Hàng's staging runs PostgreSQL and RabbitMQ in the cluster because the lab has no cloud account and both hold the only copy of some data; Redis stays a Deployment without a claim, as it holds only copies."
+      misconceptions:
+      - "Seniors often assume moving PostgreSQL to a StatefulSet keeps it running when its node fails."
+      - "Seniors often assume databases must never run inside Kubernetes."
+      - "Seniors often assume a managed database removes the need to test restores."
+      depth_notes: "Không nêu tên dịch vụ cloud hay so giá (không có trong versions.yaml), operator PostgreSQL (k8s/operators-and-cluster-lifecycle), managed vs self-hosted cho cả cluster (k8s/managed-vs-selfhosted GĐ4), viết ADR (GĐ4)."
