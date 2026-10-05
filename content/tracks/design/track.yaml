@@ -203,6 +203,21 @@ skills:
     vi: "Context map: conformist và anti-corruption layer"
     en: "Context maps: conformist and anti-corruption layer"
   prereqs: [design.ddd.bounded-contexts, design.patterns.wrapping]
+- id: design.modular.modules
+  title:
+    vi: "Modular monolith: module, hợp đồng và quyền sở hữu dữ liệu"
+    en: "Modular monolith: modules, contracts and data ownership"
+  prereqs: [design.ddd.bounded-contexts, design.architecture.dependency-rule]
+- id: design.modular.boundaries
+  title:
+    vi: "Giữ ranh giới module: phụ thuộc một chiều và test kiểm ranh giới"
+    en: "Keeping module boundaries: one-way dependencies and boundary tests"
+  prereqs: [design.modular.modules, design.ddd.context-mapping]
+- id: design.modular.extraction
+  title:
+    vi: "Tách một module thành service: cần gì và khi nào đáng"
+    en: "Extracting a module into a service: what it takes and when it pays"
+  prereqs: [design.modular.boundaries]
 levels:
 - level: 1
   title:
@@ -1977,3 +1992,234 @@ levels:
       - "An anti-corruption layer has to be a separate service standing between the two systems."
       - "A translation layer only renames fields; the values and rules pass through unchanged."
       depth_notes: "Không xây luồng hoàn tiền hay client cổng thanh toán — chưa có ở stage-2. Không dạy lại Adapter — design.l2.adapter-pattern. Không nói open host service hay published language — ngoài module."
+  - id: modular-monolith
+    title:
+      vi: "Modular monolith: ranh giới module trong một process"
+      en: "Modular monolith: module boundaries inside one process"
+    stage: 3
+    summary:
+      vi: "Chia monolith Đơn Hàng thành các module tự sở hữu dữ liệu và chỉ gọi nhau qua hợp đồng, giữ ranh giới bằng phụ thuộc một chiều và một test, rồi cân nhắc khi nào một module nên thành service riêng."
+      en: "Split Đơn Hàng's monolith into modules that own their data and talk only through contracts, keep the boundaries with one-way dependencies and a test, and judge when a module should become a service of its own."
+    lessons:
+    - id: design.l3.modular-monolith
+      title:
+        vi: "Modular monolith: chạy như một khối, xây thành nhiều module tách biệt"
+        en: "A modular monolith is deployed as one but built as separate modules"
+      main_path: true
+      duration_min: 13
+      skills: [design.modular.modules]
+      prereqs: [design.l3.contexts-inside-don-hang, design.l2.clean-architecture, backend.l2.hosted-services]
+      related: [design.l3.bounded-context, devops.l1.what-is-deploy]
+      vocab: [monolith, modular-monolith]
+      example_tag: stage-2
+      example_files:
+      - DonHang.Api/Program.cs
+      - DonHang.Domain/Entities.cs
+      - DonHang.Infrastructure/DonHangDbContext.cs
+      - DonHang.Domain/OrderService.cs
+      outline:
+      - "A monolith is an application built and deployed as one unit: at stage-2, every Đơn Hàng endpoint and the email job run in the one `api` process that `Program.cs` starts."
+      - "Inside one process, one part calls another with an ordinary method call, and one transaction can cover several tables, as when `PlaceOrderAsync` saves an order and its pending email row together."
+      - "A modular monolith is still deployed as one unit, but its code is split into modules, each owning one bounded context's model and data and offering the others only a small public contract."
+      - "Stage-2 Đơn Hàng is a monolith but not a modular one: its three projects are layers, and ordering, products and notifications share `Entities.cs` and `DonHangDbContext`, so any part can read any other's data."
+      - "Being a monolith is a deployment choice, not a design flaw; the problem modules address is parts reaching freely into each other's data, whatever the number of processes."
+      misconceptions:
+      - "A monolith is an outdated design that every growing system has to escape by splitting into services."
+      - "Đơn Hàng already has three projects, so it is already a modular monolith."
+      - "Modules inside one process cannot really be kept apart, so boundaries only matter once parts run as separate services."
+      depth_notes: "Không dạy cách chia module trong code — các bài sau của module này. Không nói tách thành service — design.l3.before-extracting-a-module, design.l3.when-to-extract-a-service. Không dạy lại bounded context — design.l3.contexts-inside-don-hang."
+    - id: design.l3.modules-cut-through-layers
+      title:
+        vi: "Một module chứa đủ các tầng của một context, không phải một tầng của mọi context"
+        en: "A module holds every layer of one context, not one layer of all"
+      main_path: true
+      duration_min: 13
+      skills: [design.modular.modules]
+      prereqs: [design.l3.modular-monolith, design.l3.subdomains, design.l2.decorator-pattern]
+      related: [design.l1.why-layers, backend.l2.cache-aside]
+      vocab: []
+      example_tag: stage-3
+      example_files:
+      - DonHang.slnx
+      - DonHang.Catalog/DonHang.Catalog.csproj
+      - DonHang.Catalog/CatalogModule.cs
+      - DonHang.Api/Program.cs
+      outline:
+      - "Layers split code by kind of work, such as HTTP, rules and storage; modules split it by bounded context, and each module keeps its own layers inside."
+      - "At stage-2, changing how products are stored and cached touches `Entities.cs`, `DonHangDbContext`, `EfProductRepository`, `ProductCache` and `ServiceCollectionExtensions`, in two projects shared with ordering."
+      - "At stage-3 the Catalog module is the project `DonHang.Catalog`: the product model, its table mapping, the Redis cache and the code that registers them all live there."
+      - "Ordering stayed where it was at stage-3: its model and rules are still in `DonHang.Domain` and its storage in `DonHang.Infrastructure`, so one module can span several projects."
+      - "Each module picks the inside design that fits its subdomain: Catalog has no rules and no domain model, while Ordering keeps `Order` and its dependency rule."
+      misconceptions:
+      - "A modular monolith adds one more layer, called modules, on top of controllers, services and repositories."
+      - "Every module must have the same inside structure, with the same projects and the same patterns."
+      - "Moving files into a folder named after a context is enough to make that context a module."
+      depth_notes: "Không nói module khác dùng Catalog thế nào — design.l3.module-contracts; không nói bảng thuộc ai — design.l3.module-owns-its-tables. Không dạy lại decorator hay cache-aside — design.l2.decorator-pattern, backend.l2.cache-aside."
+    - id: design.l3.module-contracts
+      title:
+        vi: "Module khác chỉ chạm tới một module qua hợp đồng công khai của nó"
+        en: "Other modules reach a module only through its public contract"
+      main_path: true
+      duration_min: 13
+      skills: [design.modular.modules]
+      prereqs:
+      - design.l3.modules-cut-through-layers
+      - design.l2.composition-root
+      - design.l2.ports-and-adapters
+      related: [foundation.l1.oop-encapsulation, backend.l2.openapi-contract]
+      vocab: [module-contract]
+      example_tag: stage-3
+      example_files:
+      - DonHang.Catalog/ICatalog.cs
+      - DonHang.Catalog/CatalogProduct.cs
+      - DonHang.Catalog/Product.cs
+      - DonHang.Api/Controllers/ProductsController.cs
+      outline:
+      - "A module contract is the small set of public types other modules may use; every other type in the module is `internal` and cannot be named outside its project."
+      - "At stage-3 the contract of `DonHang.Catalog` is `ICatalog` and the `CatalogProduct` record it returns; `Product`, Catalog's DbContext and `ProductCache` are `internal`."
+      - "Code outside `DonHang.Catalog` that names one of its `internal` types does not compile, so the compiler is the first check on the boundary."
+      - "At stage-3 `ProductsController` lists, reads and reprices products through `ICatalog`; it no longer queries a DbContext directly as it did at stage-2."
+      - "Catalog can change its table mapping or its cache without touching any caller, as long as `ICatalog` and `CatalogProduct` stay the same."
+      misconceptions:
+      - "Making every class `public` is harmless, because other modules will simply not use what they do not need."
+      - "A module contract has to be an HTTP API, even between modules of one process."
+      - "Returning `Product` itself from `ICatalog` is fine, because callers only read its properties."
+      depth_notes: "Không nói Ordering lấy giá qua contract — design.l3.one-way-module-dependencies; không kiểm phạm vi public bằng test — design.l3.testing-module-boundaries. Không dạy lại access modifier hay encapsulation — foundation.l1.oop-encapsulation."
+    - id: design.l3.module-owns-its-tables
+      title:
+        vi: "Bảng của module nào chỉ module đó được đọc và ghi"
+        en: "A module's tables are read and written by that module alone"
+      main_path: true
+      duration_min: 13
+      skills: [design.modular.modules]
+      prereqs: [design.l3.module-contracts, design.l2.unit-of-work, backend.l1.efcore-relationships-and-keys]
+      related: [design.l3.reference-other-aggregates-by-id, backend.l2.projection-queries]
+      vocab: []
+      example_tag: stage-3
+      example_files:
+      - DonHang.Catalog/CatalogDbContext.cs
+      - DonHang.Infrastructure/DonHangDbContext.cs
+      - db/schema.sql
+      outline:
+      - "A module owns its tables when only its own code reads and writes them; other modules get that data through its contract, never by querying the tables."
+      - "At stage-3 `CatalogDbContext` maps `products` and `DonHangDbContext` no longer does, so Ordering code has no way to query products, even by accident."
+      - "Both DbContexts still connect to the same PostgreSQL database: owning tables needed no separate database and no change to the schema."
+      - "`order_items.product_id` still has a foreign key to `products` in `db/schema.sql`: the database ties the two modules, a coupling to remove before they could use separate databases."
+      - "A query joining two modules' tables is the easiest way for a boundary to leak, because each module then depends on the other's column names."
+      misconceptions:
+      - "A module needs its own database server before its tables can count as its own."
+      - "Since both modules use the same database, Ordering may read `products` directly when it only needs a price."
+      - "A foreign key between two modules' tables must be dropped as soon as the code is split into modules."
+      depth_notes: "Không dạy database hay schema PostgreSQL riêng cho từng module, không nói một thay đổi trải hai module — backend/sagas-and-consistency GĐ3. Không dạy lại DbContext hay khóa ngoại — design.l2.unit-of-work, backend.l1.efcore-relationships-and-keys."
+    - id: design.l3.one-way-module-dependencies
+      title:
+        vi: "Phụ thuộc giữa các module chỉ đi một chiều, không thành vòng"
+        en: "Dependencies between modules point one way, never in a cycle"
+      main_path: true
+      duration_min: 14
+      skills: [design.modular.boundaries]
+      prereqs:
+      - design.l3.module-owns-its-tables
+      - design.l3.anti-corruption-layer
+      - design.l3.value-objects
+      - design.l2.ports-and-adapters
+      related: [design.l3.context-map, design.l2.dependency-rule]
+      vocab: []
+      example_tag: stage-3
+      example_files:
+      - DonHang.Domain/IProductPrices.cs
+      - DonHang.Infrastructure/CatalogProductPrices.cs
+      - DonHang.Infrastructure/DonHang.Infrastructure.csproj
+      - DonHang.Catalog/DonHang.Catalog.csproj
+      outline:
+      - "At stage-3 Ordering needs Catalog, because placing an order takes each item's current price from Catalog; Catalog needs nothing from Ordering."
+      - "`DonHang.Domain` still references no project: Ordering's core asks for prices through its own port, `IProductPrices`, written in Ordering's words."
+      - "`CatalogProductPrices` in `DonHang.Infrastructure` implements that port by calling `ICatalog` and turns each price into a `Vnd`, so Catalog's types stop at Ordering's edge."
+      - "In context map terms Catalog is upstream and Ordering downstream, and `CatalogProductPrices` is a small anti-corruption layer between two modules of one process."
+      - "If Catalog also needed Ordering, neither module could change or move out without the other; a cycle between modules is a sign the boundary is in the wrong place."
+      misconceptions:
+      - "Modules in one process may call each other in both directions, since it is all one application."
+      - "Ordering's core should use `ICatalog` directly, because the contract is already public."
+      - "A port and an adapter between two modules of one process are extra layers that buy nothing."
+      depth_notes: "Không nói Catalog báo cho module khác khi giá đổi bằng event — backend/messaging GĐ3. Không kiểm chiều phụ thuộc bằng test — design.l3.testing-module-boundaries. Không dạy lại port/adapter hay ACL — design.l2.ports-and-adapters, design.l3.anti-corruption-layer."
+    - id: design.l3.testing-module-boundaries
+      title:
+        vi: "Một test đỏ lên khi module vượt qua hợp đồng của module khác"
+        en: "A test fails when a module reaches past another module's contract"
+      main_path: true
+      duration_min: 12
+      skills: [design.modular.boundaries]
+      prereqs: [design.l3.one-way-module-dependencies, design.l2.testing-the-dependency-rule]
+      related: [design.l3.module-contracts, management.l1.reviewing-for-tests]
+      vocab: []
+      example_tag: stage-3
+      example_files:
+      - DonHang.Tests/Architecture/ModuleBoundaryTests.cs
+      - DonHang.Tests/Architecture/DependencyRuleTests.cs
+      - DonHang.Catalog/DonHang.Catalog.csproj
+      outline:
+      - "The compiler stops code outside `DonHang.Catalog` from naming an `internal` type, but not from making a new type public or adding a project reference in the wrong direction."
+      - "At stage-3 `ModuleBoundaryTests` fails if `DonHang.Catalog` references `DonHang.Domain` or `DonHang.Infrastructure`, so the one-way dependency is checked on every test run."
+      - "It also compares the public types of `DonHang.Catalog` with a list written in the test, so widening the contract fails the test until someone changes that list."
+      - "Because the allowed list lives in the test, a pull request that widens a contract shows the change to its reviewers as an edit to the test."
+      - "Like `DependencyRuleTests`, this test checks structure only: it cannot tell whether a call made through the contract is a sensible one."
+      misconceptions:
+      - "Making types `internal` is enough; a module boundary needs no test."
+      - "A test that lists public types is busywork, because the list has to be updated anyway."
+      - "Checking module boundaries needs a dedicated architecture-testing library."
+      depth_notes: "Không dạy thư viện kiểm kiến trúc (NetArchTest, ArchUnitNET) hay fitness function — GĐ4. Không dạy lại architecture test — design.l2.testing-the-dependency-rule. Không nói CI chạy test — devops/ci-cd."
+    - id: design.l3.before-extracting-a-module
+      title:
+        vi: "Trước khi thành service, một module phải thôi dùng chung dữ liệu"
+        en: "Before a module becomes a service, it must stop sharing data"
+      main_path: true
+      duration_min: 14
+      skills: [design.modular.extraction]
+      prereqs: [design.l3.module-owns-its-tables, backend.l2.database-job-queue, design.l3.context-map]
+      related: [design.l3.outbox-pattern, backend.l2.at-least-once-jobs]
+      vocab: [microservice]
+      example_tag: stage-2
+      example_files:
+      - DonHang.Infrastructure/QueuedNotifier.cs
+      - DonHang.Domain/INotifier.cs
+      - DonHang.Infrastructure/NotificationQueue.cs
+      - DonHang.Api/Jobs/NotificationSender.cs
+      outline:
+      - "A microservice is a service deployed and run on its own, owning one bounded context's data; other parts reach it only over the network, never by a method call or a shared table."
+      - "Moving a module into its own service turns each method call into a network call that can be slow or fail, and each shared transaction into separate saves."
+      - "At stage-2 the email job could not simply move out: `QueuedNotifier` adds its row to the order's DbContext, so an order and its email job are saved in one transaction."
+      - "`INotifier.Send` takes the `Order` object itself, and `NotificationQueue` loads each claimed row with its `Order` and that order's `Customer` to find the email address."
+      - "Each of these must become data the notification side receives and keeps for itself before it can run in another process; how Đơn Hàng does that comes in a later module."
+      - "Drawing the module boundary first, inside one process, makes these ties visible while changing them is still a refactoring, not a change between two systems."
+      misconceptions:
+      - "Extracting a service means moving its classes into a new project and deploying that project on its own."
+      - "Once the email job runs in another process, an order and its email job can still be saved in one transaction."
+      - "A microservice is defined by being small, measured in lines of code."
+      depth_notes: "Không dạy message broker, outbox hay gửi event giữa service — backend/messaging GĐ3; không dạy saga — backend/sagas-and-consistency. Không nói khi nào nên tách — design.l3.when-to-extract-a-service. Không dạy lại job queue — backend.l2.database-job-queue."
+    - id: design.l3.when-to-extract-a-service
+      title:
+        vi: "Chỉ tách module ra service khi một process không đáp ứng được nhu cầu của nó"
+        en: "Split a module out only when one process cannot give it what it needs"
+      main_path: true
+      duration_min: 13
+      skills: [design.modular.extraction]
+      prereqs:
+      - design.l3.before-extracting-a-module
+      - k8s.l1.deploying-don-hang
+      - backend.l2.skip-locked-claiming
+      related: [management.l2.design-doc, design.l3.subdomains]
+      vocab: []
+      example_tag: stage-2
+      example_files: [deploy/k8s/api.yaml, DonHang.Infrastructure/NotificationQueue.cs, DonHang.Api/Program.cs]
+      outline:
+      - "Reasons that can justify a separate service include scaling one part on its own, releasing it on its own schedule, keeping its failures away from the rest, or letting another team own it."
+      - "At stage-2 the email job scales with the API: each of the two `api` replicas in `api.yaml` runs a `NotificationSender`, and `FOR UPDATE SKIP LOCKED` keeps them from claiming the same row."
+      - "That tie costs something only if the job needs a different number of copies than the API; while it does not, it is no reason to extract the job."
+      - "A separate service brings its own costs: calls that can fail over the network, data no longer saved in one transaction, and one more image, pipeline and dashboard to run."
+      - "A modular monolith keeps the choice open: a module with a clean boundary can be extracted later, when a reason appears, at a cost the team can estimate."
+      - "Extracting is a decision with trade-offs, so writing down the options considered and why one was chosen is part of making it."
+      misconceptions:
+      - "A system with several modules should become several services, one per module, as soon as it can."
+      - "Extracting a service always makes the system faster, since each part gets its own process."
+      - "If a module is not extracted now, splitting it out later will be impossible."
+      depth_notes: "Không dạy viết ADR — management/tech-debt-and-adr GĐ3; không bàn đi ngược từ microservice về monolith hay distributed monolith — GĐ4. Không dạy lại replica hay SKIP LOCKED — k8s.l1.deploying-don-hang, backend.l2.skip-locked-claiming."
