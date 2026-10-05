@@ -148,6 +148,26 @@ skills:
     vi: "Deploy, quay lui và promote bằng commit"
     en: "Deploying, rolling back and promoting by commit"
   prereqs: [devops.gitops.sync, devops.release.publishing, devops.iac.modules-environments]
+- id: devops.secrets.sealing
+  title:
+    vi: "Đưa Secret vào Git ở dạng mã hóa chỉ cluster đọc được"
+    en: "Putting Secrets into Git encrypted so only the cluster can read them"
+  prereqs: [devops.config.secrets, k8s.config.configmaps-and-secrets, devops.gitops.pull-model]
+- id: devops.secrets.rotation
+  title:
+    vi: "Xoay vòng khóa ký và mật khẩu có khoảng chồng lấn"
+    en: "Rotating signing keys and passwords with a planned overlap"
+  prereqs: [devops.secrets.sealing, backend.auth.oidc, devops.gitops.change-flow]
+- id: devops.backup.postgresql
+  title:
+    vi: "Sao lưu PostgreSQL: dump, base backup, WAL và khôi phục về thời điểm"
+    en: "Backing up PostgreSQL: dumps, base backups, WAL and point-in-time recovery"
+  prereqs: [devops.docker.storage, backend.data.concurrency, backend.data.replication]
+- id: devops.dr.recovery
+  title:
+    vi: "RPO/RTO, kiểm thử khôi phục và diễn tập DR"
+    en: "RPO and RTO, restore tests and DR drills"
+  prereqs: [devops.backup.postgresql, devops.secrets.sealing, devops.iac.state]
 levels:
 - level: 1
   title:
@@ -1220,7 +1240,7 @@ levels:
       outline:
       - "`deploy/tofu/envs/staging` and `deploy/tofu/envs/production` call the same `kind-cluster` module with their own values: one node for staging, a control plane and two workers for production."
       - "Each environment folder is a separate configuration with its own state, so an apply in staging can change only what staging's state records, never production."
-      - "Each environment is split into a `cluster` layer and a `platform` layer for the `donhang` namespace and its Secrets, because the Kubernetes provider can connect only once the cluster exists."
+      - "Each environment is split into a `cluster` layer and a `platform` layer for the `donhang` namespace, because the Kubernetes provider can connect only once the cluster exists."
       - "The `platform` layer reads the `cluster` layer's outputs, such as the API server address, through a `terraform_remote_state` block instead of sharing one state with it."
       - "OpenTofu workspaces keep several states for one folder; they fit copies that differ only in variable values, while separate folders let environments differ in anything."
       - "`tofu-environments.sh` applies both layers of staging but only plans production's cluster, so you can read what production would get without running it."
@@ -1228,7 +1248,7 @@ levels:
       - "Keeping staging and production alike means putting both in one configuration with one state."
       - "A folder per environment means copying all the `.tf` code into each one."
       - "Splitting the state only makes plans faster; it does not change what one mistake can break."
-      depth_notes: "Không dạy nơi lưu state chung — devops.l3.remote-state-and-locking. Deploy ứng dụng lên cluster staging — devops/gitops. Secret trong platform chỉ là ví dụ; quản lý secret — devops/secrets-backup-dr. Multi-region, multi-account — GĐ4."
+      depth_notes: "Không dạy nơi lưu state chung — devops.l3.remote-state-and-locking. Deploy ứng dụng lên cluster staging — devops/gitops. Secret của ứng dụng không nằm ở platform — devops/secrets-backup-dr. Multi-region, multi-account — GĐ4."
     - id: devops.l3.remote-state-and-locking
       title:
         vi: "State dùng chung: một bản cho cả nhóm, khóa lại khi có người chạy"
@@ -1364,13 +1384,13 @@ levels:
       - "A sync applies the manifests from Git to the cluster; an Application with no sync policy only reports `OutOfSync` and waits until someone starts a sync."
       - "Health status is separate: right after a sync the api Deployment is `Synced` but `Progressing` until its new Pods are ready, then `Healthy`."
       - "An Application's health is the worst health among the objects it manages, so one api Pod that never becomes ready keeps the whole Application from `Healthy`."
-      - "Argo CD manages only objects from its folder: the namespace `donhang` and its Secrets, made by OpenTofu's platform layer, are neither reported missing nor changed."
+      - "Argo CD manages only objects from its folder: the namespace `donhang`, made by OpenTofu's platform layer, is neither reported missing nor changed."
       - "Argo CD rereads the repository on an interval; `gitops-first-sync.sh` asks for a refresh so the comparison happens at once."
       misconceptions:
       - "Seniors often assume `Synced` means the new version is up and serving requests."
       - "Seniors often assume Argo CD deploys whatever it finds in the repository as soon as it is installed."
-      - "Seniors often assume Argo CD will delete the Secrets in `donhang` because they are not in Git."
-      depth_notes: "Không nói kiểm health tự viết (Lua), trạng thái Suspended/Missing chi tiết, ignoreDifferences, webhook từ Git server. Thứ tự sync và migration — bài ordering-a-sync; sync tự động — devops.l3.deploying-by-commit."
+      - "Seniors often assume Argo CD will delete the namespace `donhang` because it is not in Git."
+      depth_notes: "Không nói kiểm health tự viết (Lua), trạng thái Suspended/Missing chi tiết, ignoreDifferences, webhook từ Git server. Thứ tự sync và migration — bài ordering-a-sync; sync tự động — devops.l3.deploying-by-commit. Secret của staging đến từ file đã mã hóa — devops.l3.sealed-secrets."
     - id: devops.l3.ordering-a-sync
       title:
         vi: "Sync wave và hook cho migration chạy đúng lúc, không cần script"
@@ -1510,3 +1530,223 @@ levels:
       - "Seniors often assume each environment needs its own long-lived branch, and promoting means merging one branch into the next."
       - "Seniors often assume staging and production may share one folder as long as they run in different clusters."
       depth_notes: "Không nói Kustomize/Helm để dựng môi trường từ một base chung (k8s/ingress-helm), một Argo CD quản lý nhiều cluster, promote tự động, canary (GĐ4). Không dạy lại tag phát hành — devops.l2.cutting-a-release."
+  - id: secrets-backup-dr
+    title:
+      vi: "Secret trong Git, sao lưu và khôi phục sau thảm họa"
+      en: "Secrets in Git, backups and disaster recovery"
+    stage: 3
+    summary:
+      vi: "Đưa Secret vào Git ở dạng chỉ cluster giải mã được, xoay vòng chúng có khoảng chồng lấn, sao lưu PostgreSQL bằng dump và WAL lưu trữ, chứng minh bản sao lưu bằng cách khôi phục thử, và dựng lại staging trong một buổi diễn tập có bấm giờ."
+      en: "Keep Secrets in Git in a form only the cluster can decrypt, rotate them with a planned overlap, back up PostgreSQL with dumps and archived WAL, prove backups by restoring them, and rebuild staging in a timed drill."
+    lessons:
+    - id: devops.l3.secrets-and-gitops
+      title:
+        vi: "Vì sao Secret không thể vào repo cấu hình ở dạng nguyên"
+        en: "Why Secrets cannot go into the config repository as they are"
+      main_path: true
+      duration_min: 13
+      skills: [devops.secrets.sealing]
+      prereqs: [k8s.l1.secrets, devops.l3.argo-cd-applications, devops.l3.self-heal]
+      related: [devops.l1.secrets-vs-config, devops.l3.tofu-state]
+      vocab: []
+      example_tag: stage-2
+      example_files: [scripts/k8s/secrets.sh, scripts/k8s/deploy.sh, scripts/dev-secrets.sh]
+      outline:
+      - "At stage-2 `scripts/k8s/deploy.sh` runs `scripts/k8s/secrets.sh`, which builds the Secrets `db`, `api` and `keycloak` from the gitignored `.env` of whoever deploys; no file in Git holds their values."
+      - "Under GitOps the cluster takes its desired state only from the config repository, so a Secret kept out of it must arrive by another path, which Argo CD can neither restore nor record in history."
+      - "Committing a Secret manifest as it is hands its values to everyone who can clone the repository, in every later copy of its history too, because base64 hides nothing."
+      - "One way out commits each value encrypted so that only a component inside the cluster can decrypt it; another commits only a reference and lets a component copy the value from a separate secret store."
+      - "Đơn Hàng encrypts into Git from stage-3, since the lab then needs nothing beyond the cluster and the repository; a separate store fits when many systems share secrets or values change without a commit."
+      misconceptions:
+      - "Seniors often assume a private config repository is safe enough for plain Secret manifests."
+      - "Seniors often assume keeping Secrets out of Git costs nothing under GitOps, since Argo CD simply ignores them."
+      - "Seniors often assume that if the values in Git are encrypted, Argo CD must hold the key to decrypt them."
+      depth_notes: "Không nêu tên/so sánh công cụ secret store (Vault, External Secrets, SOPS chưa có trong versions.yaml), mã hóa etcd, RBAC đọc Secret (k8s/security-and-policy). Công cụ Đơn Hàng dùng — devops.l3.sealed-secrets. Không dạy lại base64 — k8s.l1.secrets."
+    - id: devops.l3.sealed-secrets
+      title:
+        vi: "SealedSecret an toàn trong Git vì chỉ cluster mở được nó"
+        en: "A SealedSecret is safe in Git because only the cluster can open it"
+      main_path: true
+      duration_min: 15
+      skills: [devops.secrets.sealing]
+      prereqs:
+      - devops.l3.secrets-and-gitops
+      - backend.l2.validating-provider-tokens
+      - devops.l3.one-state-per-environment
+      - devops.l3.synced-versus-healthy
+      related: [k8s.l1.secrets, devops.l3.argo-cd-applications]
+      vocab: [sealed-secret, sealing-key]
+      example_tag: stage-3
+      example_files:
+      - scripts/devops/seal-secrets.sh
+      - scripts/devops/sealed-secrets-install.sh
+      - deploy/tofu/modules/donhang-platform/main.tf
+      - scripts/dev-secrets.sh
+      outline:
+      - "The Sealed Secrets controller runs in the cluster with a sealing key pair; `kubeseal` encrypts a Secret with the public half into a SealedSecret, which only the controller's private key can decrypt."
+      - "`seal-secrets.sh` seals the `db`, `api` and `keycloak` values from `.env` using only the certificate file in `secrets/`, without contacting the cluster, and commits the SealedSecrets to `envs/staging`."
+      - "When Argo CD applies a SealedSecret, the controller decrypts it and creates the Secret of the same name, which the Pods read as before; the config repository holds only ciphertext."
+      - "By default a SealedSecret decrypts only under the name and namespace it was sealed for, so copying it into another namespace or renaming it produces no Secret."
+      - "The private key opens every SealedSecret: Đơn Hàng creates it in the gitignored `secrets/`, the platform layer installs it, and the controller's own key renewal is off so it stays the only key."
+      misconceptions:
+      - "Seniors often assume Argo CD needs the private key to deploy a SealedSecret."
+      - "Seniors often assume sealing a value requires kubectl access to the cluster."
+      - "Seniors often assume a SealedSecret can be copied into another namespace like any other manifest."
+      depth_notes: "Không dạy scope namespace-wide/cluster-wide, kubeseal --re-encrypt, cài bằng Helm, RBAC (k8s/security-and-policy), cách thêm kiểu object mới (k8s/operators-and-cluster-lifecycle). Đổi giá trị — devops.l3.secret-rotation; sao lưu khóa — devops.l3.disaster-recovery-drill."
+    - id: devops.l3.secret-rotation
+      title:
+        vi: "Xoay vòng secret cần một lúc cả giá trị cũ lẫn mới đều dùng được"
+        en: "Rotating a secret needs a time when old and new both work"
+      main_path: true
+      duration_min: 18
+      skills: [devops.secrets.rotation]
+      prereqs:
+      - devops.l3.sealed-secrets
+      - backend.l2.validating-provider-tokens
+      - backend.l2.refresh-tokens
+      - devops.l3.deploying-by-commit
+      related: [devops.l1.the-jwt-secret-in-practice, k8s.l1.rolling-updates]
+      vocab: [secret-rotation]
+      example_tag: stage-3
+      example_files:
+      - scripts/devops/rotate-signing-key.sh
+      - scripts/devops/rotate-db-password.sh
+      - deploy/gitops/config-repo/envs/staging/api.yaml
+      outline:
+      - "Secret rotation replaces a secret's value on a schedule or after a suspected leak, so that any copy someone kept stops working."
+      - "Keycloak can hold several signing keys: `rotate-signing-key.sh` adds one with a higher priority, so new tokens name the new key id while tokens signed with the old key still pass the API's checks."
+      - "When a token names a key id the API has not seen, the API fetches Keycloak's public keys again by itself, so rotating the signing key needs no restart of the API."
+      - "The old key is removed only after every token it signed has expired; removing it at once makes the API reject tokens customers still hold."
+      - "A PostgreSQL role has one password at a time: `rotate-db-password.sh` runs `ALTER ROLE` first, connections already open keep working, and the api uses the new value once its Pods restart."
+      - "A changed Secret does not reach Pods that read it as environment variables, so the commit that reseals `api` also changes an annotation in its Pod template, which rolls the Pods."
+      misconceptions:
+      - "Seniors often assume rotating a signing key means swapping it in one step and restarting everything that checks tokens."
+      - "Seniors often assume a new `POSTGRES_PASSWORD` in the db Secret changes the password inside the database."
+      - "Seniors often assume running Pods pick up a changed Secret by themselves."
+      depth_notes: "Không dạy rotation tự động theo lịch, hai role luân phiên để đổi mật khẩu DB không gián đoạn, đổi sealing key, khóa của refresh token. Không dạy lại kiểm token — backend.l2.validating-provider-tokens; rolling update — k8s.l1.rolling-updates."
+    - id: devops.l3.rpo-and-rto
+      title:
+        vi: "RPO và RTO: sự cố được phép làm mất bao nhiêu dữ liệu và thời gian"
+        en: "RPO and RTO: how much data and time a failure may cost"
+      main_path: true
+      duration_min: 12
+      skills: [devops.dr.recovery]
+      prereqs: [devops.l1.volumes, k8s.l1.deploying-don-hang, management.l2.non-functional-requirements]
+      related: [foundation.l1.shell-scripts, backend.l2.redis-key-value-store]
+      vocab: [disaster-recovery, rpo, rto]
+      example_tag: stage-2
+      example_files: [scripts/terminal/backup-db.sh, docker-compose.yml, deploy/k8s/db.yaml]
+      outline:
+      - "Disaster recovery is getting a system working again after losing something it cannot run without, such as the disk under its database or a whole cluster."
+      - "RPO is how much recent data the business accepts losing, counted as time before the failure; RTO is how long it accepts the system being unusable until it works again."
+      - "Both come from the business, such as how many orders the shop could re-enter by hand, and each step lower costs more storage, tooling and practice."
+      - "At stage-2 `scripts/terminal/backup-db.sh` dumps `donhang` with `--schema-only`: its file creates every table but holds no rows, so it recovers no order."
+      - "Đơn Hàng's data lives in the Compose volume `db-data` on one machine and, in the kind cluster, in an `emptyDir` deleted with the db Pod; neither survives losing its machine."
+      - "Redis needs no backup because nothing in it is the only copy of a fact; deciding which stores hold the only copy comes before deciding how to back them up."
+      misconceptions:
+      - "Seniors often assume the RPO is whatever interval the backup job happens to run at."
+      - "Seniors often assume the RTO is how long the restore command takes."
+      - "Seniors often assume every data store in the system needs the same kind of backup."
+      depth_notes: "Không dạy cách sao lưu — các bài sau của module. Không dạy SLA/SLO (backend/capacity-and-slo GĐ4), high availability, failover, multi-region (GĐ4). Không dạy lại volume — devops.l1.volumes."
+    - id: devops.l3.logical-backups
+      title:
+        vi: "pg_dump chép một database đúng như tại một thời điểm"
+        en: "pg_dump copies one database as it was at one moment"
+      main_path: true
+      duration_min: 14
+      skills: [devops.backup.postgresql]
+      prereqs: [devops.l3.rpo-and-rto, backend.l2.transactions-in-practice, foundation.l1.shell-scripts]
+      related: [devops.l3.remote-state-and-locking, backend.l3.multi-tenancy]
+      vocab: [logical-backup]
+      example_tag: stage-3
+      example_files: [scripts/devops/backup-logical.sh, docker-compose.yml]
+      outline:
+      - "A logical backup stores a database as the statements and data that rebuild it; `pg_dump` makes one per database inside a single transaction, so it is consistent while orders keep arriving."
+      - "At stage-3 Compose's PostgreSQL holds `donhang`, `donhang_notifications`, `donhang_payments`, `donhang_tofu` and `keycloak`; `backup-logical.sh` dumps each and skips lab databases scripts can rebuild."
+      - "Roles and their passwords belong to the server, not to one database, so `pg_dump` leaves them out and `pg_dumpall --globals-only` saves them separately."
+      - "`pg_dump -Fc` writes the custom format, which `pg_restore` reads to rebuild the database inside an empty one, whole or only chosen tables."
+      - "The dumps are taken one after another, each at its own moment, so restored together they may disagree about the same order across databases."
+      - "Everything written after the last dump is lost, so the RPO is the time between dumps; dump files kept on the database's machine are lost with it."
+      misconceptions:
+      - "Seniors often assume `pg_dump` locks the database, so it can only run when nobody uses it."
+      - "Seniors often assume copying the `db-data` volume's files while PostgreSQL runs gives a usable backup."
+      - "Seniors often assume a dump of `donhang` also brings back the role the api logs in with."
+      depth_notes: "Không dạy dump song song (-j), định dạng directory/tar, nén, lưu ngoài máy hay cloud storage. Base backup và WAL — devops.l3.point-in-time-recovery; kiểm bản restore — devops.l3.restore-testing."
+    - id: devops.l3.point-in-time-recovery
+      title:
+        vi: "Base backup cùng WAL lưu trữ đưa server về đúng thời điểm bạn chọn"
+        en: "A base backup plus archived WAL restores the moment you choose"
+      main_path: true
+      duration_min: 16
+      skills: [devops.backup.postgresql]
+      prereqs: [devops.l3.logical-backups, backend.l3.read-replicas, foundation.l1.transaction-intro]
+      related: [devops.l3.restore-testing]
+      vocab: [write-ahead-log, base-backup, point-in-time-recovery]
+      example_tag: stage-3
+      example_files: [docker-compose.yml, scripts/devops/base-backup.sh, scripts/devops/pitr.sh]
+      outline:
+      - "PostgreSQL records every change in its write-ahead log (WAL) before changing the data files; replaying the WAL from a known starting point redoes every change made since."
+      - "A base backup, taken with `pg_basebackup` while the server runs, copies the data files of the whole server; with `archive_mode` on, `archive_command` copies each completed WAL segment to an archive."
+      - "Point-in-time recovery starts a server from a base backup and replays archived WAL up to `recovery_target_time`, such as just before a mistaken `DELETE`."
+      - "`pitr.sh` recovers into a separate container, so the deleted rows can be read there and copied back while the lab database keeps running."
+      - "Recovery works on the whole server: every database in it returns to the same moment, and one database cannot be taken back on its own."
+      - "With archiving the RPO is the WAL not yet archived; `archive_timeout` limits how long a quiet server waits before it archives a partly filled segment."
+      misconceptions:
+      - "Seniors often assume a read replica already protects them from a mistaken `DELETE`."
+      - "Seniors often assume a base backup alone can bring the server back to any time after it was taken."
+      - "Seniors often assume point-in-time recovery can take back one database while the others keep their newest data."
+      depth_notes: "Không dạy backup tăng dần (pg_combinebackup), pgBackRest/Barman, timeline, replication slot, lưu archive ngoài máy, checkpoint/full page write. Read replica — backend.l3.read-replicas."
+    - id: devops.l3.restore-testing
+      title:
+        vi: "Bản sao lưu chỉ đáng tin khi đã được khôi phục thử"
+        en: "A backup counts only once a restore of it has been tested"
+      main_path: true
+      duration_min: 13
+      skills: [devops.dr.recovery]
+      prereqs: [devops.l3.point-in-time-recovery, devops.l3.logical-backups]
+      related: [devops.l2.quality-gate, devops.l3.rpo-and-rto]
+      vocab: [restore-test]
+      example_tag: stage-3
+      example_files: [scripts/devops/restore-test.sh, scripts/devops/backup-logical.sh]
+      outline:
+      - "A backup can fail without an error: a schema-only dump like stage-2's `backup-db.sh`, a database left off the list, or an archive that stopped all look fine until a restore is needed."
+      - "A restore test restores the newest backup into a fresh, separate server and checks the result against facts recorded when the backup was taken, such as row counts per table."
+      - "`restore-test.sh` restores the newest dumps into a throwaway PostgreSQL container, compares counts of `orders`, `order_items` and `customers` with the dump's record, and exits 1 on any difference."
+      - "Timing the restore test gives a measured restore time to set against the RTO, in place of a guess."
+      - "When backups run on a schedule, the restore test belongs on one too, with an alert when it fails, since last month's success says nothing about last night's backup."
+      misconceptions:
+      - "Seniors often assume `pg_dump` exiting with 0 proves its file can be restored."
+      - "Seniors often assume restoring over the live database is the most realistic test."
+      - "Seniors often assume a restore test is needed once, when the backup job is first set up."
+      depth_notes: "Không dựng job theo lịch hay alert thật (CI không tới được lab; alert — devops/incidents GĐ4), không kiểm checksum trang. Khôi phục cả môi trường — devops.l3.disaster-recovery-drill."
+    - id: devops.l3.disaster-recovery-drill
+      title:
+        vi: "Diễn tập DR: dựng lại staging từ Git, khóa và bản sao lưu, có bấm giờ"
+        en: "A DR drill rebuilds staging from Git, keys and backups, and times it"
+      main_path: true
+      duration_min: 16
+      skills: [devops.dr.recovery]
+      prereqs:
+      - devops.l3.restore-testing
+      - devops.l3.sealed-secrets
+      - devops.l3.remote-state-and-locking
+      - devops.l3.argo-cd-applications
+      related: [devops.l3.infrastructure-as-code, devops.l3.self-heal]
+      vocab: [dr-drill]
+      example_tag: stage-3
+      example_files:
+      - scripts/devops/dr-drill.sh
+      - deploy/tofu/modules/donhang-platform/main.tf
+      - scripts/dev-secrets.sh
+      outline:
+      - "A DR drill destroys an environment on purpose and rebuilds it by the written steps, to find what the steps miss before a real disaster does."
+      - "`dr-drill.sh` deletes `donhang-staging`, reapplies OpenTofu's cluster and platform layers, installs the controllers, restores the config repository and waits for Argo CD's `Healthy`, timing each step."
+      - "The Git server runs inside the cluster and loses its storage with it, so the config repository comes back only from the mirror clone taken earlier; commits made after that clone are gone."
+      - "SealedSecrets decrypt in the new cluster only because the platform layer installs the same sealing key; with `--without-sealing-key` no Secret appears and the db and api Pods never start."
+      - "Two secrets sit outside every backup, the sealing key in `secrets/` and the state passphrase in `.env`: lose them and the backups they protect cannot be read."
+      - "The drill's total time is staging's measured RTO; when it exceeds the target, change the steps or the target, then drill again."
+      misconceptions:
+      - "Seniors often assume that with everything in Git, rebuilding an environment needs nothing else."
+      - "Seniors often assume a reviewed, written recovery plan works without ever being run."
+      - "Seniors often assume a backup of the cluster's objects includes the keys needed to read them."
+      depth_notes: "Không dạy backup etcd hay Velero (k8s GĐ3), dữ liệu trên PV (k8s/state-and-storage), failover tự động, multi-region, runbook/on-call (devops/incidents GĐ4). Dữ liệu staging khởi tạo lại từ seed, không restore."
