@@ -178,6 +178,21 @@ skills:
     vi: "Ghi đồng thời mà không mất thay đổi"
     en: "Concurrent writes without lost changes"
   prereqs: [foundation.sql.transaction, backend.ef.persistence]
+- id: backend.messaging.brokers
+  title:
+    vi: "Gửi message giữa các service qua RabbitMQ: exchange, queue, binding"
+    en: "Sending messages between services through RabbitMQ: exchanges, queues, bindings"
+  prereqs: [backend.jobs.background, design.modular.extraction]
+- id: backend.messaging.outbox
+  title:
+    vi: "Publish message không mất và không bịa: outbox và publisher confirm"
+    en: "Publishing messages without losing or inventing any: the outbox and publisher confirms"
+  prereqs: [backend.messaging.brokers, backend.jobs.reliability, design.ddd.domain-events]
+- id: backend.messaging.consumers
+  title:
+    vi: "Consumer chịu được lặp và lỗi: xác nhận, idempotent consumer, dead-letter queue"
+    en: "Consumers that survive repeats and failures: acknowledgements, idempotent consumers, dead-letter queues"
+  prereqs: [backend.messaging.brokers, backend.jobs.reliability]
 levels:
 - level: 1
   title:
@@ -883,7 +898,10 @@ levels:
       related: []
       vocab: []
       example_tag: stage-2
-      example_files: [DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs, DonHang.Domain/OrderService.cs, DonHang.Domain/Entities.cs]
+      example_files:
+      - DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs
+      - DonHang.Domain/OrderService.cs
+      - DonHang.Domain/Entities.cs
       outline:
       - "The `type` member of a Problem Details body is a URI that names the kind of problem, and RFC 9457 makes it the primary identifier a client should use to tell problems apart, not the human-readable `title` or `detail`."
       - "When `type` is absent it is treated as `about:blank`, which means the problem says no more than its status code."
@@ -1287,7 +1305,7 @@ levels:
       duration_min: 15
       skills: [backend.jobs.background]
       prereqs: [backend.l2.hosted-services, backend.l1.saving-changes]
-      related: [design.l3.outbox-pattern]
+      related: [backend.l3.outbox-pattern]
       vocab: [job-queue]
       example_tag: stage-2
       example_files:
@@ -1305,7 +1323,7 @@ levels:
       - "Keeping pending emails in a list in memory works just as well as a table, and it is faster."
       - "Saving the order and adding the email job in two separate `SaveChangesAsync` calls is just as safe."
       - "When the order response comes back, the email has already been sent."
-      depth_notes: "Không gọi tên outbox pattern hay message broker (RabbitMQ) — design.l3.outbox-pattern và messaging GĐ3. Không nói thất bại khi gửi — bài retry-with-backoff; không nói nhiều bản API cùng lấy job — bài skip-locked-claiming. Không dạy cấu hình SMTP hay thư viện gửi mail."
+      depth_notes: "Không gọi tên outbox pattern hay message broker (RabbitMQ) — backend.l3.outbox-pattern và messaging GĐ3. Không nói thất bại khi gửi — bài retry-with-backoff; không nói nhiều bản API cùng lấy job — bài skip-locked-claiming. Không dạy cấu hình SMTP hay thư viện gửi mail."
     - id: backend.l2.retry-with-backoff
       title:
         vi: "Mail server sập: thử lại sau, mỗi lần chờ lâu hơn"
@@ -1590,3 +1608,232 @@ levels:
       - "When `SaveChangesAsync` throws a concurrency exception, the fix is to call it again."
       - "A concurrency token needs a new column added to the `orders` table."
       depth_notes: "Không nói ETag/If-Match trên HTTP, gộp thay đổi khi xung đột hay token trên nhiều bảng — ngoài GĐ2. Không dạy lại row lock — backend.l2.skip-locked-claiming."
+- level: 3
+  title:
+    vi: "Level 3"
+    en: "Level 3"
+  modules:
+  - id: messaging
+    title:
+      vi: "Messaging: RabbitMQ, outbox và consumer đáng tin cậy"
+      en: "Messaging: RabbitMQ, the outbox and reliable consumers"
+    stage: 3
+    summary:
+      vi: "Cho service Notifications nhận sự kiện đơn hàng của Đơn Hàng qua RabbitMQ mà không mất hay gửi trùng email: lưu message vào outbox cùng đơn, publish có xác nhận, và nhận bằng acknowledgement, inbox và dead-letter queue."
+      en: "Let the Notifications service receive Đơn Hàng's order events through RabbitMQ without losing or doubling an email: save each message in an outbox with the order, publish it with confirms, and consume it with acknowledgements, an inbox and a dead-letter queue."
+    lessons:
+    - id: backend.l3.message-broker
+      title:
+        vi: "Message broker giữ việc lại cho tới khi service nhận sẵn sàng"
+        en: "A message broker holds work until the receiving service is ready"
+      main_path: true
+      duration_min: 13
+      skills: [backend.messaging.brokers]
+      prereqs:
+      - design.l3.before-extracting-a-module
+      - design.l3.when-to-extract-a-service
+      - backend.l2.database-job-queue
+      related: [backend.l2.work-outside-the-request, design.l3.module-owns-its-tables]
+      vocab: [message-broker, message-queue, rabbitmq]
+      example_tag: stage-3
+      example_files: [docker-compose.yml, DonHang.Notifications/Program.cs, scripts/backend/notifications-down.sh]
+      outline:
+      - "At stage-3, order emails are sent by their own service, `DonHang.Notifications`, which has its own database; `DonHang.Api` can no longer add a row to its tables."
+      - "Calling that service over HTTP while placing an order would tie the two together: if Notifications were down or slow, placing an order would fail or wait."
+      - "A message broker is a server that accepts messages from one program and keeps them in a message queue until another program takes them, so the sender does not need the receiver to be running."
+      - "Đơn Hàng's broker is RabbitMQ, the `rabbitmq` service in Compose; with `notifications` stopped, an order still succeeds and its message waits in the queue until the service is back."
+      - "Each message carries the customer's email address and name, because the Notifications service no longer reads the `customers` table."
+      misconceptions:
+      - "A message broker is just a slower way of calling the other service's API."
+      - "If the Notifications service is down when an order is placed, that order's email is lost."
+      - "The Notifications service can still look up what it needs in Đơn Hàng's database."
+      depth_notes: "Không dạy exchange, binding — backend.l3.exchanges-and-bindings; không nói API ghi message cùng đơn thế nào — backend.l3.outbox-pattern. Không so sánh RabbitMQ với Kafka hay broker khác; không dạy cài đặt, cluster RabbitMQ — ngoài module."
+    - id: backend.l3.exchanges-and-bindings
+      title:
+        vi: "Message gửi tới exchange, binding quyết định queue nào nhận"
+        en: "Messages go to an exchange, and bindings choose the queues"
+      main_path: true
+      duration_min: 14
+      skills: [backend.messaging.brokers]
+      prereqs: [backend.l3.message-broker, design.l3.domain-events, design.l2.observer-pattern]
+      related: [design.l3.context-map]
+      vocab: [rabbitmq-exchange, rabbitmq-binding, routing-key, publish-subscribe]
+      example_tag: stage-3
+      example_files:
+      - DonHang.Notifications/RabbitMqTopology.cs
+      - DonHang.Infrastructure/RabbitMqPublisher.cs
+      - scripts/backend/rabbitmq-topology.sh
+      outline:
+      - "A publisher never writes into a queue directly: it sends each message to an exchange together with a routing key, and the exchange decides which queues receive it."
+      - "A binding links a queue to an exchange with a pattern; at stage-3 `notifications.order-events` is bound to the topic exchange `donhang.orders` with `order.*`."
+      - "In a topic exchange's pattern, `*` stands for exactly one dot-separated word and `#` for zero or more words, so `order.*` matches `order.placed`, `order.cancelled` and `order.shipped`."
+      - "Every queue whose binding matches gets its own copy, so another service can receive the same events by binding its own queue, with no change to `DonHang.Api`: this is publish/subscribe."
+      - "By default an exchange drops a message that matches no binding, so a queue must be bound before the messages it needs are published."
+      misconceptions:
+      - "The API sends each message straight into the Notifications service's queue."
+      - "When two queues are bound to the same exchange, they share its messages, each getting about half."
+      - "If no queue is bound yet, RabbitMQ keeps the message until one is."
+      depth_notes: "Không dạy exchange kiểu direct, fanout, headers hay alternate exchange — ngoài module. Không nói ai đọc queue và xác nhận — backend.l3.consumer-acknowledgements. Không dạy lại Observer — design.l2.observer-pattern."
+    - id: backend.l3.dual-write
+      title:
+        vi: "Lưu đơn và publish message không thể nằm chung một transaction"
+        en: "Saving an order and publishing its message cannot share a transaction"
+      main_path: true
+      duration_min: 13
+      skills: [backend.messaging.outbox]
+      prereqs:
+      - backend.l3.exchanges-and-bindings
+      - backend.l2.at-least-once-jobs
+      - design.l3.dispatching-domain-events
+      - backend.l2.optimistic-concurrency
+      related: [foundation.l1.transaction-intro, backend.l2.transactions-in-practice]
+      vocab: [dual-write]
+      example_tag: stage-2
+      example_files: [DonHang.Domain/OrderService.cs, DonHang.Infrastructure/QueuedNotifier.cs]
+      outline:
+      - "At stage-2, an order and its email job are rows in one PostgreSQL database, so one `SaveChangesAsync` keeps both or loses both."
+      - "Once the email job belongs to another service, changing an order means writing to two systems, PostgreSQL and RabbitMQ: a dual write, which no single transaction covers."
+      - "Publishing after `SaveChangesAsync` loses the message if the process stops between the two steps: the order is saved and no email ever goes out."
+      - "Publishing before `SaveChangesAsync` can announce a change that is never saved, for example a cancellation whose save fails on a concurrency conflict."
+      - "Publishing inside a database transaction does not help: rolling the transaction back cannot take back a message RabbitMQ has already accepted."
+      misconceptions:
+      - "Publishing right after `SaveChangesAsync` is safe, since the order is already saved by then."
+      - "A `try`/`catch` around the publish is enough: if publishing fails, try it again."
+      - "If the publish runs inside the database transaction, a rollback cancels the message too."
+      depth_notes: "Chỉ nêu vấn đề; cách sửa — backend.l3.outbox-pattern. Không dạy giao dịch phân tán hay 2PC — backend/sagas-and-consistency GĐ3. Không dạy lại at-least-once hay optimistic concurrency — backend.l2.at-least-once-jobs, backend.l2.optimistic-concurrency."
+    - id: backend.l3.outbox-pattern
+      title:
+        vi: "Outbox: lưu message trong cùng transaction với thay đổi của đơn"
+        en: "The outbox saves a message in the same transaction as the order"
+      main_path: true
+      duration_min: 14
+      skills: [backend.messaging.outbox]
+      prereqs: [backend.l3.dual-write, design.l3.dispatching-domain-events, backend.l2.database-job-queue]
+      related: [foundation.l1.transaction-intro, design.l3.domain-events]
+      vocab: [outbox]
+      example_tag: stage-3
+      example_files:
+      - DonHang.Domain/NotifyCustomerOnOrderEvents.cs
+      - DonHang.Domain/IOutbox.cs
+      - DonHang.Infrastructure/EfOutbox.cs
+      - DonHang.Infrastructure/DonHangDbContext.cs
+      outline:
+      - "An outbox is a table in the sender's own database where a message is saved by the same transaction as the change it describes, to be published afterwards."
+      - "At stage-3, `NotifyCustomerOnOrderEvents` reacts to `OrderPlaced`, `OrderCancelled` and `OrderShipped` by adding one row to `outbox_messages` through `IOutbox`, before `SaveChangesAsync` runs."
+      - "The order's change and its outbox row are saved by one `SaveChangesAsync`, so there is never a changed order without its message, nor a message about a change that was rolled back."
+      - "Each row holds a new id, the routing key and the message body as JSON; its `published_at` stays empty until the message has reached RabbitMQ."
+      - "The stage-2 `notifications` table already worked this way for emails; the outbox does the same for messages bound for any other service."
+      misconceptions:
+      - "The outbox is a queue inside RabbitMQ."
+      - "Saving the outbox row with a second `SaveChangesAsync`, right after the order's, is just as safe."
+      - "With an outbox, the message is published at the moment the order is saved."
+      depth_notes: "Không nói ai publish các dòng outbox — backend.l3.outbox-relay. Không dạy lại domain event hay dispatch — design.l3.dispatching-domain-events. Không dạy thư viện làm sẵn outbox — ngoài module."
+    - id: backend.l3.outbox-relay
+      title:
+        vi: "Relay chỉ đánh dấu dòng outbox đã gửi sau khi RabbitMQ xác nhận"
+        en: "The relay marks an outbox row sent only after RabbitMQ confirms it"
+      main_path: true
+      duration_min: 15
+      skills: [backend.messaging.outbox]
+      prereqs: [backend.l3.outbox-pattern, backend.l2.skip-locked-claiming, backend.l2.hosted-services]
+      related: [backend.l2.at-least-once-jobs, backend.l2.retry-with-backoff]
+      vocab: [publisher-confirm]
+      example_tag: stage-3
+      example_files:
+      - DonHang.Api/Jobs/OutboxRelay.cs
+      - DonHang.Infrastructure/RabbitMqPublisher.cs
+      - scripts/backend/broker-down.sh
+      outline:
+      - "At stage-3, `OutboxRelay` is a hosted service in `DonHang.Api`; on each tick it claims unpublished `outbox_messages` rows with `FOR UPDATE SKIP LOCKED`, publishes each to `donhang.orders` and sets `published_at`."
+      - "With publisher confirms turned on, RabbitMQ answers each publish once it has taken responsibility for the message, and the relay sets `published_at` only after that answer."
+      - "The exchange and the queues are declared durable and each message is marked persistent, so a message RabbitMQ has confirmed survives a restart of the broker."
+      - "While RabbitMQ is down, orders are still accepted and their rows wait in the outbox; `broker-down.sh` shows them published once the broker is back."
+      - "A crash after the confirm and before `published_at` is saved publishes that row again: the outbox gives at-least-once delivery, so receivers must expect duplicates."
+      misconceptions:
+      - "Once the publish call returns without an error, RabbitMQ has stored the message, even without publisher confirms."
+      - "If RabbitMQ is down, placing an order has to fail, or its email would be lost."
+      - "An outbox makes sure each message is delivered exactly once."
+      depth_notes: "Không dạy đọc WAL/CDC thay cho polling, dọn dòng outbox cũ hay thứ tự message — ngoài module. Không dạy kiểu queue và cụm RabbitMQ — ngoài module. Không dạy lại SKIP LOCKED — backend.l2.skip-locked-claiming."
+    - id: backend.l3.consumer-acknowledgements
+      title:
+        vi: "RabbitMQ chỉ quên một message sau khi consumer xác nhận nó"
+        en: "RabbitMQ forgets a message only after the consumer acknowledges it"
+      main_path: true
+      duration_min: 14
+      skills: [backend.messaging.consumers]
+      prereqs: [backend.l3.outbox-relay, backend.l2.at-least-once-jobs, design.l2.driving-and-driven-adapters]
+      related: [backend.l2.skip-locked-claiming, backend.l2.hosted-services]
+      vocab: [message-consumer]
+      example_tag: stage-3
+      example_files:
+      - DonHang.Notifications/OrderEventsConsumer.cs
+      - DonHang.Notifications/Program.cs
+      - DonHang.Tests/Notifications/OrderEventsConsumerTests.cs
+      outline:
+      - "A message consumer is code that receives messages from a queue; at stage-3, `OrderEventsConsumer` is a hosted service in `DonHang.Notifications` that consumes `notifications.order-events`."
+      - "Like a controller, the consumer is a driving adapter: it turns a message from outside into a call to the service's own code."
+      - "With manual acknowledgement, RabbitMQ keeps each delivered message until the consumer acknowledges it, and delivers it again if the consumer's channel or connection closes first."
+      - "`OrderEventsConsumer` acknowledges a message only after the `notifications` row it creates is saved, so a crash between receiving and saving loses nothing."
+      - "A crash after the save and before the acknowledgement delivers the message again, so consuming is at-least-once too."
+      - "When several copies of a service consume one queue, RabbitMQ hands each message to only one of them, so adding copies shares the work."
+      misconceptions:
+      - "RabbitMQ deletes a message from the queue as soon as it hands it to a consumer."
+      - "The consumer should acknowledge first and save afterwards, so RabbitMQ is not kept waiting."
+      - "Two copies of the Notifications service reading one queue each receive every message."
+      depth_notes: "Không dạy prefetch, thứ tự message hay số consumer tối ưu — ngoài module. Không nói xử lý message trùng — backend.l3.idempotent-consumer; message lỗi mãi — backend.l3.dead-letter-queue. Không dạy lại driving adapter — design.l2.driving-and-driven-adapters."
+    - id: backend.l3.idempotent-consumer
+      title:
+        vi: "Idempotent consumer: nhận một message hai lần, chỉ làm việc một lần"
+        en: "An idempotent consumer handles a repeated message only once"
+      main_path: true
+      duration_min: 14
+      skills: [backend.messaging.consumers]
+      prereqs:
+      - backend.l3.consumer-acknowledgements
+      - backend.l2.idempotent-endpoints
+      - foundation.l1.transaction-intro
+      related: [backend.l2.at-least-once-jobs]
+      vocab: [idempotent-consumer, inbox]
+      example_tag: stage-3
+      example_files:
+      - DonHang.Notifications/OrderEventsConsumer.cs
+      - DonHang.Notifications/NotificationsDbContext.cs
+      - DonHang.Tests/Notifications/OrderEventsConsumerTests.cs
+      - scripts/backend/duplicate-message.sh
+      outline:
+      - "Both the outbox relay and a missing acknowledgement can repeat a message, so a consumer must expect any message to arrive more than once."
+      - "An idempotent consumer handles a repeated message without repeating its effect; Đơn Hàng's consumer spots a repeat by the message id the relay copies from the outbox row."
+      - "At stage-3 the consumer saves the message id in `inbox_messages` and the new `notifications` row in one transaction, and the id is that table's primary key."
+      - "When the id is already in `inbox_messages`, the consumer acknowledges the message and does nothing else, so `duplicate-message.sh` publishes one message twice and gets one email."
+      - "The check works because the inbox row and the effect are saved in one transaction; a check made in another system could not be saved together with them."
+      misconceptions:
+      - "RabbitMQ drops duplicate messages, so a consumer never sees the same one twice."
+      - "Skipping a message when its order already has a `notifications` row is enough to stop duplicates."
+      - "Saving the message id after the email has been sent is just as safe."
+      depth_notes: "Không nói thời gian giữ hay dọn dòng inbox, không khử trùng lặp ở mail server — ngoài module. Không dạy lại idempotent endpoint — backend.l2.idempotent-endpoints."
+    - id: backend.l3.dead-letter-queue
+      title:
+        vi: "Message lỗi mãi được chuyển sang dead-letter queue"
+        en: "A message that keeps failing moves to a dead-letter queue"
+      main_path: true
+      duration_min: 13
+      skills: [backend.messaging.consumers]
+      prereqs: [backend.l3.idempotent-consumer, backend.l2.retry-with-backoff]
+      related: [backend.l3.exchanges-and-bindings]
+      vocab: [poison-message, dead-letter-queue]
+      example_tag: stage-3
+      example_files:
+      - DonHang.Notifications/RabbitMqTopology.cs
+      - DonHang.Notifications/OrderEventsConsumer.cs
+      - scripts/backend/dead-letter.sh
+      outline:
+      - "A poison message is one the consumer can never handle, such as a body that is not valid JSON; putting it back in the queue would make it fail again on every delivery."
+      - "A dead-letter queue is an ordinary queue that receives the messages another queue gives up on, so a person can inspect them later."
+      - "At stage-3 `notifications.order-events` names a dead-letter exchange, and the consumer rejects a message it cannot read without requeueing it, so RabbitMQ moves it to `notifications.order-events.dead`."
+      - "For any other failure the consumer returns the message to the queue; the queue's delivery limit dead-letters it after a set number of deliveries, so it is not retried forever."
+      - "RabbitMQ records on a dead-lettered message which queue it left and why, and `dead-letter.sh` prints that record."
+      misconceptions:
+      - "A message that fails should go back in the queue until it finally works."
+      - "Messages in the dead-letter queue are retried automatically after a while."
+      - "A dead-letter queue is a special component that needs a server of its own."
+      depth_notes: "Không dạy retry trễ bằng TTL, đưa message từ dead-letter queue về lại hay cảnh báo khi nó có message — ngoài module, cảnh báo ở backend/observability. Không dạy lại retry/backoff — backend.l2.retry-with-backoff."

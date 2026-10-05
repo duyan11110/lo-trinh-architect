@@ -10,7 +10,7 @@ title: "Transaction: hoặc tất cả, hoặc không gì cả"
 duration_min: 12
 skills: [foundation.sql.transaction]
 prereqs: [foundation.l1.sql-write]
-related: [backend.l2.transactions-in-practice, design.l3.outbox-pattern]
+related: [backend.l2.transactions-in-practice, backend.l3.outbox-pattern]
 vocab: [transaction]
 example_tag: stage-0
 versions_used: [postgresql]
@@ -105,7 +105,7 @@ Kết quả mong đợi: lần chạy đầu in `orders_before` 12, `orders_insi
 - [[foundation.l1.sql-write]] — bài mà bài này hoàn thiện: ở đó bạn đổi từng dòng một, ở đây bạn quyết định những thay đổi nào đứng cùng nhau.
 - [[foundation.l1.tables-keys-relations]] — khóa ngoại khai báo ở đó là lý do một đơn hàng và các món của nó phải được ghi thành một đơn vị.
 - [[backend.l2.transactions-in-practice]] — cùng ý tưởng đó trong code ứng dụng, nơi khối được mở bằng code thay vì bằng một dòng trong file.
-- [[design.l3.outbox-pattern]] — câu trả lời cho trường hợp hai việc phải xảy ra cùng nhau là một lần ghi vào cơ sở dữ liệu và một thông điệp gửi sang hệ thống khác, điều mà không giao dịch đơn lẻ nào bao được.
+- [[backend.l3.outbox-pattern]] — câu trả lời cho trường hợp hai việc phải xảy ra cùng nhau là một lần ghi vào cơ sở dữ liệu và một thông điệp gửi sang hệ thống khác, điều mà không giao dịch đơn lẻ nào bao được.
 
 ## Tóm tắt 5 dòng
 

@@ -10,7 +10,7 @@ title: "Hàng đợi job trong PostgreSQL: lưu việc gửi email cùng đơn h
 duration_min: 15
 skills: [backend.jobs.background]
 prereqs: [backend.l2.hosted-services, backend.l1.saving-changes]
-related: [design.l3.outbox-pattern]
+related: [backend.l3.outbox-pattern]
 vocab: [job-queue]
 example_tag: stage-2
 versions_used: [aspnetcore, efcore, postgresql, mailpit, docker]
@@ -130,7 +130,7 @@ Kết quả mong đợi: script in ra `-> 201`, rồi `email | order placed`, t�
 - [[backend.l2.hosted-services]] — điều kiện tiên quyết: vòng lặp lấy job từ hàng đợi này.
 - [[backend.l1.saving-changes]] — điều kiện tiên quyết: một giao dịch bao quanh mọi thay đổi đang chờ, chính là thứ giữ đơn và job của nó đi cùng nhau.
 - [[backend.l2.retry-with-backoff]] — vấn đề tiếp theo: bộ gửi làm gì với một job gửi email thất bại.
-- [[design.l3.outbox-pattern]] — một bài sau, xây tiếp trên ý lưu việc cần làm thành một dòng.
+- [[backend.l3.outbox-pattern]] — một bài sau, xây tiếp trên ý lưu việc cần làm thành một dòng.
 
 ## Tóm tắt 5 dòng
 

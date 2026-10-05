@@ -10,7 +10,7 @@ title: "A job queue in PostgreSQL: save the email job with the order"
 duration_min: 15
 skills: [backend.jobs.background]
 prereqs: [backend.l2.hosted-services, backend.l1.saving-changes]
-related: [design.l3.outbox-pattern]
+related: [backend.l3.outbox-pattern]
 vocab: [job-queue]
 example_tag: stage-2
 versions_used: [aspnetcore, efcore, postgresql, mailpit, docker]
@@ -130,7 +130,7 @@ Expected result: the script prints `-> 201`, then `email | order placed`, the jo
 - [[backend.l2.hosted-services]] — prerequisite: the loop that takes jobs from this queue.
 - [[backend.l1.saving-changes]] — prerequisite: the one transaction around every staged change, which is what keeps the order and its job together.
 - [[backend.l2.retry-with-backoff]] — the next problem: what the sender does with a job whose email fails.
-- [[design.l3.outbox-pattern]] — a later lesson that builds on saving work as a row.
+- [[backend.l3.outbox-pattern]] — a later lesson that builds on saving work as a row.
 
 ## Five-line summary
 
