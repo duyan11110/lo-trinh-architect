@@ -193,6 +193,25 @@ skills:
     vi: "Consumer chịu được lặp và lỗi: xác nhận, idempotent consumer, dead-letter queue"
     en: "Consumers that survive repeats and failures: acknowledgements, idempotent consumers, dead-letter queues"
   prereqs: [backend.messaging.brokers, backend.jobs.reliability]
+- id: backend.consistency.distributed
+  title:
+    vi: "Biết vì sao một transaction không trải qua nhiều service, và dữ liệu còn nhất quán theo nghĩa nào"
+    en: "Why one transaction cannot span services, and what consistency remains"
+  prereqs:
+  - backend.messaging.outbox
+  - backend.messaging.consumers
+  - design.modular.extraction
+  - backend.data.concurrency
+- id: backend.sagas.steps
+  title:
+    vi: "Dựng saga từ các bước cục bộ, trạng thái dở dang và hành động bù"
+    en: "Building a saga from local steps, in-progress statuses and compensating actions"
+  prereqs: [backend.consistency.distributed, design.ddd.aggregates, backend.jobs.reliability]
+- id: backend.sagas.coordination
+  title:
+    vi: "Chọn choreography hay orchestration cho một saga"
+    en: "Choosing choreography or orchestration for a saga"
+  prereqs: [backend.sagas.steps, backend.messaging.brokers]
 levels:
 - level: 1
   title:
@@ -1661,7 +1680,7 @@ levels:
       example_tag: stage-3
       example_files:
       - DonHang.Notifications/RabbitMqTopology.cs
-      - DonHang.Infrastructure/RabbitMqPublisher.cs
+      - DonHang.Messaging/RabbitMqPublisher.cs
       - scripts/backend/rabbitmq-topology.sh
       outline:
       - "A publisher never writes into a queue directly: it sends each message to an exchange together with a routing key, and the exchange decides which queues receive it."
@@ -1740,11 +1759,11 @@ levels:
       vocab: [publisher-confirm]
       example_tag: stage-3
       example_files:
-      - DonHang.Api/Jobs/OutboxRelay.cs
-      - DonHang.Infrastructure/RabbitMqPublisher.cs
+      - DonHang.Messaging/OutboxRelay.cs
+      - DonHang.Messaging/RabbitMqPublisher.cs
       - scripts/backend/broker-down.sh
       outline:
-      - "At stage-3, `OutboxRelay` is a hosted service in `DonHang.Api`; on each tick it claims unpublished `outbox_messages` rows with `FOR UPDATE SKIP LOCKED`, publishes each to `donhang.orders` and sets `published_at`."
+      - "At stage-3, `DonHang.Api` runs `OutboxRelay` as a hosted service; on each tick it claims unpublished `outbox_messages` rows with `FOR UPDATE SKIP LOCKED`, publishes each to `donhang.orders` and sets `published_at`."
       - "With publisher confirms turned on, RabbitMQ answers each publish once it has taken responsibility for the message, and the relay sets `published_at` only after that answer."
       - "The exchange and the queues are declared durable and each message is marked persistent, so a message RabbitMQ has confirmed survives a restart of the broker."
       - "While RabbitMQ is down, orders are still accepted and their rows wait in the outbox; `broker-down.sh` shows them published once the broker is back."
@@ -1837,3 +1856,235 @@ levels:
       - "Messages in the dead-letter queue are retried automatically after a while."
       - "A dead-letter queue is a special component that needs a server of its own."
       depth_notes: "Không dạy retry trễ bằng TTL, đưa message từ dead-letter queue về lại hay cảnh báo khi nó có message — ngoài module, cảnh báo ở backend/observability. Không dạy lại retry/backoff — backend.l2.retry-with-backoff."
+  - id: sagas-and-consistency
+    title:
+      vi: "Saga và tính nhất quán giữa các service"
+      en: "Sagas and consistency across services"
+    stage: 3
+    summary:
+      vi: "Hoàn tiền một đơn đã thanh toán khi Payments là service riêng: hiểu vì sao không dùng giao dịch phân tán, chia việc thành saga gồm các bước cục bộ nối bằng message, giữ đơn ở trạng thái dở dang, bù khi cổng thanh toán từ chối, và chọn choreography hay orchestration."
+      en: "Refund a paid order once Payments is a service of its own: see why a distributed transaction is avoided, split the work into a saga of local steps joined by messages, mark the order while the saga runs, compensate when the gateway refuses, and choose choreography or orchestration."
+    lessons:
+    - id: backend.l3.payments-service
+      title:
+        vi: "Payments thành service riêng, giữ bảng payments và cổng thanh toán"
+        en: "Payments becomes a service that owns payments and the gateway"
+      main_path: true
+      duration_min: 13
+      skills: [backend.consistency.distributed]
+      prereqs: [design.l3.when-to-extract-a-service, backend.l3.idempotent-consumer, management.l2.design-doc]
+      related: [design.l3.module-owns-its-tables, design.l3.anti-corruption-layer, backend.l3.message-broker]
+      vocab: []
+      example_tag: stage-3
+      example_files:
+      - docker-compose.yml
+      - DonHang.Payments/Program.cs
+      - DonHang.Payments/PaymentsDbContext.cs
+      - docs/design/refund-design.md
+      outline:
+      - "At stage-3 `DonHang.Payments` is a separate service with its own database, `donhang_payments`, which holds the `payments` table; `DonHang.Api` no longer reads or writes payment rows."
+      - "Only `DonHang.Payments` calls the payment gateway, so the gateway's address and key are configured in that one service and in no other part of Đơn Hàng."
+      - "The second version of `refund-design.md` gives the reason for the split: the gateway's key and the money records stay in one service that is deployed and given access on its own."
+      - "A refund now changes data owned by three services: the refund row in Payments, the order's status in `DonHang.Api` and the customer's email in Notifications."
+      - "Payments learns about refund requests the way Notifications learns about orders: through the same RabbitMQ exchange, outbox and inbox, not a mechanism of its own."
+      misconceptions:
+      - "Now that Payments is a service, the API can call it over HTTP and wait for the refund inside the customer's request."
+      - "Payments can still set the order's status in Đơn Hàng's database, since both services use PostgreSQL."
+      - "Each new service needs its own way of sending messages, so Payments brings a second broker."
+      depth_notes: "Không nói refund đi qua các service theo thứ tự nào — backend.l3.saga; không nói vì sao không gộp vào một transaction — backend.l3.two-phase-commit. Không dạy lại lý do tách service — design.l3.when-to-extract-a-service; không nói thanh toán (charge) — ngoài module."
+    - id: backend.l3.two-phase-commit
+      title:
+        vi: "Two-phase commit trải được nhiều database nhưng bắt chúng chờ nhau"
+        en: "Two-phase commit can span databases, but makes each wait on the others"
+      main_path: true
+      duration_min: 14
+      skills: [backend.consistency.distributed]
+      prereqs: [backend.l3.payments-service, backend.l3.dual-write, backend.l2.skip-locked-claiming]
+      related: [foundation.l1.transaction-intro, backend.l2.transactions-in-practice]
+      vocab: [distributed-transaction, two-phase-commit]
+      example_tag: stage-3
+      example_files: [docs/design/refund-design.md, scripts/backend/prepare-transaction.sh]
+      outline:
+      - "A distributed transaction is one transaction over several databases or systems; the stage-2 refund design saved the refund, the order and the email in one transaction, which at stage-3 would need one."
+      - "In two-phase commit a coordinator first asks every participant to prepare, so each can still commit later; only if all succeed does it tell all of them to commit, otherwise all roll back."
+      - "A prepared participant keeps its row locks until the coordinator's decision arrives; if the coordinator stops, it cannot decide alone and those rows stay locked."
+      - "PostgreSQL offers this through `PREPARE TRANSACTION`, which is off by default because `max_prepared_transactions` is 0; `prepare-transaction.sh` shows Đơn Hàng's database refusing it."
+      - "RabbitMQ cannot join a PostgreSQL transaction and the gateway's HTTP API has no prepare step, so `refund-design.md` rejects two-phase commit as an option for refunds."
+      misconceptions:
+      - "Two-phase commit makes a change across services as cheap and safe as a transaction in one database."
+      - "If one participant is slow, two-phase commit just times out and rolls back, and the others lose nothing."
+      - "Any system that supports transactions can take part in a two-phase commit with any other."
+      depth_notes: "Không dạy XA, cách phục hồi sau khi coordinator hỏng, three-phase commit hay đồng thuận — ngoài module. Không nói cách thay thế — backend.l3.saga. Không dạy lại row lock hay dual write — backend.l2.skip-locked-claiming, backend.l3.dual-write."
+    - id: backend.l3.saga
+      title:
+        vi: "Saga thay một transaction lớn bằng chuỗi transaction cục bộ"
+        en: "A saga replaces one big transaction with a chain of local ones"
+      main_path: true
+      duration_min: 15
+      skills: [backend.sagas.steps]
+      prereqs:
+      - backend.l3.two-phase-commit
+      - backend.l3.outbox-pattern
+      - backend.l3.idempotent-consumer
+      - design.l3.dispatching-domain-events
+      related: [backend.l3.exchanges-and-bindings, management.l2.design-doc]
+      vocab: [saga]
+      example_tag: stage-3
+      example_files:
+      - DonHang.Domain/Entities.cs
+      - DonHang.Payments/RefundRequestedConsumer.cs
+      - DonHang.Api/Messaging/PaymentEventsConsumer.cs
+      - scripts/backend/refund-saga.sh
+      outline:
+      - "A saga is a sequence of local transactions, each in one service, where each step saves its change and publishes a message that starts the next step."
+      - "At stage-3 `POST /api/v1/orders/{id}/refund` moves the order to `refunding` and saves an `order.refund-requested` outbox row in one transaction, then answers `202 Accepted`."
+      - "`DonHang.Payments` consumes that message and saves a `pending` refund row; a later transaction there saves the gateway's answer together with a `payment.refunded` outbox row."
+      - "`DonHang.Api` consumes `payment.refunded` and, in one transaction, moves the order to `cancelled` and saves an `order.refunded` row, from which Notifications sends the email."
+      - "Every step reuses the messaging module: the outbox keeps each step's message from being lost, and each consumer's inbox makes a repeated message harmless."
+      - "`refund-saga.sh` requests a refund for order 1 and prints the order's status and the refund row as the saga moves on."
+      misconceptions:
+      - "A saga is a product you install, like RabbitMQ."
+      - "When a later step of a saga fails, the earlier steps are rolled back automatically."
+      - "The refund endpoint should wait for Payments, so it can return the final result."
+      depth_notes: "Không nói bước thất bại — backend.l3.compensating-action; trạng thái giữa các bước — backend.l3.eventual-consistency; ai điều phối — backend.l3.choreography-vs-orchestration. Không dạy thứ tự message — mỗi bước chỉ sinh message sau bước trước."
+    - id: backend.l3.eventual-consistency
+      title:
+        vi: "Các service khớp nhau sau một lúc, không phải ngay khi đổi"
+        en: "Services agree after a while, not at the moment of the change"
+      main_path: true
+      duration_min: 13
+      skills: [backend.consistency.distributed]
+      prereqs: [backend.l3.saga, backend.l2.cache-invalidation]
+      related: [backend.l3.message-broker, management.l2.non-functional-requirements]
+      vocab: [strong-consistency, eventual-consistency]
+      example_tag: stage-3
+      example_files:
+      - scripts/backend/refund-saga.sh
+      - scripts/backend/payments-down.sh
+      - DonHang.Api/Controllers/OrdersController.cs
+      outline:
+      - "Inside one PostgreSQL database, a query that starts after a transaction commits sees its change: this is strong consistency, and it ends at the boundary of each service."
+      - "While a refund saga runs, the services disagree for a while: Payments can already show `refunded` while the order still shows `refunding`."
+      - "Eventual consistency means that once every message has been handled and no new change arrives, all services agree; it promises no time limit."
+      - "`payments-down.sh` stops `DonHang.Payments`: refund requests are still accepted and their orders stay `refunding` until the service is back and works through its queue."
+      - "The API reports `refunding` instead of pretending the refund is done, which is what the refund requirements ask the customer to see."
+      misconceptions:
+      - "Eventual consistency means the data may stay wrong for good."
+      - "Eventually consistent services catch up within a fixed time, such as a second."
+      - "While Payments is down, refund requests should fail, so the services never disagree."
+      depth_notes: "Không dạy CAP, PACELC hay replica đọc — GĐ4 và backend/multitenancy-and-sharding. Không nói chặn thay đổi khác lúc saga chạy — backend.l3.saga-in-progress-status. Không dạy lại cache cũ — backend.l2.cache-invalidation."
+    - id: backend.l3.saga-in-progress-status
+      title:
+        vi: "Trạng thái refunding chặn mọi thay đổi khác khi saga đang chạy"
+        en: "A refunding status keeps other changes away while the saga runs"
+      main_path: true
+      duration_min: 13
+      skills: [backend.sagas.steps]
+      prereqs:
+      - backend.l3.eventual-consistency
+      - design.l2.status-changes-through-methods
+      - design.l3.aggregates-and-invariants
+      - backend.l2.problem-types
+      related: [backend.l2.optimistic-concurrency, management.l2.requirements-document]
+      vocab: []
+      example_tag: stage-3
+      example_files:
+      - DonHang.Domain/Entities.cs
+      - DonHang.Tests/Domain/OrderTests.cs
+      - DonHang.Api/Controllers/OrdersController.cs
+      outline:
+      - "Unlike one transaction, a saga cannot hide its unfinished work: between its steps, other requests can read the same order and try to change it."
+      - "At stage-3 `Order.RequestRefund()` accepts only a `paid` order and moves it to `refunding`; `Ship()` and `Cancel()` refuse a `refunding` order, and the API answers `409`."
+      - "A second refund request for the same order is refused the same way, so a customer cannot start two refunds for one order."
+      - "From stage-3 `Cancel()` also refuses a `paid` order, closing the gap `refund-design.md` left open: every paid order leaves through the refund saga."
+      - "The new status is a rule of the order, so it lives in `Order` and `OrderTests` checks it like the other status rules."
+      misconceptions:
+      - "Staff can still ship an order while its refund runs; the refund will catch up."
+      - "Holding a row lock on the order for the whole saga would keep others out more simply."
+      - "`refunding` is only a label for the app to show; the server does not need to check it."
+      depth_notes: "Không nói khi hoàn tiền thất bại thì đơn về đâu — backend.l3.compensating-action. Không dạy lại phương thức đổi trạng thái hay problem type — design.l2.status-changes-through-methods, backend.l2.problem-types. Không sửa DonHang.App."
+    - id: backend.l3.compensating-action
+      title:
+        vi: "Bước saga thất bại được bù bằng một thay đổi mới, không rollback"
+        en: "A failed saga step is undone by a new change, not a rollback"
+      main_path: true
+      duration_min: 14
+      skills: [backend.sagas.steps]
+      prereqs: [backend.l3.saga-in-progress-status, backend.l2.role-based-access]
+      related: [backend.l3.dead-letter-queue, management.l2.requirements-document]
+      vocab: [compensating-action]
+      example_tag: stage-3
+      example_files:
+      - DonHang.Domain/Entities.cs
+      - DonHang.Payments/RefundSender.cs
+      - DonHang.Api/Messaging/PaymentEventsConsumer.cs
+      - scripts/backend/refund-declined.sh
+      outline:
+      - "The earlier steps of a saga are already committed, so a later failure cannot roll them back; each needs a compensating action, a new change that undoes its effect for the business."
+      - "At stage-3, when the gateway refuses a refund, Payments marks the refund row `failed` with the gateway's reason and publishes `payment.refund-failed`."
+      - "`DonHang.Api` compensates by moving the order from `refunding` back to `paid` and saving an `order.refund-failed` row, so the customer is told and the order can ship again."
+      - "Compensating keeps history instead of erasing it: the `failed` row and its reason stay, and staff find them through `GET /api/v1/refunds?status=failed`."
+      - "Money returned by the gateway cannot be taken back, so the steps after it, cancelling the order and sending the email, are retried until they succeed rather than undone."
+      - "`refund-declined.sh` asks for a refund the fake gateway refuses and prints the order back at `paid`."
+      misconceptions:
+      - "When a later step fails, the database rolls back the earlier steps."
+      - "A compensating action deletes the rows the failed saga created, as if nothing had happened."
+      - "Every step of a saga can be undone, including an email already sent."
+      depth_notes: "Không nói khi nào cổng bị coi là từ chối hay thử lại — backend.l3.safe-to-repeat-saga-steps. Không dạy hoàn một phần hay đơn shipped — ngoài phạm vi refund-requirements. Không dạy lại dead-letter queue — backend.l3.dead-letter-queue."
+    - id: backend.l3.safe-to-repeat-saga-steps
+      title:
+        vi: "Bước saga gọi cổng thanh toán phải lặp lại được mà không hoàn tiền hai lần"
+        en: "A saga step that calls the gateway must be safe to repeat"
+      main_path: true
+      duration_min: 15
+      skills: [backend.sagas.steps]
+      prereqs:
+      - backend.l3.compensating-action
+      - backend.l2.retry-with-backoff
+      - backend.l2.idempotent-endpoints
+      - design.l3.anti-corruption-layer
+      related: [backend.l2.skip-locked-claiming, backend.l2.at-least-once-jobs]
+      vocab: []
+      example_tag: stage-3
+      example_files:
+      - DonHang.Payments/RefundSender.cs
+      - DonHang.Payments/GatewayRefundClient.cs
+      - DonHang.Tests/Payments/RefundSenderTests.cs
+      - scripts/backend/gateway-down.sh
+      outline:
+      - "`RefundSender` in `DonHang.Payments` claims due `pending` refund rows with `FOR UPDATE SKIP LOCKED` and calls the gateway for each, as `NotificationSender` does for emails."
+      - "Every call for one row sends the same idempotency key, `refund-` followed by the row's id, so a retry after a timeout cannot refund the payment twice."
+      - "`GatewayRefundClient` is the anti-corruption layer: it turns the gateway's own answers into three outcomes Đơn Hàng uses: refunded, refused, or try again later."
+      - "An error or no answer from the gateway schedules another try with exponential backoff; only a refusal, or 24 hours of failed tries, marks the row `failed` and starts the compensation."
+      - "`gateway-down.sh` stops the fake gateway: the refund stays `pending` with growing `attempts`, and completes once the gateway is back."
+      misconceptions:
+      - "A timeout from the gateway means no refund happened, so a new request with a new key is safe."
+      - "The gateway's own status names can be stored as they are; translating them is extra work."
+      - "Retrying a refund forever is safer than ever marking it failed."
+      depth_notes: "Không dạy timeout, circuit breaker — backend/resilience GĐ3; không dạy cổng gọi ngược báo kết quả — refund-design loại. Không dạy lại backoff, idempotency key, SKIP LOCKED hay ACL — backend.l2.retry-with-backoff, backend.l2.idempotent-endpoints, design.l3.anti-corruption-layer."
+    - id: backend.l3.choreography-vs-orchestration
+      title:
+        vi: "Choreography hay orchestration: ai quyết bước tiếp theo của saga"
+        en: "Choreography or orchestration: who decides a saga's next step"
+      main_path: true
+      duration_min: 13
+      skills: [backend.sagas.coordination]
+      prereqs: [backend.l3.safe-to-repeat-saga-steps, backend.l3.exchanges-and-bindings]
+      related: [design.l3.context-map, design.l3.domain-events]
+      vocab: [saga-choreography, saga-orchestration]
+      example_tag: stage-3
+      example_files:
+      - DonHang.Payments/RabbitMqTopology.cs
+      - DonHang.Notifications/RabbitMqTopology.cs
+      - DonHang.Api/Messaging/PaymentEventsConsumer.cs
+      outline:
+      - "In choreography no service directs the saga: each reacts to the others' messages, as Đơn Hàng's refund does through `order.refund-requested` and `payment.refunded`."
+      - "Payments binds its own queue to `order.refund-requested` on `donhang.orders`, so `DonHang.Api` publishes an event without knowing which service acts on it."
+      - "In orchestration one orchestrator keeps the saga's state, sends each service a command, and picks the next step from each reply."
+      - "Choreography needs no extra part but spreads the flow: to follow one refund you read the bindings and consumers of three services."
+      - "Orchestration puts the flow in one place at the price of a part every step depends on; it tends to pay off when a saga has many steps and failure paths."
+      misconceptions:
+      - "Choreography and orchestration are two libraries for building sagas."
+      - "An orchestrator always has to be a separate service."
+      - "Choreography is always better, because the services never depend on each other."
+      depth_notes: "Không xây orchestrator hay process manager trong repo, không dạy workflow engine — ngoài module. Không dạy lại publish/subscribe hay binding — backend.l3.exchanges-and-bindings."
