@@ -212,6 +212,21 @@ skills:
     vi: "Chọn choreography hay orchestration cho một saga"
     en: "Choosing choreography or orchestration for a saga"
   prereqs: [backend.sagas.steps, backend.messaging.brokers]
+- id: backend.observability.signals
+  title:
+    vi: "Chọn tín hiệu cho biết chuyện gì xảy ra bên trong hệ thống đang chạy"
+    en: "Choosing the signals that show what happens inside a running system"
+  prereqs: [devops.monitoring.logs, devops.monitoring.metrics, backend.sagas.coordination]
+- id: backend.observability.tracing
+  title:
+    vi: "Theo một request qua nhiều service bằng trace OpenTelemetry"
+    en: "Following one request across services with OpenTelemetry traces"
+  prereqs: [backend.observability.signals, backend.messaging.outbox, backend.messaging.consumers]
+- id: backend.observability.correlation
+  title:
+    vi: "Nối log với trace bằng trace id"
+    en: "Tying logs to traces by their trace id"
+  prereqs: [backend.observability.tracing, devops.monitoring.logs]
 levels:
 - level: 1
   title:
@@ -1855,7 +1870,7 @@ levels:
       - "A message that fails should go back in the queue until it finally works."
       - "Messages in the dead-letter queue are retried automatically after a while."
       - "A dead-letter queue is a special component that needs a server of its own."
-      depth_notes: "Không dạy retry trễ bằng TTL, đưa message từ dead-letter queue về lại hay cảnh báo khi nó có message — ngoài module, cảnh báo ở backend/observability. Không dạy lại retry/backoff — backend.l2.retry-with-backoff."
+      depth_notes: "Không dạy retry trễ bằng TTL, đưa message từ dead-letter queue về lại hay cảnh báo khi nó có message — ngoài module; panel số message ở backend/observability, alert rule ở devops/incidents (GĐ4). Không dạy lại retry/backoff — backend.l2.retry-with-backoff."
   - id: sagas-and-consistency
     title:
       vi: "Saga và tính nhất quán giữa các service"
@@ -2088,3 +2103,248 @@ levels:
       - "An orchestrator always has to be a separate service."
       - "Choreography is always better, because the services never depend on each other."
       depth_notes: "Không xây orchestrator hay process manager trong repo, không dạy workflow engine — ngoài module. Không dạy lại publish/subscribe hay binding — backend.l3.exchanges-and-bindings."
+  - id: observability
+    title:
+      vi: "Observability: theo một request qua nhiều service"
+      en: "Observability: following one request across services"
+    stage: 3
+    summary:
+      vi: "Theo một yêu cầu hoàn tiền qua DonHang.Api, RabbitMQ, Payments và Notifications: gửi span của mỗi service tới Tempo bằng OpenTelemetry, mang ngữ cảnh trace qua HTTP và qua outbox, tìm log của một trace bằng trace id, lấy mẫu trace mà vẫn giữ trọn, và theo dõi message tồn trong queue."
+      en: "Follow one refund through DonHang.Api, RabbitMQ, Payments and Notifications: send each service's spans to Tempo with OpenTelemetry, carry the trace context over HTTP and through the outbox, find a trace's logs by its id, sample whole traces, and watch queue backlogs."
+    lessons:
+    - id: backend.l3.observability
+      title:
+        vi: "Observability: biết chuyện gì đã xảy ra với một request từ bên ngoài"
+        en: "Observability: telling from outside what happened to one request"
+      main_path: true
+      duration_min: 13
+      skills: [backend.observability.signals]
+      prereqs:
+      - devops.l2.centralized-logs
+      - devops.l2.grafana-dashboards
+      - backend.l2.database-job-queue
+      - backend.l3.choreography-vs-orchestration
+      related:
+      - devops.l2.why-monitoring
+      - backend.l1.structured-logging
+      - backend.l1.exception-handling-middleware
+      vocab: [observability, telemetry]
+      example_tag: stage-2
+      example_files:
+      - DonHang.Api/Middleware/RequestLoggingMiddleware.cs
+      - DonHang.Api/Jobs/NotificationSender.cs
+      - DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs
+      outline:
+      - "Observability is how well you can tell what happened inside a running system from the telemetry it sends out, including for questions nobody planned for when the code was written."
+      - "Telemetry is the data a program sends out about its own work: the logs and metrics Đơn Hàng already has, and a third kind, added in this module, that follows one request."
+      - "Metrics answer how many and how fast across all requests, such as the `5xx` rate on the dashboard, but cannot say what happened to one particular order."
+      - "At stage-2 the line `RequestLoggingMiddleware` writes for `POST /api/v1/orders` and the line `NotificationSender` writes for that order's email share no field, so only their times link them."
+      - "The `unhandled exception` line from `ExceptionHandlingMiddleware` holds no method or path, so when two requests fail at once no field says which error belongs to which request line."
+      - "Once one refund passes through `DonHang.Api`, RabbitMQ, `DonHang.Payments` and `DonHang.Notifications`, matching lines by time gets harder with every service and every request running at once."
+      misconceptions:
+      - "Observability is a new name for monitoring: it just means more dashboards."
+      - "With enough log lines I can always rebuild what happened to one order."
+      - "Searching Loki for the order id finds every line about that order."
+      - "Matching log lines by their timestamps is precise enough to follow one request."
+      depth_notes: "Không dạy trace, span — backend.l3.traces-and-spans; OpenTelemetry — backend.l3.opentelemetry-sdk. Không đặt SLO hay alert — GĐ4 (backend/capacity-and-slo, devops/incidents). Không dạy lại metric, Loki — devops/monitoring-basics."
+    - id: backend.l3.traces-and-spans
+      title:
+        vi: "Trace là cây các span có thời gian của một request qua nhiều service"
+        en: "A trace is one request's tree of timed spans across services"
+      main_path: true
+      duration_min: 14
+      skills: [backend.observability.tracing]
+      prereqs: [backend.l3.observability, backend.l3.saga]
+      related:
+      - design.l1.tracing-a-request-through-layers
+      - backend.l2.efcore-generated-sql
+      - devops.l2.grafana-dashboards
+      vocab: [distributed-trace, trace-span, tempo]
+      example_tag: stage-3
+      example_files:
+      - scripts/backend/trace-refund.sh
+      - docker-compose.yml
+      - deploy/monitoring/grafana/provisioning/datasources/datasources.yml
+      outline:
+      - "A trace records one piece of work, such as one request, across every process it reaches; every span in it carries the same trace id."
+      - "A span is one timed operation inside a trace, such as handling one HTTP request or running one SQL command, with a name, a start time, a duration and attributes."
+      - "Every span except the first names its parent span, so a trace forms a tree that shows which operation caused which."
+      - "At stage-3 every service sends its spans to Tempo, a store for traces that Grafana queries as a third data source next to Prometheus and Loki."
+      - "`trace-refund.sh` requests a refund and prints its trace from Tempo as an indented tree of spans, each with its service and name, from `DonHang.Api` through Payments to Notifications."
+      - "The consumer spans of the refund saga start after `POST /api/v1/orders/{id}/refund` has already answered `202`, so a child span can end long after its parent."
+      misconceptions:
+      - "A trace is just a more detailed log file of one service."
+      - "Each service keeps its own trace of a request, and someone matches them up later."
+      - "Tracing records every line of code that ran, like a debugger does."
+      - "A child span always ends before its parent does."
+      depth_notes: "Không nói span được tạo thế nào — backend.l3.opentelemetry-sdk; trace id đi qua HTTP, RabbitMQ thế nào — backend.l3.trace-context-propagation, backend.l3.tracing-through-the-outbox. Không dạy span event, link giữa trace, TraceQL, giao diện Tempo chi tiết — ngoài module."
+    - id: backend.l3.opentelemetry-sdk
+      title:
+        vi: "OpenTelemetry biến việc của mỗi service thành span gửi đi qua OTLP"
+        en: "OpenTelemetry turns each service's work into spans sent over OTLP"
+      main_path: true
+      duration_min: 15
+      skills: [backend.observability.tracing]
+      prereqs: [backend.l3.traces-and-spans, devops.l2.centralized-logs, backend.l1.hosting-and-program-cs]
+      related: [devops.l2.metrics-endpoint, backend.l3.payments-service]
+      vocab: [opentelemetry, instrumentation, otlp]
+      example_tag: stage-3
+      example_files:
+      - DonHang.Api/Program.cs
+      - Directory.Packages.props
+      - deploy/monitoring/alloy/config.alloy
+      - docker-compose.yml
+      outline:
+      - "OpenTelemetry is an open standard with libraries for producing telemetry: an API that code calls, an SDK that collects and exports, and OTLP, the protocol for sending the data on."
+      - "In .NET a span is a `System.Diagnostics.Activity` started from an `ActivitySource`; the OpenTelemetry SDK records only activities from the sources it has been told to listen to."
+      - "Instrumentation is code that creates spans for a library: ASP.NET Core, `HttpClient` and Npgsql instrumentation give spans for requests, outgoing calls and SQL commands with no change to controllers."
+      - "At stage-3 each service's `Program.cs` calls `AddOpenTelemetry()` with its own service name and exports spans over OTLP to Alloy, which forwards them to Tempo."
+      - "The SDK exports spans in batches in the background, so a request does not wait for its spans to reach Tempo."
+      - "Because the services speak only OTLP to Alloy, moving traces to another store changes Alloy's configuration, not the services' code."
+      misconceptions:
+      - "OpenTelemetry is a product like Grafana that stores traces and shows them."
+      - "To get spans, every controller action has to start and stop its own."
+      - "Sending spans makes every request wait for Tempo, and fails it when Tempo is down."
+      depth_notes: "Không chuyển metric sang OpenTelemetry/Meter API: giữ prometheus-net (exporter Prometheus của OpenTelemetry cho ASP.NET Core còn prerelease); không gửi log qua OTLP. Không dạy span tự viết, semantic conventions — ngoài module. Truyền trace — backend.l3.trace-context-propagation."
+    - id: backend.l3.trace-context-propagation
+      title:
+        vi: "Header traceparent mang trace từ process này sang process kế tiếp"
+        en: "The traceparent header carries a trace from one process to the next"
+      main_path: true
+      duration_min: 13
+      skills: [backend.observability.tracing]
+      prereqs:
+      - backend.l3.opentelemetry-sdk
+      - backend.l3.safe-to-repeat-saga-steps
+      - foundation.l1.http-request-response
+      related: [design.l3.anti-corruption-layer]
+      vocab: [trace-context, context-propagation]
+      example_tag: stage-3
+      example_files:
+      - DonHang.Payments/GatewayRefundClient.cs
+      - DonHang.Payments/Program.cs
+      - scripts/backend/traceparent.sh
+      outline:
+      - "Context propagation passes the trace id and the current span id from one process to the next, so the receiver's spans join the sender's trace instead of starting a new one."
+      - "Over HTTP this trace context travels in the W3C `traceparent` header: a version, a 32-hex-digit trace id, a 16-hex-digit parent span id and flags, joined by dashes."
+      - "ASP.NET Core instrumentation reads an incoming `traceparent`, and `HttpClient` instrumentation writes one on each outgoing call, so neither controllers nor clients handle it."
+      - "At stage-3 the call `GatewayRefundClient` makes from Payments to the fake gateway carries `traceparent`, so the gateway's span is part of the refund's trace."
+      - "`traceparent.sh` sends a request with a `traceparent` it made up, then finds the API's spans in Tempo under that same trace id."
+      misconceptions:
+      - "Tempo puts spans from different services into one trace by matching their times."
+      - "Each service creates its own trace id, and the ids get linked later."
+      - "Passing the trace along means adding a trace id parameter to every method and endpoint."
+      depth_notes: "Không nói RabbitMQ — backend.l3.tracing-through-the-outbox. Không dạy header tracestate, baggage, định dạng propagation khác hay có nên tin traceparent từ internet — ngoài module. Không dạy lại header HTTP, ACL — foundation.l1.http-request-response, design.l3.anti-corruption-layer."
+    - id: backend.l3.tracing-through-the-outbox
+      title:
+        vi: "Qua outbox, ngữ cảnh trace được lưu cùng dòng message"
+        en: "Through the outbox, the trace context is saved with the message row"
+      main_path: true
+      duration_min: 15
+      skills: [backend.observability.tracing]
+      prereqs:
+      - backend.l3.trace-context-propagation
+      - backend.l3.outbox-relay
+      - backend.l3.consumer-acknowledgements
+      related: [backend.l3.saga, backend.l3.outbox-pattern, backend.l3.dual-write]
+      vocab: []
+      example_tag: stage-3
+      example_files:
+      - DonHang.Messaging/OutboxMessage.cs
+      - DonHang.Messaging/OutboxRelay.cs
+      - DonHang.Messaging/MessageTracing.cs
+      - DonHang.Tests/Messaging/TracePropagationTests.cs
+      outline:
+      - "RabbitMQ messages carry headers too, so a publisher can put `traceparent` in them and a consumer's span can continue the publisher's trace."
+      - "With an outbox, the relay publishes later and outside the request, so the context current at publish time is the relay's own, not that of the request that saved the row."
+      - "At stage-3 a new outbox row stores the current `traceparent` in its `trace_parent` column, in both `DonHang.Api` and `DonHang.Payments`."
+      - "`OutboxRelay` starts a publish span whose parent is the stored context, and puts that span's `traceparent` in the message headers."
+      - "Each consumer starts its span as a child of the context in the message header, so one refund's spans from every service form one trace."
+      - "A row saved before the column existed has no `trace_parent`, so its message starts a new trace instead of failing."
+      misconceptions:
+      - "RabbitMQ passes the trace along by itself, so nothing needs to be done."
+      - "The relay publishes the request's row, so its publish belongs to that request's trace automatically."
+      - "A trace has to end when the HTTP response is sent."
+      depth_notes: "Không dạy link giữa trace, span cho lô message hay instrumentation có sẵn của RabbitMQ.Client — ngoài module. Không nối trace tới bước gửi email của NotificationSender. Không dạy lại outbox, relay — backend.l3.outbox-pattern, backend.l3.outbox-relay."
+    - id: backend.l3.trace-ids-in-logs
+      title:
+        vi: "Trace id trong mỗi dòng log gom các log của một request lại"
+        en: "A trace id in every log line ties one request's logs together"
+      main_path: true
+      duration_min: 14
+      skills: [backend.observability.correlation]
+      prereqs: [backend.l3.tracing-through-the-outbox, devops.l2.json-logs, devops.l2.centralized-logs]
+      related: [devops.l2.prometheus-scraping, backend.l1.structured-logging]
+      vocab: [correlation-id]
+      example_tag: stage-3
+      example_files:
+      - docker-compose.yml
+      - deploy/monitoring/alloy/config.alloy
+      - deploy/monitoring/grafana/provisioning/datasources/datasources.yml
+      - scripts/backend/logs-for-trace.sh
+      outline:
+      - "A correlation id is an id that every record of one piece of work carries, so the records can be gathered later; once tracing is in place, the trace id is that id."
+      - "At stage-3 every service's JSON log line carries the `TraceId` and `SpanId` of the span current when it was written, turned on by logging configuration with no change to the log calls."
+      - "Alloy keeps the trace id as a field of each line, not as a Loki label, because a label with one value per request would create a new stream for every request."
+      - "`logs-for-trace.sh` requests a refund, then with one LogQL query prints that refund's log lines from `DonHang.Api`, `DonHang.Payments` and `DonHang.Notifications`."
+      - "In Grafana, the Loki data source turns the trace id in a log line into a link that opens the trace in Tempo."
+      misconceptions:
+      - "To find one request's logs, I must pass a request id into every log call."
+      - "The trace id should be a Loki label, so that looking it up is fast."
+      - "Logs and traces live in separate tools, so I have to line them up by time."
+      depth_notes: "Không gửi log qua OTLP, không dạy log scope tự viết hay exemplar nối metric với trace — ngoài module. Không dạy lại log JSON, LogQL, label — devops.l2.json-logs, devops.l2.centralized-logs."
+    - id: backend.l3.trace-sampling
+      title:
+        vi: "Sampling giữ trọn một phần trace, quyết một lần ở nơi trace bắt đầu"
+        en: "Sampling keeps some whole traces, decided once where each one starts"
+      main_path: true
+      duration_min: 13
+      skills: [backend.observability.tracing]
+      prereqs: [backend.l3.trace-context-propagation, backend.l3.trace-ids-in-logs]
+      related: [devops.l2.counters-and-rate, backend.l3.opentelemetry-sdk]
+      vocab: [trace-sampling]
+      example_tag: stage-3
+      example_files: [DonHang.Api/Program.cs, docker-compose.yml, scripts/backend/trace-sampling.sh]
+      outline:
+      - "Recording and storing every span of every request costs CPU, network and storage in step with traffic, so a busy system keeps only some traces: this is sampling."
+      - "With head sampling, the service where a trace starts decides whether to keep it, and the decision travels in the sampled flag of `traceparent`."
+      - "A parent-based sampler follows the parent's decision for every span that has a parent, so all services keep or drop the same trace and kept traces stay whole."
+      - "At stage-3 the root's ratio comes from configuration and the lab keeps every trace; `trace-sampling.sh` sends one `traceparent` marked sampled and one not, and only the first reaches Tempo."
+      - "Đơn Hàng's request metrics come from prometheus-net, not from traces, so sampling traces does not change the request counts on the dashboard."
+      - "Head sampling decides before the request has run, so it can drop the trace of a rare error; keeping traces by their outcome needs a component that waits for the whole trace."
+      misconceptions:
+      - "Keeping 10% of traces means each trace keeps 10% of its spans."
+      - "Each service can keep 10% of its spans on its own, and the traces still come out whole."
+      - "Once traces are sampled, the request rate on the dashboard is sampled too."
+      depth_notes: "Không dạy tail sampling, sampling trong Alloy hay chọn tỉ lệ cho tải thật — ngoài module (chi phí — GĐ4). Không dạy lại traceparent — backend.l3.trace-context-propagation; counter — devops.l2.counters-and-rate."
+    - id: backend.l3.queue-backlog-metrics
+      title:
+        vi: "Số message tồn trong queue cho thấy phía bất đồng bộ đang tụt lại"
+        en: "A queue's backlog shows the asynchronous side falling behind"
+      main_path: true
+      duration_min: 13
+      skills: [backend.observability.signals, devops.monitoring.dashboards]
+      prereqs:
+      - backend.l3.dead-letter-queue
+      - devops.l2.counters-and-rate
+      - devops.l2.grafana-dashboards
+      - backend.l3.observability
+      related: [backend.l3.eventual-consistency, devops.l2.prometheus-scraping, backend.l3.message-broker]
+      vocab: []
+      example_tag: stage-3
+      example_files:
+      - deploy/monitoring/prometheus.yml
+      - deploy/monitoring/grafana/dashboards/donhang-api.json
+      - docker-compose.yml
+      - scripts/backend/queue-backlog.sh
+      outline:
+      - "At stage-3 a stopped or slow consumer does not slow `POST /api/v1/orders`: the API's request rate, errors and p95 stay normal while order emails wait in the queue."
+      - "The number of messages waiting in a queue is a gauge: it rises while messages arrive faster than the consumer handles them and falls as it catches up."
+      - "RabbitMQ's Prometheus plugin publishes queue numbers on port `15692`; by default it adds all queues together, so Đơn Hàng's scrape job asks it for one series per queue."
+      - "Đơn Hàng's dashboard gains panels for messages waiting in `notifications.order-events` and in `notifications.order-events.dead`, where any message at all needs a person to look."
+      - "`queue-backlog.sh` stops `notifications`, places orders and shows the queue's count rising in Prometheus while the API's `5xx` rate stays at zero."
+      misconceptions:
+      - "If the API's dashboard looks healthy, every part of Đơn Hàng is working."
+      - "Payments and Notifications are fine as long as their containers are running."
+      - "The number of messages in a queue is a counter, so I should read it with `rate()`."
+      depth_notes: "Không dạy alert rule hay gửi cảnh báo khi dead-letter queue có message — GĐ4 (devops/incidents); không dạy thời gian chờ của từng message, prefetch, số consumer — ngoài module. Không dạy lại gauge, scrape — devops/monitoring-basics."
