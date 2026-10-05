@@ -1,0 +1,133 @@
+{
+  "id": "design.l2.testing-the-dependency-rule",
+  "technical": {
+    "reviewed_at": "2026-09-30T14:30:00+07:00",
+    "reviewer": "claude-opus-5-5 (round 2)",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "not-needed",
+        "evidence": "Definition of the lesson's own vocab term (architecture-test), matching outline item 1 verbatim; it defines a term rather than asserting behaviour of a tool.",
+        "source": "content/tracks/design/track.yaml (outline item 1)"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "stage-2 Entities.cs:38-41 comment: \"The client's Idempotency-Key, stored in the same row ... A unique index guards it.\" above `public string? IdempotencyKey { get; init; }`. DonHangDbContext.cs:59: `e.HasIndex(o => o.IdempotencyKey).IsUnique();`.",
+        "source": "git show stage-2:DonHang.Domain/Entities.cs; stage-2:DonHang.Infrastructure/DonHangDbContext.cs"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "EF Core docs, Indexes, Data Annotations tab: sample `[Index(nameof(Url))] public class Blog` with `using Microsoft.EntityFrameworkCore;`. mapping-attributes.md: \"All new mapping attributes designed for EF Core ... are contained in the Microsoft.EntityFrameworkCore.Abstractions NuGet package.\" Run on stage-2 archive with [Microsoft.EntityFrameworkCore.Index(...)] on Order: Collection: [\"Microsoft.EntityFrameworkCore.Abstractions\"].",
+        "source": "refs/efcore-docs/entity-framework/core/modeling/indexes.md; refs/efcore-docs/entity-framework/core/modeling/relationships/mapping-attributes.md:22"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "stage-2 DonHang.Domain.csproj has only a PropertyGroup, no ItemGroup. Adding `public DonHang.Infrastructure.DonHangDbContext? Db { get; set; }` to Order in the stage-2 archive: `dotnet build DonHang.Domain` -> \"error CS0234: The type or namespace name 'Infrastructure' does not exist in the namespace 'DonHang' (are you missing an assembly reference?)\". Archive restored afterwards.",
+        "source": "git show stage-2:DonHang.Domain/DonHang.Domain.csproj; dotnet build on git archive stage-2"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "DependencyRuleTests.cs:11-33 at stage-2: ForbiddenPrefixes holds exactly the 7 listed strings; body is `typeof(OrderService).Assembly.GetReferencedAssemblies()`, `.Where(name => ForbiddenPrefixes.Any(prefix => name.StartsWith(prefix)))`, `Assert.Empty(forbidden)`.",
+        "source": "git show stage-2:DonHang.Tests/Architecture/DependencyRuleTests.cs"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "API ref: \"Gets the AssemblyName objects for all the assemblies referenced by this assembly.\" Second half (only used assemblies recorded) is not in that page; settled by execution on stage-2 archive: Npgsql.EntityFrameworkCore.PostgreSQL PackageReference alone -> \"Passed! - Failed: 0, Passed: 1\"; plus a DbContext? property -> Failed with Collection: [\"Microsoft.EntityFrameworkCore\"].",
+        "source": "https://learn.microsoft.com/dotnet/api/system.reflection.assembly.getreferencedassemblies (net-10.0); dotnet test on git archive stage-2"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Stage-2 archive, PackageReference Npgsql.EntityFrameworkCore.PostgreSQL in DonHang.Domain.csproj + `[Microsoft.EntityFrameworkCore.Index(nameof(IdempotencyKey), IsUnique = true)]` on Order; build succeeded, `dotnet test DonHang.Tests --filter DependencyRuleTests` -> \"Assert.Empty() Failure: Collection was not empty\" / \"Collection: [\\\"Microsoft.EntityFrameworkCore.Abstractions\\\"]\" / \"Failed! - Failed: 1\".",
+        "source": "dotnet test on git archive stage-2 (SDK 10.0.300)"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Observed output with xunit 2.9.2 (Directory.Packages.props stage-2): \"Error Message: Assert.Empty() Failure: Collection was not empty\" followed by \"Collection: [\\\"Microsoft.EntityFrameworkCore\\\"]\".",
+        "source": "dotnet test on git archive stage-2"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "DonHang.Tests.csproj:27-34 at stage-2: comment \"The tests reference every layer; only DonHang.Domain's own .csproj decides what the core is built against, and DependencyRuleTests checks it.\" and ProjectReferences to DonHang.Domain, DonHang.Infrastructure, DonHang.Api.",
+        "source": "git show stage-2:DonHang.Tests/DonHang.Tests.csproj"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "DependencyRuleTests.cs uses only `using DonHang.Domain; using Xunit;` and a [Fact]. DonHang.Tests.csproj PackageReferences: Microsoft.NET.Test.Sdk, xunit, xunit.runner.visualstudio, Testcontainers.PostgreSql, Testcontainers.Redis, Microsoft.AspNetCore.Mvc.Testing — no architecture-testing package.",
+        "source": "git show stage-2:DonHang.Tests/Architecture/DependencyRuleTests.cs; stage-2:DonHang.Tests/DonHang.Tests.csproj"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Stage-2 archive: baseline \"Passed! - Failed: 0, Passed: 1, Total: 1, Duration: 11 ms\"; step 1 (PackageReference only) \"Passed! ... Passed: 1\"; step 2 (+ `public Microsoft.EntityFrameworkCore.DbContext? Db { get; set; }` in Order) \"Failed! - Failed: 1\" with Collection: [\"Microsoft.EntityFrameworkCore\"]. Build succeeded in both runs. Archive restored and re-run: Passed.",
+        "source": "dotnet test DonHang.Tests --filter DependencyRuleTests on git archive stage-2"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "The test reads only `typeof(OrderService).Assembly` (DonHang.Domain.dll); ProductsController.List is in DonHang.Api/Controllers/ProductsController.cs:24 at stage-2, so a rule placed there cannot affect the test's input.",
+        "source": "git show stage-2:DonHang.Tests/Architecture/DependencyRuleTests.cs; stage-2:DonHang.Api/Controllers/ProductsController.cs"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Outline item 4 verbatim. Supported by the repo: stage-2 .github/workflows/ci.yml runs on `push` and `pull_request` and executes `dotnet test DonHang.slnx --no-build`, so the failing [Fact] surfaces on the PR. Lesson correctly does not mention CI (depth_notes).",
+        "source": "git show stage-2:.github/workflows/ci.yml"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "Round 2 run with DOCKER_HOST=tcp://127.0.0.1:1 (Docker unreachable): `dotnet test DonHang.Tests --filter DependencyRuleTests` -> \"Passed!  - Failed: 0, Passed: 1, Skipped: 0, Total: 1, Duration: 14 ms\". `docker ps -a --filter label=org.testcontainers=true` empty afterwards. DependencyRuleTests.cs declares no IClassFixture; only EfOrderRepositoryTests/OrdersApiTests use PostgresFixture/ApiFactory.",
+        "source": "dotnet test on git archive stage-2 (scratchpad hex-c/stage2); git show stage-2:DonHang.Tests/Architecture/DependencyRuleTests.cs"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "stage-2 EfOrderRepositoryTests.cs: `using DonHang.Infrastructure;` ... `var repository = new EfOrderRepository(db);`. ApiFactory.cs: `public sealed class ApiFactory : WebApplicationFactory<Program>` (\"Runs DonHang.Api's own Program.cs inside the test process\"); OrdersApiTests.cs: `using DonHang.Api;`, IClassFixture<ApiFactory>, HTTP requests through the real pipeline. Supports the section 5 sentence \"other tests at stage-2 exercise `EfOrderRepository` and the whole API\".",
+        "source": "git show stage-2:DonHang.Tests/Integration/{EfOrderRepositoryTests,ApiFactory,OrdersApiTests}.cs"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "nuget-packages.md:83,85: \"EF Core basic functionality | Microsoft.EntityFrameworkCore\"; \"Lightweight package for EF Core attributes, etc. | Microsoft.EntityFrameworkCore.Abstractions\". mapping-attributes.md:22: EF Core mapping attributes \"are contained in the Microsoft.EntityFrameworkCore.Abstractions NuGet package\". Round 2 run, [Index] on Order + `DbContext? Db` property: Collection: [\"Microsoft.EntityFrameworkCore.Abstractions\", \"Microsoft.EntityFrameworkCore\"]. Archive restored (diff vs stage-2 empty).",
+        "source": "refs/efcore-docs/entity-framework/core/what-is-new/nuget-packages.md; refs/efcore-docs/entity-framework/core/modeling/relationships/mapping-attributes.md; dotnet test on git archive stage-2 (scratchpad hex-c/stage2)"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 3,
+        "kind": "accuracy",
+        "quote": "a `PackageReference` line in a project file makes its assemblies available to that project",
+        "text": "Incomplete for this lesson's own Try it: step 1 references Npgsql.EntityFrameworkCore.PostgreSQL, yet step 2 uses `DbContext`, declared in Microsoft.EntityFrameworkCore, and the [Index] attribute is in Microsoft.EntityFrameworkCore.Abstractions: assemblies of packages it depends on, not its own. EF Core docs (mapping-attributes.md:22): the Abstractions package \"is included as a dependency whenever the main Microsoft.EntityFrameworkCore package, or one of the associated database provider packages, is used.\"",
+        "fix": "Replace with: \"a `PackageReference` line in a project file makes its assemblies, and those of the packages it depends on, available to that project.\" No claim needed (definition)."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-30T15:00:00+07:00",
+    "reviewer": "review-junior (prompt 05), round 2 (only the changes made after round-1 issues)",
+    "issues": [],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

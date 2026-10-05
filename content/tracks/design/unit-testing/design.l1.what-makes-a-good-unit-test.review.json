@@ -1,0 +1,154 @@
+{
+  "id": "design.l1.what-makes-a-good-unit-test",
+  "technical": {
+    "reviewed_at": "2026-09-26T18:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "OrderService.cs @ stage-1 lines 12-18: `CustomerId = customerId, PlacedAt = DateTimeOffset.UtcNow, Status = \"new\", Items = items,` inside `new Order { ... }` in PlaceOrderAsync(int customerId, List<OrderItem> items).",
+        "source": "examples/don-hang @ stage-1: DonHang.Domain/OrderService.cs:8-18"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "OrderServiceTests.cs @ stage-1: SetsStatusNew asserts `Assert.Equal(\"new\", order.Status); Assert.Equal(1, order.CustomerId);` (lines 20-21). No line in the file passes PlacedAt to any Assert; the only PlacedAt occurrence is the Seed on line 49.",
+        "source": "examples/don-hang @ stage-1: DonHang.Tests/Services/OrderServiceTests.cs"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Lines 48-54: `repository.Seed(new Order { Id = 1, CustomerId = 1, PlacedAt = DateTimeOffset.UtcNow, Status = \"new\" });` ... `Assert.Equal(\"cancelled\", order.Status);` is the only assertion.",
+        "source": "examples/don-hang @ stage-1: DonHang.Tests/Services/OrderServiceTests.cs:45-55"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Every [Fact] builds its own fakes: lines 14-15, 27-28 (`new FakeOrderRepository()`, `new FakeNotifier()`), 40 and 60 (`new OrderService(new FakeOrderRepository(), new FakeNotifier())`), 48+50. No field or static member holds a fake; `OneItem` is an expression-bodied property that returns a new OrderItem per call.",
+        "source": "examples/don-hang @ stage-1: DonHang.Tests/Services/OrderServiceTests.cs"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "xUnit docs: \"xUnit.net creates a new instance of the test class for every test that is run, so any code which is placed into the constructor of the test class will be run for every single test.\" Confirmed by running a probe class (3 [Fact]s, static ctor counter) on a git-archive copy of stage-1 with xunit 2.9.2: instances 1, 2, 3, one per test. Round 3: \"values stored in each instance's fields are not shared\" is correct for instance fields (static excluded by wording).",
+        "source": "https://xunit.net/docs/shared-context; dotnet test on scratch copy of stage-1"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Probe on a git-archive copy of stage-1 (xunit 2.9.2): `Assert.Equal(1, 2); output.WriteLine(\"PROBE SECOND ASSERT REACHED\"); Assert.Equal(\"x\", \"y\");` reported only the first failure; the second line was never written. xunit.assert.xml: XunitException is \"The base assert exception class\". Lesson now says \"normally ends the test\", which leaves room for Assert.Multiple (\"Runs multiple checks, collecting the exceptions from each one\").",
+        "source": "dotnet test on scratch copy; ~/.nuget/packages/xunit.assert/2.9.2/lib/net6.0/xunit.assert.xml"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "\"Fast: ... Milliseconds.\" \"Isolated: ... no dependencies on any outside factors\" \"Repeatable: ... The test always returns the same result if you don't change anything in between runs.\" \"try to include only one Act task per test\". On time: calls to `DateTime.Now` → \"If the test suite runs on Tuesday, the second test passes, but the first test fails.\" Order: \"the order in which unit tests run should _not_ matter\". Randomness is not named; it follows from Repeatable.",
+        "source": "refs/dotnet-docs/docs/core/testing/unit-testing-best-practices.md:40-42,301,362-405; order-unit-tests.md:11"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "System.Runtime.xml (net10.0): UtcNow \"Gets a DateTimeOffset object whose date and time are set to the current Coordinated Universal Time (UTC) date and time and whose offset is TimeSpan.Zero.\" Date \"Gets a DateTime value that represents the date component of the current DateTimeOffset object.\" Two UtcNow reads straddling 00:00 UTC give different .Date values.",
+        "source": "Microsoft.NETCore.App.Ref/10.0.12/ref/net10.0/System.Runtime.xml (P:System.DateTimeOffset.UtcNow, P:System.DateTimeOffset.Date)"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Now hedged (\"can do more harm\"), matching the round-1 suggested text. .NET docs: \"You should have a high level of confidence that your tests work, otherwise, you can't trust them. Tests that you don't trust, don't provide any value. When a test fails, you want to have a sense that something is wrong with your code and that it can't be ignored.\"",
+        "source": "refs/dotnet-docs/docs/core/testing/unit-testing-best-practices.md:214"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "xunit.extensibility.execution 2.9.2, xunit.execution.dotnet.xml (T:Xunit.Sdk.DefaultTestCaseOrderer): \"Default implementation of ITestCaseOrderer. Orders tests in an unpredictable but stable order, so that repeated test runs of the identical test assembly run tests in the same order.\" Not source order, so \"does not promise to run tests in the order they are written\" holds.",
+        "source": "~/.nuget/packages/xunit.extensibility.execution/2.9.2/lib/netstandard1.1/xunit.execution.dotnet.xml:266-271"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "OrderServiceTests.cs @ stage-1 lines 33-34: `var sent = Assert.Single(notifier.Sent); Assert.Equal(order.Id, sent.OrderId);` — two sends fail Assert.Single, a wrong id fails Assert.Equal. SetsStatusNew (lines 11-22) never reads notifier.Sent and asserts only Status and CustomerId, so it still passes as long as notifier.Send (OrderService.cs:21) does not throw.",
+        "source": "examples/don-hang @ stage-1: DonHang.Tests/Services/OrderServiceTests.cs:11-35; DonHang.Domain/OrderService.cs:19-22"
+      },
+      {
+        "n": 12,
+        "verdict": "rephrased",
+        "evidence": "DefaultTestCaseOrderer: \"Orders tests in an unpredictable but stable order, so that repeated test runs of the identical test assembly run tests in the same order.\" DefaultTestCollectionOrderer: \"...run test collections in a random order.\" So stable order holds inside one class (one collection by default), not the whole run. Second half is correct: with a shared FakeOrderRepository (`order.Id = nextId++`), a test can pass alone and fail in the full run.",
+        "source": "~/.nuget/packages/xunit.extensibility.execution/2.9.2/lib/netstandard1.1/xunit.execution.dotnet.xml:266-288; examples/don-hang @ stage-1: DonHang.Tests/FakeOrderRepository.cs",
+        "suggested_text": "xUnit keeps the order of the tests in one class the same between identical runs, but running one test on its own changes which tests ran before it, so the same test can pass alone and fail in the full run."
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "quote": "xUnit keeps the order the same between identical runs",
+        "text": "Too broad for xUnit 2.9.2. Only the order of tests inside a collection (by default, one test class) is documented as stable: DefaultTestCollectionOrderer \"run[s] test collections in a random order\" across identical runs. The lesson's case (one shared repository in OrderServiceTests) is inside one class, so the point stands once scoped. Round-2 issues (order \"can change from one run to the next\"; \"the class's fields\") are resolved.",
+        "fix": "Write \"xUnit keeps the order of the tests in one class the same between identical runs, but ...\" and update claim 12 text to say \"within a test class\"."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-25T12:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "term",
+        "quote": "More assertions in one test method means better coverage",
+        "text": "Still there from rounds 1-2: \"coverage\" is not in known_vocab. Kept minor because the same sentence goes on \"so a test should check as much as possible at once\", which tells me what the belief means, and the correction does not use the word.",
+        "fix": "If the outline wording can bend, replace \"means better coverage\" with \"checks more of the code\"; otherwise leave it."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "term",
+        "quote": "fails for an order placed just before midnight UTC and checked just after",
+        "text": "\"UTC\" is not in known_vocab. I can link it to `DateTimeOffset.UtcNow` in the code below and the sentence works as \"just before midnight\", so I am not stuck, but I do not know what UTC is.",
+        "fix": "Write \"just before midnight UTC (the clock `UtcNow` reads)\" or similar, in a few words."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "diagram",
+        "quote": "Shared state is the third cause.",
+        "text": "The diagram's cause node says \"test order\", the prose names the third cause \"shared state\" and then explains test order inside it. I worked out they are the same cause, but for a moment I looked for a fourth one.",
+        "fix": "Start the paragraph with \"Test order is the third cause, through shared state.\" or change the diagram label to \"test order (shared state)\"."
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "style",
+        "quote": "Check something the code decides rather than what the clock says, for example that `PlacedAt` is not later than a time the test reads just after calling `PlaceOrderAsync`.",
+        "text": "The lesson just told me `PlacedAt` is what the clock says, so the example seems to contradict its own lead-in. I understood it only after seeing that the check is a bound that is always true, not an exact value.",
+        "fix": "Replace the lead-in with \"Check a rule that holds whenever the test runs, for example that ...\"."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "quote": "but the later failures are in unrelated behaviours that were never checked.",
+        "text": "q4 option b explanation: \"never checked\" confuses me, because the fifth assertion was in the test all along; it was just never reached. That is the point of the correct answer, so the wording works against it.",
+        "fix": "Replace \"that were never checked\" with \"whose assertions were never reached before\"."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "coverage",
+        "UTC"
+      ],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

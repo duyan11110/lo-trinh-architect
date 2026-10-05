@@ -1,0 +1,126 @@
+{
+  "id": "backend.l2.retry-with-backoff",
+  "technical": {
+    "reviewed_at": "2026-09-28T21:10:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "NotificationSender.cs:86-101 at stage-2: Attempts++; if (Attempts >= MaxAttempts) { Status = \"failed\"; LogError(ex, ...); return; } else delay = FirstRetryDelay * Math.Pow(2, Attempts - 1); NextAttemptAt = UtcNow + delay; LogWarning(ex, ...). Status is not assigned on the warning path, so it stays pending. The section 5 block matches the source character for character.",
+        "source": "examples/don-hang @ stage-2 (= HEAD 7a131bc): DonHang.Api/Jobs/NotificationSender.cs:83-101"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "NotificationSender.cs:18-19: FirstRetryDelay = TimeSpan.FromSeconds(2); MaxAttempts = 5. Live run 2026-09-28 (scripts/backend/email-retry.sh, notification 39): log lines 'next attempt in 2 s', '4 s', '8 s', '16 s', then 'failed on attempt 5; giving up'; the log State carries DelaySeconds 2 for attempt 1.",
+        "source": "examples/don-hang @ stage-2 (= HEAD 7a131bc): NotificationSender.cs:16-19, 97; live run of scripts/backend/email-retry.sh"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Round 2 re-check at stage-2^{commit}. SendOneAsync (65-81): the try around email.SendAsync ends in catch (Exception ex) when (!stoppingToken.IsCancellationRequested) { RecordFailure(notification, ex); }, called per row in the foreach of SendDueAsync (53-57), so the round goes on. Then queue.CompleteAsync runs once: db.SaveChangesAsync + CommitTransactionAsync (NotificationQueue.cs:33-37). Supports 'saves all their changes together at its end' (sec. 4) and 'saved with the rest of the round, at its end' (sec. 5).",
+        "source": "examples/don-hang @ stage-2: DonHang.Api/Jobs/NotificationSender.cs:47-81; DonHang.Infrastructure/NotificationQueue.cs:33-37"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Round 2 re-check. NotificationQueue.cs:22-26: SELECT * FROM notifications WHERE status = 'pending' AND next_attempt_at <= {now} ORDER BY next_attempt_at, id LIMIT {batchSize} FOR UPDATE SKIP LOCKED; rounds come from PeriodicTimer(Tick), Tick = 2 s (NotificationSender.cs:13, 27-28). So 'The query that takes due rows only asks for pending ones' and 'the first tick after that takes it' hold (LIMIT 10 never binds in the lesson's one-row scenario).",
+        "source": "examples/don-hang @ stage-2: DonHang.Infrastructure/NotificationQueue.cs:16-30; DonHang.Api/Jobs/NotificationSender.cs:13-14, 27-28"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Math.Pow: 'Returns a specified number raised to the specified power.' Example output '2^0 = 1 ... 2^3 = 8'. TimeSpan.Multiply operator (TimeSpan, Double), moniker net-10.0: 'Returns a new TimeSpan object whose value is the result of multiplying the specified timeSpan instance and the specified factor.' Live log: delays 2, 4, 8, 16 s for attempts 1-4.",
+        "source": "https://learn.microsoft.com/dotnet/api/system.math.pow?view=net-10.0 ; https://learn.microsoft.com/dotnet/api/system.timespan.op_multiply?view=net-10.0"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "refs overview.md:483 'The logger methods have overloads that take an exception parameter'; :442 'The arguments themselves are passed to the logging system ... This enables logging providers to store the parameter values as fields.' Live api JSON log for notification 39: \"Exception\":\"System.Net.Sockets.SocketException ...\" and \"State\":{\"NotificationId\":39,\"Attempt\":1,\"DelaySeconds\":2,...}.",
+        "source": "refs/dotnet-docs/docs/core/extensions/logging/overview.md:442, 481-499; docker compose logs api (2026-09-28)"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "email-retry.sh:14 'docker compose stop mailpit', :15 trap 'docker compose start mailpit' EXIT, :20-24 POST /api/v1/orders and prints the code, :31-35 polls while status = pending (max 60), :37-42 greps the api log and prints status, attempts, sent_at IS NULL. Live run printed '-> 201'; mailpit was running again after exit.",
+        "source": "examples/don-hang @ stage-2 (= HEAD 7a131bc): scripts/backend/email-retry.sh:14-42; live run 2026-09-28"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "outputs/stage-2/scripts/backend/email-retry.txt equals the lesson's output block. Live run 2026-09-28 produced the same text with id 39 in place of '...': five lines 'Notification 39 failed on attempt 1; next attempt in 2 s' ... 'attempt 5; giving up', then 'failed | 5 | t'.",
+        "source": "examples/don-hang @ stage-2 (= HEAD 7a131bc): outputs/stage-2/scripts/backend/email-retry.txt; live run"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Section 7 now: 'The whole run takes one to two minutes.' Round 1 live run of scripts/backend/email-retry.sh on the stage-2 lab: 'real 1m17.636s'; api log: attempt 1 at 12:11:48.57, attempt 5 at 12:12:48.54; each failed send took about 5-9 s (SocketException from the DNS lookup of the stopped mailpit), plus 30 s of backoff and up to 2 s per tick. Not re-run in round 2. One environment measured (Docker Desktop, Windows host); faster DNS failures would shorten the run.",
+        "source": "live run in examples/don-hang (stage-2), technical review round 1, 2026-09-28; docker compose logs --timestamps api"
+      },
+      {
+        "n": 10,
+        "verdict": "not-needed",
+        "evidence": "Stated with its condition (a server that is down or overloaded) as the reason for the design, as outline item 2 requires; the checkable part (waits 2, 4, 8, 16 s) is verified in claim 2.",
+        "source": "content/tracks/backend/track.yaml, outline item 2"
+      },
+      {
+        "n": 11,
+        "verdict": "not-needed",
+        "evidence": "Section 4 now uses the round 1 suggested_text verbatim: 'A failing server would receive attempt after attempt with no pause between them, all of them likely to fail for the same reason.' The unsupported timing ('within a fraction of a second') is gone; section 6 says 'one right after another'. What remains is a conditional design rationale with no number or syntax.",
+        "source": "lesson sections 4 and 6 (round 2); content/tracks/backend/track.yaml, outline item 2"
+      },
+      {
+        "n": 12,
+        "verdict": "not-needed",
+        "evidence": "Conditional design rationale ('when some emails can never be sent'), matching outline item 3; the checkable part (failed rows are kept and never claimed again) is verified in claims 1 and 4.",
+        "source": "content/tracks/backend/track.yaml, outline item 3"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "accuracy",
+        "quote": "The whole run takes one to two minutes.",
+        "text": "True for the lab (1m17.6s), but the script comment shown in section 5 says 'Waits of 2, 4, 8 and 16 seconds between the five attempts: about 40 s in all.' Nothing in the lesson says why the run is longer: each failed send here takes a few seconds before it throws (claim 9).",
+        "fix": "Section 7: 'The whole run takes one to two minutes: besides the 30 seconds of waits, each failed send here takes a few seconds before it throws.' Claim 9 already covers this."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-28T22:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation, round 2)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "gap",
+        "quote": "The whole run takes one to two minutes: besides the 30 seconds of waits, each failed send here takes a few seconds before it throws.",
+        "text": "Section 7 now explains the length, but the script comment in section 5 still says 'about 40 s in all'. I stopped to decide which number to expect; the sentence does not say the comment counts only the waits.",
+        "fix": "Add to the section 7 sentence: '(the script's own comment, about 40 s, counts only the waits and ticks)'."
+      },
+      {
+        "severity": "minor",
+        "section": "backend.l2.retry-with-backoff.q3",
+        "kind": "quiz",
+        "quote": "Each failed send throws within a few milliseconds.",
+        "text": "Section 7 says each failed send here 'takes a few seconds before it throws'; the q3 stem says milliseconds. I can answer, but I first wondered which is true for Đơn Hàng.",
+        "fix": "Mark it as the scenario's assumption, e.g. 'Assume each failed send throws within a few milliseconds.'"
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

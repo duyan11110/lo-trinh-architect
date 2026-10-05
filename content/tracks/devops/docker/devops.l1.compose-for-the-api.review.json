@@ -1,0 +1,137 @@
+{
+  "id": "devops.l1.compose-for-the-api",
+  "technical": {
+    "reviewed_at": "2026-09-26T12:15:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "source": "git -C examples/don-hang show stage-1:docker-compose.yml L81-99, stage-1:scripts/up.sh; refs/docker-docs/content/reference/compose-file/build.md L26-28",
+        "evidence": "L83-86 `build: context: . dockerfile: DonHang.Api/Dockerfile`, `image: donhang-api:stage-1`; L91 `Host=db`; L94-96 `condition: service_healthy`; L97-99 `172.28.0.13`. up.sh: `docker compose up -d --build --wait`. Docs: \"If `pull_policy` is missing ... Compose attempts to pull the image first and then builds from source if the image isn't found\". stage-1^{commit} == HEAD == 4fca60af; both blocks match."
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "source": "refs/docker-docs/_vendor/github.com/moby/buildkit/frontend/dockerfile/docs/reference.md L2943-2967; docker-compose.yml@stage-1 L75-79",
+        "evidence": "\"This status is initially `starting`. Whenever a health check passes, it becomes `healthy` (whatever state it was previously in).\" / \"If a single run of the check takes longer than **timeout** seconds then the check is considered to have failed.\" / \"It takes **retries** consecutive failures of the health check for the container to be considered `unhealthy`.\" Compose file: interval 3s, timeout 3s, retries 30, test `pg_isready -U donhang -d donhang`."
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "source": "refs/docker-docs/content/manuals/compose/how-tos/startup-order.md L20-25, L54",
+        "evidence": "\"On startup, Compose does not wait until a container is \\\"ready\\\", only until it's running.\" / \"`service_healthy`. This specifies that a dependency is expected to be “healthy”, which is defined with `healthcheck`, before starting a dependent service.\" / \"Compose waits for healthchecks to pass on dependencies marked with `service_healthy`.\""
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "source": "https://www.postgresql.org/docs/17/app-pg-isready.html (Exit Status); reviewer run r1, postgres:17.6-alpine",
+        "evidence": "\"pg_isready returns 0 to the shell if the server is accepting connections normally, 1 if the server is rejecting connections (for example during startup)\". R1 run: pg_isready reported \"accepting connections\" ~2 s after start. Claim now matches the r1 suggested_text; the init-script clause is gone from claim and lesson §4."
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "source": "git -C examples/don-hang show stage-1:DonHang.Api/Program.cs L56-61, L74",
+        "evidence": "L60 `MigrationBaseline.ApplyIfNeeded(context);`, L61 `context.Database.Migrate();` inside a scope created after `builder.Build()`, and `app.Run();` only at L74. The migration step runs before Kestrel starts serving."
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "source": "refs/docker-docs/content/manuals/engine/network/_index.md L286; refs/docker-docs/content/manuals/compose/how-tos/networking.md L41; reviewer run",
+        "evidence": "\"`--dns=127.0.0.1` refers to the container's own loopback address.\" / \"Each container can now look up the service name `web` or `db` and get back the appropriate container's IP address.\" Run: donhang-api:stage-1 on network donhang with Host=localhost -> \"Npgsql.NpgsqlException (0x80004005): Failed to connect to 127.0.0.1:5432 ---> System.Net.Sockets.SocketException (111): Connection refused\"."
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "source": "reviewer run on the lab, Docker Compose v2.33.1-desktop.1, examples/don-hang @ stage-1, 2026-09-26",
+        "evidence": "`docker compose up -d api` printed: donhang-db Created, donhang-api Created, donhang-db Starting, donhang-db Started, donhang-db Waiting, donhang-db Healthy, donhang-api Starting, donhang-api Started. curl right away: 502; after `sleep 5`: 200. `docker inspect -f '{{json .Config.Healthcheck}}' donhang-api` -> null. Caddyfile@stage-1 routes /api/v1/* to api:8080."
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "source": "docker-compose.yml@stage-1 L70-71; reviewer run r1; refs/docker-docs/_vendor/github.com/moby/buildkit/frontend/dockerfile/docs/reference.md L2951",
+        "evidence": "db `ports: - \"5432:5432\"`. R1 run of donhang-api:stage-1 with Host=localhost: \"Failed to connect to 127.0.0.1:5432 ---> System.Net.Sockets.SocketException (111): Connection refused\". Dockerfile reference: \"`--interval=DURATION` (default: `30s`)\"; compose file sets `interval: 3s`."
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "source": "refs/docker-docs/content/reference/compose-file/services.md L1093-1094; https://www.postgresql.org/docs/17/app-pg-isready.html",
+        "evidence": "\"Using `CMD-SHELL` runs the command configured as a string using the container's default shell (`/bin/sh` for Linux).\" / \"pg_isready is a utility for checking the connection status of a PostgreSQL database server.\" Opened for r2: these two pages, build.md, Dockerfile reference HEALTHCHECK, docker-compose.yml and scripts/up.sh @stage-1. No new issues found."
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-26T13:30:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation, round 2)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "gap",
+        "quote": "Docker allows up to 30 failures in a row before it marks the container unhealthy. Until the first success, `db` counts as starting, and `api` waits.",
+        "text": "Still open from round 1: I learn that `db` can become unhealthy, but not what happens to `api` then. Does it wait forever, start anyway, or not start? The paragraph stops just before the answer I expected.",
+        "fix": "Add one sentence after \"marks the container unhealthy\" saying what Compose does with `api` in that case."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "term",
+        "quote": "or when asked to, as `scripts/up.sh` does with `--build`",
+        "text": "Still open from round 1: `scripts/up.sh` has not appeared in anything I was given; I don't know what it is or when I would run it.",
+        "fix": "Either drop the reference, or add a few words: \"`scripts/up.sh`, the script that starts the lab,\"."
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "example",
+        "quote": "Right away, run `curl -s -o /dev/null -w \"%{http_code}\\n\" http://localhost:8080/api/v1/products`",
+        "text": "Still open from round 1: `curl` and its flags, `up -d` in step 2, and the `/api/v1/products` endpoint are not explained. I can still copy the commands and check against the expected result, so the step is doable.",
+        "fix": "Add a parenthesis after the command: \"(prints only the HTTP status code of a request to the products endpoint through Caddy)\"; and after `up -d api`: \"(`-d` returns you to the prompt)\"."
+      },
+      {
+        "severity": "minor",
+        "section": "devops.l1.compose-for-the-api.q2",
+        "kind": "quiz",
+        "quote": "False, because plain `depends_on` only orders the start; waiting needs a healthcheck and `service_healthy`.",
+        "text": "Unchanged since round 1: the key is almost word for word the lesson's \"a plain `depends_on` only orders the start; readiness needs a healthcheck ... and `condition: service_healthy`\", and it is the longest option. I can pick it by matching.",
+        "fix": "Reword the key in different words, e.g. \"False: Compose would start `db` first, then start `api` without checking whether Postgres answers yet.\""
+      },
+      {
+        "severity": "minor",
+        "section": "devops.l1.compose-for-the-api.q4",
+        "kind": "quiz",
+        "quote": "Inside the API's container, `localhost` is the container itself, where nothing listens on `5432`",
+        "text": "Unchanged since round 1: the key is nearly the lesson's sentence \"`localhost` inside the API's container means that container itself, where nothing listens on port `5432`\", so the scenario can be answered by recognition.",
+        "fix": "Reword the key, e.g. \"In the lab, `localhost` resolves to the API's own container, not to the database container\"."
+      },
+      {
+        "severity": "minor",
+        "section": "devops.l1.compose-for-the-api.q5",
+        "kind": "quiz",
+        "quote": "Whether the Postgres server accepts connections",
+        "text": "The option text is still the lesson's phrase (\"asks whether the server accepts connections\", \"succeeds when the Postgres server accepts connections\"), and the JWT and `orders` distractors are clearly unrelated, so I can answer without understanding.",
+        "fix": "Replace one unrelated distractor with a closer one from the lesson, e.g. \"Whether the API has finished its migrations\", and reword the key option slightly away from the lesson's sentence."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "scripts/up.sh",
+        "curl (and its flags -s -o -w)",
+        "docker compose up -d"
+      ],
+      "skipped_steps": [
+        "What happens to `api` when `db` becomes unhealthy after 30 failures (section 5)."
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

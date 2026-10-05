@@ -1,0 +1,141 @@
+{
+  "id": "frontend.l2.ephemeral-vs-app-state",
+  "technical": {
+    "reviewed_at": "2026-09-29T17:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "main.dart:17 `final apiClient = ApiClient();` inside build, :21 `home: ProductListScreen(apiClient: apiClient)`; product_list_screen.dart:37-38 push `LoginScreen(apiClient: widget.apiClient)`; login_screen.dart:31-32 pushReplacement `CreateOrderScreen(apiClient: widget.apiClient)`. Probe with same shape (root StatelessWidget creating the client in build), full sign-in + back flow: printed `rootBuilds=1`.",
+        "source": "examples/don-hang @ stage-1: main.dart, product_list_screen.dart, login_screen.dart; execution: flutter test probe (Flutter 3.47.2) mirroring stage-1 flow: StatelessWidget root creating a client, list screen, push LoginScreen-like State, pushReplacement to order screen, pageBack"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "login_screen.dart @ stage-1: `_loading`/`_error` assigned only at lines 24-27, 35, 37, each inside setState; read only in build: line 57 `if (_error != null) Text(_error!, style: const TextStyle(color: Colors.red))`, lines 59-60 `onPressed: _loading ? null : _submit`, `_loading ? const CircularProgressIndicator() : ...`.",
+        "source": "examples/don-hang @ stage-1: DonHang.App/lib/screens/login_screen.dart"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "api_client.dart @ stage-1: line 14 `String? _token;`, line 16 `void setToken(String? token) => _token = token;` (the only public member touching it, write-only), line 20 `if (_token != null) 'Authorization': 'Bearer $_token'`, line 43 `_token = token;` in login, line 51 `headers: _headers` in createOrder. No getter exposes _token.",
+        "source": "examples/don-hang @ stage-1: DonHang.App/lib/api_client.dart"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Ran `dart analyze` (Dart 3.13.2) on a two-file probe: a.dart declares `class ApiClient { String? _token; }`, main.dart imports a.dart and reads `ApiClient()._token` → \"error - The getter '_token' isn't defined for the type 'ApiClient'. Try importing the library that defines '_token'...\" (undefined_getter).",
+        "source": "execution: dart analyze, Dart SDK 3.13.2 (pinned via flutter 3.47)"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "navigation-basics.md: \"`pushReplacement`: Replaces the current route on the top of the stack with a new one.\" ui/index.md: \"When a state object is no longer needed, the framework calls `dispose()` on the state object.\" Probe: after pushReplacement, `loginDisposed=true`; order screen had `backButton=1`; after pageBack the list screen was shown (`back on list: 1`).",
+        "source": "refs/flutter-website/.../cookbook/navigation/navigation-basics.md; .../ui/index.md; execution: flutter test probe (Flutter 3.47.2) mirroring stage-1 flow: StatelessWidget root creating a client, list screen, push LoginScreen-like State, pushReplacement to order screen, pageBack"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "product_list_screen.dart @ stage-1 lines 34-41: `actions: [ IconButton(icon: const Icon(Icons.login), onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => LoginScreen(apiClient: widget.apiClient))))]` — unconditional; build (lines 30-69) never references a token or any ApiClient member besides passing widget.apiClient.",
+        "source": "examples/don-hang @ stage-1: DonHang.App/lib/screens/product_list_screen.dart"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "ui/index.md (Counter sample): \"This call to setState tells the Flutter framework that something has changed in this State, which causes it to rerun the build method below ... If you change _counter without calling setState(), then the build method won't be called again, and so nothing would appear to happen.\" login (api_client.dart:33-45) calls no setState.",
+        "source": "refs/flutter-website/sites/docs/src/content/ui/index.md; api_client.dart @ stage-1"
+      },
+      {
+        "n": 8,
+        "verdict": "rephrased",
+        "evidence": "dart analyze (Dart 3.13): imported public non-final `counter = 5;` OK; imported `const int limit` assigned → \"Constant variables can't be assigned a value after initialization\" (assignment_to_const); a local `int local` declared inside top-level function setup() in a.dart → from main.dart \"Undefined name 'local'\". Claim holds for top-level vars, but the lesson's §3 wording 'outside any class' also covers function locals and 'not final' misses const.",
+        "source": "execution: dart analyze, Dart SDK 3.13 (flutter 3.47.2), two-file probe",
+        "suggested_text": "global variable — a variable declared at the top level of a Dart file, outside any class or function; if its name does not start with `_` and it is neither `final` nor `const`, every file that imports that file can read it and assign to it."
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "ephemeral-vs-app.md: \"Ephemeral state ... is the state you can neatly contain in a single widget.\" \"No other part of your app needs to access `_index`.\" App state: \"State that is not ephemeral, that you want to share across many parts of your app\"; examples: \"Login info\". \"There is no clear-cut, universal rule to distinguish whether a particular variable is ephemeral or app state.\" Lesson §3 hedges the 'outlive the screen' test as 'a strong sign' and §4 cites the no-clear-cut rule.",
+        "source": "refs/flutter-website/sites/docs/src/content/data-and-backend/state-mgmt/ephemeral-vs-app.md"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Conditional recommendation, consistent with ephemeral-vs-app.md: \"Here, using `setState()` and a field inside the StatefulWidget's State class is completely natural. No other part of your app needs to access `_index`.\" and the flowchart 'Single widget' → 'Ephemeral state' (\"take the following diagram with a large grain of salt\"). Lesson states it with the condition 'while one widget is its only reader'.",
+        "source": "refs/flutter-website/sites/docs/src/content/data-and-backend/state-mgmt/ephemeral-vs-app.md"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "create_order_screen.dart @ stage-1 line 38 `appBar: AppBar(title: const Text('Place an order'))`, line 45 `const Text('Order 1 keyboard')`; product_list_screen.dart lines 34-40: IconButton(Icons.login) in AppBar `actions` (trailing edge, top right in left-to-right layout).",
+        "source": "examples/don-hang @ stage-1: DonHang.App/lib/screens/create_order_screen.dart, product_list_screen.dart"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "git -C examples/don-hang grep -n \"setToken\\|_token\" stage-1 -- DonHang.App → only api_client.dart:14 `String? _token;`, :16 `void setToken(String? token) => _token = token;` (declaration, no caller), :20 read in _headers, :43 `_token = token;` in login. No code path clears _token.",
+        "source": "examples/don-hang @ stage-1: DonHang.App/lib/api_client.dart (git grep over DonHang.App)"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "main.dart:21 builds `ProductListScreen(apiClient: apiClient)` in DonHangApp.build. Probe: list screen's title read a variable set during sign-in; after sign-in and pageBack it printed `title=list none`, `rootBuilds=1 listBuildsBefore=1 after=1` — the list was neither rebuilt with new constructor arguments nor built again.",
+        "source": "examples/don-hang @ stage-1: DonHang.App/lib/main.dart; execution: flutter test probe (Flutter 3.47.2) mirroring stage-1 flow: StatelessWidget root creating a client, list screen, push LoginScreen-like State, pushReplacement to order screen, pageBack"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 3,
+        "kind": "accuracy",
+        "text": "Definition too loose. 'outside any class' also covers a local variable inside a top-level function (dart analyze: \"Undefined name 'local'\" from another file), and 'not final' misses const (\"Constant variables can't be assigned a value after initialization\"). See claim 8.",
+        "quote": "a variable declared in a Dart file outside any class; if its name does not start with `_` and it is not `final`",
+        "fix": "Replace with: \"global variable — a variable declared at the top level of a Dart file, outside any class or function; if its name does not start with `_` and it is neither `final` nor `const`, every file that imports that file can read it and assign to it.\" Update claim 8 text to match."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "code",
+        "text": "Line range is off by one: in product_list_screen.dart @ stage-1 the IconButton opens at line 35 and closes at line 40 (`),`); lines 35-39 cut the widget before its closing parenthesis. Claim 6/11 source hints also cite 34-41/32-41.",
+        "quote": "in `product_list_screen.dart` lines 35-39",
+        "fix": "Change to \"lines 35-40\" (and use 35-40 in claim 1's source_hint)."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-29T18:30:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation, round 2)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": "frontend.l2.ephemeral-vs-app-state.q5",
+        "kind": "quiz",
+        "text": "Still true after round 1: the blank is filled by copying line 95 of the section 5 code block, which is on screen above; I can answer without understanding why the same object matters. The explanation does teach the 'why', so this is only minor.",
+        "quote": "MaterialPageRoute(builder: (_) => CreateOrderScreen(apiClient: ___)),",
+        "fix": "Either accept it as a recall question and lower difficulty to 2, or ask what the order screen would lack if `ApiClient()` were written in the blank."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "gap",
+        "text": "The aside 'each time DonHangApp builds, which in a normal run is once' makes me stop and wonder what happens if it builds twice: a new ApiClient without the token? The lesson does not say, and nothing later needs this aside.",
+        "quote": "This is where the app's `ApiClient` is created, each time `DonHangApp` builds, which in a normal run is once.",
+        "fix": "Either drop the clause 'each time `DonHangApp` builds, which in a normal run is once', or add half a sentence saying a second build would create a new ApiClient without the token."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

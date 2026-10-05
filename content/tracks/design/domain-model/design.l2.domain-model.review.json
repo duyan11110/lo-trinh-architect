@@ -1,0 +1,126 @@
+{
+  "id": "design.l2.domain-model",
+  "technical": {
+    "reviewed_at": "2026-09-30T23:55:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "\"A domain entity in DDD must implement the domain logic or behavior related to the entity data ... The entity's methods take care of the invariants and rules of the entity instead of having those rules spread across the application layer.\" and (net-core-microservice-domain-model.md:154) \"you want to update the entity only through methods in the entity (or the constructor) in order to control any invariant\".",
+        "source": "refs/dotnet-docs/docs/architecture/microservices/microservice-ddd-cqrs-patterns/microservice-domain-model.md:26; net-core-microservice-domain-model.md:154"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Entities.cs@stage-2 lines 83-88: `if (Status == \"cancelled\") throw new OrderStatusException(Id, \"already-cancelled\", ...)`, `if (Status == \"shipped\") throw new OrderStatusException(Id, \"already-shipped\", ...)`, `Status = \"cancelled\";`. Code block matches source character-for-character. dotnet test --filter Domain.OrderTests|OrderServiceTests on git archive stage-2: Passed 16, Failed 0 (includes Cancel_ShippedOrder_Throws, Cancel_CancelledOrder_Throws, Cancel_NewOrder/PaidOrder_SetsStatusCancelled).",
+        "source": "examples/don-hang@stage-2 DonHang.Domain/Entities.cs:82-88; DonHang.Tests/Domain/OrderTests.cs"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "OrderService.cs@stage-2 42-48: `FindAsync(orderId) ?? throw new KeyNotFoundException(...)`, `order.Cancel();`, `notifier.Send(order, \"order cancelled\");`, `await repository.SaveChangesAsync();` - no `if`/comparison in the body; `shipped` only in the comment (line 38). stage-1 OrderService.cs 31-36: same KeyNotFoundException, `order.Status = \"cancelled\"; await repository.SaveChangesAsync(); notifier.Send(order.Id, ...)` - saved, then sent. Code block matches source.",
+        "source": "examples/don-hang@stage-2 DonHang.Domain/OrderService.cs:36-49; @stage-1 DonHang.Domain/OrderService.cs:29-38"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "\"When an exception is thrown, the CLR will unwind the stack, looking for a method with a catch block for the specific exception type\". CancelOrderAsync has no try/catch, so lines 46-47 (Send, SaveChangesAsync) do not run after Cancel() throws; the only catch is in ExceptionHandlingMiddleware, which writes a response and does not save. Test Cancel_ShippedOrder_Throws also asserts Status stays \"shipped\".",
+        "source": "refs/dotnet-docs/docs/csharp/fundamentals/exceptions/index.md:14; OrderService.cs:45-47@stage-2"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "OrderStatusException.cs@stage-2: `namespace DonHang.Domain;` `public sealed class OrderStatusException(int orderId, string code, string message) : Exception(message)` with `OrderId` and `Code` properties, no status code member. DonHang.Domain.csproj@stage-2 contains only a PropertyGroup (TargetFramework net10.0), no ProjectReference/PackageReference.",
+        "source": "examples/don-hang@stage-2 DonHang.Domain/OrderStatusException.cs; DonHang.Domain/DonHang.Domain.csproj"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "ExceptionHandlingMiddleware.cs@stage-2: `private const string ProblemTypeBase = \"https://donhang.local/problems/\";` ... `catch (OrderStatusException ex)` → `WriteProblemAsync(context, StatusCodes.Status409Conflict, \"Order status does not allow this\", ex.Message, type: ProblemTypeBase + ex.Code, orderId: ex.OrderId);`. File is DonHang.Api/Middleware/, namespace DonHang.Api.Middleware.",
+        "source": "examples/don-hang@stage-2 DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs:16,34-41"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Code path at stage-2: OrdersController.Cancel ([HttpPatch(\"{id:int}/cancel\")]) runs the OrderOwner check, then `orderService.CancelOrderAsync(id)`; Cancel() throws code already-shipped; Program.cs:107 `app.UseMiddleware<ExceptionHandlingMiddleware>();` precedes MapControllers, so the catch writes 409 with type .../already-shipped. Not exercised over HTTP (shared lab, needs a shipped order owned by the caller); settled by reading code plus passing OrderTests. Note the lesson's situation omits the owner condition (a non-owner gets 403).",
+        "source": "examples/don-hang@stage-2 DonHang.Api/Controllers/OrdersController.cs:68-84; DonHang.Api/Program.cs:106-111"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Conditional opinion, supported: \"if your microservice or Bounded Context is very simple (a CRUD service), the anemic domain model in the form of entity objects with just data properties might be good enough\" and \"if you need to tackle the complexity ... that has a lot of ever-changing business rules, the anemic domain model might be an anti-pattern\". Ledger text now matches section 4 (\"whose only rule is a simple check on an incoming value\"); the Product half is claim 9.",
+        "source": "refs/dotnet-docs/docs/architecture/microservices/microservice-ddd-cqrs-patterns/microservice-domain-model.md:46,50"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Entities.cs@stage-2 18-23: Product has Id, Name, PriceVnd auto-properties, no methods. Dtos.cs:10 `UpdateProductPriceRequest([Range(1, int.MaxValue)] int PriceVnd)`, used by the only product write (ProductsController PATCH, class has [ApiController]); docs: \"The `[ApiController]` attribute makes model validation errors automatically trigger an HTTP 400 response.\" schema.sql:7 `price_vnd integer NOT NULL CHECK (price_vnd > 0)`. Round 3: the lesson's parenthetical now says this in words (API rejects, database refuses); both halves match the code.",
+        "source": "examples/don-hang@stage-2 Entities.cs:18-23, Dtos.cs:10, ProductsController.cs:13,64-70, db/schema.sql:7; refs/aspnetcore-docs/aspnetcore/web-api/index.md:106"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "\"The AddDbContext extension method registers DbContext types with a scoped lifetime by default.\" \"In many web applications, each HTTP request corresponds to a single unit-of-work.\" \"all changes in a single call to SaveChanges are applied in a transaction\". Code: QueuedNotifier(DonHangDbContext db).Send only does db.Notifications.Add(...); EfOrderRepository(DonHangDbContext db).SaveChangesAsync => db.SaveChangesAsync(); both AddScoped (ServiceCollectionExtensions.cs).",
+        "source": "refs/efcore-docs/entity-framework/core/dbcontext-configuration/index.md:43,419; saving/transactions.md:17; QueuedNotifier.cs, EfOrderRepository.cs:7,37 @stage-2"
+      },
+      {
+        "n": 11,
+        "verdict": "not-needed",
+        "evidence": "Design position that follows directly from the prerequisite dependency rule (DonHang.Domain references nothing, so it cannot name ASP.NET Core status types); the repo states it at ExceptionHandlingMiddleware.cs:35 \"The domain says which rule was broken (ex.Code); only here does that become HTTP.\" Ledger now names DonHang.Domain as the lesson does. Stated in the misconception block as the course's position, not as a platform fact."
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Entities.cs@stage-2 class Order (lines 30-97): members are Id, CustomerId, PlacedAt, Status, Items, IdempotencyKey, Version, Customer, two constructors, MarkPaid, Cancel, Ship; no repository, DbContext or save call. OrderService.cs:47 `await repository.SaveChangesAsync();`; IOrderRepository declares `Task SaveChangesAsync();`.",
+        "source": "examples/don-hang@stage-2 DonHang.Domain/Entities.cs:30-97; OrderService.cs:47; IOrderRepository.cs"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Ran in examples/don-hang: `git grep -n \"throw new OrderStatusException\" stage-2 -- \"DonHang.*/*.cs\" | wc -l` → 7 (Entities.cs:77,78,85,86,92,93,94). `git grep -n \"OrderStatusException\" stage-2 -- \"DonHang.Api/*.cs\"` → `DonHang.Api/Controllers/OrdersController.cs:70: // refusal arrives here as OrderStatusException and leaves as a 409.` and `DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs:36: catch (OrderStatusException ex)`.",
+        "source": "git grep on tag stage-2, examples/don-hang"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "OrderTests.cs@stage-2: `var ex = Assert.Throws<OrderStatusException>(order.Cancel); Assert.Equal(\"already-shipped\", ex.Code);` (lines 47-49) and `Assert.Equal(\"already-cancelled\", ex.Code);` (line 82); no HTTP types. Run: 16 passed.",
+        "source": "examples/don-hang@stage-2 DonHang.Tests/Domain/OrderTests.cs:40-83"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "OrderStatusException.cs@stage-2: `public sealed class OrderStatusException(...) : Exception(message)` with `public int OrderId { get; }` and `public string Code { get; }`; a caller outside the middleware already does this: OrderTests.cs:47-49 `var ex = Assert.Throws<OrderStatusException>(order.Cancel); Assert.Equal(\"already-shipped\", ex.Code);`.",
+        "source": "examples/don-hang@stage-2 DonHang.Domain/OrderStatusException.cs:8-12; DonHang.Tests/Domain/OrderTests.cs:47-49"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Round-3 parenthetical: after \"must be above zero\", \"a lower price\" has no clear reference point. [Range(1, int.MaxValue)] (Dtos.cs:10) and CHECK (price_vnd > 0) also refuse a price of exactly zero, which is not lower than zero.",
+        "quote": "(the API rejects a request with a lower price, and the database refuses such a row)",
+        "fix": "Write \"(the API rejects a request with a price of zero or less, and the database refuses such a row)\" (same in vi)."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-01T00:10:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation, round 3: changed parts only)",
+    "issues": [],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

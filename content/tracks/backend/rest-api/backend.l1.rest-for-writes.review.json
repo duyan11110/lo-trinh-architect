@@ -1,0 +1,139 @@
+{
+  "id": "backend.l1.rest-for-writes",
+  "technical": {
+    "reviewed_at": "2026-09-24T20:10:00+07:00",
+    "reviewer": "claude-opus-5[1m]",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "refs/rfc/rfc9110.txt 9.3.4: \"The PUT method requests that the state of the target resource be created or replaced with the state defined by the representation enclosed in the request message content.\" / \"If the target resource does not have a current representation and the PUT successfully creates one, then the origin server MUST inform the user agent by sending a 201 (Created) response.\" / if it does have one and it is modified, \"the origin server MUST send either a 200 (OK) or a 204 (No Content) response\". 9.2.2: \"PUT, DELETE, and safe request methods are idempotent.\"",
+        "source": "refs/rfc/rfc9110.txt (local mirror), Sections 9.3.4 (lines 4074-4096) and 9.2.2 (lines 3861-3867)"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Not in the local mirror: refs/rfc holds 6265/9110/9111/9112 only, and grep \"PATCH\" rfc9110.txt returns just three hits, none defining it (\"[RFC5789] Dusseault, L. and J. Snell, 'PATCH Method for HTTP'\"). WebFetch of rfc-editor.org/rfc/rfc5789 Section 2 returned verbatim: \"With PATCH, however, the enclosed entity contains a set of instructions describing how a resource currently residing on the origin server should be modified\"; \"PATCH is neither safe nor idempotent\"; \"A PATCH request can be issued in such a way as to be idempotent\".",
+        "source": "RFC 5789 Section 2, https://www.rfc-editor.org/rfc/rfc5789 (fetched 2026-09-24); refs/rfc/rfc9110.txt line 9631"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "refs/rfc/rfc9110.txt 9.3.5: \"If a DELETE method is successfully applied, the origin server SHOULD send\" ... \"a 204 (No Content) status code if the action has been enacted and no further information is to be supplied, or\" ... \"a 200 (OK) status code if the action has been enacted and the response message includes a representation describing the status\" (202 listed first), so the hedged \"typically 204\" holds. 9.2.2: \"PUT, DELETE, and safe request methods are idempotent\"; \"the request will have the same intended effect ... though the response might differ\".",
+        "source": "refs/rfc/rfc9110.txt (local mirror), Sections 9.3.5 (lines 4229-4240) and 9.2.2 (lines 3863-3882)"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Enumerated every .cs file at the tag (git -C examples/don-hang ls-tree -r --name-only stage-1 | grep '\\.cs$', then git show stage-1:<file> | grep 'HttpPut\\|HttpDelete'): zero matches across the whole tree. OrdersController.cs at stage-1 declares only [HttpPost] (Create), [HttpGet(\"{id:int}\")] (Get) and [HttpPatch(\"{id:int}/cancel\")] (Cancel). So PATCH /api/v1/orders/{id}/cancel is indeed the only non-POST write endpoint, and section 5's \"This API has no real `PUT` or `DELETE` endpoint at this stage\" holds.",
+        "source": "examples/don-hang @ tag stage-1 (git show), all .cs files"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "git -C examples/don-hang show stage-1:DonHang.Api/Controllers/OrdersController.cs, lines 40-46 numbered with cat -n, are character-for-character the lesson's block: [Authorize] / [HttpPatch(\"{id:int}/cancel\")] / public async Task<ActionResult<OrderDto>> Cancel(int id) { var order = await orderService.CancelOrderAsync(id); return Ok(ToDto(order)); } — 4-space indent included. The signature's only parameter is the route int id; no body parameter. Live: PATCH with no body/Content-Type -> 200; same call with no Authorization header -> 401.",
+        "source": "examples/don-hang/DonHang.Api/Controllers/OrdersController.cs @ stage-1, lines 40-46; live probes on localhost:8080 (2026-09-24)"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "stage-1 DonHang.Domain/OrderService.cs, CancelOrderAsync: finds the order (else throws KeyNotFoundException), then `order.Status = \"cancelled\"; await repository.SaveChangesAsync(); notifier.Send(order.Id, \"order cancelled\");` and returns it. No other Order member is assigned. Live confirmation: the pre-cancel POST response and both cancel responses for order 24 carry identical customerId 1, placedAt 2026-09-24T08:55:10.462001+00:00 and items [{productId:2,quantity:1,unitPriceVnd:450000}]; only status changed new -> cancelled.",
+        "source": "examples/don-hang/DonHang.Domain/OrderService.cs @ stage-1; live run 2026-09-24"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Independent live run this session against the stage-1 lab: POST /api/v1/auth/login with anh.tran@example.com / donhang-dev-password returned a token (213 chars); POST /api/v1/orders with the lesson's exact body returned {\"id\":24,...,\"status\":\"new\"}; PATCH /api/v1/orders/24/cancel -> \"HTTP/1.1 200 OK\" with \"status\":\"cancelled\"; the identical second PATCH -> 200 with a byte-identical body. Every literal in Try it steps 1-2 and the Expected result matches the running system.",
+        "source": "live run against donhang-api (stage-1) via Caddy on localhost:8080, 2026-09-24"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "refs/rfc/rfc9110.txt 9.3.5: \"content received in a DELETE request has no generally defined semantics, cannot alter the meaning or target of the request\" and \"A client SHOULD NOT generate content in a DELETE request unless it is made directly to an origin server that has previously indicated, in or out of band, that such a request has a purpose and will be adequately supported.\" That is a SHOULD NOT with an explicit exception, which is exactly what section 4's \"normally carries no body\" and the diagram label \"normally no body\" say.",
+        "source": "refs/rfc/rfc9110.txt (local mirror), Section 9.3.5, lines 4242-4253"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Live probe separates the two 404s: GET /api/v1/orders/99999999999 and /orders/abc both answer 404 with Content-Length: 0 (no route matched, no action ran), while /orders/2147483647 and /orders/999999 answer 404 with application/problem+json from NotFound() inside Get — so the constraint rejects out-of-32-bit-range segments, not only non-numeric ones. refs/aspnetcore-docs routing.md constraint table: `int` | `{id:int}` | `123456789`, `-123456789` | \"Matches any integer\". refs/dotnet-docs: `int` = \"-2,147,483,648 to 2,147,483,647 | Signed 32-bit integer\".",
+        "source": "live probes on localhost:8080 (2026-09-24); refs/aspnetcore-docs/aspnetcore/fundamentals/routing.md line 505; refs/dotnet-docs/docs/csharp/language-reference/builtin-types/integral-numeric-types.md line 49"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Claim added and verified in this same round-3 pass, using this reviewer's own already-gathered evidence: RFC 9110 9.3.4 requires 201 on PUT-creates and states no condition on id selection; the lesson's clause is a defensible inference from the client naming its own request target, not an RFC rule, which is exactly what the claim text says.",
+        "source": "RFC 9110 Section 9.3.4"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Unlisted claim: the condition attached to PUT-as-create. Claim 1 covers only \"a successful PUT that creates a resource MUST answer 201\"; nothing in .meta.json covers the added restriction \"only where the client itself picks the id\". RFC 9110 9.3.4 states no such condition — it follows from the client naming the request target, not from a rule in the spec. The sentence is defensible as written (a client that PUTs to a URL has by definition chosen that URL), but a bare \"only\" with no ledger entry is the kind of hidden assumption the ledger exists to record.",
+        "quote": "but only where the client itself picks the id it puts in the URL, instead of the server picking one as with `POST`",
+        "fix": "Leave the lesson text alone and add claim 10 to .meta.json: {\"n\":10,\"section\":4,\"kind\":\"behavior\",\"version_key\":\"http\",\"text\":\"RFC 9110 9.3.4 requires 201 when a PUT creates the resource and sets no condition on who chooses the id; the lesson's 'only where the client itself picks the id' follows from the client naming the request target, not from a rule in the RFC.\",\"source_hint\":\"RFC 9110 Section 9.3.4\",\"needs_verification\":false}."
+      },
+      {
+        "severity": "minor",
+        "section": 3,
+        "kind": "version",
+        "text": "Unchanged from round 2 and still true: claim 2 is the only claim with no `version_key`, and its governing document (RFC 5789) is in neither refs/ nor content/versions.yaml — `standards.http` pins RFC 9110, which names [RFC5789] only in its reference list (line 9631) and never defines PATCH. Every PATCH statement in sections 3, 4 and 5 therefore rests on a document the project has not pinned; this round it could only be checked by WebFetch, not offline, which the procedure ranks as weaker evidence.",
+        "quote": "`PATCH` is not idempotent by default",
+        "fix": "Owner decision, already recorded in .meta.json open_questions: add `http_patch: docs: https://www.rfc-editor.org/rfc/rfc5789` under `standards:` in content/versions.yaml (prompt 08), then set claim 2's `version_key` to `http_patch`. No change to the lesson body — RFC 5789 Section 2 supports the wording verbatim."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-24T21:05:00+07:00",
+    "reviewer": "claude-opus-5[1m] (junior-reader simulation, round 3)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "style",
+        "text": "I re-read this paragraph twice. Everything around this clause compares POST/PUT/PATCH by what the client already knows, and then one aside says a client picks the id — the previous lesson told me the server assigns the id and the client never sends one. I can follow the sentence, but nothing later (section 5, the summary, the quiz) uses the PUT-creates case, so I stopped to work out whether it applied to Đơn Hàng and moved on unsure.",
+        "quote": "A `PUT` may also create the resource at that URL, answering `201` instead — but only where the client itself picks the id it puts in the URL, instead of the server picking one as with `POST`.",
+        "fix": "After \"...instead of the server picking one as with `POST`.\" add one sentence: \"Đơn Hàng never works that way — here the server always picks the id, as the last lesson showed.\""
+      },
+      {
+        "severity": "minor",
+        "section": "quiz q1",
+        "kind": "quiz",
+        "text": "The correct option repeats the exact phrase I read in Core concepts (\"the resource's whole new state\"), so I picked it by matching words rather than by deciding what a PUT body is. It is a difficulty-1 recall question, so this is tolerable, but the phrase match makes it free.",
+        "quote": "The resource's whole new state, replacing what was there before",
+        "fix": "Reword option a away from the lesson's wording, e.g. \"Everything the resource should contain after the request, not only the fields that changed\"; mirror it in `vi`."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz q5",
+        "kind": "quiz",
+        "text": "The correct option is both the longest and the only one starting with \"Yes\" (b and c are visibly shorter and both start with \"No\", d hedges). I could pick it on shape alone, before applying the end-state rule the question is actually testing.",
+        "quote": "Yes — the widget is gone either way, even though the second response differs",
+        "fix": "Shorten option a to \"Yes — the widget is gone either way\" and lengthen b to \"No — the second call answered a different status code than the first, so the two calls did not match\"; mirror both in `vi`."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "text": "Of the four questions with lettered options, three (q1, q5, q6) have `a` as the answer and only q2 has `c`. After q1 and q5 I noticed the pattern and would have guessed `a` on q6 before reading the options.",
+        "fix": "In q6, display the correct option third — keep its id `a`, just list it after the `b` and `c` entries, the way q4 already lists its options out of id order."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [
+        "\"but only where the client itself picks the id it puts in the URL\" — understandable as written, but the lesson never says where such an API exists and never returns to the case, so it reads as a dead end against the previous lesson's \"the server assigns the id\"."
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

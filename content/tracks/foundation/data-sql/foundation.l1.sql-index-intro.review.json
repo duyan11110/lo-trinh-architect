@@ -1,0 +1,198 @@
+{
+  "id": "foundation.l1.sql-index-intro",
+  "technical": {
+    "reviewed_at": "2026-09-27T07:25:00+07:00",
+    "reviewer": "claude-opus-5-5[1m] (round 3)",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "db/seed.sql lines 23-35: INSERT INTO orders ids 1-12; header comment '12 orders'; id 2 = ( 2, 1, '2026-03-05 14:40:00+07', 'shipped').",
+        "source": "examples/don-hang@stage-0 (ff911b0): db/seed.sql"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "index-demo.sql lines 5-9: CREATE TEMPORARY TABLE order_log ... timestamptz '2026-01-01 00:00:00+07' + (g * interval '1 minute') FROM generate_series(1, 200000). 2026-01-02 03:04+07 is minute 1624 -> exactly one g.",
+        "source": "examples/don-hang@stage-0 (ff911b0): db/queries/index-demo.sql"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "\"Temporary tables are automatically dropped at the end of a session, or optionally at the end of the current transaction\". psql: with -f \"it terminates after processing all the -c and -f options in sequence\", so each script run is a new session.",
+        "source": "https://www.postgresql.org/docs/17/sql-createtable.html; https://www.postgresql.org/docs/17/app-psql.html"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "\"With no advance preparation, the system would have to scan the entire test1 table, row by row\"; \"the EXPLAIN output shows the WHERE clause being applied as a 'filter' condition attached to the Seq Scan plan node.\" Lab run: Seq Scan on order_log / Filter: (placed_at = ...).",
+        "source": "https://www.postgresql.org/docs/17/indexes-intro.html; https://www.postgresql.org/docs/17/using-explain.html"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "\"By default, the CREATE INDEX command creates B-tree indexes\"; \"B-trees can handle equality and range queries on data that can be sorted into some ordering.\" B-Tree Structure: \"Each leaf page contains tuples that point to table rows.\"",
+        "source": "https://www.postgresql.org/docs/17/indexes-types.html; https://www.postgresql.org/docs/17/btree.html"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "\"the child plan node visits an index to find the locations of rows matching the index condition, and then the upper plan node actually fetches those rows from the table\"; nested loop: \"run its second, or 'inner' child once for each row obtained from the outer child. Column values from the current outer row can be plugged into the inner scan\". Lab: Index Scan using order_log_placed_at_idx / Index Cond.",
+        "source": "https://www.postgresql.org/docs/17/using-explain.html"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Filter: \"the plan node checks the condition for each row it scans, and outputs only the ones that pass the condition.\" Index path: index visited \"to find the locations of rows matching the index condition\", then only those rows fetched, \"because not all the pages of the table have to be visited\".",
+        "source": "https://www.postgresql.org/docs/17/using-explain.html"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "\"After an index is created, the system has to keep it synchronized with the table. This adds overhead to data manipulation operations.\" HOT: \"The update does not modify any columns referenced by the table's indexes\" -> \"New index entries are not needed\". VACUUM \"removes dead row versions in tables and indexes\"; \"In the default configuration, autovacuuming is enabled\".",
+        "source": "https://www.postgresql.org/docs/17/indexes-intro.html; https://www.postgresql.org/docs/17/storage-hot.html; https://www.postgresql.org/docs/17/routine-vacuuming.html"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "\"This command displays the execution plan that the PostgreSQL planner generates for the supplied statement.\" \"The ANALYZE option causes the statement to be actually executed, not only planned.\" COSTS: \"Include information on the estimated startup and total cost of each plan node ... defaults to TRUE.\"",
+        "source": "https://www.postgresql.org/docs/17/sql-explain.html"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "ANALYZE \"collects statistics about the contents of tables ... Subsequently, the query planner uses these statistics\". reltuples/relpages \"updated by VACUUM, ANALYZE, and a few DDL commands such as CREATE INDEX\"; pg_statistic (selectivity, value distribution) \"updated by the ANALYZE and VACUUM ANALYZE commands\". Syntax matches index-demo.sql line 16.",
+        "source": "https://www.postgresql.org/docs/17/sql-analyze.html; https://www.postgresql.org/docs/17/planner-stats.html"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "\"This query can use an index if one has been defined on the result of the lower(col1) function\" (index must store the expression). Lab psql 17.6: date(timestamptz '2026-01-02 03:04:00+07') -> 2026-01-02 (type date); with order_log_placed_at_idx present, date(placed_at) = '2026-01-02' plans Seq Scan / Filter.",
+        "source": "https://www.postgresql.org/docs/17/indexes-expressional.html; lab psql run 2026-09-27"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "\"use a B-tree index for queries involving ... LIKE ... if the pattern is a constant and is anchored to the beginning of the string ... but not col LIKE '%bar'.\" LIKE: \"a percent sign (%) matches any sequence of zero or more characters\"; ILIKE makes match case-insensitive. seed.sql: (7, 'Webcam 720p', 560000).",
+        "source": "https://www.postgresql.org/docs/17/indexes-types.html; https://www.postgresql.org/docs/17/functions-matching.html; examples/don-hang@stage-0 (ff911b0): db/seed.sql"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "outputs/stage-0/scripts/sql/explain.txt matches the lesson excerpt line for line (Seq Scan/Filter placed_at; Index Scan using order_log_placed_at_idx/Index Cond; Seq Scan/Filter date(placed_at)), each '(2 rows)'. Re-run in lab (PostgreSQL 17.6) gives identical plans.",
+        "source": "examples/don-hang@stage-0 (ff911b0): outputs/stage-0/scripts/sql/explain.txt; lab psql run 2026-09-27"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "explain.sh line 5 execs ../lab-run.sh outside the box; lab-run.sh runs docker compose exec -T lab ... \"/repo/$rel\"; docker-compose.yml line 24 '- ./:/repo:ro', service 'db' (postgres:17.6-alpine); explain.sh lines 7-9 psql --host db ... --echo-queries --set ON_ERROR_STOP=on --file /repo/db/queries/index-demo.sql; up.sh line 11 echo \"The lab is up.\"",
+        "source": "examples/don-hang@stage-0 (ff911b0): scripts/sql/explain.sh; scripts/lab-run.sh; docker-compose.yml; scripts/up.sh"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "-e / --echo-queries: \"Copy all SQL commands sent to the server to standard output as well.\" Captured explain.txt shows each statement printed before its result.",
+        "source": "https://www.postgresql.org/docs/17/app-psql.html"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "\"Adding a unique constraint will automatically create a unique B-tree index\"; \"Adding a primary key will automatically create a unique B-tree index\"; \"the declaration of a foreign key constraint does not automatically create an index on the referencing columns\"; \"it is often a good idea to index the referencing columns too.\"",
+        "source": "https://www.postgresql.org/docs/17/ddl-constraints.html"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "schema.sql line 20: 'customer_id integer NOT NULL REFERENCES customers (id),'; case-insensitive grep for 'index' in db/schema.sql at stage-0 returns no line.",
+        "source": "examples/don-hang@stage-0 (ff911b0): db/schema.sql"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "Executed: index-demo.sql at stage-0 plus EXPLAIN (COSTS OFF) SELECT * FROM order_log WHERE customer_id = 3 in lab (PostgreSQL 17.6) -> 'Seq Scan on order_log / Filter: (customer_id = 3)'. Only index created in the file is order_log_placed_at_idx.",
+        "source": "lab psql run 2026-09-27; examples/don-hang@stage-0 (ff911b0): db/queries/index-demo.sql"
+      },
+      {
+        "n": 19,
+        "verdict": "verified",
+        "evidence": "Conditioned recommendation, supported: \"indexes that are seldom or never used in queries should be removed\"; \"an index defined on a column that is part of a join condition can also significantly speed up queries with joins\"; FK: \"often a good idea to index the referencing columns\".",
+        "source": "https://www.postgresql.org/docs/17/indexes-intro.html; https://www.postgresql.org/docs/17/ddl-constraints.html"
+      },
+      {
+        "n": 20,
+        "verdict": "verified",
+        "evidence": "Parallel safety: always parallel restricted includes \"Scans of temporary tables.\" Captured output and lab re-run: each of the three plans is exactly two lines, '(2 rows)', no Gather node.",
+        "source": "https://www.postgresql.org/docs/17/parallel-safety.html; examples/don-hang@stage-0 (ff911b0): outputs/stage-0/scripts/sql/explain.txt"
+      },
+      {
+        "n": 21,
+        "verdict": "verified",
+        "evidence": "Planner uses an index \"when it thinks doing so would be more efficient than a sequential table scan\"; ANALYZE only collects statistics. Lab: orders (1 page, analyzed) with orders_pkey, EXPLAIN SELECT * FROM orders WHERE id = 2 -> Seq Scan, Filter (id = 2). Opened: sql-explain, indexes-intro, indexes-types, indexes-expressional, btree, using-explain, ddl-constraints, sql-createtable, app-psql, storage-hot, routine-vacuuming, sql-analyze, planner-stats, parallel-safety, functions-matching.",
+        "source": "https://www.postgresql.org/docs/17/indexes-intro.html; https://www.postgresql.org/docs/17/sql-analyze.html; lab psql run 2026-09-27"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-27T18:00:00+07:00",
+    "reviewer": "claude-opus-5-5[1m] (junior reader simulation, prompt 05, round 3; known_vocab = 27 terms through JOIN, five-line summary of foundation.l1.sql-select; lesson vocab = [index])",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "quote": "Before the index, the plan shows the test on a `Filter` line, checked for each row the step scans. After it, the test sits on an `Index Cond` line",
+        "text": "At this point I have never seen a printed plan, so 'a `Filter` line' and 'an `Index Cond` line' are names of things I cannot picture yet. They only make sense once I reach the output block in section 5, and I had to come back here.",
+        "fix": "Add 'as the output in the next section shows' after 'Before the index, the plan shows the test on a `Filter` line'."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "quote": "ordered values can be searched without reading them one by one.",
+        "text": "I accept this, but the lesson does not show why until the dictionary comparison two sections later ('like words in a dictionary'). Here, where the main idea is built, I have to take it on trust.",
+        "fix": "Add a short comparison right after this sentence, e.g. 'the way you find a word in a dictionary by opening near its first letter rather than reading from page one.'"
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "length",
+        "quote": "`EXPLAIN` prints the plan for the statement after it and does not run that statement; `COSTS OFF` drops the estimated numbers, so only the shape of the plan is left.",
+        "text": "This paragraph explains EXPLAIN, COSTS OFF, the two-line plans, CREATE INDEX, ANALYZE and statistics, and date() in one block. I read it twice to separate what each line of the code does.",
+        "fix": "Start a new paragraph at 'The first and second queries are the same text'."
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "example",
+        "quote": "this time `SELECT * FROM order_log WHERE customer_id = 3`, and run the script again.",
+        "text": "The statement is given without a closing `;`, while every statement in the file ends with one. I am not sure whether to type it, and I do not know what psql does with the last line if I leave it off.",
+        "fix": "Write the statement as it should be added: '`EXPLAIN (COSTS OFF) SELECT * FROM order_log WHERE customer_id = 3;`'."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "quote": "checking before an insert is what a `UNIQUE` constraint does, not an ordinary index.",
+        "text": "q6, explanation of option c: the lesson only says a UNIQUE constraint gets an index and holds no repeated value; it never says anything is checked before an insert. This new idea in a wrong-option explanation makes me wonder what I missed.",
+        "fix": "End the explanation at 'not reading it to check.' and drop the clause about UNIQUE."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [
+        "Why ordered values can be searched without reading them one by one is only illustrated later, by the dictionary comparison in section 5.",
+        "`Filter` and `Index Cond` lines are named in section 4 before any plan output has been shown."
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

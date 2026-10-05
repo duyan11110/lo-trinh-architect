@@ -1,0 +1,161 @@
+{
+  "id": "design.l1.writing-a-unit-test",
+  "technical": {
+    "reviewed_at": "2026-09-25T17:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Docs: \"The `[Fact]` attribute declares a test method that's run by the test runner.\" Run on a git-archive copy of stage-0 with a probe file: the new [Fact] in ShippingFeeTests ran with no other change (Total: 3); a [Fact] in an `internal class` was not discovered (and raises analyzer error xUnit1000 \"Test classes must be public\").",
+        "source": "refs/dotnet-docs/docs/core/testing/unit-testing-csharp-with-xunit.md:148; dotnet test on scratch copy of stage-0 (xunit 2.9.2, VSTest adapter 2.8.2, .NET 10.0.12)"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Probe build: `error xUnit1001: Fact methods cannot have parameters` and `error xUnit1028: Test methods must have a supported return type. Valid types are: void, Task.` With the analyzers suppressed, the runtime reports `[Fact] methods are not allowed to have parameters. Did you mean to use [Theory]?`; `public async Task` fact passed.",
+        "source": "dotnet build / dotnet test on scratch copy of stage-0 (xunit 2.9.2 analyzers)"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "xUnit docs show the failure output \"Assert.Equal() Failure: Values differ / Expected: 5 / Actual: 4\". Local run with `Assert.Equal(50_000, fee.ForOrder(500_000))`: `Expected: 50000 / Actual:   60000`; swapped to `Assert.Equal(fee.ForOrder(500_000), 50_000)`: `Expected: 60000 / Actual:   50000`.",
+        "source": "https://xunit.net/docs/getting-started/v2/getting-started; dotnet test on scratch copy of stage-0"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "SamplesTests.cs:33-36 `order.AddLine(productId: 1, quantity: 1, unitPriceVnd: 1_250_000);` `order.AddLine(productId: 2, quantity: 2, unitPriceVnd: 450_000);` `Assert.Equal(2_150_000, order.TotalVnd);` and :44 `Assert.Throws<InvalidOperationException>(order.MarkPaid);`. Code block (lines 27-46) matches the tag verbatim.",
+        "source": "examples/don-hang @ stage-0: samples/DonHang.Samples.Tests/SamplesTests.cs:27-46"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "`if (lines.Count == 0) throw new InvalidOperationException(\"an order with no lines cannot be paid\");` in `public void MarkPaid()`.",
+        "source": "examples/don-hang @ stage-0: samples/DonHang.Samples/Samples/Oop/OrderEncapsulated.cs (MarkPaid)"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Probe `Assert.Throws<ArgumentException>(a)` where `a` throws ArgumentNullException failed: \"Assert.Throws() Failure: Exception type was not an exact match / Expected: typeof(System.ArgumentException) / Actual: typeof(System.ArgumentNullException)\". AnEmptyOrderCannotBePaid passes at stage-0, so the delegate is invoked.",
+        "source": "dotnet test on scratch copy of stage-0 (xunit 2.9.2)"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "`public sealed class ExpressShipping : ShippingFee { public override int ForOrder(int totalVnd) => 60_000; }` — the argument is ignored.",
+        "source": "examples/don-hang @ stage-0: samples/DonHang.Samples/Samples/Oop/ShippingFee.cs"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Added the test (as `ShippingFee fee = new ExpressShipping(); Assert.Equal(60_000, fee.ForOrder(500_000));`) and ran `dotnet test samples/DonHang.Samples.Tests --filter ShippingFeeTests`: `Passed! - Failed: 0, Passed: 3, Total: 3`. With 50_000: `Failed ...ShippingFeeTests.ExpressShippingAlwaysCostsSixtyThousand ... Expected: 50000 Actual: 60000`, `Failed: 1, Passed: 2`. Swapped: `Expected: 60000 Actual: 50000`.",
+        "source": "dotnet test on scratch copy of stage-0 (SDK 10.0)"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Docs: \"The name of your test should consist of three parts: Name of the method being tested; Scenario under which the method is being tested; Expected behavior when the scenario is invoked\" and \"when tests fail, you can see exactly which scenarios don't meet your expectations.\" The lesson gives the reason (failure report) and does not forbid the method name.",
+        "source": "refs/dotnet-docs/docs/core/testing/unit-testing-best-practices.md:117-124"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 9,
+        "kind": "accuracy",
+        "text": "Summary line 1 implies only public [Fact] methods run. Run on stage-0 (xunit 2.9.2): a `private void` and an `internal void` [Fact] method inside a public class were both discovered and passed, with no analyzer diagnostic. Only the class must be public (xUnit1000); section 4 states this correctly.",
+        "quote": "xUnit runs every public `[Fact]` method it finds",
+        "fix": "Replace with: \"xUnit runs every `[Fact]` method in the project's public classes; there is no list of tests to register them in.\""
+      },
+      {
+        "severity": "minor",
+        "section": "design.l1.writing-a-unit-test.q1",
+        "kind": "quiz",
+        "text": "Key (a) is still the only defensible option, but its wording adds a condition that is not required: a non-public [Fact] method in a public class also runs (verified on stage-0).",
+        "quote": "The `[Fact]` attribute on a public method in a public class",
+        "fix": "Change option a (en) to \"The `[Fact]` attribute on a method in a public class\" and vi to \"Attribute `[Fact]` trên một method trong một class public\"."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "example",
+        "text": "The prose assertion uses a variable `fee` that the sentence never introduces; it says to create `new ExpressShipping()` but not to store it in `fee` (as `ShippingFee fee = new StandardShipping();` does in the existing test).",
+        "quote": "would create `new ExpressShipping()` and assert `Assert.Equal(60_000, fee.ForOrder(500_000))`",
+        "fix": "Write: \"would store `new ExpressShipping()` in a `ShippingFee fee`, as `StandardShippingIsFreeFromTwoMillion` does, and assert `Assert.Equal(60_000, fee.ForOrder(500_000))`\"."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-25T18:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (review-junior)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 2,
+        "kind": "gap",
+        "text": "This sentence covers all three questions, but the first one (what makes xUnit treat the method as a test) decides whether the test runs at all, not just what a failure looks like. I stopped to work out which questions the sentence meant.",
+        "quote": "The test might pass whichever way you answer them; what changes is what you see on the day it fails.",
+        "fix": "Say the sentence is about the last two: \"The name and the argument order don't change whether the test passes; what changes is what you see on the day it fails.\""
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "text": "I can't tell from this sentence whether the method has to be public or only happens to be. Quiz q1 option a says only \"a method in a public class\", so I guessed that the method doesn't have to be public, but the lesson never says so.",
+        "quote": "the class must be public, and the methods here are public too.",
+        "fix": "Replace \"and the methods here are public too\" with one plain statement about the method, e.g. \"the method itself does not have to be public, but by convention it is\" (whatever is true)."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "diagram",
+        "text": "The diagram sends every test through Assert.Equal. Then section 5's second test uses Assert.Throws, and nothing links it back to the diagram's passed/failed branches, so I wasn't sure the diagram applies to it.",
+        "quote": "M --> E{Assert.Equal expected, actual}",
+        "fix": "In section 5, after the Assert.Throws explanation, add one clause: \"if no exception, or a different one, comes out, the test fails just like a failed Assert.Equal\"."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "term",
+        "text": "`ForOrder` and its argument aren't explained here. I guess 500_000 is the order total in VND and that any value would do because express shipping is flat, but I'm not sure why this number was picked.",
+        "quote": "assert `Assert.Equal(60_000, fee.ForOrder(500_000))`",
+        "fix": "Add after the assertion: \"(`ForOrder` takes the order total in VND; any total works, because express shipping is always 60,000)\"."
+      },
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "style",
+        "text": "I read this twice. When the arguments are swapped, \"Expected\" shows what the code already returns, so \"fixing\" the code to match it changes nothing. I couldn't picture what the reader actually does wrong. Quiz q4's scenario (changing the test to match) is clearer.",
+        "quote": "You notice this when you \"fix\" code to match what the report says was expected, and the test still fails.",
+        "fix": "Replace with the q4 shape: \"You notice this when the report's Expected is the buggy value, you change the test to match it, and the bug stays.\""
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "gap",
+        "text": "The result says \"three tests passed\", but I don't know what `--filter ShippingFeeTests` selects or that the class already has two tests. I can check the number but can't work it out myself.",
+        "quote": "Expected result: step 2 reports three tests passed.",
+        "fix": "Add to step 2: \"(`--filter ShippingFeeTests` runs only the tests in that class, which already has two)\"."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [
+        "The test might pass whichever way you answer them; what changes is what you see on the day it fails.",
+        "the class must be public, and the methods here are public too.",
+        "You notice this when you \"fix\" code to match what the report says was expected, and the test still fails.",
+        "Expected result: step 2 reports three tests passed."
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

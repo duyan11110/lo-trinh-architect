@@ -1,0 +1,115 @@
+{
+  "id": "backend.l2.idempotent-endpoints",
+  "technical": {
+    "reviewed_at": "2026-09-28T10:15:00+07:00",
+    "reviewer": "claude-opus-5-5 (technical, round 3)",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "RFC 9110 §9.2.2: \"if a client sends a PUT request and the underlying connection is closed before any response is received, then the client can establish a new connection and retry the idempotent request. It knows that repeating the request will have the same intended effect, even if the original request succeeded\" and \"A client SHOULD NOT automatically retry a request with a non-idempotent method unless it has ... some means to detect that the original request was never applied.\"",
+        "source": "refs/rfc/rfc9110.txt §9.2.2 (lines 3874-3886)"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "OrdersController.cs @ stage-2 line 32: `[FromHeader(Name = \"Idempotency-Key\")] string? idempotencyKey`, line 41 passes it to PlaceOrderAsync. ASP.NET Core model binding docs, 'No source for a model property': \"By default, a model state error isn't created if no value is found for a model property. The property is set to null or a default value: Nullable simple types are set to null.\" Running DB has 15 orders with idempotency_key NULL, created without the header.",
+        "source": "refs/aspnetcore-docs/aspnetcore/mvc/models/model-binding.md (No source for a model property); examples/don-hang@stage-2 DonHang.Api/Controllers/OrdersController.cs"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "OrderService.cs @ stage-2 lines 17-23 as quoted in the lesson; ExceptionHandlingMiddleware maps ArgumentException to 400. Executed in lab box: customer 1 POST with key K -> 201; customer 2 (chau.nguyen) POST with the same K -> 400 {\"title\":\"Invalid request\",\"status\":400,\"detail\":\"this Idempotency-Key was already used by another customer\"}.",
+        "source": "examples/don-hang@stage-2 DonHang.Domain/OrderService.cs, DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs; run against running stack (HEAD = stage-2^{commit} 7a131bc)"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "PG 17 Table 8.9: timestamp with time zone \"Resolution 1 microsecond\"; p \"specifies the number of fractional digits retained in the seconds field ... range of p is from 0 to 6\". .NET: \"Each increment represents 100 nanoseconds\". placed_at is DateTimeOffset -> \"timestamp with time zone\" (snapshot). R2 run: 201 twice, id 111; placedAt \"...51.5801985\" first vs \"...51.580198\" retry. CreatedAtAction returned unconditionally.",
+        "source": "https://www.postgresql.org/docs/17/datatype-datetime.html; refs/dotnet-docs/docs/visual-basic/language-reference/data-types/date-data-type.md:22; examples/don-hang@stage-2 OrdersController.cs, DonHangDbContextModelSnapshot.cs:135-137; execution 2026-09-28"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "OrderService.cs:25 sets `IdempotencyKey = idempotencyKey` in the Order initializer; DonHangDbContext.cs:58 maps it to column `idempotency_key` of orders; migration AddOrderIdempotencyKey adds `idempotency_key` text nullable to table orders. The key is a scalar property of the Order entity, so it is part of that entity's INSERT.",
+        "source": "examples/don-hang@stage-2 DonHang.Domain/OrderService.cs, DonHang.Infrastructure/DonHangDbContext.cs, Migrations/20260927103146_AddOrderIdempotencyKey.cs"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "EF Core docs, Transactions: \"By default, if the database provider supports transactions, all changes in a single call to `SaveChanges` are applied in a transaction. If any of the changes fail, then the transaction is rolled back and none of the changes are applied to the database.\" QueuedNotifier (registered as INotifier in ServiceCollectionExtensions.cs:24) only calls db.Notifications.Add on the same DbContext; OrderService calls SaveChangesAsync once.",
+        "source": "refs/efcore-docs/entity-framework/core/saving/transactions.md:17; examples/don-hang@stage-2 DonHang.Infrastructure/QueuedNotifier.cs"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "PostgreSQL 17, Unique Indexes: \"When an index is declared unique, multiple table rows with equal indexed values are not allowed.\" Running DB: `CREATE UNIQUE INDEX \"IX_orders_idempotency_key\" ON public.orders USING btree (idempotency_key)`.",
+        "source": "https://www.postgresql.org/docs/17/indexes-unique.html; pg_indexes in the running donhang DB"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "PostgreSQL 17, Unique Indexes: \"By default, null values in a unique column are not considered equal, allowing multiple nulls in the column. The NULLS NOT DISTINCT option modifies this\". The generated index has no NULLS NOT DISTINCT (indexdef above), and the DB holds 15 orders with idempotency_key NULL.",
+        "source": "https://www.postgresql.org/docs/17/indexes-unique.html; pg_indexes / SELECT count(*) ... IS NULL in the running DB"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "ExceptionHandlingMiddleware.cs @ stage-2: `catch (DbUpdateException ex) when (ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })` -> WriteProblemAsync(409, \"Conflict\", \"the same request is already being processed; retry it to get its result\"). Round 1 execution: 5 rounds of 30 simultaneous POSTs with one key, each 1 row, losers 409 with that body. Round 2: 20 simultaneous -> 20x201, rows=1.",
+        "source": "examples/don-hang@stage-2 DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs; execution in lab box 2026-09-28"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "After the concurrent burst, one more POST with the same key -> 201 with the saved order (same id), no new row (count stayed 1). OrderService.cs:17-23 lookup returns the earlier order.",
+        "source": "execution in lab box against running stack (stage-2)"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "RFC 9110 §9.2.2: \"A request method is considered 'idempotent' if the intended effect on the server of multiple identical requests with that method is the same as the effect for a single such request. Of the request methods defined by this specification, PUT, DELETE, and safe request methods are idempotent.\" POST is neither safe nor listed.",
+        "source": "refs/rfc/rfc9110.txt §9.2.2 (lines 3861-3867)"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Round 2 run @ stage-2: both \"-> 201\", same \"id\":111, line before last \"both responses carry the same order id: yes\", last line \"orders customer 1 gained from the two requests: 1\". `cat -A` of the script shows the sed replacement as ^A (byte 0x01), so both extracted ids are the same byte (or empty) and the comparison is always yes, as the lesson's step 2 now warns. meta text now reads \"instead of \\1\" (no control char).",
+        "source": "examples/don-hang@stage-2 scripts/backend/idempotent-order.sh; outputs/stage-2/scripts/backend/idempotent-order.txt; execution 2026-09-28"
+      },
+      {
+        "n": 13,
+        "verdict": "not-needed",
+        "evidence": "Reasoning statement, not a version-dependent behaviour: identical items occur both in a retry and in a deliberate repeat order, so item comparison cannot separate them. Consistent with the code: PlaceOrderAsync does no item comparison.",
+        "source": "lesson reasoning; examples/don-hang@stage-2 DonHang.Domain/OrderService.cs"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-28T11:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior, round 3)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "style",
+        "text": "I had to read this sentence twice: 'e is what configures Order there' is vague about what e is, and 'there' points back to the start of the same sentence. I can still follow it, because the lambda o => o.IdempotencyKey is plain C# and the second half says what the two lines do.",
+        "quote": "`e` is what configures `Order` there and `o` stands for one order: these lines name the key's column and put a unique index on it.",
+        "fix": "Replace 'e is what configures Order there' with 'e is the object these lines use to configure Order'."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

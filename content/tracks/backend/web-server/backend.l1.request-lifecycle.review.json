@@ -1,0 +1,154 @@
+{
+  "id": "backend.l1.request-lifecycle",
+  "technical": {
+    "reviewed_at": "2026-09-27T14:00:00+07:00",
+    "reviewer": "claude-opus-5-5[1m]",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "index.md:665: \"If you don't call `app.UseRouting`, the **Routing** middleware runs at the beginning of the pipeline by default.\" index.md:23: \"Each middleware in the request pipeline is responsible for invoking the next middleware in the pipeline or short-circuiting the pipeline.\" git show stage-1:DonHang.Api/Program.cs: no UseRouting call. Live r2: GET /api/v1/orders/999999 reached OrdersController.Get (404 problem+json).",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/middleware/index.md:23,665 (moniker >= aspnetcore-8.0); stage-1 Program.cs; live run 2026-09-27 r2, examples/don-hang HEAD = stage-1^{commit} = 75bf7d2"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "index.md:667: \"The order you add middleware components in the `Program.cs` file defines the order in which the middleware components are invoked on requests and the reverse order for the response.\" Kestrel as the server that writes the response: live r2 curl -i shows \"Server: Kestrel\" (plus \"Via: 1.1 Caddy\"); servers/kestrel.md:23 \"Kestrel is a cross-platform web server\".",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/middleware/index.md:667; refs/aspnetcore-docs/aspnetcore/fundamentals/servers/kestrel.md:23; live run 2026-09-27 r2, examples/don-hang HEAD = stage-1^{commit} = 75bf7d2"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "index.md:127: \"Middleware added to the pipeline before the terminal middleware still processes code after their `next.Invoke` statements.\" Live r2: POST /api/v1/orders without Authorization -> \"HTTP/1.1 401 Unauthorized\"; docker compose logs api -> \"POST /api/v1/orders responded 401 in 0ms\".",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/middleware/index.md:127; live run 2026-09-27 r2, examples/don-hang HEAD = stage-1^{commit} = 75bf7d2"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "git show stage-1:DonHang.Api/Controllers/OrdersController.cs: Get carries only [HttpGet(\"{id:int}\")]; Create/Cancel/List carry [Authorize]; Get body: \"if (order is null) return NotFound();\". Program.cs:43 AddAuthorization() sets no fallback policy. Live r2: no-header GET /api/v1/orders/999999 -> 404.",
+        "source": "examples/don-hang @ stage-1: OrdersController.cs, Program.cs:43; live run 2026-09-27 r2, examples/don-hang HEAD = stage-1^{commit} = 75bf7d2"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Live r2: curl -i http://localhost:8080/api/v1/orders/999999 -> \"HTTP/1.1 404 Not Found\"; docker compose logs api -> \"GET /api/v1/orders/999999 responded 404 in 78ms\". Caddyfile: handle /api/v1/* { reverse_proxy api:8080 }; docker-compose.yml service name api; RequestLoggingMiddleware template \"{Method} {Path} responded {StatusCode} in {ElapsedMs}ms\".",
+        "source": "examples/don-hang @ stage-1: Caddyfile, docker-compose.yml, RequestLoggingMiddleware.cs; live run 2026-09-27 r2, examples/don-hang HEAD = stage-1^{commit} = 75bf7d2"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "git show stage-1:DonHang.Api/Program.cs lines 65-74 match the lesson block character for character (67-72: ExceptionHandlingMiddleware, RequestLoggingMiddleware, UseCors, UseAuthentication, UseAuthorization, MapControllers). Reverse: index.md:667 \"...invoked on requests and the reverse order for the response.\" Claim conditioned on the endpoint or UseAuthorization answering.",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/Program.cs:65-74; refs/aspnetcore-docs/aspnetcore/fundamentals/middleware/index.md:667"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Live r2: curl -i -X POST http://localhost:8080/api/v1/orders -d '{\"items\":[]}' (no Authorization) -> \"HTTP/1.1 401 Unauthorized\", \"Content-Length: 0\" (no problem+json body, so not from the endpoint or ExceptionHandlingMiddleware); logs -> \"POST /api/v1/orders responded 401 in 0ms\". Create carries [Authorize].",
+        "source": "examples/don-hang @ stage-1: OrdersController.cs; live run 2026-09-27 r2, examples/don-hang HEAD = stage-1^{commit} = 75bf7d2"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "index.md:55: \"The call to WebApplication.Run at the end of the code block runs the app and blocks the calling thread until host shutdown.\" (moniker >= aspnetcore-6.0).",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/middleware/index.md:55"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "index.md:653 (moniker >= aspnetcore-8.0): \"Authentication doesn't short-circuit unauthenticated requests.\" Program.cs registers only AddJwtBearer (lines 25-42). Live r2: no-token POST -> 401 with Content-Length: 0; Create never ran.",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/middleware/index.md:653; examples/don-hang @ stage-1 Program.cs:25-43; live run 2026-09-27 r2, examples/don-hang HEAD = stage-1^{commit} = 75bf7d2"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "git show stage-1:DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs: InvokeAsync = try { await next(context); } catch (KeyNotFoundException) / catch (ArgumentException) / catch (Exception); nothing after the try/catch; WriteProblemAsync called only from catch blocks.",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 3,
+        "kind": "accuracy",
+        "quote": "request lifecycle — the complete path one request takes: Kestrel, routing, every middleware in order",
+        "text": "Carried from r1, still unapplied. \"complete\" and \"every middleware\" overstate: the lab sets ASPNETCORE_ENVIRONMENT=Development (docker-compose.yml:93) and middleware8.md:5 (>= aspnetcore-8.0) says \"UseDeveloperExceptionPage is added first when the HostingEnvironment is \\\"Development\\\"\", so a framework-added middleware sits outside ExceptionHandlingMiddleware; the diagram's K->>M1 / M1-->>K is exact only for Program.cs's own middleware. s4 and summary 5 already scope to \"middleware Program.cs registers\"; s3 does not.",
+        "fix": "In s3 drop \"complete\" (\"the path one request takes: ...\") and change \"every middleware in order\" to \"every middleware Program.cs registers, in order\". Optionally add under the diagram: \"The framework can add a few middleware of its own around these; this lesson follows only the ones Program.cs registers.\" Do not name DeveloperExceptionPage (scope)."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-27T15:00:00+07:00",
+    "reviewer": "junior-sim round 2 (fresh session, prompt 05)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "term",
+        "quote": "run `curl -i http://localhost:8080/api/v1/orders/999999` (`curl` sends a `GET` for an order that does not exist; `-i` prints the status code and headers too)",
+        "text": "`curl`, `localhost` and (step 2) `docker compose` are tool/network names I have not been taught. Each is glossed inline by what the command does, so I can copy, run and check the result without stopping; I only do not know what the tools are.",
+        "fix": "No change required for this lesson; if a track lesson introduces curl/docker compose, link it in Before you start. Optionally add \"(this machine)\" after the first `localhost`."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "term",
+        "quote": "and blocks until the app shuts down",
+        "text": "\"Blocks\" is jargon I do not have; I guess it means the line does not finish until the app stops. Side note, so it does not affect the main idea.",
+        "fix": "Replace \"and blocks until the app shuts down\" with \"and does not return until the app shuts down\"."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "gap",
+        "quote": "Reading top to bottom names the forward order for these six calls: exception handling, logging, `UseCors`, `UseAuthentication`, `UseAuthorization`, then the matched endpoint.",
+        "text": "The block has seven `app.` lines; the sixth item is \"the matched endpoint\", not a call, and the previous paragraph said `app.MapControllers()` is not a step the response passes back through. I had to stop and work out whether `MapControllers` counts as one of the \"six calls\".",
+        "fix": "Replace \"these six calls\" with \"these five calls and the endpoint\" here and in \"the reverse order of these six calls\" in the next paragraph."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "length",
+        "quote": "for every request the endpoint or `UseAuthorization` answers, whether it reaches `app.MapControllers()` or stops one line earlier, at `UseAuthorization`.",
+        "text": "Read this sentence twice. For a rejected request the way out is not \"this list backward\" in full, only the part from `UseAuthorization` back; the sentence packs both cases into one clause and I had to reconstruct that myself.",
+        "fix": "Split into two sentences: \"For a request the endpoint answers, that is the whole list backward. For one `UseAuthorization` rejects, it is the same list backward starting from `UseAuthorization`.\""
+      },
+      {
+        "severity": "minor",
+        "section": 2,
+        "kind": "example",
+        "quote": "In what order does the response pass back through these calls, and who sees it last before the client?",
+        "text": "\"Who sees it last\" could mean the last middleware (`ExceptionHandlingMiddleware`) or Kestrel. The lesson answers both (section 4 last sentence; Connections), but never says which one the question meant, so I was unsure I had the intended answer.",
+        "fix": "Change to \"which of these calls sees it last, before Kestrel sends it to the client?\""
+      },
+      {
+        "severity": "minor",
+        "section": "quiz q6",
+        "kind": "quiz",
+        "quote": "No — `ExceptionHandlingMiddleware` must be registered first among Đơn Hàng's own middleware, so nothing may run before it",
+        "text": "The code comment in section 5 says \"Order matters: exceptions caught first\", which made option b look supported for a moment. I still chose a, since b does not answer whether logging works, but the comment pulled me toward b.",
+        "fix": "In explanation b, add: \"The comment's 'exceptions caught first' explains why it comes before logging, not a rule that nothing may precede it.\" (en and vi)"
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "`curl`",
+        "localhost",
+        "`docker compose`",
+        "blocks (a call)"
+      ],
+      "skipped_steps": [
+        "Section 5: whether `app.MapControllers()` is one of the \"six calls\"",
+        "Section 5: reverse order for a rejected request is only the list backward from `UseAuthorization`, packed into one clause"
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

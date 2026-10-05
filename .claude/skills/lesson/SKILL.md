@@ -6,6 +6,7 @@ allowed-tools: Read Write Edit Glob Grep Bash(git show *) Bash(tools/*) Bash(git
 ---
 Bài: `$id`. Chế độ: `$mode` (mặc định `generate` nếu trống).
 
+0. Nếu `$id` rỗng hoặc `$id` ∈ {`generate`, `fix-validation`, `apply-review`} (dấu hiệu lời gọi bị trượt tham số — `$0`/`$1` không thấy id thật): dừng ngay, không đọc prompt, không ghi file, chỉ in `{"blocked": true, "reasons": ["missing lesson id"]}`. (Nguồn gốc thật đã sửa ở `tools/gen`; đây là lớp chặn thứ hai — DECISIONS.md §3, 2026-09-07.)
 1. Đọc `prompts/00-system.md` (system prompt) rồi `prompts/02-lesson.md` và làm đúng theo nó.
 2. Nạp ngữ cảnh đúng như đầu prompt 02 liệt kê. Lấy entry của bài từ `content/tracks/<track>/track.yaml` (track = phần đầu của id). Với mỗi prereq, chỉ đọc frontmatter + mục "Five-line summary" của file `.en.md` tương ứng. `known_vocab`: `tools/known-vocab --before $id`. Code ví dụ: `tools/extract-code <file> --tag <tag>` cho từng `example_files`, hoặc `git -C examples/don-hang show <tag>:<file>` nếu tool chưa có. Mẫu giọng: bài `.en.md` gần nhất có `status: approved` cùng track, nếu chưa có thì `examples/foundation.l1.http-request-response.en.md`.
 3. Nếu `$mode` là `fix-validation`: chạy `tools/validate $id`, dán lỗi vào phần `{{validation_errors}}`, chỉ sửa đúng lỗi. Nếu `apply-review`: đọc `<slug>.review.json` và áp dụng theo quy tắc trong prompt.

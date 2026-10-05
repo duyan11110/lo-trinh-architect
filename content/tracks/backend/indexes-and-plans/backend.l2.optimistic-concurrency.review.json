@@ -1,0 +1,139 @@
+{
+  "id": "backend.l2.optimistic-concurrency",
+  "technical": {
+    "reviewed_at": "2026-09-29T00:30:00+07:00",
+    "reviewer": "claude-opus-5-5 (round 3)",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "\"optimistic concurrency takes no locks, but arranges for the data modification to fail on save if the data has changed since it was queried. This concurrency failure is reported to the application, which deals with it accordingly\"",
+        "source": "refs/efcore-docs/entity-framework/core/saving/concurrency.md:17 (EF Core docs, Handling Concurrency Conflicts)"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "\"Every table has several system columns that are implicitly defined by the system.\" xmin: \"The identity (transaction ID) of the inserting transaction for this row version. (A row version is an individual state of a row; each update of a row creates a new row version for the same logical row.)\"",
+        "source": "https://www.postgresql.org/docs/17/ddl-system-columns.html"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Npgsql docs: \"All PostgreSQL tables have a set of implicit and hidden system columns, among which xmin holds the ID of the latest updating transaction... ideal for use as a concurrency token\"; sample: uint Version + .Property(b => b.Version).IsRowVersion(). Live api log at stage-2: \"UPDATE orders SET status = @p8 WHERE id = @p9 AND xmin = @p10 RETURNING xmin;\"",
+        "source": "https://www.npgsql.org/efcore/modeling/concurrency.html; docker logs donhang-api (run 2026-09-28)"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "\"The concurrency token is loaded and tracked when an entity is queried - just like any other property. Then, when an update or delete operation is performed during SaveChanges, the value of the concurrency token on the database is compared against the original value read by EF Core.\" + \"EF Core has added a condition for Version as well\" (UPDATE ... WHERE [PersonId] = @p1 AND [Version] = @p2).",
+        "source": "refs/efcore-docs/entity-framework/core/saving/concurrency.md:19,49-52"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "\"if a concurrent update occurred, the UPDATE fails to find any matching rows and reports that zero were affected. As a result, EF Core's SaveChanges throws a DbUpdateConcurrencyException\". Live log: \"DbUpdateConcurrencyException: The database operation was expected to affect 1 row(s), but actually affected 0 row(s)\".",
+        "source": "refs/efcore-docs/entity-framework/core/saving/concurrency.md:54; docker logs donhang-api after concurrency-conflict.sh"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Read Committed: \"the would-be updater will wait for the first updating transaction to commit or roll back... If the first updater commits, ... it will attempt to apply its operation to the updated version of the row. The search condition of the command (the WHERE clause) is re-evaluated to see if the updated version of the row still matches the search condition.\"",
+        "source": "https://www.postgresql.org/docs/17/transaction-iso.html (13.2.1)"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "\"all changes in a single call to SaveChanges are applied in a transaction. If any of the changes fail, then the transaction is rolled back and none of the changes are applied\". OrderService.cs@stage-2 CancelOrderAsync: order.Cancel(); notifier.Send(order, \"order cancelled\"); await repository.SaveChangesAsync(); comment \"The notification is saved with the order, by the same SaveChangesAsync.\" Round-1 live run: batch INSERT INTO notifications + UPDATE orders ... AND xmin; 0 new 'order cancelled' rows for order 5.",
+        "source": "refs/efcore-docs/entity-framework/core/saving/transactions.md:17; examples/don-hang@stage-2 DonHang.Domain/OrderService.cs:37-49"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "\"Read Committed is the default isolation level in PostgreSQL.\" FOR UPDATE: \"other transactions that attempt UPDATE, DELETE, SELECT FOR UPDATE ... of these rows will be blocked until the current transaction ends; conversely, SELECT FOR UPDATE will wait for a concurrent transaction that has run any of those commands on the same row, and will then lock and return the updated row\". Entities.cs@stage-2 Cancel(): if (Status == \"shipped\") throw new OrderStatusException(Id, \"already-shipped\", ...).",
+        "source": "https://www.postgresql.org/docs/17/transaction-iso.html 13.2.1; https://www.postgresql.org/docs/17/explicit-locking.html 13.3.2"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Lesson text now equals the round-1 suggested_text and names its condition. EF docs: optimistic concurrency \"assumes that concurrency conflicts are relatively rare\"; locking makes others \"block for the entirety of the transaction\", \"although note that EF's mechanism throws an exception and forces you to retry instead, which also has an impact\". Live api log: order UPDATE carries \"AND xmin = @p10 RETURNING xmin\" (the one extra condition).",
+        "source": "refs/efcore-docs/entity-framework/core/saving/concurrency.md:17,172; docker logs donhang-api (round 1)"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Round 3 recheck of the reworded s5 sentence (\"the Npgsql provider writes no SQL for it\"): Entities.cs@stage-2:46 \"public uint Version { get; private set; }\"; AddOrderVersionToken.cs@stage-2 comment \"The Npgsql provider writes no SQL for this step\". `dotnet ef migrations script` (round 2) outputs only the __EFMigrationsHistory INSERT; live \\d orders shows no new column. Code block DonHangDbContext.cs:61-65 matches stage-2 verbatim.",
+        "source": "examples/don-hang@stage-2 Entities.cs, Migrations/20260927103157_AddOrderVersionToken.cs, DonHangDbContext.cs; dotnet-ef 10.0.12; psql on donhang-db"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "ExceptionHandlingMiddleware.cs@stage-2:45-50: catch (DbUpdateConcurrencyException ex) ... WriteProblemAsync(context, StatusCodes.Status409Conflict, \"Order was changed by another request\", \"reload the order and try again\", type: ProblemTypeBase + \"concurrent-update\", orderId: order?.Id), order from ex.Entries...OfType<Order>(). Live body matches.",
+        "source": "examples/don-hang@stage-2 DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Ledger now matches section 2 (\"wrap every read and save in a Repeatable Read transaction and retry on `40001`\"). PG 17 13.2.2: a Repeatable Read transaction that tries to update a row changed by a concurrent committed transaction is rolled back with \"could not serialize access due to concurrent update\"; applications \"must be prepared to retry\" and should \"retry the whole transaction from the beginning\". 13.4: such failures \"will always have the SQLSTATE code 40001 (serialization_failure)\".",
+        "source": "https://www.postgresql.org/docs/17/transaction-iso.html 13.2.2; https://www.postgresql.org/docs/17/mvcc-serialization-failure-handling.html (round 2 fetch)"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "The token is \"compared against the original value read by EF Core\"; resolving needs \"Refresh the original values of the concurrency token to reflect the current values in the database. Retry...\". ConflictResolutionSample.cs: \"// Refresh original values to bypass next concurrency check\" entry.OriginalValues.SetValues(databaseValues);. So with no refresh the same WHERE fails again; after copying the DB token into the original value the next save passes and writes the tracked status (cancelled) over shipped.",
+        "source": "refs/efcore-docs/entity-framework/core/saving/concurrency.md:19,150-153; refs/efcore-docs/samples/core/Saving/Concurrency/ConflictResolutionSample.cs:60-61"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "Live run 2026-09-28 of scripts/backend/concurrency-conflict.sh (submodule HEAD = stage-2^{commit} 7a131bc): body {\"type\":\"https://donhang.local/problems/concurrent-update\",...,\"status\":409,...,\"orderId\":5}, \"-> 409\"; ship: UPDATE 1, COMMIT; order 5 afterwards shipped; after the script, SELECT shows 5|paid. Matches outputs/stage-2/scripts/backend/concurrency-conflict.txt.",
+        "source": "examples/don-hang@stage-2 scripts/backend/concurrency-conflict.sh; live lab"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-29T00:10:00+07:00",
+    "reviewer": "review-junior (claude-opus-5-5), round 2",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "gap",
+        "text": "Carried over from round 1 (text unchanged). I know a migration changes the database schema. A migration that adds no column and writes no SQL makes me wonder why it is added at all; quiz q3 option b depends on accepting that it is a required step.",
+        "quote": "The migration `AddOrderVersionToken` only records the mapping;",
+        "fix": "Add half a sentence saying why the migration is still created even though it changes no table (for example, that EF Core records every model change as a migration)."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "code",
+        "text": "Carried over from round 1 (code and prose unchanged). `ProblemTypeBase` and `WriteProblemAsync` are not explained, and the prose calls `orderId` an \"extension\" without saying what that is in a Problem Details body. I connect ProblemTypeBase only by comparing with the URL in Try it.",
+        "quote": "type: ProblemTypeBase + \"concurrent-update\", orderId: order?.Id",
+        "fix": "Add one sentence after the block: ProblemTypeBase is the `https://donhang.local/problems/` prefix, and `orderId` is an extra field added to the Problem Details body."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "term",
+        "text": "\"Npgsql provider\" is now defined in the prose, but I meet it first in the code comment just above, so for a few lines I am still stuck. Not blocking, since the definition follows right after the block.",
+        "quote": "IsRowVersion() on a uint makes the Npgsql provider map Version to",
+        "fix": "Mention the Npgsql provider with its definition in the sentence before the code block (\"The token is one line in the mapping of `Order`...\"), or leave as is."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [
+        "The migration `AddOrderVersionToken` only records the mapping; the Npgsql provider ... writes no SQL for it"
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

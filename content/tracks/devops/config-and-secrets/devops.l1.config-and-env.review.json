@@ -1,0 +1,113 @@
+{
+  "id": "devops.l1.config-and-env",
+  "technical": {
+    "reviewed_at": "2026-09-26T16:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "\"Default app configuration is loaded in the following order, from highest to lowest priority: 1. Command-line arguments ... 1. Environment variables not prefixed by ASPNETCORE_ or DOTNET_ ... 1. User secrets when the app runs in the Development environment ... 1. appsettings.{ENVIRONMENT}.json ... 1. appsettings.json\". Also: \"key values read from the environment override values read from appsettings.json, appsettings.{ENVIRONMENT}.json, and user secrets.\"",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/configuration/index.md lines 81-87, 568"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "\"The colon (:) separator doesn't work with environment variable hierarchical keys on all platforms. ... All platforms support the double underscore (__) syntax and automatically replace it with a colon (:).\" Matches the extended claim text (mapping + reason). Execution (r1): ConnectionStrings__Default in donhang-api is read via GetConnectionString(\"Default\") (Program.cs:16).",
+        "source": "refs/aspnetcore-docs/aspnetcore/includes/environmentVarableColon.md; configuration/index.md line 276"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "git show stage-1:docker-compose.yml lines 89-93: `environment:` / `# lesson: devops.l1.config-and-env` / `ConnectionStrings__Default: \"Host=db;Database=donhang;Username=donhang;Password=${POSTGRES_PASSWORD}\"` / `Jwt__SigningKey: \"${JWT_SIGNING_KEY}\"` / `ASPNETCORE_ENVIRONMENT: \"Development\"`. Block in lesson matches character-for-character.",
+        "source": "examples/don-hang @ stage-1 (4fca60a): docker-compose.yml:89-93"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "git show stage-1:DonHang.Api/appsettings.json has only Logging.LogLevel (Default, Microsoft.AspNetCore, Microsoft.EntityFrameworkCore), AllowedHosts \"*\", Jwt.Issuer \"donhang-api\", Jwt.Audience \"donhang-app\". Program.cs:16 GetConnectionString(\"Default\") ?? throw ...\"ConnectionStrings:Default is not set\"; :23 Configuration[\"Jwt:SigningKey\"]. /app contains only appsettings.json (no appsettings.Development.json).",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/appsettings.json, DonHang.Api/Program.cs:16-24; docker exec donhang-api ls /app"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Ran step 1: ConnectionStrings__Default=Host=db;Database=donhang;Username=donhang;Password=donhang-dev-password / ASPNETCORE_ENVIRONMENT=Development / ASPNETCORE_HTTP_PORTS=8080 / ASPNETCORE_URLS=http://+:8080. Step 2 printed the stage-1 appsettings.json verbatim. Step 3: \"Unhandled exception. System.InvalidOperationException: ConnectionStrings:Default is not set  at Program.<Main>$(String[] args) in /src/DonHang.Api/Program.cs:line 16\". Running container image id == donhang-api:stage-1 id.",
+        "source": "execution on the running lab, 2026-09-26"
+      },
+      {
+        "n": 6,
+        "verdict": "not-needed",
+        "evidence": "Definitional framing of the term 'config' taken from outline item 1; no version-specific behaviour asserted. The mechanism that makes it possible (env vars override appsettings.json) is covered by claim 1. R2: zero issues; opened configuration/index.md, environments.md, host-filtering.md, Compose variable-interpolation.md, stage-1 sources.",
+        "source": "track.yaml devops.l1.config-and-env outline item 1"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "\"ASPNETCORE_ENVIRONMENT when the WebApplication.CreateBuilder method is called. ... The ASPNETCORE_ENVIRONMENT value overrides DOTNET_ENVIRONMENT.\" and \"If the environment isn't set, it defaults to the Production environment\". Program.cs @ stage-1 uses WebApplication.CreateBuilder; printenv in donhang-api shows ASPNETCORE_ENVIRONMENT=Development.",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/environments.md lines 64, 228"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Compose: \"The .env file is the default method for setting variables. The .env file should be placed at the root of the project directory next to your compose.yaml file.\" (shell vars take precedence; not set in the lab). stage-1 scripts/dev-secrets.sh cd's to repo root and writes .env with POSTGRES_PASSWORD. Host filtering: AllowedHosts \"is a semicolon-delimited list of host names\". JwtTokenService.IssueToken passes issuer: Jwt:Issuer, audience: Jwt:Audience to every JwtSecurityToken.",
+        "source": "refs/docker-docs/.../variable-interpolation.md:60-80; refs/aspnetcore-docs/.../kestrel/host-filtering.md:20; don-hang @ stage-1 scripts/dev-secrets.sh, DonHang.Api/JwtTokenService.cs:24-26"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-26T17:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation, round 2)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "gap",
+        "text": "The expected result calls the password 'the lab's fake password', but §5 only says it comes from the `.env` file that `scripts/dev-secrets.sh` wrote. Nothing told me it is fake, so I stop to wonder whether I am looking at the wrong value.",
+        "quote": "(with the lab's fake password)",
+        "fix": "Replace 'with the lab's fake password' with 'with the password from the lab's `.env` file'."
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "gap",
+        "text": "I learned `|` as a pipe. Inside the grep pattern 'ConnectionStrings|ASPNETCORE' it seems to mean 'either word', and `sh -c` is not explained. I can copy the command, but I do not know why there are two `|` doing different things.",
+        "quote": "`docker exec donhang-api sh -c \"printenv | grep -E 'ConnectionStrings|ASPNETCORE'\"`",
+        "fix": "Extend the parenthesis: '(`printenv` prints them, `grep` keeps only lines containing either word, and `sh -c` runs this pipe inside the container)'."
+      },
+      {
+        "severity": "minor",
+        "section": "devops.l1.config-and-env.q5",
+        "kind": "style",
+        "text": "The lesson now says 'every place the API runs', but explanation d still uses 'environments' in the new sense, right next to 'environment variables' used elsewhere; I stop to decide which meaning is meant.",
+        "quote": "Code is what stays the same between environments; config is what changes around it.",
+        "fix": "Replace 'between environments' with 'between the places the API runs'."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "length",
+        "text": "The second sentence of §5's first paragraph carries the key mapping, Program.cs, Host=db, the password substitution, the .env file, the script and a pointer to the next lesson. I had to re-read it.",
+        "quote": "with `Host=db` and a password that Compose fills in for `${POSTGRES_PASSWORD}` from the `.env` file `scripts/dev-secrets.sh` wrote; the next lesson looks at that file.",
+        "fix": "Split at the semicolon before 'with `Host=db`': end the sentence after 'for the database', then start a new one: 'Its host is `db`, and Compose fills in `${POSTGRES_PASSWORD}` from the `.env` file …'."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "sh -c"
+      ],
+      "skipped_steps": [
+        "Why the lab's password is called 'fake' in Try it (§7); §5 does not say so"
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

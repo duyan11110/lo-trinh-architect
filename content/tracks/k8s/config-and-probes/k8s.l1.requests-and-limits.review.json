@@ -1,0 +1,118 @@
+{
+  "id": "k8s.l1.requests-and-limits",
+  "technical": {
+    "reviewed_at": "2026-10-04T09:40:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "\"The scheduler ensures that, for each resource type, the sum of the resource requests of the scheduled containers is less than the capacity of the node.\" (no request = nothing counted). Memory task: \"The Container has no upper bound on the amount of memory it uses. The Container could use all of the memory available on the Node where it is running\".",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/configuration/manage-resources-containers.md; refs/.../tasks/configure-pod-container/assign-memory-resource.md (If you do not specify a memory limit)"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "\"Each node has a maximum capacity for each of the resource types: the amount of CPU and memory it can provide for Pods. The scheduler ensures that, for each resource type, the sum of the resource requests of the scheduled containers is less than the capacity of the node.\" Lesson: \"a node whose capacity, minus what is already reserved there, covers them\" matches.",
+        "source": "refs/.../concepts/configuration/manage-resources-containers.md (How Pods with resource requests are scheduled)"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "\"1 CPU unit is equivalent to 1 physical CPU core, or 1 virtual core\"; \"the quantity expression 0.1 is equivalent to the expression 100m, which can be read as 'one hundred millicpu'\". Memory: \"Limits and requests for memory are measured in bytes ... You can also use the power-of-two equivalents: Ei, Pi, Ti, Gi, Mi, Ki.\" 256Mi = 256 x 2^20 bytes follows.",
+        "source": "refs/.../concepts/configuration/manage-resources-containers.md (CPU resource units; Memory resource units)"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "\"If the scheduler cannot find any node where a Pod can fit, the Pod remains unscheduled until a place can be found. An Event is produced each time the scheduler fails to find a place for the Pod.\" Run on kind-donhang (Pod rv-oversized, cpu \"100\", ns default): phase Pending, PodScheduled False reason Unschedulable, FailedScheduling \"0/3 nodes are available: 1 node(s) had untolerated taint(s), 2 Insufficient cpu. ...\".",
+        "source": "refs/.../concepts/configuration/manage-resources-containers.md (Troubleshooting: FailedScheduling); kubectl 1.34.3 on kind-donhang"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "\"it's possible (and allowed) for a container to use more resource than its request for that resource specifies.\" \"Note that although actual memory or CPU resource usage on nodes is very low, the scheduler still refuses to place a Pod on a node if the capacity check fails.\"",
+        "source": "refs/.../concepts/configuration/manage-resources-containers.md (Requests and limits; How Pods with resource requests are scheduled)"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "\"cpu limits are enforced by CPU throttling.\" \"If the container tries to allocate more memory than this limit, the Linux kernel out-of-memory subsystem activates and, typically, intervenes by stopping one of the processes in the container ... Kubernetes restarts the container.\" R3: lesson says \"the operating system's out-of-memory (OOM) killer\"; the Linux kernel is part of the node's operating system, so the broader wording stays true. Run: Pod rv-oom (limit 32Mi) -> OOMKilled, exitCode 137, restartCount 1.",
+        "source": "refs/.../concepts/configuration/manage-resources-containers.md; kind-donhang run (Pod rv-oom, deleted)"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "git show stage-2:deploy/k8s/api.yaml lines 53-63 identical to the lesson block (requests cpu 250m / memory 256Mi; limits cpu 500m / memory 512Mi). grep resources: in stage-2 db.yaml, redis.yaml, keycloak.yaml, mailpit.yaml -> no match. Live describe nodes: db, keycloak, mailpit, redis Pods all 0 (0%).",
+        "source": "examples/don-hang stage-2:deploy/k8s/*.yaml; kubectl describe nodes on kind-donhang"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "stage-2:deploy/k8s/lessons/oversized-pod.yaml: Pod oversized, ns donhang, container web image caddy:2.10.0, requests cpu \"100\", memory 64Mi. kubectl get nodes: allocatable cpu 20 on each of the 3 kind nodes (kind nodes see the host's CPUs; holds on any host with fewer than 100 cores). R2: \"from the Caddy web server image the lesson Pods use\": caddy:2.10.0 is also the image of labelled-pods, web-pod, web-liveness-pod, web-replicaset, web-deployment in stage-2 deploy/k8s/lessons/.",
+        "source": "examples/don-hang stage-2:deploy/k8s/lessons/oversized-pod.yaml; kubectl get nodes on kind-donhang"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "git show stage-2:scripts/k8s/resources.sh lines 11-27 identical to the lesson block; show() at line 6 echoes the command then runs it; line 20 waits for conditions[0].reason=Unschedulable; line 27 deletes the Pod.",
+        "source": "examples/don-hang stage-2:scripts/k8s/resources.sh"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "outputs/stage-2/scripts/k8s/resources.txt identical to the lesson's output block. Re-run with rv-oversized on kind-donhang reproduced the same FailedScheduling message word for word.",
+        "source": "examples/don-hang/outputs/stage-2/scripts/k8s/resources.txt; kind-donhang run"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Docs: \"Example: node-role.kubernetes.io/control-plane:NoSchedule ... Taint that kubeadm applies on control plane nodes to restrict placing Pods and allow only specific pods to schedule on them.\" kubectl get nodes: donhang-control-plane taints [effect:NoSchedule key:node-role.kubernetes.io/control-plane]; workers none.",
+        "source": "refs/.../reference/labels-annotations-taints/_index.md; kubectl get nodes on kind-donhang"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Lesson now uses the R1 suggested_text (no capacity/allocatable base). Re-ran `kubectl describe nodes | grep \" api-\"` on kind-donhang (read-only): two lines, \"api-746f868bc9-ndl9d 250m (1%) 500m (2%) 256Mi (1%) 512Mi (3%)\" and \"api-746f868bc9-jlbbc ... same amounts\". grep gloss (\"keeps only the lines that contain ` api-`\") matches the output.",
+        "source": "kubectl 1.34.3 describe nodes on kind-donhang"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "R3: lesson now \"a runaway api is stopped long before it can take all of a node's memory\"; \"For the api, the heap simply grows.\" deleted. Docs: \"A container may use more memory than its memory limit, but if it does, it may get killed.\" \"stopping one of the processes in the container ... Kubernetes restarts the container.\" \"stopped\" also covers the .NET runtime stopping the process with its own out-of-memory error first (GC heap cap 75% of container limit), so it holds either way.",
+        "source": "refs/.../concepts/configuration/manage-resources-containers.md (Requests and limits)"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "\"`memory` limits are enforced by the kernel with out of memory (OOM) kills. When a container uses more than its `memory` limit, the kernel may terminate it.\" MemoryQoS (memory.high throttling) is alpha, off by default; \"The default kubelet configuration does not enable memory throttling\". R3 wording \"the operating system does not slow a container down\" is the same fact with kernel widened to operating system (kernel is its core): still true.",
+        "source": "refs/.../concepts/configuration/manage-resources-containers.md; refs/.../concepts/workloads/pods/pod-qos.md (Memory QoS with cgroup v2); refs/.../feature-gates/MemoryQoS.md"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "Glossary: \"A Kubernetes object that describes state changes or notable occurrences in the cluster.\" \"Events have a limited retention time\". Lesson's \"a short record Kubernetes keeps of what happened to an object\" is consistent; the FailedScheduling event in resources.txt is recorded against Pod oversized (field-selector involvedObject.name=oversized). R3 opened: manage-resources-containers.md, pod-qos.md, MemoryQoS.md, glossary/event.md; quiz q6 en/vi.",
+        "source": "refs/kubernetes-website/content/en/docs/reference/glossary/event.md; stage-2:scripts/k8s/resources.sh line 25"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-04T10:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior)",
+    "issues": [],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

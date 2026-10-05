@@ -1,0 +1,110 @@
+{
+  "id": "devops.l1.reverse-proxy-and-tls",
+  "technical": {
+    "reviewed_at": "2026-09-26T06:45:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "git show stage-0:Caddyfile → `donhang.local:8443 { tls internal / root * /srv/www / file_server }`. git show stage-1:Caddyfile lines 62-76 add `handle /api/v1/* { reverse_proxy api:8080 }` and wrap file_server in `handle { }`. The lesson's code block matches stage-1 lines 62-76 character for character.",
+        "source": "examples/don-hang @ stage-0 and stage-1: Caddyfile"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Caddy tls docs: `internal` means to \"use Caddy's internal, locally-trusted CA to produce certificates for this site\"; \"Caddy will attempt to install the root CA certificate to the system trust store, but this may fail ... when running in a Docker container.\" Lab: chain leaf <- 'Caddy Local Authority - ECC Intermediate' <- '2026 ECC Root' (openssl s_client, r1). Host curl without -k: exit 60; with -k: 200 (re-run r2).",
+        "source": "https://caddyserver.com/docs/caddyfile/directives/tls; execution on host and lab box, 2026-09-26"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Caddy reverse_proxy docs: \"By default, connections are made to the upstream over plaintext HTTP. When using the URL form, a scheme can be used to set some transport defaults as a shorthand.\" The upstream is `api:8080` with no scheme. Execution: HTTPS via Caddy returns `Server: Kestrel`, while Kestrel only accepts plain HTTP (see claim 6).",
+        "source": "https://caddyserver.com/docs/caddyfile/directives/reverse_proxy"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "git show stage-1:DonHang.Api/Dockerfile → `ENV ASPNETCORE_URLS=http://+:8080`. Program.cs and appsettings.json at stage-1 contain no Kestrel/HTTPS/certificate configuration (git grep -i 'cert|https|UseHttps' over DonHang.* at stage-1: no hits). refs/aspnetcore-docs kestrel/endpoints.md lists the `ASPNETCORE_URLS` environment variable as an endpoint source. Execution: TLS to api:8080 fails (claim 6).",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/Dockerfile, Program.cs; refs/aspnetcore-docs/aspnetcore/fundamentals/servers/kestrel/endpoints.md"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "r3 re-run on host (curl 8.9.0): exact command -> `HTTP/1.1 200 OK`, headers incl. `Server: Kestrel`, `Via: 1.1 Caddy`, body `{\"id\":1,\"name\":\"Bàn phím cơ\",...}` (-i prints status line + headers). Lab box `curl -s -i http://api:8080/api/v1/products/1` -> `Server: Kestrel`, no Via header, so Via is added by Caddy. Without -k: exit 60 (r2).",
+        "source": "execution against running lab (host and ssh -p 2222 lab box), 2026-09-26"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "From the lab box: `curl -sS https://api:8080/api/v1/products/1` → `curl: (35) TLS connect error: error:0A00010B:SSL routines::wrong version number`, exit 35, no JSON. `curl -s http://api:8080/api/v1/products/1` → `{\"id\":1,\"name\":\"Bàn phím cơ\",\"priceVnd\":1250000}`, exit 0.",
+        "source": "execution via ssh -p 2222 dev@localhost, 2026-09-26"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "curl is not in versions.yaml, so no allowed doc root; settled by execution on the host (no donhang.local entry in the Windows hosts file): without --resolve → exit 6 (could not resolve host); with --resolve donhang.local:8443:127.0.0.1 but no -k → exit 60 (certificate not trusted); with both → 200.",
+        "source": "execution on host, curl 8.9.0"
+      },
+      {
+        "n": 8,
+        "verdict": "not-needed",
+        "evidence": "Conditional design judgement ('acceptable only on the same machine or a private network') plus a definitional consequence of termination (one program holds the certificate). The lesson states the condition; no version-specific behaviour. Consistent with refs/aspnetcore-docs host-and-deploy/proxy-load-balancer.md, which describes HTTPS proxied over HTTP as a normal setup.",
+        "source": "outline items 1-3; refs/aspnetcore-docs/aspnetcore/host-and-deploy/proxy-load-balancer.md"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "r2 from lab box: printf '\u0016\u0003\u0001...' | nc api 8080 -> `HTTP/1.1 400 Bad Request`, `Content-Length: 0`, `Connection: close`; curl -v https://api:8080/ -> 5 bytes received, then `error:0A00010B:SSL routines::wrong version number`. Caddy reverse_proxy docs (Headers): \"It sets the `X-Forwarded-Proto` header field.\" Upstream `api:8080` has no scheme -> plaintext HTTP (claim 3). Docs opened: Caddy tls, reverse_proxy; refs/aspnetcore-docs kestrel/endpoints.md, proxy-load-balancer.md.",
+        "source": "execution via ssh -p 2222 dev@localhost, 2026-09-26; https://caddyserver.com/docs/caddyfile/directives/reverse_proxy"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-26T10:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "style",
+        "quote": "`-i` shows the answer's headers",
+        "text": "Step 1 now says `-i` shows the headers. Steps 2 and 3 then run `ssh ... -i secrets/lab_key ...`, where `-i` clearly means something else (it is followed by a file). Having just learned `-i`, I paused and wondered whether step 2 also prints headers. I can still run the command by copying it.",
+        "fix": "In step 1 write \"`-i` (for `curl`) shows the answer's headers\", or add to step 2: \"here `-i secrets/lab_key` is the key `ssh` logs in with, not curl's `-i`\"."
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "term",
+        "quote": "which speaks HTTPS straight to Kestrel from the lab box.",
+        "text": "\"lab box\" and `ssh` are not in known_vocab and not defined here (also \"lab box\" in quiz q4). From prereq summary 5 (\"no port of its own outside the lab\") I can infer I must be inside the lab to reach `api:8080`, and the commands are copy-pasteable, so the Try-it still works. Minor because the step is doable and the point is inferable.",
+        "fix": "Add in step 2 one clause: \"`ssh ... dev@localhost` runs the quoted command on the lab box, a machine inside the lab network that can reach `api:8080`\"."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "quote": "every application behind the proxy can stay a plain HTTP server that never loads a key or checks a date.",
+        "text": "\"a key\" is not said to be which key. The TLS prereq summary only mentions the public key inside a certificate. I guess it means something the program needs alongside its certificate, but I have to guess; section 5 repeats the idea as \"nothing in the API loads a certificate\" without a key.",
+        "fix": "Replace \"never loads a key or checks a date\" with \"never loads a certificate or watches its expiry date\"."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "lab box",
+        "ssh"
+      ],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

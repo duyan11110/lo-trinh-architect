@@ -1,0 +1,112 @@
+{
+  "id": "design.l2.valid-from-construction",
+  "technical": {
+    "reviewed_at": "2026-10-01T00:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "git grep at stage-1: DonHang.Tests/Services/OrderServiceTests.cs:49 `repository.Seed(new Order { Id = 1, CustomerId = 1, PlacedAt = DateTimeOffset.UtcNow, Status = \"new\" });` — no Items. stage-1 Entities.cs: CustomerId/PlacedAt `{ get; set; }`, Status `required ... { get; set; }`, so it compiles. stage-1 OrderService.cs:10 is the only `items.Count == 0` check.",
+        "source": "examples/don-hang @ stage-1: DonHang.Tests/Services/OrderServiceTests.cs:49; DonHang.Domain/OrderService.cs:10; DonHang.Domain/Entities.cs:25-35"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Round 2: ledger now drops the error codes. Round-1 dotnet build of the stage-1 line against stage-2 DonHang.Domain reported CS7036 (no argument for required parameter 'customerId' of 'Order.Order(int, List<OrderItem>, DateTimeOffset)' — the parameterless ctor is private, so not a candidate) and CS0200 ('Order.CustomerId' ... read only; same for PlacedAt, Status). stage-2 OrderServiceTests.cs:56 `repository.Seed(new Order(customerId: 1, OneItem(), DateTimeOffset.UtcNow) { Id = 1 });`.",
+        "source": "execution (round 1): scratchpad/rt-vfc/w/Probe vs stage-2 DonHang.Domain; examples/don-hang @ stage-2: DonHang.Tests/Services/OrderServiceTests.cs:12,56; DonHang.Domain/Entities.cs:30-58"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "stage-2 Entities.cs:61-69: `public Order(int customerId, List<OrderItem> items, DateTimeOffset placedAt)`; `if (items.Count == 0) throw new ArgumentException(\"an order needs at least one item\");` `if (items.Any(item => item.Quantity < 1)) throw new ArgumentException(...)`; then CustomerId, Items, PlacedAt, `Status = \"new\"`. Probe run: `new Order(1, [], ...)` → `ArgumentException`, Message `an order needs at least one item`.",
+        "source": "examples/don-hang @ stage-2: DonHang.Domain/Entities.cs:60-70; probe run"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Now worded as \"runs before `new` hands the object to the caller\". Docs: \"The runtime invokes the `Taxi` constructor immediately after memory is allocated for the new object.\" The constructor body (and its throw) runs inside `new`; if it throws, `new` produces no reference for the caller. Lesson §3 and quiz q1/q2/q4 use this wording.",
+        "source": "refs/dotnet-docs/docs/csharp/programming-guide/classes-and-structs/using-constructors.md:12"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "stage-2 OrderService.cs:25 `var order = new Order(customerId, items, DateTimeOffset.UtcNow) { IdempotencyKey = idempotencyKey };`; lines 15-34 contain no `items.Count`. Entities.cs:41 `public string? IdempotencyKey { get; init; }`. Added part: Entities.cs:32 `public int Id { get; set; }` (comment l.27 \"Only Id keeps a public setter\"); OrderServiceTests.cs:56 uses `{ Id = 1 }`, and :12 defines `OneItem()` returning one item.",
+        "source": "examples/don-hang @ stage-2: DonHang.Domain/OrderService.cs:15-34; DonHang.Domain/Entities.cs:27-41; DonHang.Tests/Services/OrderServiceTests.cs:12,56"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Now scoped to \"starts without items\". stage-2 Entities.cs:55 `private Order()`; CustomerId/PlacedAt/Status/Items `{ get; private set; }`; the only public constructor (61-70) throws on `items.Count == 0`. `git grep \"new Order(\" stage-2` in DonHang.Domain/Api: only OrderService.cs:25. (Mutation of Items after creation is outside the claim as now worded.)",
+        "source": "examples/don-hang @ stage-2: DonHang.Domain/Entities.cs:30-70"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "stage-2 ExceptionHandlingMiddleware.cs:29-32 `catch (ArgumentException ex)` → `WriteProblemAsync(context, StatusCodes.Status400BadRequest, \"Invalid request\", ex.Message)`; Program.cs:107 registers it before MapControllers; Dtos.cs:18 `CreateOrderRequest(List<CreateOrderItemRequest> Items)` has no validation attribute. C# docs: \"Use a catch clause to specify the base type of exceptions you want to handle\" — matching is by type.",
+        "source": "examples/don-hang @ stage-2: DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs:29-33, Program.cs:106-111; refs/dotnet-docs/docs/csharp/language-reference/statements/exception-handling-statements.md:71"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "stage-2 OrderService.cs: line 25 constructs the order; AddAsync (26), notifier.Send (31), SaveChangesAsync (32) come after it in the same method with no try/catch, so a throw at line 25 skips all three.",
+        "source": "examples/don-hang @ stage-2: DonHang.Domain/OrderService.cs:25-33"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Run: `git grep -n \"an order needs at least one item\" stage-1 stage-2 -- \"DonHang.*/*.cs\"` → `stage-1:DonHang.Domain/OrderService.cs:10: ... throw new ArgumentException(\"an order needs at least one item\");` and `stage-2:DonHang.Domain/Entities.cs:63: ... throw new ArgumentException(\"an order needs at least one item\");` — identical string.",
+        "source": "execution in examples/don-hang"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "stage-2 Entities.cs:75-96: MarkPaid, Cancel, Ship each test only `Status` before changing it; none reads Items or CustomerId. Lesson now scopes it to \"every new order the code places\" (round-1 minor on EF-loaded orders resolved).",
+        "source": "examples/don-hang @ stage-2: DonHang.Domain/Entities.cs:72-96"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "First half: stage-1 OrderServiceTests.cs:49 seeded an order with no items, stored by FakeOrderRepository.Seed, and nothing checked it. Second half now reads \"runs before `new` hands the object to anyone\", consistent with \"The runtime invokes the `Taxi` constructor immediately after memory is allocated for the new object.\"",
+        "source": "refs/dotnet-docs/docs/csharp/programming-guide/classes-and-structs/using-constructors.md:12; examples/don-hang @ stage-1: DonHang.Tests/Services/OrderServiceTests.cs:49"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "stage-1: db/schema.sql:29 `quantity integer NOT NULL CHECK (quantity > 0)`, loaded by docker-compose.yml:67 into docker-entrypoint-initdb.d; no quantity check in stage-1 C#; middleware has no DbUpdateException branch → 500. stage-2: Dtos.cs:16 CreateOrderItemRequest has no validation attribute; controller passes items to PlaceOrderAsync; Entities.cs:64 `if (items.Any(item => item.Quantity < 1)) throw new ArgumentException(...)`; middleware :29-32 ArgumentException → 400.",
+        "source": "examples/don-hang @ stage-1: db/schema.sql:29, docker-compose.yml:67; @ stage-2: DonHang.Api/Dtos.cs:16, Controllers/OrdersController.cs:37-41, DonHang.Domain/Entities.cs:64, Middleware/ExceptionHandlingMiddleware.cs:29-33"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Executed both commands in examples/don-hang (git 2.46.0.windows.1; pinned 2.54 in lab box, git grep <rev>:<path>:<line> format unchanged). Output 1: exactly two lines, stage-1 OrderService.cs:10 and stage-2 Entities.cs:63. Output 2: exactly one line, `stage-2:DonHang.Domain/OrderService.cs:25: var order = new Order(customerId, items, DateTimeOffset.UtcNow) { IdempotencyKey = idempotencyKey };`.",
+        "source": "execution in examples/don-hang"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "design.l2.builder-pattern (status approved) five-line summary line 5: \"When every value is known at once, as for `Order` in `OrderService`, an object initializer is enough and no builder is needed.\" Round 2 opened: refs using-constructors.md; stage-1/stage-2 Entities.cs, OrderService.cs, OrderServiceTests.cs, ExceptionHandlingMiddleware.cs, OrdersController.cs, Dtos.cs, Program.cs, db/schema.sql, docker-compose.yml.",
+        "source": "content/tracks/design/*/design.l2.builder-pattern.en.md:133"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-01T01:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior)",
+    "issues": [],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

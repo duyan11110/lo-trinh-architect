@@ -1,0 +1,233 @@
+{
+  "id": "backend.l2.cache-aside",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-09-28T14:55:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "With cache-aside the application, not the cache, loads data: it asks the cache first and, on a miss, reads the data store and puts the result in the cache itself.",
+      "kind": "fact",
+      "source_hint": "Microsoft Azure Architecture Center: Cache-Aside pattern; glossary entry cache-aside",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 2,
+      "text": "ProductsController.Get(int id) calls products.FindAsync(id) on its IProductRepository and answers NotFound() for null, otherwise Ok(new ProductDto(...)); List() reads DonHangDbContext (db.Products) directly.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: DonHang.Api/Controllers/ProductsController.cs:10-57",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 3,
+      "text": "AddDonHangInfrastructure registers IProductRepository as scoped: a new ProductCache built around the registered EfProductRepository, the IConnectionMultiplexer and an ILogger<ProductCache>; the controller only sees IProductRepository.",
+      "kind": "fact",
+      "version_key": "aspnetcore",
+      "source_hint": "examples/don-hang @ stage-2: DonHang.Infrastructure/ServiceCollectionExtensions.cs:40-47",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 4,
+      "text": "ProductCache.FindAsync builds key product:{id}, calls GetAsync; a non-null result is returned (hit); otherwise, after the per-key lock and a second GetAsync, it calls inner.FindAsync and SetAsync only when the product is not null.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: DonHang.Infrastructure/ProductCache.cs:23-49",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 5,
+      "text": "On a hit, GetAsync turns the stored text into a Product with JsonSerializer.Deserialize<Product>(..., JsonSerializerOptions.Web); no EF Core query runs. The stored JSON is {\"id\":3,\"name\":\"Tai nghe\",\"priceVnd\":890000}.",
+      "kind": "behavior",
+      "version_key": "dotnet",
+      "source_hint": "ProductCache.cs:64-76; outputs/stage-2/scripts/backend/cache-aside.txt:4,9; .NET docs: JsonSerializerOptions.Web (camelCase)",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 6,
+      "text": "SetAsync serializes the product to JSON and calls StringSetAsync(key, json, Ttl) with Ttl = TimeSpan.FromMinutes(5), which stores the string under the key with a 5-minute expiry.",
+      "kind": "number",
+      "version_key": "stackexchange_redis",
+      "source_hint": "ProductCache.cs:18, 78-89; StackExchange.Redis API: IDatabaseAsync.StringSetAsync(key, value, expiry)",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 7,
+      "text": "EfProductRepository.FindAsync calls db.Products.FindAsync(id); with the request's new scoped DbContext this sends one query to PostgreSQL.",
+      "kind": "behavior",
+      "version_key": "efcore",
+      "source_hint": "EfProductRepository.cs:9 @ stage-2; EF Core docs: DbSet.FindAsync (tracked entity first, else database query)",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 8,
+      "text": "GetAsync and SetAsync catch exceptions that are RedisException or RedisTimeoutException, log a warning, and continue: GetAsync returns null (treated as a miss), SetAsync lets the request go on.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: DonHang.Infrastructure/ProductCache.cs:61-89",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 9,
+      "text": "With the redis container stopped, GET product:3 fails with RedisConnectionException (a subclass of RedisException), so the catch applies and the request is answered from PostgreSQL.",
+      "kind": "behavior",
+      "version_key": "stackexchange_redis",
+      "source_hint": "api log at stage-2 after cache-aside.sh (RedisConnectionException ... GET product:3); StackExchange.Redis API: RedisConnectionException : RedisException",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 10,
+      "text": "A ConnectionMultiplexer is designed to be shared and reused between callers, and should not be created per operation; it is thread-safe.",
+      "kind": "behavior",
+      "version_key": "stackexchange_redis",
+      "source_hint": "StackExchange.Redis docs: Basic Usage ('designed to be shared and reused between callers')",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 11,
+      "text": "services.AddSingleton<IConnectionMultiplexer>(...) creates one ConnectionMultiplexer via ConfigurationOptions.Parse(redisConfiguration), BacklogPolicy = BacklogPolicy.FailFast, ConnectionMultiplexer.Connect(options).",
+      "kind": "syntax",
+      "version_key": "stackexchange_redis",
+      "source_hint": "examples/don-hang @ stage-2: DonHang.Infrastructure/ServiceCollectionExtensions.cs:28-38",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 12,
+      "text": "abortConnect=false lets Connect return a multiplexer even while Redis is down, and the multiplexer keeps trying to connect in the background.",
+      "kind": "behavior",
+      "version_key": "stackexchange_redis",
+      "source_hint": "StackExchange.Redis docs: Configuration (abortConnect; reconnects in background); ServiceCollectionExtensions.cs:29-32",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 13,
+      "text": "BacklogPolicy.FailFast makes each Redis command fail at once while there is no connection, instead of waiting in a backlog for the connection to come back.",
+      "kind": "behavior",
+      "version_key": "stackexchange_redis",
+      "source_hint": "StackExchange.Redis API/docs: BacklogPolicy.FailFast; ServiceCollectionExtensions.cs:31-32",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 14,
+      "text": "cache-aside.sh output: after DEL, the first GET /api/v1/products/3 is 200 with 1 products query and product:3 then holds the JSON; the repeat is 200 with 0 queries; with redis stopped it is 200 with 1 query.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: outputs/stage-2/scripts/backend/cache-aside.txt",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 15,
+      "text": "cache-aside.sh runs on the host; it counts lines containing 'FROM products' in docker compose logs of api before and after each request, and stops then restarts the redis service.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: scripts/backend/cache-aside.sh:1-36",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 16,
+      "text": "EF Core logs each SQL command it sends under category Microsoft.EntityFrameworkCore.Database.Command at Information level, which the lab's api service enables.",
+      "kind": "behavior",
+      "version_key": "efcore",
+      "source_hint": "EF Core docs: Simple logging / event ids (CommandExecuted); docker-compose.yml:124-127 @ stage-2",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 17,
+      "text": "While redis is stopped, one product request logs the warning 'Redis read of product:3 failed; reading PostgreSQL instead' twice, because FindAsync calls GetAsync twice on a miss.",
+      "kind": "fact",
+      "source_hint": "ProductCache.cs:73 @ stage-2; docker compose logs api after cache-aside.sh (checked 2026-09-28)",
+      "needs_verification": true,
+      "section": 7
+    },
+    {
+      "n": 18,
+      "text": "docker compose logs api prints the log output of the api service's container, run from the folder holding docker-compose.yml.",
+      "kind": "syntax",
+      "version_key": "docker",
+      "source_hint": "Docker docs: docker compose logs",
+      "needs_verification": true,
+      "section": 7
+    },
+    {
+      "n": 19,
+      "text": "On a miss ProductCache does Redis GETs (GetAsync twice: before and after the per-key lock), then the query, then a Redis write, so a miss costs more than a read with no cache.",
+      "kind": "behavior",
+      "source_hint": "ProductCache.cs:25-49 @ stage-2",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 20,
+      "text": "A cache pays off when the same data is read far more often than it changes; each cached copy is one more place that can hold an old value.",
+      "kind": "opinion",
+      "source_hint": "Azure Architecture Center: Cache-Aside pattern, 'When to use this pattern' / consistency considerations",
+      "needs_verification": false,
+      "section": 6
+    },
+    {
+      "n": 21,
+      "text": "For a product that does not exist, inner.FindAsync returns null, SetAsync is not called (nothing is written to Redis for that id), and the controller answers 404.",
+      "kind": "fact",
+      "source_hint": "ProductCache.cs:41-43; ProductsController.cs:54-55 @ stage-2",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 22,
+      "text": "StackExchange.Redis is the Redis client library DonHang.Api uses (DonHang.Infrastructure package reference).",
+      "kind": "fact",
+      "version_key": "stackexchange_redis",
+      "source_hint": "examples/don-hang @ stage-2: Directory.Packages.props (StackExchange.Redis 3.3.1); ProductCache.cs:5",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 23,
+      "text": "Until product:3 expires (5 minutes after it was written), requests for product 3 are hits unless the key is deleted first (UpdatePriceAsync deletes it after a price change) or a Redis error occurs.",
+      "kind": "behavior",
+      "version_key": "stackexchange_redis",
+      "source_hint": "examples/don-hang @ stage-2: DonHang.Infrastructure/ProductCache.cs:18, 25-29, 54-58",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 24,
+      "text": "The helpers at the top of cache-aside.sh: redis runs redis-cli in the redis container via docker compose exec; get_product_3 curls GET /api/v1/products/3, prints body and status code, then the products query count.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: scripts/backend/cache-aside.sh:8-18",
+      "needs_verification": true,
+      "section": 5
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "outline_items_missing": [],
+    "beyond_scope": []
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1309,
+    "notes": "Generated; fix-validation 1 (quiz Q10 'when'). Round 1: hit-until-expiry sentence qualified (claim 23); second Redis look + finally named; 404 path spelled out; abortConnect/FailFast per claim 12/13; registration of ProductCache; script helpers (claim 24); misconception 3 per claim 19; Try it folder + two warning lines; 'deserializes' removed; quiz q1/q2/q4/q5/q6 per review. Round 2: misconception 3 symptom per tech minor."
+  },
+  "open_questions": [],
+  "repo_changes_needed": []
+}

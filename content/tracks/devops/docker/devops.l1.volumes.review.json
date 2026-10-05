@@ -1,0 +1,132 @@
+{
+  "id": "devops.l1.volumes",
+  "technical": {
+    "reviewed_at": "2026-09-26T11:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "storage/_index.md: \"By default all files created inside a container are stored on a writable container layer ... Data written to the container layer doesn't persist when the container is destroyed.\" volumes.md: \"A volume's contents exist outside the lifecycle of a given container. When a container is destroyed, the writable layer is destroyed with it. Using a volume ensures that the data is persisted even if the container using it is removed.\" Confirmed by running the Try-it (claim 6).",
+        "source": "refs/docker-docs/content/manuals/engine/storage/_index.md; refs/docker-docs/content/manuals/engine/storage/volumes.md (A volume's lifecycle)"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "storage/_index.md: \"Docker supports the following types of storage mounts ... Volume mounts ... Bind mounts\"; \"Bind mounts create a direct link between a host system path and a container\". bind-mounts.md: with a volume \"a new directory is created within Docker's storage directory ... Docker creates and maintains this storage location\". docker inspect donhang-db: two \"Type\":\"bind\" and one \"Type\":\"volume\"; docker volume ls lists no bind mount.",
+        "source": "refs/docker-docs/content/manuals/engine/storage/_index.md; bind-mounts.md; docker inspect/volume ls, 2026-09-26"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "git -C examples/don-hang show stage-1:docker-compose.yml, lines 66-69: '- ./db/schema.sql:/docker-entrypoint-initdb.d/10-schema.sql:ro', '- ./db/seed.sql:/docker-entrypoint-initdb.d/20-seed.sql:ro', '- db-data:/var/lib/postgresql/data'; lines 126-130 top-level 'volumes: db-data: caddy-data: caddy-config: lab-config:'. docker inspect donhang-db Mounts: two entries \"Type\":\"bind\",\"RW\":false and one \"Type\":\"volume\",\"Name\":\"donhang_db-data\",\"Destination\":\"/var/lib/postgresql/data\".",
+        "source": "examples/don-hang@stage-1 docker-compose.yml:56-69,126-130; docker inspect on the running lab"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Execution: after docker compose rm -sf db and up, docker logs donhang-db printed \"PostgreSQL Database directory appears to contain a database; Skipping initialization\". /usr/local/bin/docker-entrypoint.sh in postgres:17.6-alpine: 'if [ -s \"$PGDATA/PG_VERSION\" ]; then DATABASE_ALREADY_EXISTS=true' and 'if [ -z \"$DATABASE_ALREADY_EXISTS\" ]; then ... docker_process_init_files /docker-entrypoint-initdb.d/*'. PGDATA=/var/lib/postgresql/data. (Image behaviour, not PostgreSQL server docs; settled by execution.)",
+        "source": "docker exec donhang-db (entrypoint script, logs), 2026-09-26"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "docker-compose.yml@stage-1 line 3 'name: donhang'; lab volumes line 24 '- ./:/repo:ro'. compose-file/volumes.md: \"instead of attempting to create a volume called `{project_name}_db-data`\"; \"Running `docker compose up` creates the volume if it doesn't already exist.\" docker volume ls on the lab: donhang_caddy-config, donhang_caddy-data, donhang_db-data, donhang_lab-config.",
+        "source": "refs/docker-docs/content/reference/compose-file/volumes.md; docker volume ls, 2026-09-26"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Ran on the lab (Docker 28.0.1, Compose v2.33.1-desktop.1): step 1 -> 25. 'docker compose rm -sf db' -> 'Container donhang-db Stopped / Going to remove donhang-db / Removed'; docker volume ls still lists donhang_db-data. 'docker compose up -d --wait db' -> 'Container donhang-db Created ... Healthy'; step 1 again -> 25. compose rm --help: '-s, --stop Stop the containers, if required, before removing', '-f, --force Don't ask to confirm removal'.",
+        "source": "execution in examples/don-hang, 2026-09-26; docker compose rm --help (v2.33.1)"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "psql --help inside donhang-db (psql 17.6): \"-t, --tuples-only print rows only\", \"-A, --no-align unaligned table output mode\", \"-c, --command=COMMAND run only single command (SQL or internal) and exit\". Output of step 1 was the bare line '25'.",
+        "source": "docker exec donhang-db psql --help, 2026-09-26"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "volumes.md: \"When you create a volume, it's stored within a directory on the Docker host. When you mount the volume into a container, this directory is what's mounted into the container.\" Backup is a separate explicit procedure (\"Back up, restore, or migrate data volumes\"). docker compose rm --help: \"Any data which is not in a volume will be lost.\" Nothing in the lab makes a second copy. Ledger kind now behavior.",
+        "source": "refs/docker-docs/content/manuals/engine/storage/volumes.md"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "compose-file/volumes.md: \"Running `docker compose up` creates the volume if it doesn't already exist. Otherwise, the existing volume is used\". docker compose rm --help (v2.33.1): \"-v, --volumes Remove any anonymous volumes attached to containers\" (named volumes untouched); docker compose down --help: \"-v, --volumes Remove named volumes declared in the \\\"volumes\\\" section\" (opt-in). Execution round 1: after compose rm -sf db, docker volume ls still listed donhang_db-data.",
+        "source": "refs/docker-docs/content/reference/compose-file/volumes.md; docker compose rm/down --help, 2026-09-26"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Slightly overstated: Docker also calls anonymous volumes volumes (volumes.md: anonymous volumes \"persist even if you remove the container that uses them\"), so 'the word volume' is not reserved for the named kind. The point being made (bind mounts are not volumes) is correct; anonymous volumes are out of scope, so this only needs a narrower wording.",
+        "quote": "Docker keeps the word volume for the named kind: a bind mount is a separate type",
+        "fix": "Replace with: \"Docker does not call a bind mount a volume: it is a separate type\" (rest of the sentence unchanged)."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-26T13:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "example",
+        "text": "Still open from round 1 (wording kept from the outline): from what I know about the garbage collector, removing a variable does not delete the object it pointed to, so the comparison argues against the misconception as much as for it. The correction itself is clear.",
+        "quote": "the same way removing a variable deletes what it pointed to",
+        "fix": "Only if the outline owner agrees: change the comparison to 'the same way removing a container deletes its own changes'. Otherwise leave as is."
+      },
+      {
+        "severity": "minor",
+        "section": 9,
+        "kind": "gap",
+        "text": "Summary line 4 says the scripts run 'only on the very first start', but the second misconception and quiz q4 say they run again when the volume is removed and the data folder is empty. The two statements pulled against each other for a moment.",
+        "quote": "`schema.sql` and `seed.sql` run only when that data folder is empty, which is only on the very first start.",
+        "fix": "Replace 'which is only on the very first start' with 'such as on the very first start or after the volume is removed'."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "text": "q4, explanation d: the last clause 'only the empty data folder did' does not attach to anything ('did' what?). I had to re-read it to get that it means the empty data folder is what made the scripts run.",
+        "quote": "but whether the API runs has nothing to do with them; only the empty data folder did.",
+        "fix": "End the sentence with '; what made them run was the empty data folder.'"
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "text": "q4, correct explanation: 'the scripts ran, adding the product and losing every order' reads as if running the scripts deleted the orders. The lesson says the orders were lost because the volume was removed.",
+        "quote": "Removing the volume emptied the data folder: the scripts ran, adding the product and losing every order.",
+        "fix": "Rewrite as: 'Removing the volume deleted every order and emptied the data folder, so the scripts ran and added the product.'"
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "text": "q2: the correct option is the longest and nearly repeats the first misconception's correction ('the next `db` container picks up the same data'), so I can match it by wording.",
+        "quote": "False, because the named volume stays and the next `db` container finds the same data.",
+        "fix": "Shorten c to 'False, because removing the container does not remove the named volume.'"
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

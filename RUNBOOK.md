@@ -32,7 +32,7 @@ Trong `app/` theo `app/CLAUDE.md` + docs/07 §11, asset = `examples/content.samp
 **Done mỗi milestone:** `flutter analyze` 0 cảnh báo, `flutter test` xanh, golden tạo lần đầu (E4); commit `auto/app-mN` + push.
 
 ## Bước 5 — Nội dung GĐ0 (agent, chạy dài — `tools/gen --stage 0`)
-Theo SPEC gen + DECISIONS D-1…D-4: sinh → quiz → validate → 2 review → sửa (≤ 3 vòng) → approved (D1) → translate (Sonnet) → parity; hết 11 module → gate0 (từng track + cross) → `build --publish` → commit `dist/` → push `auto/stage-0`.
+Theo SPEC gen + DECISIONS D-1…D-4: sinh → quiz → validate → 2 review → sửa (≤ 3 vòng) → approved (D1) → translate (Opus 5.5) → parity; hết 11 module → gate0 (từng track + cross) → `build --publish` → commit `dist/` → push `auto/stage-0`.
 **Done:** `tools/status` (hoặc `/status`) cho thấy: 55 bài main path GĐ0 `published` (bài nhánh phụ có thể `reviewed`), `content/gates/gate0.json` ≥ 90 câu, `dist/manifest.json` `content_version ≥ 1`; `logs/gen-<date>.md` có bảng tổng kết; những bài kẹt `reviewed` được liệt kê rõ lý do.
 
 ## Bước 6 — App M7 + CI + deploy (agent)

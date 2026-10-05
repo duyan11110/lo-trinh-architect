@@ -1,0 +1,138 @@
+{
+  "id": "devops.l1.reverse-proxy-basics",
+  "technical": {
+    "reviewed_at": "2026-09-26T18:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "RFC 9110 §3.7: \"A \\\"gateway\\\" (a.k.a. \\\"reverse proxy\\\") is an intermediary that acts as an origin server for the outbound connection but translates received requests and forwards them inbound to another server or servers.\" Execution: curl -si localhost:8080/api/v1/products/1 -> 200, Server: Kestrel, Via: 1.1 Caddy (answer relayed by Caddy); host cannot resolve `api` (curl -v: \"Could not resolve host: api\").",
+        "source": "refs/rfc/rfc9110.txt:911-913; execution on running lab (stage-1)"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Caddyfile@stage-1:22-24 `handle /api/v1/* { reverse_proxy api:8080 }`; Caddyfile@stage-0:14-55 answered /api/v1/orders, /orders/1, /orders/999 with `respond` inside `handle @postOrder/@getOrder/@replaceOrder/@deleteOrder/@missingOrder`, all removed at stage-1. Caddy matchers doc: \"`/foo/*` will not match `/foo` or `/foobar`\" (prefix match on `/prefix/*`); handle doc: handle does not strip the prefix (handle_path does).",
+        "source": "examples/don-hang@stage-0,stage-1: Caddyfile; https://caddyserver.com/docs/caddyfile/matchers; https://caddyserver.com/docs/caddyfile/directives/handle"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Caddy reverse_proxy doc page does not mention Via (only X-Forwarded-For/-Proto/-Host); settled by execution against caddy:2.10.0: /api/v1/products/1 -> `Server: Kestrel`, `Via: 1.1 Caddy`; /conflict -> 409, `Server: Caddy`, no Via; lab box direct curl api:8080 -> `Server: Kestrel`, no Via. RFC 9110 §7.6.3: a gateway \"MAY send a Via header field in forwarded response messages.\"",
+        "source": "execution on running lab (Try-it steps 1-3); refs/rfc/rfc9110.txt:2686-2690"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Caddyfile@stage-1:12 `root * /srv/www`, 46-58 redir 302 / respond 409 / respond 503 / fallback `handle { file_server }`. handle doc: \"only the first matching handle block will be evaluated\"; \"A handle with no matcher acts like a fallback route.\" Execution: /redirect -> 302, Location: /index.html, Server: Caddy; /conflict -> 409, Server: Caddy.",
+        "source": "examples/don-hang@stage-1: Caddyfile; https://caddyserver.com/docs/caddyfile/directives/handle; curl on running lab"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "docker-compose.yml@stage-1: service api has hostname api, network donhang (172.28.0.13), no `ports:`; lab on donhang (172.28.0.12). Host: `curl -sv http://api:8080/` -> \"Could not resolve host: api\"; nslookup api -> Non-existent domain; curl 172.28.0.13:8080 timed out (Docker Desktop). Lab box: ssh ... 'curl -si http://api:8080/api/v1/products/1' -> 200 Server: Kestrel.",
+        "source": "examples/don-hang@stage-1: docker-compose.yml; execution on host and lab box"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Ledger now matches lesson §6 and q2: r1 execution POST /api/v1/auth/login body `{bad` -> 400 application/problem+json, Server: Kestrel, Via: 1.1 Caddy; raw request with header line `Host localhost` (no colon) to :8080 -> 400 text/plain, no Server: Kestrel, no Via (rejected by Caddy). Lesson text now names the broken JSON body case only.",
+        "source": "execution on running lab (r1: curl and raw request via nc)"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Execution from examples/don-hang: `ssh -o StrictHostKeyChecking=accept-new -p 2222 -i secrets/lab_key dev@localhost 'curl -si http://api:8080/api/v1/products/1'` printed \"Warning: Permanently added '[localhost]:2222' (ED25519) to the list of known hosts.\" (host key was unknown, so default ssh asks) then the 200 Kestrel answer, i.e. the command ran on the lab box.",
+        "source": "execution on host against running lab"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "RFC 9110 §3.7: a \"proxy\" \"is chosen by the client, usually via local configuration rules\", whereas a gateway (reverse proxy) \"acts as an origin server for the outbound connection\" — so the client needs no setup. docker-compose.yml@stage-1: api publishes no port; only path in from host to the API is Caddy's :8080/:8443.",
+        "source": "refs/rfc/rfc9110.txt:898-913; examples/don-hang@stage-1: docker-compose.yml"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "OrdersController.cs@stage-1: `[HttpGet(\"{id:int}\")] public async Task<ActionResult<OrderDto>> Get(int id)` has no [Authorize] (only Create, Cancel, List do); reads repository.FindAsync(id). r1 execution: GET localhost:8080/api/v1/orders/1 -> 200 {\"id\":1,\"customerId\":1,\"status\":\"paid\",...,\"items\":[...]}, Server: Kestrel.",
+        "source": "examples/don-hang@stage-1: DonHang.Api/Controllers/OrdersController.cs; execution on running lab"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Caddy reverse_proxy doc: header_up \"sets, adds (with the + prefix), deletes (with the - prefix), or performs a replacement (by using two arguments, a search and replacement) in a request header going upstream\"; header_down does the same for response headers coming downstream.",
+        "source": "https://caddyserver.com/docs/caddyfile/directives/reverse_proxy (r1 fetch)"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "docker-compose.yml@stage-1 ports: lab 2222, 8080, 8443 (web uses network_mode service:lab); db 5432; app-web 8081; api has no `ports:`. r1 execution on Docker Desktop: host `curl http://api:8080` -> Could not resolve host; curl 172.28.0.13:8080 timed out.",
+        "source": "examples/don-hang@stage-1: docker-compose.yml; execution on host"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "route doc: \"Evaluates a group of directives literally and as a single unit.\" \"Directives contained in a route block will not be reordered internally.\" handle doc: \"only the first matching handle block will be evaluated\". root doc: \"Sets the root path of the site, used by various matchers and directives that access the file system.\" matchers doc: named matcher \"is defined outside of any particular directive, and can be reused.\" Caddyfile@stage-1:33-34 `respond @guest`/`respond @signedIn` under handle /admin.",
+        "source": "https://caddyserver.com/docs/caddyfile/directives/route; .../root; .../handle; .../matchers; Caddyfile@stage-1"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "quote": "The lab runs Caddy, the API and the database as separate parts on a private network of its own, which the lab box is also on",
+        "text": "docker-compose.yml@stage-1: service web (Caddy) has `network_mode: \"service:lab\"` and no network entry of its own; it shares the lab box's network place (172.28.0.12) rather than being a separate member beside it. The rest of the paragraph (api's 8080 is not the laptop's 8080; laptop reaches Caddy's 8080, not the API's) is correct. Not blocking: nothing the lesson derives from this is wrong.",
+        "fix": "Optional: \"The lab runs the API and the database as separate parts on a private network of its own; the lab box is on it too, and Caddy runs inside the lab box's place on that network.\" Keep the rest of the paragraph."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-26T20:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior, prompt 05, round 2)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "style",
+        "quote": "and Caddy shares the lab box's place on that network; `api` is the API's name there.",
+        "text": "'lab box' first appears here and is not in my prereq summaries; it is only explained later in Try-it ('the lab box, which is on the lab's network'). 'shares the lab box's place' is hard to picture: is Caddy a program running on the lab box? I can guess yes, which is enough for Try-it step 3 and q4, so not blocking.",
+        "fix": "Replace 'Caddy shares the lab box's place on that network' with 'the lab box, the machine you ssh into in Try-it, is on it too, and Caddy runs on the lab box'."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "length",
+        "quote": "Caddy adds a `Via: 1.1 Caddy` header to the answers it passes back, and Kestrel's `Server: Kestrel` header comes through unchanged.",
+        "text": "The Via/Server sentence is not in its own paragraph: it now closes the new network paragraph, which is about ports and names. Switching topic in the last sentence made me re-read; this is the sentence Try-it tests.",
+        "fix": "Move this sentence to its own one-sentence paragraph right after the network paragraph (or right after the first code block's explanation)."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "gap",
+        "quote": "`/admin`, just below it in the same file, still answers with `respond` lines of its own.",
+        "text": "Carried over from round 1: `/admin` is in neither excerpt, yet the diagram arrow and summary line 4 list it beside paths I can see. The new `@guest`/`@signedIn` sentence helps a little, but I still take it on trust.",
+        "fix": "Add 'not shown here' to this sentence, e.g. '`/admin`, in lines between the two excerpts (not shown), still answers with `respond` lines of its own.'"
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "lab box (first used in §5 before Try-it explains it)"
+      ],
+      "skipped_steps": [
+        "`/admin`, just below it in the same file — lines not shown"
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

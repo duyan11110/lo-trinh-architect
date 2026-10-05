@@ -1,0 +1,150 @@
+{
+  "id": "backend.l2.skip-locked-claiming",
+  "technical": {
+    "reviewed_at": "2026-09-28T21:10:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "git show stage-2:DonHang.Api/Program.cs:32 `builder.Services.AddHostedService<NotificationSender>();`. Docs: \"The hosted service is activated once at app startup and gracefully shut down at app shutdown.\" Each api process has its own host, so each runs one NotificationSender against the shared database.",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/host/hosted-services.md:76; examples/don-hang @ stage-2 DonHang.Api/Program.cs:32"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "\"Read Committed is the default isolation level in PostgreSQL.\" \"a SELECT query (without a FOR UPDATE/SHARE clause) sees only data committed before the query began; it never sees either uncommitted data or changes committed by concurrent transactions during the query's execution.\"",
+        "source": "https://www.postgresql.org/docs/17/transaction-iso.html, 13.2.1 Read Committed Isolation Level (WebFetch)"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "\"FOR UPDATE causes the rows retrieved by the SELECT statement to be locked as though for update. This prevents them from being locked, modified or deleted by other transactions until the current transaction ends. That is, other transactions that attempt UPDATE, DELETE, SELECT FOR UPDATE, ... of these rows will be blocked until the current transaction ends\". Live: a FOR UPDATE NOWAIT on a row held by another open transaction failed with \"could not obtain lock on row in relation \\\"notifications\\\"\".",
+        "source": "https://www.postgresql.org/docs/17/explicit-locking.html, 13.3.2 Row-Level Locks (WebFetch); live psql in donhang-db, 2026-09-28"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "\"With SKIP LOCKED, any selected rows that cannot be immediately locked are skipped. Skipping locked rows provides an inconsistent view of the data, so this is not suitable for general purpose work, but can be used to avoid lock contention with multiple consumers accessing a queue-like table.\"",
+        "source": "https://www.postgresql.org/docs/17/sql-select.html, The Locking Clause (WebFetch)"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "\"Row-level locks do not affect data querying; they block only writers and lockers to the same row.\" \"Row-level locks are released at transaction end or during savepoint rollback\". Live: plain SELECT of a row locked FOR UPDATE by an idle-in-transaction session returned `44|pending` at once; skip-locked.sh session D printed all four demo rows while A held two.",
+        "source": "https://www.postgresql.org/docs/17/explicit-locking.html, 13.3.2 (WebFetch); live runs 2026-09-28"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "\"For either normal or abnormal termination, any open transaction is rolled back, not committed.\" Live: a psql holding FOR UPDATE on a demo row (state 'idle in transaction') was killed; its backend disappeared from pg_stat_activity and a new FOR UPDATE NOWAIT on the row returned it at once.",
+        "source": "https://www.postgresql.org/docs/17/protocol-flow.html, 53.2.9 Termination (WebFetch); live psql in donhang-db, 2026-09-28"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "git show stage-2:DonHang.Infrastructure/NotificationQueue.cs lines 16-30: BeginTransactionAsync at line 18, then FromSql with SELECT * FROM notifications WHERE status = 'pending' AND next_attempt_at <= {now} ORDER BY next_attempt_at, id LIMIT {batchSize} FOR UPDATE SKIP LOCKED (lines 21-27). The lesson's block (lines 16-37) matches the source character for character.",
+        "source": "examples/don-hang @ stage-2: DonHang.Infrastructure/NotificationQueue.cs:16-37"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "NotificationSender.cs:13 `Tick = TimeSpan.FromSeconds(2)`, :14 `BatchSize = 10`, :27 `new PeriodicTimer(Tick)`; SendDueAsync (47-59): `queue.ClaimDueAsync(BatchSize, ...)`, foreach `SendOneAsync(...)`, then `queue.CompleteAsync(...)`.",
+        "source": "examples/don-hang @ stage-2: DonHang.Api/Jobs/NotificationSender.cs"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "\"When SaveChanges is invoked and a transaction is already in progress on the context, EF automatically creates a savepoint before saving any data.\" The 'Controlling transactions' example calls SaveChangesAsync between BeginTransactionAsync and CommitAsync, executing them \"in a single transaction\".",
+        "source": "refs/efcore-docs/entity-framework/core/saving/transactions.md:53 and 'Controlling transactions'"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Script (stage-2) lines 7-9: `sql` wraps one psql call = one connection; line 14-17 insert 4 rows due 2100-01-01, trap deletes them; line 29 `&`. Live run 2026-09-28: A got demo job 1, 2; B got demo job 3, 4; C: `ERROR:  canceling statement due to lock timeout` then `CONTEXT:  while locking tuple (0,72) in relation \"notifications\"`; D sees demo job 1-4; exit 0; afterwards 0 rows with next_attempt_at = 2100-01-01.",
+        "source": "examples/don-hang @ stage-2 (HEAD = stage-2^{commit}): scripts/backend/skip-locked.sh; live run in donhang-lab 2026-09-28"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "lock_timeout: \"Abort any statement that waits longer than the specified amount of time while attempting to acquire a lock on a table, index, row, or other database object. ... The limit applies both to explicit locking requests (such as LOCK TABLE, or SELECT FOR UPDATE without NOWAIT) ...\" Live: session C printed \"ERROR:  canceling statement due to lock timeout\".",
+        "source": "https://www.postgresql.org/docs/17/runtime-config-client.html, lock_timeout (WebFetch); live run of skip-locked.sh 2026-09-28"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "\"To prevent the operation from waiting for other transactions to commit, use either the NOWAIT or SKIP LOCKED option.\" i.e. without them a locking SELECT waits. Live: session C (FOR UPDATE without SKIP LOCKED) waited until lock_timeout cancelled it.",
+        "source": "https://www.postgresql.org/docs/17/sql-select.html, The Locking Clause (WebFetch); live run 2026-09-28"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Follows from the code rather than preference: the transaction opened in ClaimDueAsync stays open across every SendOneAsync of the batch until CompleteAsync commits (NotificationSender.cs:53-58), and row locks last until transaction end (13.3.2). Fewer rows per claim means fewer sends inside the transaction.",
+        "source": "examples/don-hang @ stage-2: DonHang.Api/Jobs/NotificationSender.cs:53-58; postgresql.org/docs/17/explicit-locking.html"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "quote": "A large one would let one copy lock most due rows while the others find nothing to claim, and would leave more rows waiting if that copy stops.",
+        "text": "New sentence (round 2) is not in the ledger: claim 13 only says a small batch keeps the transaction short. Its content follows from claims 4 and 6 (SKIP LOCKED + LIMIT; rollback on lost connection), so no evidence gap, but 'most due rows' holds only when fewer rows are due than the large batch size.",
+        "fix": "Extend claim 13 text in .meta.json: \"...short; a large batch lets one copy lock most due rows while others find none (when fewer rows are due than the batch), and more rows wait if that copy stops.\" Lesson text may stay; optionally write \"could\" for \"would\"."
+      },
+      {
+        "severity": "minor",
+        "section": "backend.l2.skip-locked-claiming.q2",
+        "kind": "quiz",
+        "quote": "it takes no lock, so nothing blocks it",
+        "text": "The keyed option's reason is too strong. PostgreSQL 17, 13.3.1 ACCESS SHARE: \"The SELECT command acquires a lock of this mode on referenced tables.\" A plain SELECT takes no row lock; the key is still the right answer, and explanation b already says \"takes no row lock\".",
+        "fix": "q2 option c: en \"False, because your query returns all ten rows straight away, still `pending`; it takes no row lock, so the sender's locks do not block it.\" vi \"Sai, vì truy vấn của bạn trả về đủ mười dòng ngay, vẫn `pending`; nó không lấy khóa dòng nào, nên khóa của bộ gửi không chặn nó.\""
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-28T21:40:00+07:00",
+    "reviewer": "claude-review-junior",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "gap",
+        "quote": "Expected result: when no real order email is waiting for a retry, A got `demo job 1` and `demo job 2`",
+        "text": "Round 2 scope. The new condition is concrete, but I have to reconstruct why it matters: a retry row has a next_attempt_at before 2100, so the claim's ORDER BY next_attempt_at puts it ahead of the demo rows and shifts what A and B get. I got there only by combining '$due', 'due in the year 2100' and the ORDER BY; I would not know what to expect if the condition fails.",
+        "fix": "Add half a sentence after the condition: 'otherwise that email's row comes first in the claim's order, so A and B get it before the demo jobs'."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "gap",
+        "quote": "Each session in it is one separate connection to PostgreSQL with its own transaction",
+        "text": "Round 2 scope. This now answers my round-1 questions about 'session' and `sql`. Small snag: session D sends no `BEGIN`, and I only know a transaction as something `BEGIN` opens, so 'with its own transaction' does not match what I see for D.",
+        "fix": "Write 'one separate connection to PostgreSQL; A, B and C each open their own transaction' or say D's single statement runs on its own, outside the others' transactions."
+      },
+      {
+        "severity": "minor",
+        "section": "backend.l2.skip-locked-claiming.q2",
+        "kind": "quiz",
+        "quote": "False, because your query returns all ten rows straight away, still `pending`; it takes no row lock, so the sender's locks do not block it.",
+        "text": "Round 2 scope. The rewritten key is no longer a lesson sentence, good. But it is now about twice as long as the other three options, so I could pick it by length alone without understanding.",
+        "fix": "Shorten option c to about the others' length, e.g. 'False: it returns all ten rows at once, still `pending`, since it takes no row lock.' (and the vi text accordingly), or lengthen one distractor to match."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [
+        "Why a real order email waiting for a retry changes which demo jobs A and B get (section 7; reconstructable, minor)"
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

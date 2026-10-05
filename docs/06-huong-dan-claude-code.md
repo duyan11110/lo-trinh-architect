@@ -105,8 +105,7 @@ Subagent có **cửa sổ ngữ cảnh riêng**: nó không thấy prompt sinh b
 chính thức liệt kê trong `.claude/settings.json` (và bị chặn WebSearch để không lấy blog làm bằng chứng); `review-junior` bị cấm
 mọi truy cập mạng — nó phải "ngu" đúng mức một junior chỉ biết `known_vocab`.
 
-Cả hai dùng `model: opus`. Sinh bài và dịch chạy bằng model của phiên chính (khuyến nghị Opus cho sinh bài; dịch có thể hạ xuống
-Sonnet bằng `/model` trước khi gọi `/translate` nếu muốn tiết kiệm — nhưng đọc lướt bản VI kỹ hơn).
+Cả hai dùng `model: claude-opus-5-5`. Sinh bài và dịch chạy bằng model của phiên chính — Opus 5.5 cho mọi bước (DECISIONS.md D3).
 
 ## 5. Quyền (`.claude/settings.json`)
 
@@ -123,7 +122,7 @@ claude -p "/lesson $ID generate" --output-format json --allowedTools "Read,Write
 claude -p "Dùng subagent review-technical cho bài $ID" --output-format json
 ```
 
-`tools/gen --stage 0` lặp qua các module theo `path.yaml` với vòng lặp giống `gen-module`, đặt `approved` theo điều kiện DECISIONS.md D1, dịch (Sonnet),
+`tools/gen --stage 0` lặp qua các module theo `path.yaml` với vòng lặp giống `gen-module`, đặt `approved` theo điều kiện DECISIONS.md D1, dịch (Opus 5.5),
 sinh gate, `build --publish`, commit `dist/` và push nhánh `auto/stage-0`. Chạy qua đêm; sáng hôm sau `/status`, mở PR `auto/stage-0` → `main` và duyệt lô.
 (Chủ đã bỏ điều kiện "tự đọc ≥ 10 bài trước" cho GĐ0 — DECISIONS.md D12.)
 

@@ -1,0 +1,123 @@
+{
+  "id": "design.l2.webapplicationfactory",
+  "technical": {
+    "reviewed_at": "2026-10-02T00:20:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "OrdersController.cs@stage-2: '[Route(\"api/v1/orders\")]', '[Authorize] [HttpPost] public async Task<ActionResult<OrderDto>> Create(...)', 'return CreatedAtAction(nameof(Get), new { id = order.Id }, ToDto(order));'. Reviewer run: PostOrder_SignedInCustomer_Returns201WithLocation passes (asserts HttpStatusCode.Created and Location.AbsolutePath == /api/v1/orders/{id}); 'Passed: 5, Total: 5'.",
+        "source": "examples/don-hang @ stage-2: DonHang.Api/Controllers/OrdersController.cs; reviewer execution on git archive stage-2"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "integration-tests.md (>= aspnetcore-10.0): 'WebApplicationFactory<TEntryPoint> is used to create a TestServer for the integration tests. TEntryPoint is the entry point class of the SUT, usually Program.cs.' includes/integrationTests.md: 'the test web host and in-memory test server (TestServer)'. migration/22-to-30.md lists TestServer as a server of its own: 'servers (Kestrel, HttpSys, TestServer, etc.)'. Reviewer run: docker events shows only the postgres and redis containers; no port is opened for the API.",
+        "source": "refs/aspnetcore-docs/aspnetcore/test/integration-tests.md:58; includes/integrationTests.md:46; migration/22-to-30.md:414"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "ApiFactory.cs@stage-2:18-30: 'public sealed class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime', 'new RedisBuilder(\"redis:8.10.2-alpine\").Build()', 'public PostgresFixture Database { get; } = new();', InitializeAsync: 'await Database.InitializeAsync(); await redis.StartAsync();'. PostgresFixture.cs:26-31: 'await container.StartAsync(); ... await db.Database.MigrateAsync();'.",
+        "source": "examples/don-hang @ stage-2: DonHang.Tests/Integration/ApiFactory.cs, PostgresFixture.cs"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "ApiFactory.cs@stage-2:40-41 'builder.UseSetting(\"ConnectionStrings:Default\", Database.ConnectionString); builder.UseSetting(\"ConnectionStrings:Redis\", redis.GetConnectionString());'. Program.cs:17,23 GetConnectionString(\"Default\"/\"Redis\"). docker-compose.yml@stage-2:111 'ConnectionStrings__Default: \"Host=db;Database=donhang;Username=donhang;Password=${POSTGRES_PASSWORD}\"' (names a user); :112 'ConnectionStrings__Redis: \"redis:6379,abortConnect=false\"' (no user). Round 2: Testcontainers.Redis sets no password. Section 4 wording matches.",
+        "source": "examples/don-hang @ stage-2: DonHang.Tests/Integration/ApiFactory.cs, DonHang.Api/Program.cs, docker-compose.yml"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Program.cs@stage-2:89-93: '// Until stage-1 the app applied pending migrations here, every time it started. From stage-2 it does not: the migrate service runs the migration bundle first, and Compose starts this app only once that has succeeded.' then 'var app = builder.Build();' with no Migrate call in the file. docker-compose.yml api.depends_on: 'migrate: condition: service_completed_successfully'.",
+        "source": "examples/don-hang @ stage-2: DonHang.Api/Program.cs, docker-compose.yml"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Not stated in the ASP.NET Core docs; settled by execution. Reviewer probe (copy of stage-2, timestamps appended to a file): '22:55:40.246 InitializeAsync done' / '22:55:40.290 test InitializeAsync (reset)' / '22:55:41.209 before CreateClient' / '22:55:41.241 ConfigureWebHost' / '22:55:41.684 ConfigureTestServices ...'; ConfigureWebHost ran once only, at the first CreateClient(); later CreateClient() calls did not run it again. 5 passed.",
+        "source": "execution: dotnet test DonHang.Tests --filter OrdersApiTests on reviewer copy scratchpad/rev-wf1 (probe logging only)"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "integration-tests.md: 'The test app's builder.ConfigureServices callback is executed *after* the app's Program.cs code is executed.' (says ConfigureServices, not ConfigureTestServices). Execution settles ConfigureTestServices: probe inside its callback logged 'IEmailSender before RemoveAll = 1, hosted = 4', i.e. Program.cs's MailKitEmailSender registration and NotificationSender were already in the collection when the callback ran.",
+        "source": "refs/aspnetcore-docs/aspnetcore/test/integration-tests.md:114; reviewer probe scratchpad/rev-wf1"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "ApiFactory.cs:42-48: 'services.RemoveAll<IEmailSender>(); services.AddSingleton<IEmailSender>(Emails); services.AddAuthentication(TestAuthHandler.SchemeName).AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(TestAuthHandler.SchemeName, null);' and nothing else in the callback. Note: AddAuthentication(scheme) changes the default scheme the app chose in Program.cs:42 (see minor issue on section 6).",
+        "source": "examples/don-hang @ stage-2: DonHang.Tests/Integration/ApiFactory.cs"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Program.cs:32 'builder.Services.AddHostedService<NotificationSender>();' is not removed by ApiFactory; NotificationSender.cs:51 'scope.ServiceProvider.GetRequiredService<IEmailSender>()'. FakeEmailSender.cs: 'Takes MailKitEmailSender's place in API tests: NotificationSender still runs and \"sends\", but each email is only recorded here'. Probe: 4 IHostedService registrations present inside ConfigureTestServices.",
+        "source": "examples/don-hang @ stage-2: Program.cs, Jobs/NotificationSender.cs, Integration/FakeEmailSender.cs"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "OrdersApiTests.cs@stage-2:13-15 'public sealed class OrdersApiTests(ApiFactory factory) : IClassFixture<ApiFactory>, IAsyncLifetime' / 'public Task InitializeAsync() => factory.Database.ResetAsync();'. Lines 19-30 match the claim. PlaceOrderAsync (122-124): 'client.PostAsJsonAsync(\"/api/v1/orders\", new CreateOrderRequest([new CreateOrderItemRequest(productId, Quantity: 2, UnitPriceVnd: 15_000)]))' = one item for that product. Test passed in round-1 reviewer run (5/5).",
+        "source": "examples/don-hang @ stage-2: DonHang.Tests/Integration/OrdersApiTests.cs"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "testing.md:20 'A controller unit test avoids scenarios such as filters, routing, and model binding. Tests that cover the interactions among components that collectively respond to a request are handled by integration tests.' routing.md:20 'Routing is responsible for matching incoming HTTP requests and dispatching those requests...' and 'routing is also able to generate URLs that map to endpoints.' Program.cs@stage-2:106-110 UseMiddleware(...), UseAuthentication, UseAuthorization: not entered by a direct call. R3 opened: these two refs files, ApiFactory.cs, OrdersApiTests.cs, compose.",
+        "source": "refs/aspnetcore-docs/aspnetcore/mvc/controllers/testing.md:20; refs/aspnetcore-docs/aspnetcore/fundamentals/routing.md:20; DonHang.Api/Program.cs @ stage-2"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Stated in the lesson as a description of ApiFactory, not a rule. ApiFactory.cs:42-48 removes/replaces only IEmailSender and adds TestAuthHandler; InitializeAsync starts real postgres/redis containers. FakeEmailSender.cs: 'so no SMTP server (Mailpit) is needed'. Order id: PostOrder test asserts Location == /api/v1/orders/{order.Id} with order read from the response of the real PostgreSQL-backed app (5/5 passed, round 1).",
+        "source": "examples/don-hang @ stage-2: ApiFactory.cs, FakeEmailSender.cs, OrdersApiTests.cs"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Reviewer run on git archive stage-2 (lab up): 'Passed!  - Failed: 0, Passed: 5, Skipped: 0, Total: 5'. docker events --filter image=postgres:17.6-alpine --filter image=redis:8.10.2-alpine --filter event=create printed exactly two lines: '... container create 5083c1f4... (desktop.docker.io/ports/5432/tcp=0.0.0.0:0, image=postgres:17.6-alpine, ...' and '... container create 4957ceee... (desktop.docker.io/ports/6379/tcp=0.0.0.0:0, image=redis:8.10.2-alpine, ...'.",
+        "source": "execution: scratchpad/it-a/s2 (git archive stage-2), Docker 28.0.1"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-01T23:59:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation, round 3)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "length",
+        "text": "Paragraph 2 is clearer now ('ApiFactory then gives' answers who), but the last sentence still holds a relative clause, a parenthesis and then 'as configuration' far from the verb; I re-read it once to see that 'as configuration' says how the strings are given.",
+        "quote": "`ApiFactory` then gives the app their connection strings, which say where each store is (and, for PostgreSQL, which user to log in as), as configuration: the values the lab passes as environment variables.",
+        "fix": "Move 'as configuration' right after 'connection strings', or split off the gloss into its own short sentence."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "length",
+        "text": "The RemoveAll sentence now answers both why it can and why it must drop the registration, but it carries three clauses joined by 'which', 'and' and 'so'; I had to re-read it to see where the AddSingleton step starts. The word 'callback' is not in my known_vocab; I read it from the visible 'services => {' lambda, so it did not stop me.",
+        "quote": "`RemoveAll<IEmailSender>()` drops the app's registration, which is already there to drop because the callback runs after `Program.cs` made it, and the next line registers `Emails`, a `FakeEmailSender`, so the fake is the only `IEmailSender` left.",
+        "fix": "End the sentence after 'made it', and start a new one: 'The next line registers `Emails`, a `FakeEmailSender`, so the fake is the only `IEmailSender` left.'"
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

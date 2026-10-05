@@ -1,0 +1,181 @@
+{
+  "id": "backend.l1.get-and-status-codes",
+  "technical": {
+    "reviewed_at": "2026-09-24T18:35:00+07:00",
+    "reviewer": "claude-opus-5[1m]",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "git show stage-1:DonHang.Api/Controllers/ProductsController.cs, lines 13-20: `[HttpGet] public async Task<ActionResult<List<ProductDto>>> List() { var products = await db.Products.Select(p => new ProductDto(p.Id, p.Name, p.PriceVnd)).ToListAsync(); return Ok(products); }`. One `return`, no `if`, no `Count`/`Any`/`Length` in the method. Ok -> 200 is documented: \"A 200 status code is returned with the `Product` object when the product does exist. The `Ok` convenience method is invoked as shorthand for `return new OkObjectResult(product);`\"",
+        "source": "examples/don-hang @ stage-1 ProductsController.cs:13-20; refs/aspnetcore-docs/aspnetcore/web-api/action-return-types.md:70"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Source lines 22-28: `var product = await db.Products.FindAsync(id); if (product is null) return NotFound(); return Ok(new ProductDto(product.Id, product.Name, product.PriceVnd));` - the `NotFound()` return precedes the only `new ProductDto(...)` on that path. Status codes documented: \"|ControllerBase.NotFound|Returns 404 status code.|\" and \"A 200 status code is returned with the `Product` object when the product does exist. The `Ok` convenience method is invoked as shorthand for `return new OkObjectResult(product);`\"",
+        "source": "examples/don-hang @ stage-1 ProductsController.cs:22-28; refs/aspnetcore-docs/aspnetcore/web-api/index.md:41; .../action-return-types.md:69-70"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "The whole class body at stage-1 (lines 10-29) contains exactly two `db` calls: `db.Products.Select(...).ToListAsync()` and `db.Products.FindAsync(id)`. No `Add`, `AddAsync`, `Update`, `Remove`, `Attach`, `SaveChanges`, `SaveChangesAsync`, `ExecuteUpdate` or `ExecuteDelete` appears anywhere in the file at that tag.",
+        "source": "examples/don-hang @ stage-1, DonHang.Api/Controllers/ProductsController.cs (full file read)"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Not executed this session; docs + repo artifacts. db/seed.sql @ stage-1 seeds ids 1-8 only, id 1 = 'Bàn phím cơ', 1250000 - 1 exists, 999999 doesn't, and GET /api/v1/products has exactly these 8 rows to return via List()'s unconditional Ok(products) (claim 1). Caddyfile puts the API on 8080. Docs: NotFound -> 404 ProblemDetails, no product fields. Claim text extended this round to cover the 3rd Try-it command; verified with the same evidence.",
+        "source": "examples/don-hang @ stage-1: db/seed.sql, Caddyfile, DonHang.Api/Program.cs; refs/aspnetcore-docs/aspnetcore/web-api/index.md:254-271"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "RFC 9110 9.2.1: \"Request methods are considered 'safe' if their defined semantics are essentially read-only; i.e., the client does not request, and does not expect, any state change on the origin server as a result of applying a safe method to a target resource.\" and \"the GET, HEAD, OPTIONS, and TRACE methods are defined to be safe.\" 9.2.2: \"Of the request methods defined by this specification, PUT, DELETE, and safe request methods are idempotent.\" Safe implies idempotent, never the reverse, so safe is the stronger promise.",
+        "source": "refs/rfc/rfc9110.txt lines 3813-3867 (RFC 9110 sections 9.2.1, 9.2.2)"
+      },
+      {
+        "n": 6,
+        "verdict": "rephrased",
+        "evidence": "No document pinned in versions.yaml states the collection rule; source_hint names only \"REST convention\". It follows from RFC 9110 15.5.5 - \"The 404 (Not Found) status code indicates that the origin server did not find a current representation for the target resource or is not willing to disclose that one exists\" - plus 15.3.1 \"The 200 (OK) status code indicates that the request has succeeded\": the collection resource exists whatever its row count. But RFC 9110 nowhere distinguishes collection URLs from item URLs.",
+        "source": "refs/rfc/rfc9110.txt lines 6915-6917, 7587-7593 (RFC 9110 sections 15.3.1, 15.5.5)",
+        "suggested_text": "collection GET stays `200` - by the convention this API follows, a collection URL names the whole set, and an empty set is still a complete answer about that set; the row count never turns the answer into a `404` (a URL the server has no collection behind at all, like `/api/v1/gadgets`, is a different case: there is nothing there at all, so this rule says nothing about it)."
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "RFC 9110 15.5.5, verbatim: \"The 404 (Not Found) status code indicates that the origin server did not find a current representation for the target resource or is not willing to disclose that one exists. A 404 status code does not indicate whether this lack of representation is temporary or permanent; the 410 (Gone) status code is preferred over 404 if the origin server knows ... that the condition is likely to be permanent.\" Both halves of the claim are literal in that paragraph.",
+        "source": "refs/rfc/rfc9110.txt lines 7587-7595 (RFC 9110 section 15.5.5)"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Prepending: \"The route templates you define on the controller are prepended to route templates on the actions\", with the parallel sample \"The URL path `/products` can match `ProductsApi.ListProducts`\". Constraint table: `int` | `{id:int}` | Example Matches \"`123456789`, `-123456789`\" | \"Matches any integer\" - negatives match, as the lesson says. Non-integer segment: \"If constraints are used for input validation, invalid input results in a `404` Not Found response\", i.e. the constrained route does not match; no other route at stage-1 covers `/api/v1/products/<non-integer>`.",
+        "source": "refs/aspnetcore-docs/aspnetcore/mvc/controllers/routing.md:414; .../fundamentals/routing.md:499,505"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 3,
+        "kind": "opinion-as-fact",
+        "text": "The collection-GET rule is stated with no condition, as if HTTP required it. RFC 9110 defines 404 only as \"did not find a current representation for the target resource\" (15.5.5) and never mentions collection URLs; the rule is an API-design convention that follows from the collection resource existing, and claim 6's own source_hint concedes it (\"REST resource-naming convention\"). Summary line 2 repeats the unconditioned form.",
+        "fix": "Add the missing anchor in section 3 bullet 2 and in summary line 2: say the rule is the convention this API follows and that it holds because the collection exists whatever its row count - e.g. \"collection GET stays `200` - by the convention this API follows, a collection URL names the whole set, and an empty set is still a complete answer about that set; the row count never turns the answer into a `404`\". Keep the `/api/v1/gadgets` exception as written.",
+        "quote": "collection GET stays `200` - a collection URL names the whole set, and an empty set is still a complete answer about that set; the row count never turns the answer into a `404`"
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "scope",
+        "text": "depth_notes for this lesson in track.yaml: \"Không giải thích db.Products/EF Core bên trong ProductsController (module orm-efcore sau) — bài này chỉ nhìn vào method GET và status code nó trả về, không phải cách dữ liệu được lấy.\" The paragraph after the code block still explains how the data is fetched: what `db` is, what the `List()` query hands back, what `FindAsync(id)` hands back. Only the `FindAsync` -> `null` half is load-bearing (it is the 404 branch, claim 2).",
+        "fix": "Either trim to what the status-code branch needs - keep \"`FindAsync(id)` hands back the one row with that id, or `null` if there is none\" and shorten the rest to \"both methods only ever read from `db`\" - or amend this lesson's depth_notes in content/tracks/backend/track.yaml to allow one orienting sentence about `db`, so the next reviewer does not reopen it.",
+        "quote": "`db` is how this class reaches the Đơn Hàng database, and both methods only ever read from it: `List()` runs a query and hands back one `ProductDto` per product row"
+      },
+      {
+        "severity": "minor",
+        "section": "frontmatter",
+        "kind": "version",
+        "text": "`versions_used: [aspnetcore]` omits `http`, although claims 5 and 7 both carry `version_key: http` and rest entirely on RFC 9110. docs/01 says the re-review mechanism keys off this field (\"tìm mọi bài có versions_used chứa key đó → đưa lại qua review kỹ thuật\"), so a change to the pinned HTTP standard would not route this lesson back. The foundation HTTP lessons declare it (`versions_used: [http, caddy]`).",
+        "fix": "Change the frontmatter to `versions_used: [aspnetcore, http]` (`http` = the `standards.http` key in content/versions.yaml, RFC 9110 - the same key foundation.l1.http-methods uses, not the Dart `runtimes.http` package).",
+        "quote": "versions_used: [aspnetcore]"
+      },
+      {
+        "severity": "minor",
+        "section": "backend.l1.get-and-status-codes.q3",
+        "kind": "quiz",
+        "text": "The fill answer set is [\"NotFound\"] only. The prompt already prints the parentheses (\"the method returns ____()\"), so a reader who types the call the way it reads in the code, `NotFound()`, is marked wrong for a correct answer. Sibling quizzes in this module accept several spellings (rest-resources: four variants of the URL; dtos-and-serialization: `priceVnd` and the quoted form).",
+        "fix": "Extend the answer array to [\"NotFound\", \"NotFound()\", \"return NotFound\"] so the same call written with its parentheses is accepted.",
+        "quote": "\"answer\": [\"NotFound\"]"
+      },
+      {
+        "severity": "minor",
+        "section": "backend.l1.get-and-status-codes.q4",
+        "kind": "quiz",
+        "text": "`section_ref` is 6 (\"Beginners often think...\"), but nothing in section 6 describes the four moments the question orders: `FindAsync` returning `null`, the `if (product is null)` branch, `NotFound()` producing the response, the client reading the status line. That sequence is in section 5 (the paragraph on `Get(int id)`'s two returns) and section 7. The keyed order a,b,c,d is correct.",
+        "fix": "Set \"section_ref\": 5 for q4, the section that actually establishes the branch-and-return sequence.",
+        "quote": "\"section_ref\": 6"
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "accuracy",
+        "text": "Unlisted claim: the third Try it expectation is a statement about the running lab and no claim covers it - claim 4 covers only `/api/v1/products/1` and `/api/v1/products/999999`. It is true (db/seed.sql @ stage-1 seeds 8 products, and outputs/stage-1/scripts/backend/auth-and-orders.txt shows the endpoint answering with a JSON array of them), but it is exactly the kind of execution-dependent statement the ledger exists for.",
+        "fix": "Extend claim 4's text in the .meta.json to cover the third command: \"...; sending GET /api/v1/products returns 200 with a JSON array of the seeded products\", adding examples/don-hang db/seed.sql @ stage-1 to its source_hint. No change to the lesson text.",
+        "quote": "the third returns `200` with a JSON array of products - the same `200` it would give if that array were empty"
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-24T21:10:00+07:00",
+    "reviewer": "claude-opus-5[1m] (junior reader sim, round 3)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "term",
+        "text": "`[ApiController]` sits above the class in the block and is never named. The prose excuses \"the class header\", and I could not tell whether that phrase covers this attribute line or only the `public sealed class ...` line - especially since the other attribute above the class, `[Route(...)]`, does matter and is explained one sentence later. I scanned the paragraph twice looking for it before moving on.",
+        "quote": "the class header is the same shape for every class like this one and doesn't affect the status code",
+        "fix": "Name it in that same sentence: \"...; `[ApiController]` and the class header line are the same shape for every class like this one and don't affect the status code.\""
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "term",
+        "text": "`ControllerBase` and the return types `Task<ActionResult<List<ProductDto>>>` and `Task<ActionResult<ProductDto>>` are names I have never met. The prose explains `[Route]`, `[HttpGet]`, `db`, `FindAsync`, `Ok(...)` and `NotFound()`, so the silence here made me wonder whether the return type is what picks the status code - the two `ActionResult` types differ between the method that can answer `404` and the one that can't, which looks like a pattern.",
+        "quote": "public sealed class ProductsController(DonHangDbContext db) : ControllerBase",
+        "fix": "Add one clause to the \"lines that matter\" sentence: \"...and the `return` lines; the return types and the class header don't choose the status code - the `return` line does.\""
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "length",
+        "text": "The paragraph right after the code puts five things in one sentence: the class URL prefix, each `[HttpGet]`, negative ids, non-integer segments, and `db`/`FindAsync`. I re-read it twice. The two asides never come back anywhere else in the lesson, and \"matches no route at all\" left me asking what the client gets then - a question the lesson doesn't answer and doesn't need to.",
+        "quote": "which arrives as the `id` parameter - a segment that isn't an integer, like `/api/v1/products/abc`, matches no route at all",
+        "fix": "Cut the two asides: delete \"(a negative one matches too)\" and \"- a segment that isn't an integer, like `/api/v1/products/abc`, matches no route at all\", leaving the rest of the sentence unchanged."
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "example",
+        "text": "Step 1 tells me to wait until `scripts/up.sh` stops printing, but not whether it hands the terminal back. If the system keeps running in that window I can't type the `curl` line there, and I wouldn't know whether to press Ctrl+C (which might stop the system I just started) or open a second terminal. I'd have to guess, and a wrong guess eats the three minutes.",
+        "quote": "start the example system with `scripts/up.sh` - it starts the Đơn Hàng system on port 8080; wait until it stops printing before running the next command",
+        "fix": "Say what the terminal does next: either \"...wait until it stops printing and your prompt comes back\" if the script returns, or \"...leave it running and open a second terminal for the commands below\" if it doesn't."
+      },
+      {
+        "severity": "minor",
+        "section": "backend.l1.get-and-status-codes.q5",
+        "kind": "quiz",
+        "text": "Option a's first half repeats Core concepts bullet 4 and summary line 5 almost word for word. I recognised the sentence and picked it before reading the other three options, without thinking about `view_count` at all - so the question tests whether I remember the rule's wording, not whether I can apply it to the teammate's plan.",
+        "quote": "A GET must not change the resource it serves, even on its first call; incrementing `view_count` changes the very product row the client asked to read",
+        "fix": "Drop the restated rule and keep the applied half: \"Incrementing `view_count` changes the very product row the client asked to read, and the client never asked for that change.\""
+      },
+      {
+        "severity": "minor",
+        "section": "backend.l1.get-and-status-codes.q2",
+        "kind": "quiz",
+        "text": "Option c is clearly the longest and the only one that says what the code does; I could have picked it on length alone without reading the lesson. It is still the option I'd choose after reading, so this costs the question some bite rather than making it unanswerable.",
+        "quote": "False, because nothing in `List()` looks at how many rows came back before it returns, so zero rows take the same path as eight and answer `200`.",
+        "fix": "Tighten option c to roughly option d's length: \"False, because `List()` never looks at the row count before it returns, so zero rows answer `200` just like eight do.\""
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "`[ApiController]`",
+        "`ControllerBase`",
+        "`Task<ActionResult<List<ProductDto>>>` / `Task<ActionResult<ProductDto>>`"
+      ],
+      "skipped_steps": [
+        "\"a segment that isn't an integer, like `/api/v1/products/abc`, matches no route at all\" - the lesson never says what the client gets back in that case; an aside with no payoff later."
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

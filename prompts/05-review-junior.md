@@ -71,3 +71,8 @@ One ` ```json ` block: `{ "id": "{{id}}", "junior": { … } }` per the schema. Q
 '…' and '…' saying that …", "replace 'simply' with the two steps …". Do not suggest adding new sections or new terms beyond
 the lesson's `vocab`; if the lesson genuinely needs a term it cannot have, say "move this lesson after the lesson that introduces X"
 as the fix.
+
+Schema caps, hard: `text` and `fix` ≤ 600 chars each, `quote` ≤ 300. Aim for well under — a review file that fails its own
+schema blocks validate, and the lesson skill cannot repair a `.review.json`, only you can (observed failure mode, tools/gen
+pilot, 2026-09-07: one `text` at 617/600 chars burned an extra round for zero content reason). One `fix` per issue; if an
+issue needs several unrelated changes, split it into separate issues instead of one long `fix`.

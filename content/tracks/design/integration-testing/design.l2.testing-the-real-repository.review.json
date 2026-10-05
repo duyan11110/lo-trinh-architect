@@ -1,0 +1,109 @@
+{
+  "id": "design.l2.testing-the-real-repository",
+  "technical": {
+    "reviewed_at": "2026-10-01T23:05:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Own run on a fresh git archive stage-2 copy with FindAsync changed to db.Orders.FirstOrDefaultAsync(o => o.Id == id) plus a probe test (save customer/products/order with 2 items, then repository.FindAsync on the SAME context; Assert.Same(order, found); Assert.Equal(2, found!.Items.Count)): probe PASSED. Docs: \"When materializing an entity, EF Core returns the same entity instance from the change tracker if it's already being tracked.\"",
+        "source": "execution 2026-10-01 (scratchpad rt-trr); refs/efcore-docs/entity-framework/core/querying/tracking.md:40"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "\"All of these entities are tracked in the `Unchanged` state after SaveChanges completes, since these entities now exist in the database\" (explicit-tracking.md:189). \"When materializing an entity, EF Core returns the same entity instance from the change tracker if it's already being tracked.\" (tracking.md:40). Round-1 probe on stage-2: same-context FindAsync returned the saved instance (Assert.Same passed).",
+        "source": "refs/efcore-docs/entity-framework/core/change-tracking/explicit-tracking.md:189; refs/efcore-docs/entity-framework/core/querying/tracking.md:38-40; execution 2026-10-01"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "EfOrderRepositoryTests.cs@stage-2 lines 29-42: await using (var db = database.CreateContext()) { ... AddAsync(order); SaveChangesAsync(); orderId = order.Id; } then line 44-45: await using var readDb = database.CreateContext(); new EfOrderRepository(readDb).FindAsync(orderId); asserts at 47-50.",
+        "source": "examples/don-hang@stage-2 DonHang.Tests/Integration/EfOrderRepositoryTests.cs:25-51"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "PostgresFixture.cs@stage-2: \"public DonHangDbContext CreateContext() => new(new DbContextOptionsBuilder<DonHangDbContext>().UseNpgsql(ConnectionString).Options);\" — a new instance per call. Execution with Include removed: the read context returns the order with 0 items, i.e. built from the order row only.",
+        "source": "examples/don-hang@stage-2 DonHang.Tests/Integration/PostgresFixture.cs; execution 2026-10-01"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Own run, Include removed: \"Failed DonHang.Tests.Integration.EfOrderRepositoryTests.FindAsync_SavedOrderWithTwoItems_ReadsBothItemsBack ... Assert.Equal() Failure: Values differ / Expected: 2 / Actual:   0\" at EfOrderRepositoryTests.cs:line 49. Order.Items is initialised to [] in Entities.cs, so the list is empty, not null.",
+        "source": "execution 2026-10-01 on git archive stage-2 copy; DonHang.Domain/Entities.cs@stage-2"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Migration 20260924092625_AddOrderCustomerNavigation adds FK_orders_customers_customer_id (principalTable customers, column id). Test SaveChangesAsync_OrderForMissingCustomer_IsRefused (customerId -1) passes asserting PostgresErrorCodes.ForeignKeyViolation. Note: no FK on order_items.product_id — own probe saving an item with ProductId = -5 succeeded; the products are not required by any key.",
+        "source": "examples/don-hang@stage-2 Migrations/20260924092625_AddOrderCustomerNavigation.cs, DonHangDbContextModelSnapshot.cs; execution 2026-10-01"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "PostgresFixture.InitializeAsync runs db.Database.MigrateAsync(); mapping is DonHangDbContext.OnModelCreating; query is FindAsync. Own run: renaming OrderItem.Quantity column to \"qty\" made both EfOrderRepositoryTests fail (PendingModelChangesWarning in MigrateAsync); removing Include failed the read test. FakeOrderRepository (DonHang.Tests/FakeOrderRepository.cs) holds objects in memory and runs none of these.",
+        "source": "examples/don-hang@stage-2; execution 2026-10-01"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "await using (...) { } disposes db at the closing brace (EfOrderRepositoryTests.cs:29-42); only orderId is declared outside. Docs: \"non-composite primary keys of type short, int, long, or Guid are set up to have values generated for inserted entities\". Execution: the read through readDb with orderId returns a non-null order (Assert.NotNull passes; failure only at the Count line).",
+        "source": "refs/efcore-docs/entity-framework/core/modeling/generated-properties.md:56; execution 2026-10-01"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Lines 48-50: Assert.Equal(\"new\", found.Status); Assert.Equal(2, found.Items.Count); Assert.Equal(150_000, found.Items.Sum(item => item.Quantity * item.UnitPriceVnd)); items are 2 x 15_000 and 1 x 120_000 (lines 35-36) = 150_000.",
+        "source": "examples/don-hang@stage-2 DonHang.Tests/Integration/EfOrderRepositoryTests.cs:35-36,47-50"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Lines 72-80: creates Customer, Product \"Pen\", Product \"Book\"; db.AddRange(customer, pen, book); await db.SaveChangesAsync(); return (customer.Id, pen.Id, book.Id); ids are database-generated int keys (generated-properties.md:56).",
+        "source": "examples/don-hang@stage-2 DonHang.Tests/Integration/EfOrderRepositoryTests.cs:72-80"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "EfOrderRepository(DonHangDbContext db) takes the concrete context. Docs: \"properly mocking DbSet query functionality is not possible ... they create a DbSet backed by an in-memory collection, and then evaluate query operators against that collection in memory ... Rather than a mock, this is actually a sort of fake, where the in-memory collection replaces the real database.\"",
+        "source": "refs/efcore-docs/entity-framework/core/testing/choosing-a-testing-strategy.md:73; EfOrderRepository.cs@stage-2"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Own run (stage-2 copy, Include removed, filter incl. EfOrderRepositoryTests): ReadsBothItemsBack \"[FAIL] ... Assert.Equal() Failure: Values differ / Expected: 2 / Actual:   0\"; SaveChangesAsync_OrderForMissingCustomer_IsRefused passed. Matches author evidence-tc.txt (1 failed, 1 passed for the exact filter). R2 (zero issues): opened refs tracking.md, explicit-tracking.md, related-data/eager.md; git show stage-2 of EfOrderRepositoryTests.cs, EfOrderRepository.cs, PostgresFixture.cs.",
+        "source": "execution 2026-10-01; scratchpad it-a/evidence-tc.txt"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-01T23:30:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation, round 2)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "example",
+        "text": "Round 2 (changed parts only). Expected result now names the second test, but the lesson never says what it checks, so I cannot tell on my own why removing the Include leaves it green. Its name lets me guess (an order for a missing customer is refused, which matches the foreign key paragraph), so I do not get stuck.",
+        "quote": "one test fails and the other, `SaveChangesAsync_OrderForMissingCustomer_IsRefused`, passes.",
+        "fix": "Add half a clause after the name: \"which only checks that saving an order for a customer that does not exist is refused, and never calls `FindAsync`\"."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

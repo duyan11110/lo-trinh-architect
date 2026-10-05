@@ -1,0 +1,121 @@
+{
+  "id": "design.l2.testing-the-entity",
+  "technical": {
+    "reviewed_at": "2026-10-01T14:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "stage-1 OrderServiceTests.cs:65-67 comment: \"No test here cancels a `shipped` order. The suite is green, `CancelOrderAsync` still lets it through\". Tests at stage-1: CancelOrderAsync_NewOrder_SetsStatusCancelled (seeds `new Order { Id = 1, ..., Status = \"new\" }`, l.49) and CancelOrderAsync_UnknownOrder_Throws. stage-1 Entities.cs:30 `public required string Status { get; set; }`, so a seed with Status = \"shipped\" compiles. CancelOrderAsync is async on OrderService(repository, notifier).",
+        "source": "examples/don-hang @ stage-1: DonHang.Tests/Services/OrderServiceTests.cs:45-67; DonHang.Domain/Entities.cs:30; DonHang.Domain/OrderService.cs:29-38"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "stage-2 Entities.cs:83-88 Cancel(): `if (Status == \"shipped\") throw new OrderStatusException(Id, \"already-shipped\", ...)`. git ls-tree stage-2 DonHang.Tests lists Domain/OrderTests.cs and Services/OrderServiceTests.cs.",
+        "source": "examples/don-hang @ stage-2: DonHang.Domain/Entities.cs:83-88; DonHang.Domain/OrderStatusException.cs:8; git ls-tree stage-2 DonHang.Tests"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "OrderTests.cs:11 OneItem() returns one item; l.13 `private static Order NewOrder() => new(customerId: 1, OneItem(), DateTimeOffset.UtcNow);`. All 10 [Fact] methods are `public void`; the file contains no Fake*, repository, notifier or `await` (two constructor tests call `new Order(...)` directly instead of NewOrder(), which the lesson does not contradict).",
+        "source": "examples/don-hang @ stage-2: DonHang.Tests/Domain/OrderTests.cs:1-117"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Entities.cs:75-96: MarkPaid() throws unless Status is \"new\" (l.77-78) then sets \"paid\"; Cancel() throws on \"cancelled\"/\"shipped\" (l.85-86), so it accepts new or paid; Ship() throws on cancelled/shipped and `if (Status != \"paid\")` (l.92-94). All three are `public void`. Status has a private setter (l.35); the only other assignments are in the constructors (l.57, 69). Order has no repository/notifier field or parameter (l.30-97).",
+        "source": "examples/don-hang @ stage-2: DonHang.Domain/Entities.cs:30-97"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Entities.cs:35 `public string Status { get; private set; }`; l.94 `if (Status != \"paid\") throw new OrderStatusException(Id, \"not-paid\", ...)`; l.74 comment \"No endpoint takes payments at stage-2; OrderTests uses this to get a paid order.\" git grep MarkPaid stage-2: callers only in DonHang.Tests/Domain/OrderTests.cs (l.44,67,89,111,113); samples/ has an unrelated OrderEncapsulated.MarkPaid.",
+        "source": "examples/don-hang @ stage-2: DonHang.Domain/Entities.cs:35,72-96; git grep MarkPaid stage-2"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "OrderTests.cs:43-50 matches the claim and the §5 block (lines 38-51, character-for-character). OrderStatusException.cs:3-11 comment: \"Thrown by Order when a status change is not allowed from the status the order is in. It names the case with a code — \\\"already-cancelled\\\", \\\"already-shipped\\\", \\\"not-paid\\\" or \\\"already-paid\\\"\"; `public string Code { get; } = code;`. Every throw in Order uses this type (Entities.cs:77-94).",
+        "source": "examples/don-hang @ stage-2: DonHang.Tests/Domain/OrderTests.cs:38-51; DonHang.Domain/OrderStatusException.cs"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "xunit.assert 2.9.2 XML docs: Throws<T>(Action) \"Verifies that the exact exception is thrown\", returns \"The exception that was thrown\"; Single(IEnumerable) returns \"The single item in the collection\", throws SingleException \"when the collection does not contain exactly one element\". Execution (round 1): with the shipped check deleted, xUnit failed OrderTests.cs:47 \"Assert.Throws() Failure: No exception was thrown\". OrderServiceTests.cs:34 `var sent = Assert.Single(...)` compiles and reads sent.OrderId.",
+        "source": "~/.nuget/packages/xunit.assert/2.9.2/lib/net6.0/xunit.assert.xml:677-685,1311-1318; execution on scratchpad/dm-c/s2-te"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "stage-2 OrderServiceTests.cs has exactly six [Fact]s: PlaceOrderAsync_ValidItems_SavesTheOrder, PlaceOrderAsync_ValidItems_SendsOneNotification, PlaceOrderAsync_SameIdempotencyKey_ReturnsTheFirstOrder, CancelOrderAsync_NewOrder_SavesAndNotifies (l.62-63), CancelOrderAsync_UnknownOrder_Throws (KeyNotFoundException, l.71), ShipOrderAsync_NewOrder_ThrowsAndNotifiesNobody (Assert.Empty(notifier.Sent), l.84). l.12 `OneItem() => [new() { ProductId = 1, Quantity = 2, UnitPriceVnd = 100_000 }]` returns a one-item List<OrderItem>. Run: \"Passed: 6, Total: 6\".",
+        "source": "examples/don-hang @ stage-2: DonHang.Tests/Services/OrderServiceTests.cs:12-85; dotnet test --filter FullyQualifiedName~OrderServiceTests (round 1)"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "No test in stage-2 OrderServiceTests seeds or reaches a `shipped` order (only new orders are seeded, l.56, 78). Also no Cancel/shipped test in DonHang.Tests/Integration (git grep). Execution: with the shipped check removed, the OrderServiceTests filter still reports Passed: 6.",
+        "source": "examples/don-hang @ stage-2: DonHang.Tests/Services/OrderServiceTests.cs; execution on scratchpad/dm-c/s2-te"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Conditional reasoning supported by this code: CancelOrderAsync_NewOrder_SavesAndNotifies needs 4 setup lines (repository, Seed, notifier, service) plus await; the OrderTests equivalents need 1-3 lines (NewOrder plus the status-changing calls), no fake, no await. Lesson states it as a consequence of that comparison, not as an unconditional ranking.",
+        "source": "examples/don-hang @ stage-2: OrderServiceTests.cs:52-64 vs OrderTests.cs:38-61; outline item 4"
+      },
+      {
+        "n": 11,
+        "verdict": "not-needed",
+        "evidence": "Definitional (what a fake is for), taught in the prerequisite; the factual half (Order has no dependency) is covered and verified by claim 4.",
+        "source": "claim 4; design.l1.test-doubles"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Docs list operators: \"`~` contains\"; \"An expression without any operator is interpreted as a contains on the `FullyQualifiedName` property. For example, `dotnet test --filter xyz` is the same as `dotnet test --filter FullyQualifiedName~xyz`.\" Execution: the filter ran exactly the 10 tests of DonHang.Tests.Domain.OrderTests.",
+        "source": "refs/dotnet-docs/docs/core/testing/selective-unit-tests.md:27,41"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Run on a copy of git archive stage-2: Domain filter \"Passed! Failed: 0, Passed: 10, Total: 10\". After deleting Entities.cs:86 (the shipped throw): \"Failed! Failed: 1, Passed: 9, Total: 10\", failing test DonHang.Tests.Domain.OrderTests.Cancel_ShippedOrder_Throws, \"Assert.Throws() Failure: No exception was thrown\". OrderServiceTests filter with the change: \"Passed! Failed: 0, Passed: 6, Total: 6\". After restoring: still 6/6.",
+        "source": "execution: dotnet test DonHang.Tests, scratchpad/dm-c/s2-te (stage-2 archive), .NET SDK 10"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "reviewing-for-tests.en.md:104: \"CancelOrderAsync_NewOrder_SetsStatusCancelled checks ... a new order. CancelOrderAsync_UnknownOrder_Throws checks the missing order. ... no test tries a shipped order.\" Round 2, zero issues; opened: stage-2 Entities.cs, OrderStatusException.cs, OrderService.cs, OrderTests.cs, OrderServiceTests.cs, FakeNotifier.cs; xunit.assert 2.9.2 XML docs; refs/dotnet-docs selective-unit-tests.md; status-changes-through-methods.en.md.",
+        "source": "content/tracks/management/*/management.l1.reviewing-for-tests.en.md:104"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-01T15:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation, round 2)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "text": "q2 correct explanation says CancelOrderAsync \"only calls\" order.Cancel(), but §5 says CancelOrderAsync also finds the order and sends the notification. Read literally, the two disagree; I understood it only after guessing \"only\" refers to the status check.",
+        "quote": "`CancelOrderAsync` only calls `order.Cancel()`; the check itself is in `Order`.",
+        "fix": "Reword to \"For the status check, `CancelOrderAsync` just calls `order.Cancel()`; the check itself is in `Order`.\""
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

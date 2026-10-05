@@ -1,0 +1,119 @@
+{
+  "id": "backend.l1.protecting-an-endpoint",
+  "technical": {
+    "reviewed_at": "2026-09-25T10:05:00+07:00",
+    "reviewer": "claude-opus-5-5 (technical round 3)",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Live (round 3), examples/don-hang HEAD = stage-1^{commit} 4fca60a, stack up: login anh.tran@example.com / donhang-dev-password -> token. curl -s -i /api/v1/orders/3 with it -> 'HTTP/1.1 200 OK', body {\"id\":3,\"customerId\":2,\"status\":\"paid\",...}. db/seed.sql@stage-1: orders (3, 2, ...).",
+        "source": "curl http://localhost:8080/api/v1/orders/3; git show stage-1:db/seed.sql"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "git show stage-1:DonHang.Api/Controllers/OrdersController.cs:30-36: [HttpGet(\"{id:int}\")] only, no [Authorize] (none at class level either, lines 10-12); FindAsync(id); if (order is null) return NotFound(); return Ok(ToDto(order)). Program.cs:43 AddAuthorization() with no fallback policy. Block matches source character-for-character.",
+        "source": "examples/don-hang@stage-1 DonHang.Api/Controllers/OrdersController.cs:10-36; DonHang.Api/Program.cs:43"
+      },
+      {
+        "n": 3,
+        "verdict": "rephrased",
+        "evidence": "git grep -E 'forbid|403' stage-1 (case-insensitive): no match in any .cs file; only customer filter is EfOrderRepository.ListByCustomerAsync. But Caddyfile@stage-1:33 does return 403 ('respond @guest \"Forbidden: role=guest may not open /admin\" 403'), so 'No code in the example repository returns 403' is too broad. Lesson text ('nothing in Đơn Hàng checks it' = the ownership check) is accurate; only the ledger wording needs narrowing.",
+        "source": "examples/don-hang@stage-1 git grep; Caddyfile:33; DonHang.Infrastructure/EfOrderRepository.cs:13-14",
+        "suggested_text": "No C# code in DonHang.Api at stage-1 returns 403 or compares a resource's owner with the caller for a single-order request (the only 403 in the repo is Caddy's /admin lab route)."
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "OrdersController.cs@stage-1:49-56: [Authorize], int.Parse(User.FindFirstValue(JwtRegisteredClaimNames.Sub)!), repository.ListByCustomerAsync(customerId). EfOrderRepository.cs:13-14: db.Orders.Where(o => o.CustomerId == customerId). JwtTokenService.cs:20: new Claim(JwtRegisteredClaimNames.Sub, customerId.ToString()) - supports the gloss 'the field in the token that holds the caller's customer id'. Program.cs:31 MapInboundClaims = false keeps 'sub'.",
+        "source": "examples/don-hang@stage-1 OrdersController.cs:49-56; EfOrderRepository.cs:13-14; JwtTokenService.cs:20; Program.cs:31"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Live (round 3): curl /api/v1/orders with customer 1's token -> 12 entries (ids 1,2,10,14..17,24..28), every one \"customerName\":\"Trần Minh Anh\" (customer 1 in seed.sql); id 3 absent. Extra ids beyond seed come from earlier POSTs by customer 1; the lesson's expected result does not depend on the count.",
+        "source": "curl http://localhost:8080/api/v1/orders; git show stage-1:db/seed.sql"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "refs/rfc/rfc9110.txt 15.5.4: 'The 403 (Forbidden) status code indicates that the server understood the request but refuses to fulfill it.' ... 'The client MAY repeat the request with new or different credentials. However, a request might be forbidden for reasons unrelated to the credentials.' 15.5.2: 401 'lacks valid authentication credentials'. JwtTokenService.cs:20 puts customerId in sub, so a new token for the same customer carries the same sub. Lesson's conditioned wording ('When the refusal is about ownership') fits.",
+        "source": "refs/rfc/rfc9110.txt sections 15.5.2, 15.5.4; examples/don-hang@stage-1 DonHang.Api/JwtTokenService.cs:18-22"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "refs aspnetcore/security/authorization/resource-based.md:16: 'Attribute evaluation occurs before data binding and before execution of any method that loads a resource. Declarative authorization with an [Authorize] attribute doesn't suffice for resource-based authorization. Instead, the app must invoke a custom authorization method'. security/authentication/index.md:44: 'Calling UseAuthentication registers the middleware ... Call UseAuthentication before any middleware that depends on users being authenticated.' Program.cs:70 app.UseAuthentication().",
+        "source": "refs/aspnetcore-docs/aspnetcore/security/authorization/resource-based.md:16; refs/aspnetcore-docs/aspnetcore/security/authentication/index.md:44"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Conditioned ('one way'). Code supports it: EfOrderRepository.ListByCustomerAsync filters Where(o => o.CustomerId == customerId), so rows of other customers are never loaded; live /api/v1/orders returned only customer 1's orders (claim 5).",
+        "source": "examples/don-hang@stage-1 DonHang.Infrastructure/EfOrderRepository.cs:13-14"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Live (round 3): 'Authorization: Bearer abc.def.ghi' -> GET /api/v1/orders = 401, GET /api/v1/orders/3 = 200. No-header GET /api/v1/orders = 401. Matches [Authorize] on List (line 49) and none on Get (line 30). Also supports section 6: customer 1's token -> /orders/1 200 {\"id\":1,\"customerId\":1,...} and /orders/3 200 {\"id\":3,\"customerId\":2,...}. Docs opened this round: refs/rfc/rfc9110.txt, refs/aspnetcore-docs resource-based.md and authentication/index.md.",
+        "source": "curl http://localhost:8080/api/v1/orders[/3|/1]; OrdersController.cs@stage-1:30,49"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": "q5",
+        "kind": "quiz",
+        "text": "q5 option c explanation says the token 'carries `sub` and `email`'; JwtTokenService also sets issuer, audience and expires (iss/aud/exp), so read literally the list is incomplete. Key and all wrong options are correct.",
+        "quote": "The token carries `sub` and `email`, not a list of orders",
+        "fix": "en: \"The token carries claims such as `sub` and `email`, not a list of orders; the filtering happens in the repository query.\" vi: \"Token mang các claim như `sub` và `email`, không mang danh sách order; việc lọc xảy ra trong câu query của repository.\""
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-25T14:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior, round 3 - final)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "term",
+        "quote": "log in as customer 1: `curl -s -X POST http://localhost:8080/api/v1/auth/login",
+        "text": "`curl` (and its flags `-s`, `-X`, `-H`, `-d`) is a tool name not in known_vocab or the prereq summaries. Kept minor, not major: every command is given in full and I can run it by copy-paste, and the one flag that matters (`-i`) is explained. Same as earlier rounds, which did not flag it.",
+        "fix": "Optional: after the first command, add \"(`curl` sends an HTTP request from the shell and prints the response)\"."
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "example",
+        "quote": "every entry carries the same `customerName`, and order 3 is not among them.",
+        "text": "The lesson never says the list response has a `customerName` field; the `List` code shows `o.Customer!.FullName`, so I guess `FullName` becomes `customerName` in the JSON. I can still judge success by the ids (order 3 absent), so it does not block the exercise.",
+        "fix": "In the paragraph after the `List` block, add one clause: \"each entry has the order's id, status and the customer's name (`customerName`)\"."
+      },
+      {
+        "severity": "minor",
+        "section": "backend.l1.protecting-an-endpoint.q1",
+        "kind": "quiz",
+        "quote": "An API may choose `404` to hide that, but the answer that says what actually failed",
+        "text": "The lesson never mentions answering `404` to hide an order's existence. I can pick a from the text alone, but this explanation introduces a new idea and makes me wonder whether c was also acceptable.",
+        "fix": "Drop the 404-hiding clause from explanation c (en and vi): \"Order 3 does exist; what failed is ownership, with the caller known, and that is `403`.\""
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "curl"
+      ],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

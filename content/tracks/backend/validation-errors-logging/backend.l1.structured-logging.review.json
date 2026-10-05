@@ -1,0 +1,140 @@
+{
+  "id": "backend.l1.structured-logging",
+  "technical": {
+    "reviewed_at": "2026-09-27T06:45:00+07:00",
+    "reviewer": "claude-opus-5-5[1m] (technical review, prompt 04, round 2 per task; fresh session, lesson re-read in full and challenge list written before .meta.json)",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "`git -C examples/don-hang show stage-1:DonHang.Infrastructure/LoggingNotifier.cs` lines 9-13 match the lesson block exactly: `logger.LogInformation(\"notification for order {OrderId}: {Subject}\", orderId, subject);` - one template, two placeholders, two arguments.",
+        "source": "examples/don-hang @ stage-1 (75bf7d2): DonHang.Infrastructure/LoggingNotifier.cs:9-13"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "`git show stage-1:DonHang.Api/Middleware/RequestLoggingMiddleware.cs` lines 9-24 match the lesson block exactly: template \"{Method} {Path} responded {StatusCode} in {ElapsedMs}ms\" then context.Request.Method, context.Request.Path, context.Response.StatusCode, stopwatch.ElapsedMilliseconds.",
+        "source": "examples/don-hang @ stage-1 (75bf7d2): DonHang.Api/Middleware/RequestLoggingMiddleware.cs:9-24"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "overview.md:425 \"The order of placeholders, not their names, determines which parameters are used to provide their values.\" :442 \"The arguments themselves are passed to the logging system... This enables logging providers to store the parameter values as fields.\" Run (SDK 10, AddJsonConsole): \"State\":{\"OrderId\":41,\"Subject\":\"order placed\",...}; (\"{P2} then {P1}\",\"a\",\"b\") -> P2=a, P1=b (positional).",
+        "source": "refs/dotnet-docs docs/core/extensions/logging/overview.md:425,442; scratchpad dotnet run app.cs (Microsoft.NET.Sdk.Web + AddJsonConsole), this session"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Live this session: login 200, POST /api/v1/orders 201, `docker logs donhang-api --since 1m`: `info: DonHang.Api.Middleware.RequestLoggingMiddleware[0]` / `POST /api/v1/auth/login responded 200 in 195ms`, `info: DonHang.Infrastructure.LoggingNotifier[0]` / `      notification for order 40: order placed`, `POST /api/v1/orders responded 201 in 390ms`. docker_logs.yaml --since: \"relative (e.g. `42m` for 42 minutes)\".",
+        "source": "live run against donhang-api (image donhang-api:stage-1); refs/docker-docs data/cli/engine/docker_logs.yaml:33"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "interpolated.md:104 \"If an interpolated string has the type `string`, the compiler typically transforms it into a String.Format method call.\" Run (SDK 10, AddJsonConsole): LogInformation($\"notification for order {orderId}: {subject}\") -> \"State\":{\"{OriginalFormat}\":\"notification for order 41: order placed\"} - no OrderId/Subject property. Lesson text itself does not mention String.Format.",
+        "source": "refs/dotnet-docs docs/csharp/language-reference/tokens/interpolated.md:104; scratchpad run this session"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "OrderService.PlaceOrderAsync: `await repository.SaveChangesAsync(); notifier.Send(order.Id, \"order placed\"); return order;` - no condition around Send. Live run produced exactly one LoggingNotifier line for the placed order (order 40).",
+        "source": "examples/don-hang @ stage-1 (75bf7d2): DonHang.Domain/OrderService.cs:8-23; live run"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Placeholder sets at stage-1: LoggingNotifier {OrderId},{Subject}; RequestLoggingMiddleware {Method},{Path},{StatusCode},{ElapsedMs}. Each file has exactly one LogInformation call. Disjoint.",
+        "source": "examples/don-hang @ stage-1 (75bf7d2): LoggingNotifier.cs:12; RequestLoggingMiddleware.cs:17-22"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Program.cs:67-68 UseMiddleware<ExceptionHandlingMiddleware>() then UseMiddleware<RequestLoggingMiddleware>(); RequestLoggingMiddleware has no try/finally. Live: POST /api/v1/orders {\"items\":[]} -> {\"title\":\"Invalid request\",\"status\":400,\"detail\":\"an order needs at least one item\"}; log tail ends with the exception stack (through RequestLoggingMiddleware.cs:line 14), no RequestLoggingMiddleware line for it.",
+        "source": "examples/don-hang @ stage-1 (75bf7d2): Program.cs:67-68, ExceptionHandlingMiddleware.cs, RequestLoggingMiddleware.cs:14; live run"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "stage-1 Program.cs: no ClearProviders/AddJsonConsole/other provider; appsettings.json only Logging:LogLevel; Dockerfile/compose set no Logging__Console__* env (docker inspect env confirms). aspnetcore logging/index.md:25 CreateBuilder \"adds the following default logging providers: Console, Debug, EventSource, Windows EventLog\". console-log-formatter.md:85 \"By default, the `Simple` console log formatter is selected\".",
+        "source": "refs/aspnetcore-docs aspnetcore/fundamentals/logging/index.md:25; refs/dotnet-docs docs/core/extensions/logging/console-log-formatter.md:85; examples/don-hang @ stage-1 (75bf7d2): Program.cs, appsettings.json, DonHang.Api/Dockerfile"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "accuracy",
+        "text": "`--since 1m` covers only the last 60 s before `docker logs` runs. A reader who spends more than a minute between step 1's login (copying the token, pasting the second curl) and step 2 will not see the login's RequestLoggingMiddleware line, yet the expected result asserts it is there. Still present unchanged from the previous round.",
+        "fix": "Either change step 2 to `docker logs donhang-api --since 5m` with gloss \"keeps only the last five minutes\", or reword the expected result to \"...a `RequestLoggingMiddleware` line for each request made in that minute (placing the order, and the login if it was inside that minute)...\". Update claim 4 to match.",
+        "quote": "that window also holds a `RequestLoggingMiddleware` line for each request those steps made (login, then placing the order)"
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-27T14:00:00+07:00",
+    "reviewer": "claude-opus-5-5[1m] (junior reader simulation, prompt 05, round 2) - fresh session; lesson and quiz read with only known_vocab, the lesson's vocab and the two prereq five-line summaries; junior object written before this file was opened. `technical` untouched.",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "style",
+        "text": "\"writer\" appears as if it were a known part of the logger (\"whatever writes the output\", \"This console's writer\", \"another writer\"). I read it as plain English - something that writes the text out - and could follow, but I paused to check whether it was a term I should know.",
+        "fix": "Use the same plain phrase each time, e.g. replace \"This console's writer turns it into that sentence; another writer could keep each field\" with \"The part that writes this console's output turns it into that sentence; a different one could keep each field\".",
+        "quote": "This console's writer turns it into that sentence; another writer could keep each field"
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "length",
+        "text": "The paragraph after the RequestLoggingMiddleware block does three jobs (what to ignore, four fields, the two lines sharing no field and filtering each). I re-read it twice; \"whatever each request was doing\" in particular did not attach to anything for me.",
+        "fix": "Delete \", whatever each request was doing\" and split the paragraph before \"The two lines don't share a field\".",
+        "quote": "or `ElapsedMs` above some threshold for slow requests, whatever each request was doing"
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "length",
+        "text": "The last paragraph of section 5 (the line not appearing on an exception, ExceptionHandlingMiddleware, the 400) is about when the line is written, not about fields. It is followable, but it felt like the start of the next lesson and pulled me away from the main idea just before the misconceptions.",
+        "fix": "Cut the paragraph to its first two sentences and move the ExceptionHandlingMiddleware pointer into the existing Connections bullet for backend.l1.exception-handling-middleware.",
+        "quote": "This line only appears when `next(context)` returns normally."
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "example",
+        "text": "Step 1 sends me to another lesson's Try it (backend.l1.creating-a-resource), which is not one of this lesson's prereqs. I can open it, but for 3 minutes I would rather see which two requests to make (login, then place an order) named here.",
+        "fix": "Add in step 1, after \"to place an order\": \"(step 1 logs in and gets a token, step 2 places an order with it)\".",
+        "quote": "run steps 1 and 2 of [[backend.l1.creating-a-resource]]'s Try it to place an order"
+      },
+      {
+        "severity": "minor",
+        "section": "quiz q3",
+        "kind": "quiz",
+        "text": "The blank sits next to `{Subject}` with `orderId` as the matching argument, so `{OrderId}` can be guessed from the pattern of the question alone, without reading the lesson.",
+        "fix": "Blank the whole template instead, e.g. ask which of the two names `{OrderId}` / `{Subject}` becomes the field filled by the first argument after the template, or ask for the field name a tool would filter on to find order 41.",
+        "quote": "`logger.LogInformation(\"notification for order ____: {Subject}\", orderId, subject)`"
+      },
+      {
+        "severity": "minor",
+        "section": "quiz q5",
+        "kind": "quiz",
+        "text": "Wrong-option explanations b, c, d use \"would ... when\" where \"if\" is meant (\"would be enough when ... preserved\"). I read them as \"at the times when\" and briefly thought the lesson said this sometimes happens.",
+        "fix": "In the en explanations for b, c, d replace \"when\" with \"if\" (e.g. \"This check would be enough if this console's printed line preserved every difference...\").",
+        "quote": "This check would be enough when this console's printed line preserved every difference between the two versions"
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

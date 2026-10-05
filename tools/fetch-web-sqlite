@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# tools/fetch-web-sqlite — download sqlite3.wasm + drift_worker.js matching
+# the versions pinned in app/pubspec.lock, sha256 them, and write them into
+# app/web/. See tools/SPEC.md and DECISIONS B6.
+#
+# app/ does not exist yet in this repo (Flutter project not created, per
+# DECISIONS §Bước 4) — this fails gracefully rather than crashing, as
+# instructed, and re-run once app/pubspec.lock exists.
+set -euo pipefail
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$DIR/.." && pwd)"
+APP_DIR="$REPO_ROOT/app"
+LOCK="$APP_DIR/pubspec.lock"
+
+if [ ! -d "$APP_DIR" ] || [ ! -f "$LOCK" ]; then
+  echo "fetch-web-sqlite: app/pubspec.lock not found — app/ chưa dựng (Flutter project chưa tạo), bỏ qua." >&2
+  exit 1
+fi
+
+get_pinned_version() {
+  # pubspec.lock: "<pkg>:\n    ...\n    version: \"X.Y.Z\""
+  awk -v pkg="$1" '
+    $0 ~ "^  "pkg":$" { found=1; next }
+    found && /^  [a-zA-Z0-9_]+:$/ { found=0 }
+    found && /version:/ { gsub(/[" ]/,"",$0); sub(/version:/,"",$0); print; exit }
+  ' "$LOCK"
+}
+
+SQLITE3_VERSION="$(get_pinned_version sqlite3 || true)"
+DRIFT_VERSION="$(get_pinned_version drift || true)"
+
+if [ -z "$SQLITE3_VERSION" ] || [ -z "$DRIFT_VERSION" ]; then
+  echo "fetch-web-sqlite: không tìm thấy phiên bản 'sqlite3' hoặc 'drift' trong $LOCK — bỏ qua." >&2
+  exit 1
+fi
+
+WEB_DIR="$APP_DIR/web"
+mkdir -p "$WEB_DIR"
+
+SQLITE3_URL="https://github.com/simolus3/sqlite3.dart/releases/download/sqlite3-$SQLITE3_VERSION/sqlite3.wasm"
+DRIFT_URL="https://github.com/simolus3/drift/releases/download/drift-$DRIFT_VERSION/drift_worker.js"
+
+fetch_one() {
+  local url="$1" dest="$2" label="$3"
+  echo "tải $label ($url)"
+  if ! curl -fsSL "$url" -o "$dest"; then
+    echo "fetch-web-sqlite: tải $label thất bại ($url) — kiểm tra version pin hoặc tag release." >&2
+    return 1
+  fi
+  local sum
+  sum="$(sha256sum "$dest" | cut -d' ' -f1)"
+  echo "  sha256($label) = $sum"
+}
+
+status=0
+fetch_one "$SQLITE3_URL" "$WEB_DIR/sqlite3.wasm" "sqlite3.wasm@$SQLITE3_VERSION" || status=1
+fetch_one "$DRIFT_URL" "$WEB_DIR/drift_worker.js" "drift_worker.js@$DRIFT_VERSION" || status=1
+
+exit $status

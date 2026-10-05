@@ -1,0 +1,168 @@
+{
+  "id": "foundation.l1.transaction-intro",
+  "technical": {
+    "reviewed_at": "2026-09-27T21:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "stage-0 db/schema.sql: `order_id integer NOT NULL REFERENCES orders (id)`, `quantity integer NOT NULL CHECK (quantity > 0)`. Execution with quantity 0: `ERROR:  new row for relation \"order_items\" violates check constraint \"order_items_quantity_check\"`.",
+        "source": "examples/don-hang@stage-0 db/schema.sql; Run in lab (postgres:17.6-alpine) on throwaway DB r2tx from stage-0 db/schema.sql + db/seed.sql, psql --no-psqlrc --set ON_ERROR_STOP=on, dropped afterwards"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "stage-0 db/seed.sql: orders ids 1..12 with customer_id only 1-4; customers (5, 'Vũ Gia Khánh', ...); products (3, 'Tai nghe', 890000). Fresh seed printed orders_before 12.",
+        "source": "examples/don-hang@stage-0 db/seed.sql"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "BEGIN: \"By default (without BEGIN), PostgreSQL executes transactions in \"autocommit\" mode, that is, each statement is executed in its own transaction and a commit is implicitly performed at the end of the statement (if execution was successful, otherwise a rollback is done).\"",
+        "source": "https://www.postgresql.org/docs/17/sql-begin.html"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "\"BEGIN initiates a transaction block, that is, all statements after a BEGIN command will be executed in a single transaction until an explicit COMMIT or ROLLBACK is given.\"",
+        "source": "https://www.postgresql.org/docs/17/sql-begin.html"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "COMMIT: \"All changes made by the transaction become visible to others and are guaranteed to be durable if a crash occurs.\" ROLLBACK discards all updates (round-1 evidence, sql-rollback.html); execution: after ROLLBACK count back to 12.",
+        "source": "https://www.postgresql.org/docs/17/sql-commit.html; https://www.postgresql.org/docs/17/sql-rollback.html; Run in lab (postgres:17.6-alpine) on throwaway DB r2tx from stage-0 db/schema.sql + db/seed.sql, psql --no-psqlrc --set ON_ERROR_STOP=on, dropped afterwards"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Tutorial 3.4: \"The updates made so far by an open transaction are invisible to other transactions until the transaction completes, whereupon all the updates become visible simultaneously.\" Execution: same connection counts 13 inside the block (orders_inside_transaction 13).",
+        "source": "https://www.postgresql.org/docs/17/tutorial-transactions.html; Run in lab (postgres:17.6-alpine) on throwaway DB r2tx from stage-0 db/schema.sql + db/seed.sql, psql --no-psqlrc --set ON_ERROR_STOP=on, dropped afterwards"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "COMMIT: changes \"are guaranteed to be durable if a crash occurs.\" Tutorial 3.4: \"all the updates made by a transaction are logged in permanent storage (i.e., on disk) before the transaction is reported complete.\"",
+        "source": "https://www.postgresql.org/docs/17/sql-commit.html; https://www.postgresql.org/docs/17/tutorial-transactions.html"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Execution: `BEGIN; SELECT 1/0; SELECT 1; COMMIT` -> `ERROR: division by zero`, `ERROR: current transaction is aborted, commands ignored until end of transaction block`, then COMMIT answered with command tag `ROLLBACK`. Savepoint part of claim not used in the lesson.",
+        "source": "Run in lab (postgres:17.6-alpine) on throwaway DB r2tx from stage-0 db/schema.sql + db/seed.sql, psql --no-psqlrc --set ON_ERROR_STOP=on, dropped afterwards"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Protocol 53.2.9: \"For either normal or abnormal termination, any open transaction is rolled back, not committed.\" Execution: quantity-0 run exited 3 at the refusal with block open; next run printed 12, 13, 12 (order 13 not kept, no duplicate-key error).",
+        "source": "https://www.postgresql.org/docs/17/protocol-flow.html; Run in lab (postgres:17.6-alpine) on throwaway DB r2tx from stage-0 db/schema.sql + db/seed.sql, psql --no-psqlrc --set ON_ERROR_STOP=on, dropped afterwards"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "13.3.2: FOR UPDATE \"is also acquired by any DELETE on a row, and also by an UPDATE that modifies the values of certain columns\"; other transactions attempting UPDATE/DELETE \"will be blocked until the current transaction ends\"; \"Row-level locks are released at transaction end\".",
+        "source": "https://www.postgresql.org/docs/17/explicit-locking.html"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Execution of stage-0 db/queries/transaction-place-order.sql on fresh seed: 12, BEGIN, INSERT 0 1, INSERT 0 1, 13, ROLLBACK, 12; exit 0.",
+        "source": "Run in lab (postgres:17.6-alpine) on throwaway DB r2tx from stage-0 db/schema.sql + db/seed.sql, psql --no-psqlrc --set ON_ERROR_STOP=on, dropped afterwards"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "run-query.sh: `psql ... --set ON_ERROR_STOP=on --file ...`. With ROLLBACK changed to COMMIT: first run 12/13/13; next run printed 13, BEGIN, then `ERROR:  duplicate key value violates unique constraint \"orders_pkey\" DETAIL: Key (id)=(13) already exists.`, exit 3.",
+        "source": "examples/don-hang@stage-0 scripts/sql/run-query.sh; Run in lab (postgres:17.6-alpine) on throwaway DB r2tx from stage-0 db/schema.sql + db/seed.sql, psql --no-psqlrc --set ON_ERROR_STOP=on, dropped afterwards"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "BEGIN: \"Statements are executed more quickly in a transaction block, because transaction start/commit requires significant CPU and disk activity.\" Tutorial 3.4: without BEGIN \"each individual statement has an implicit BEGIN and (if successful) COMMIT wrapped around it\" -> one write alone or in a block pays one start/commit either way; claim now states exactly that.",
+        "source": "https://www.postgresql.org/docs/17/sql-begin.html; https://www.postgresql.org/docs/17/tutorial-transactions.html"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "Opinion mirrors outline item 3. Factual part: 13.3.2 \"Row-level locks do not affect data querying; they block only writers and lockers to the same row.\"",
+        "source": "https://www.postgresql.org/docs/17/explicit-locking.html"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "stage-0 db/queries/write-basics.sql: `BEGIN;` (l.4), INSERT INTO products (l.10), UPDATE products (l.14), DELETE FROM products (l.18), `ROLLBACK;` (l.21).",
+        "source": "examples/don-hang@stage-0 db/queries/write-basics.sql"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "accuracy",
+        "quote": "The second run prints 12, the command tag for the `INSERT` into `orders`, then an `ERROR` line about the quantity, and stops",
+        "text": "Actual output (run-query.sh uses --echo-queries) also prints the echoed statements, `SET`, the `BEGIN` tag before the INSERT tag, and a `DETAIL:  Failing row contains (13, 3, 0, 890000).` line. The list reads as the full output; a reader may take `BEGIN` for the INSERT's tag.",
+        "fix": "Write: \"The second run prints 12, then `BEGIN` and `INSERT 0 1` (each after the statement it answers), then an `ERROR` line about the quantity with a `DETAIL` line, and stops\"."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-27T22:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior reader simulation, prompt 05, round 2; known_vocab = 28 terms from the scratchpad known list plus foundation.l1.sql-write five-line summary; lesson vocab = [transaction])",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "style",
+        "quote": "While the block is open, the rows it changed are held: another transaction that wants to change the same rows waits for yours to end.",
+        "text": "The lesson uses 'transaction', 'transaction block', 'block', 'unit' and 'unit of work' for nearly the same thing. I worked out that a block is what BEGIN opens and that a single statement is also a transaction, but 'another transaction ... waits for yours' made me stop to check whether 'yours' is the block or something else.",
+        "fix": "In the `BEGIN` bullet of Core concepts, add one clause: 'the block is how one transaction spans several statements; below, \"the unit\" means the block's changes.'"
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "length",
+        "quote": "A file that ended in `COMMIT` instead would leave both rows: its next run would print 13 for `orders_before` and then stop.",
+        "text": "The paragraph starts with why the two writes belong together (foreign key, quantity rule), then jumps to a what-if about COMMIT and a re-run; 'and then stop' comes before its reason. I re-read it to connect the two halves.",
+        "fix": "Start a new paragraph at 'A file that ended in `COMMIT` instead…', so the foreign-key reason and the re-run what-if are read separately."
+      },
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "length",
+        "quote": "The gain comes from paying the cost of starting and ending a transaction once for many writes instead of once per write, not from `BEGIN` itself",
+        "text": "The second misconception is one long paragraph carrying three ideas (speed is a side effect, where the gain comes from, rows held while open) plus the 'you notice this' scene. I read it twice.",
+        "fix": "Split before 'But every row the block has changed stays held…' so the speed point and the held-rows point are two short paragraphs."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "quote": "13, because the block ended by keeping both rows, and they are now part of the shop's own data",
+        "text": "q6 is answered by a near-verbatim sentence in section 5: 'its next run would print 13 for `orders_before`'. I can pick 13 by recall without reasoning about COMMIT.",
+        "fix": "Ask about a different observable of the COMMIT variant, e.g. what `orders_inside_transaction` or the second run's first error would be, so the answer is not a copied line."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "quote": "Fewer writes to disk is a real gain from one block, so the night's many small `INSERT`s can themselves finish sooner",
+        "text": "q4 option b: 'can themselves finish sooner' is awkward; I paused on whether 'themselves' means the INSERTs alone vs. the whole job. Still decidable from section 6, but b and d sit close.",
+        "fix": "Drop 'themselves': '…so the night's many small `INSERT`s can finish sooner.'"
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

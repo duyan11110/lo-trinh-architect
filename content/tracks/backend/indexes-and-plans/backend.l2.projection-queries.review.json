@@ -1,0 +1,131 @@
+{
+  "id": "backend.l2.projection-queries",
+  "technical": {
+    "reviewed_at": "2026-09-29T00:45:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "stage-1 EfOrderRepository.cs: `public Task<List<Order>> ListByCustomerAsync(int customerId) => db.Orders.Where(o => o.CustomerId == customerId).Include(o => o.Customer).OrderBy(o => o.Id).ToListAsync();` (no Take). stage-1 DonHangDbContext.cs line 26: `e.Property(c => c.PasswordHash).HasColumnName(\"password_hash\");`; stage-2 DonHangDbContext.cs and Entities.cs have no PasswordHash/password_hash.",
+        "source": "examples/don-hang stage-1 and stage-2: DonHang.Infrastructure/EfOrderRepository.cs, DonHang.Infrastructure/DonHangDbContext.cs, DonHang.Domain/Entities.cs"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "efficient-querying.md: \"Although this code only actually needs each Blog's `Url` property, the entire Blog entity is fetched, and unneeded columns are transferred from the database\". Execution: stage-1 Entities.cs + DonHangDbContext.cs, stage-1 query, ToQueryString (Npgsql EF 10.0.3, no connection): `SELECT o.id, o.customer_id, o.placed_at, o.status, c.id, c.city, c.email, c.full_name, c.password_hash FROM orders AS o INNER JOIN customers AS c ON o.customer_id = c.id ...`.",
+        "source": "refs/efcore-docs/entity-framework/core/performance/efficient-querying.md (Project only properties you need); scratchpad pq_r1 ToQueryString run"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "how-query-works.md: \"When you call LINQ operators, you're simply building up an in-memory representation of the query. The query is only sent to the database when the results are consumed.\" ... \"Using an operator such as `ToList`, `ToArray`, ... or the equivalent async overloads\". efficient-querying.md: \"The resulting SQL pulls back only the needed columns\". client-eval.md: partial client evaluation \"in the top-level projection (essentially, the last call to `Select()`)\" = one OrderSummary built per row. Captured SQL selects 3 columns.",
+        "source": "refs/efcore-docs/entity-framework/core/querying/how-query-works.md; .../performance/efficient-querying.md; .../querying/client-eval.md"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "No docs sentence found in refs for \"Include is ignored when projecting\" (eager.md in the mirror has none); settled by execution. Captured stage-2 SQL: `INNER JOIN customers AS c ON o0.customer_id = c.id` with no Include in the method. ToQueryString (stage-1 model): the same query with `.Include(o => o.Customer).Select(o => new Sum(o.Id, o.Status, o.Customer!.FullName))` and without the Include both give `SELECT o.id, o.status, c.full_name FROM orders AS o INNER JOIN customers AS c ON o.customer_id = c.id ...`.",
+        "source": "examples/don-hang/outputs/stage-2/scripts/backend/efcore-sql.txt; scratchpad pq_r1 ToQueryString run"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "tracking.md: \"If the result set doesn't contain any entity types, then no tracking is done. In the following query, we return an anonymous type with some of the values from the entity (but no instances of the actual entity type). There are no tracked entities coming out of the query.\"",
+        "source": "refs/efcore-docs/entity-framework/core/querying/tracking.md (Tracking and custom projections)"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "record.md: \"A *positional record class* and a *positional readonly record struct* declare init-only properties.\" and \"After initialization, you can't change the value of value-type properties or the reference of reference-type properties.\" OrderSummary is `public sealed record` (a record class).",
+        "source": "refs/dotnet-docs/docs/csharp/language-reference/builtin-types/record.md"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "efficient-querying.md: \"Note that this technique is very useful for read-only queries, but things get more complicated if you need to *update* the fetched blogs, since EF's change tracking only works with entity instances.\"",
+        "source": "refs/efcore-docs/entity-framework/core/performance/efficient-querying.md"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "stage-2 EfOrderRepository.cs lines 23-29: Where(CustomerId && Id > afterId).OrderBy(Id).Take(limit).Select(new OrderSummary(o.Id, o.Status, o.Customer!.FullName)).ToListAsync(), no Include; block lines 18-29 matches the tag. Captured SQL: inner `SELECT o.id, o.customer_id, o.status FROM orders AS o WHERE o.customer_id = @customerId AND o.id > @afterId ORDER BY o.id LIMIT @p`, outer `SELECT o0.id, o0.status, c.full_name ... INNER JOIN customers AS c ON o0.customer_id = c.id ORDER BY o0.id`.",
+        "source": "examples/don-hang stage-2: DonHang.Infrastructure/EfOrderRepository.cs; outputs/stage-2/scripts/backend/efcore-sql.txt"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "stage-2 DonHang.Domain/OrderSummary.cs: `public sealed record OrderSummary(int Id, string Status, string CustomerName);` with comment \"It lives in DonHang.Domain so IOrderRepository can return it without knowing DonHang.Api's DTOs.\"",
+        "source": "examples/don-hang stage-2: DonHang.Domain/OrderSummary.cs"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "stage-2 OrdersController.cs line 114: `return Ok(orders.Select(o => new OrderSummaryDto(o.Id, o.Status, o.CustomerName)).ToList());`; Dtos.cs: `public sealed record OrderSummaryDto(int Id, string Status, string CustomerName);`.",
+        "source": "examples/don-hang stage-2: DonHang.Api/Controllers/OrdersController.cs, DonHang.Api/Dtos.cs"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Captured SQL: outer `SELECT o0.id, o0.status, c.full_name`, inner `SELECT o.id, o.customer_id, o.status FROM orders AS o`, `INNER JOIN customers AS c ON o0.customer_id = c.id`. The only customers columns in the text are c.full_name (selected) and c.id (JOIN condition only), as the claim now says.",
+        "source": "examples/don-hang stage-2: outputs/stage-2/scripts/backend/efcore-sql.txt"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "stage-2 Entities.cs Customer: Id, FullName, Email, City, IdentitySubject; DonHangDbContext.cs maps them to id, full_name, email, city, identity_subject.",
+        "source": "examples/don-hang stage-2: DonHang.Domain/Entities.cs, DonHang.Infrastructure/DonHangDbContext.cs"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "efficient-querying.md: \"this technique is very useful for read-only queries, but things get more complicated if you need to *update* the fetched blogs\". Lesson now anchors the rule in Đơn Hàng: stage-2 OrderService.CancelOrderAsync/ShipOrderAsync call `repository.FindAsync(orderId)`, and EfOrderRepository.FindAsync is commented \"Tracked: cancelling and shipping load the order with this\".",
+        "source": "refs/efcore-docs/entity-framework/core/performance/efficient-querying.md; examples/don-hang stage-2: DonHang.Domain/OrderService.cs, DonHang.Infrastructure/EfOrderRepository.cs"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-29T01:10:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 1,
+        "kind": "gap",
+        "text": "Round 2: prose now names the lesson on EF Core's logged SQL and Connections links it, but 'Before you start' still lists no lesson that taught reading the log (Command[20101], DbType, CommandTimeout). Left open by the writer as an owner decision on track.yaml prereqs.",
+        "quote": "`scripts/backend/efcore-sql.sh`, the script from the lesson on EF Core's logged SQL, requests one page as customer 3",
+        "fix": "Owner: add backend.l2.efcore-generated-sql to this lesson's prereqs in track.yaml, then add it to 'Before you start' with one line: you know how to read the SQL EF Core logs with `efcore-sql.sh`."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "style",
+        "text": "'the `Where` before it' points at a `Where` I have not seen yet; the query code only appears in section 5. I paused to look for it.",
+        "quote": "It reads the lambda as part of the query, like the `Where` before it,",
+        "fix": "Replace 'like the `Where` before it' with 'like the `Where` that comes before it in the query (shown below)'."
+      },
+      {
+        "severity": "minor",
+        "section": "backend.l2.projection-queries.q2",
+        "kind": "quiz",
+        "text": "Rewritten option c is no longer verbatim, but it is now clearly the longest option (about 115 chars vs 70-80 for the others), so it can be picked by length.",
+        "quote": "False, because what comes back is built by the `Select`, not loaded as `Order` objects, so there is nothing to snapshot.",
+        "fix": "Shorten c to about the others' length, e.g. 'False, because the `Select` returns records, not `Order` objects.' or lengthen a, b and d with a clause each."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

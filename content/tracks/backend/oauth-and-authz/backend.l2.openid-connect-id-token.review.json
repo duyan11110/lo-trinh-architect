@@ -1,0 +1,109 @@
+{
+  "id": "backend.l2.openid-connect-id-token",
+  "technical": {
+    "reviewed_at": "2026-09-28T22:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (prompt 04, round 3)",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "RFC 6749 §1.4: \"The string is usually opaque to the client.\" (seen again, round 2). OIDC Core §1: \"OpenID Connect 1.0 is a simple identity layer on top of the OAuth 2.0 protocol.\" §4 now reads \"OAuth 2.0 describes the access token as usually opaque to the client: something it passes on to the API, not something it is meant to read.\" - qualifier restored, matches the RFC and the ledger text.",
+        "source": "https://www.rfc-editor.org/rfc/rfc6749 §1.4; https://openid.net/specs/openid-connect-core-1_0.html §1"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "DonHang.App/lib/auth/keycloak_sign_in.dart @ stage-2, finish(): comment \"Only the access token is kept\" and `return (jsonDecode(response.body) as Map<String, dynamic>)['access_token'] as String;`. AuthController (Notifier<String?>) stores only that string.",
+        "source": "examples/don-hang @ stage-2: DonHang.App/lib/auth/keycloak_sign_in.dart, DonHang.App/lib/auth/auth_controller.dart"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "OIDC Core §1: \"OpenID Connect 1.0 is a simple identity layer on top of the OAuth 2.0 protocol.\" §3.1.2.1: \"If the openid scope value is not present, the behavior is entirely unspecified.\" Execution (run 2026-09-28, stage-2): scope 'profile email' -> response keys without id_token; 'openid profile email' -> keys include \"id_token\" next to \"access_token\"; both via the same keycloak_sign_in function.",
+        "source": "https://openid.net/specs/openid-connect-core-1_0.html §1, §3.1.2.1, §3.1.3.3; scripts/backend/oidc-tokens.sh"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "OIDC Core §2: ID Token is \"represented as a JSON Web Token (JWT)\"; aud: \"It MUST contain the OAuth 2.0 client_id of the Relying Party as an audience value\". RFC 6749 §2.2: \"a client identifier -- a unique string representing the registration information provided by the client.\" Round 3: §4 now \"the id the app is registered under in the realm, `donhang-app`\" = \"clientId\": \"donhang-app\" in keycloak/donhang-realm.json @ stage-2. Run: ID token aud donhang-app.",
+        "source": "https://openid.net/specs/openid-connect-core-1_0.html §2; https://www.rfc-editor.org/rfc/rfc6749 §2.2; keycloak/donhang-realm.json @ stage-2"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Round-1 execution (2026-09-28, stage-2): scope 'profile email' -> keys without id_token; 'openid profile email' -> keys with id_token; ID token aud donhang-app, access token aud donhang-api, same iss and sub; full decode of the access token has name and email too. scripts/backend/oidc-tokens.sh @ stage-2 line 25 filters the access token with {iss, aud, sub, typ, azp, roles}, line 23 the ID token with {..., name, email}. §5 now says exactly that.",
+        "source": "scripts/backend/oidc-tokens.sh @ stage-2 lines 10-31; execution round 1"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "keycloak/donhang-realm.json @ stage-2, client donhang-app: \"defaultClientScopes\": [\"basic\", \"profile\", \"email\", \"web-origins\"]. Round-1 run with scope=openid only: ID token has name and email. §4 now: \"because `donhang-app` has the `profile` and `email` scopes on by default\" - matches.",
+        "source": "keycloak/donhang-realm.json @ stage-2 line 32; execution round 1"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "keycloak/donhang-realm.json @ stage-2, client donhang-app, protocolMapper \"audience donhang-api\" (oidc-audience-mapper): \"included.custom.audience\": \"donhang-api\", \"access.token.claim\": \"true\", \"id.token.claim\": \"false\". Run: access token aud donhang-api, ID token aud donhang-app.",
+        "source": "examples/don-hang @ stage-2: keycloak/donhang-realm.json"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Docs: \"A basic implementation of the AddJwtBearer can validate just the audience and the issuer.\" with sample `jwtOptions.Audience = ...`; \"If any of these claims or values are incorrect, the API should return a 401 response.\" Run: DonHang.Api GET /api/v1/orders/1 with ID token -> 401, WWW-Authenticate: Bearer error=\"invalid_token\", error_description=\"The audience '(null)' is invalid\"; with access token -> 200.",
+        "source": "refs/aspnetcore-docs/aspnetcore/security/authentication/configure-jwt-bearer-authentication.md; DonHang.Api/Program.cs:48-50 @ stage-2"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Run: both tokens have iss http://localhost:8180/realms/donhang; typ differs (ID vs Bearer) but Program.cs @ stage-2 configures no typ check (only Authority, MetadataAddress, Audience, RequireHttpsMetadata, MapInboundClaims, RoleClaimType), and the API's 401 for the ID token names the audience as the failure. The lesson scopes the sentence with 'here'.",
+        "source": "DonHang.Api/Program.cs:40-56 @ stage-2; execution"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "OIDC Core §2 aud: \"It MUST contain the OAuth 2.0 client_id of the Relying Party as an audience value\"; RFC 7519 §4.1.3: a principal not identified in aud MUST reject the JWT. Round 3 run (stage-2): one request with both tokens in two Authorization headers, either order -> 401, WWW-Authenticate: Bearer error=\"invalid_token\"; so q4 explanation d \"the API refuses it whichever header it arrives in\" holds. §4 closing sentence (ID token = who logged in, access token = call the API) matches.",
+        "source": "https://openid.net/specs/openid-connect-core-1_0.html §2; https://www.rfc-editor.org/rfc/rfc7519 §4.1.3; execution round 3"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "OIDC Core §1: \"OpenID Connect 1.0 is a simple identity layer on top of the OAuth 2.0 protocol.\" Round 3, new §4 sentence \"only the scope list changes\": scripts/lib/keycloak.sh @ stage-2 keycloak_sign_in sends the same /auth request (client_id, response_type=code, redirect_uri, PKCE S256) and the same /token request for both sign-ins; only the scope argument differs. §3.1.2.1 also requires redirect_uri, which the flow already sends, so nothing else changes here.",
+        "source": "https://openid.net/specs/openid-connect-core-1_0.html §1, §3.1, §3.1.2.1; scripts/lib/keycloak.sh @ stage-2"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "scripts/lib/keycloak.sh @ stage-2: jwt_claims runs `jq -R 'split(\".\")[1] | gsub(\"-\"; \"+\") | gsub(\"_\"; \"/\") | @base64d | fromjson'`. Round 3 zero issues; opened: lesson en.md, quiz.json, meta.json, oidc-tokens.sh, lib/keycloak.sh, Program.cs @ stage-2, OIDC Core, RFC 6749/7519 (prior rounds), live run vs donhang-api. q4 c no longer states what removing options.Audience does; its remaining text follows from §3 aud definition.",
+        "source": "examples/don-hang @ stage-2: scripts/lib/keycloak.sh"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-28T22:30:00+07:00",
+    "reviewer": "claude-opus-5-5 (prompt 05, round 3)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": "backend.l2.openid-connect-id-token.q4",
+        "kind": "quiz",
+        "quote": "the API refuses it whichever header it arrives in",
+        "text": "Option d sends the access token too, so I wonder whether the request still passes on the access token alone. The explanation only says the ID token is refused; the lesson never shows a request with two tokens, so I cannot tell what happens to the whole request. My answer (a) does not change.",
+        "fix": "End explanation d with one plain clause about the whole request, e.g. 'so the request fails even though the access token is there too', or drop the header detail and keep only the aud rule."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

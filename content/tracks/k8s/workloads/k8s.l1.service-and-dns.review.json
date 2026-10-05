@@ -1,0 +1,115 @@
+{
+  "id": "k8s.l1.service-and-dns",
+  "technical": {
+    "reviewed_at": "2026-10-04T04:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (round 3)",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "architecture/_index.md:122-126: \"all Kubernetes clusters should have cluster DNS ... Cluster DNS is a DNS server ... which serves DNS records for Kubernetes services.\" dns-debugging-resolution.md:173: \"The Service for CoreDNS is named kube-dns\". dns-custom-nameservers.md:84 Corefile \".:53 {\". Round 2 run (kind donhang): kube-dns 10.96.0.10, ports dns 53/UDP, dns-tcp 53/TCP, metrics 9153/TCP; coredns Pods in kube-system. R3 text \"normally\" + \"in Đơn Hàng's cluster\" and \"port 53, the DNS port; the other entries ... do not matter\" are supported.",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/architecture/_index.md:120-128; tasks/administer-cluster/dns-debugging-resolution.md:173; dns-custom-nameservers.md:84; kubectl get svc kube-dns (round 2)"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "dns-pod-service.md:42-43: \"DNS queries may be expanded using the Pod's /etc/resolv.conf. kubelet configures this file for each Pod.\" :276-277: \"If dnsPolicy is not explicitly specified, then \\\"ClusterFirst\\\" is used.\" architecture/_index.md:128: \"Containers started by Kubernetes automatically include this DNS server in their DNS searches.\" Executed rv Pod in donhang: \"nameserver 10.96.0.10\" = kube-dns cluster IP.",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/services-networking/dns-pod-service.md:42-51,272-277; concepts/architecture/_index.md:128"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "dns-pod-service.md:74-77: \"Normal\" (not headless) Services get A/AAAA records \"with a name of the form my-svc.my-namespace.svc.cluster-domain.example. This resolves to the cluster IP of the Service.\" web-service.yaml@stage-2: port 80, targetPort 80. Executed rv-sd2a in default: nslookup mailpit.svc.cluster.local. and mailpit.cluster.local. -> NXDOMAIN; mailpit.donhang.svc.cluster.local. -> 10.96.198.13 (= its cluster IP).",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/services-networking/dns-pod-service.md:72-80; examples/don-hang@stage-2 deploy/k8s/lessons/web-service.yaml; kubectl run rv-sd2a"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "dns-debugging-resolution.md:77-81: \"search path may vary for different cloud providers\" with example \"search default.svc.cluster.local svc.cluster.local cluster.local google.internal c.gce_project_id.internal\" (extra domains after the cluster ones). dns-custom-nameservers.md:56-59: kubelet --resolv-conf file used \"for DNS inheritance\". Lesson now hedges (\"can be passed on through kind ... appear after these\") = round 2 suggested_text. awk at service-dns.sh@stage-2:24-26 prints nameserver/options lines whole and keeps only search entries matching /cluster\\.local$/, as the prose says.",
+        "source": "refs/kubernetes-website/content/en/docs/tasks/administer-cluster/dns-debugging-resolution.md:77-81; dns-custom-nameservers.md:56-59; examples/don-hang@stage-2 scripts/k8s/service-dns.sh:24-26"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "dns-pod-service.md:33-40: \"A query for data returns no results, because it uses the Pod's test namespace. A query for data.prod returns the intended result, because it specifies the namespace.\" Captured output stage-2: \"wget: bad address 'web'\" from default, Caddy title for web.donhang. Re-run with mailpit: from default \"wget: bad address 'mailpit:8025'\", \"Connecting to mailpit.donhang:8025 (10.96.198.13:8025)\".",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/services-networking/dns-pod-service.md:28-56; examples/don-hang outputs/stage-2/scripts/k8s/service-dns.txt"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "kubectl explain service.spec.clusterIP (v1.34.11): \"This field may not be changed through updates unless the type field is also being changed to ExternalName\". dns-pod-service.md:76-77: the A record \"resolves to the cluster IP of the Service\". Name -> cluster IP, cluster IP fixed for the Service's life, so Pod replacement does not change the answer.",
+        "source": "kubectl explain service.spec.clusterIP; refs/kubernetes-website/content/en/docs/concepts/services-networking/dns-pod-service.md:72-77"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "cluster-ip-allocation.md:22-29: \"dynamically: the cluster's control plane automatically picks a free IP address from within the configured IP range ... statically: you specify an IP address of your choice\". kubectl explain service.spec.clusterIP: \"clusterIP is the IP address of the service and is usually assigned randomly.\" Lesson says \"could get another address\" — matches.",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/services-networking/cluster-ip-allocation.md:20-33; service.md:456-460"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "dns-debugging-resolution.md:328-329: \"Kubernetes installs do not configure the nodes' resolv.conf files to use the cluster DNS by default\". Executed on the Windows host running the kind cluster: nslookup kube-dns.kube-system.svc.cluster.local -> \"can't find ... Non-existent domain\"; curl http://mailpit.donhang.svc.cluster.local:8025/ -> 000 (no resolution).",
+        "source": "refs/kubernetes-website/content/en/docs/tasks/administer-cluster/dns-debugging-resolution.md:328-330; host nslookup/curl"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Executed in caddy:2.10.0 Pod: which -> /usr/bin/wget, /usr/bin/nslookup; \"BusyBox v1.37.0\". Final dot: from default, wget http://mailpit.donhang.:8025/ -> \"bad address\" (no search domain added) while mailpit.donhang (no dot) and mailpit.donhang.svc.cluster.local. both succeed.",
+        "source": "kubectl run rv-sd1/rv-sd7 --image=caddy:2.10.0 (kind donhang)"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "git show stage-2:scripts/k8s/service-dns.sh: line 16 applies web-deployment.yaml and web-service.yaml; 24-26 awk keeps cluster.local search domains plus nameserver/options; 29 kubectl get service kube-dns; 35-37 nslookup vs .spec.clusterIP; 40-45 wget from donhang/default; 48 kubectl delete of both. Lesson blocks 19-30 and 32-45 match character-for-character; output block matches outputs/stage-2/scripts/k8s/service-dns.txt.",
+        "source": "examples/don-hang @ stage-2 scripts/k8s/service-dns.sh; outputs/stage-2/scripts/k8s/service-dns.txt"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Round 2 executed 9 runs kubectl run --rm -i --restart=Never --quiet -n default --image=caddy:2.10.0 -- wget -O /dev/null http://mailpit.donhang:8025/ -> \"Connecting to mailpit.donhang:8025 (10.96.198.13:8025)\" (= CLUSTER-IP); round 1 and round 2 rv-sd4 showed late attach losing first output lines with no warning. service-dns.sh@stage-2:9-12 documents the couldn't-attach warning. R3 adds \"if no Connecting line appears at all, run step 3 again\" (--rm Pod, safe to repeat), closing the round 2 gap.",
+        "source": "kubectl run rv-sd31..rv-sd39, rv-sd4 (kind donhang, round 2); examples/don-hang@stage-2 scripts/k8s/service-dns.sh:9-12"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "git show stage-2:deploy/k8s/lessons/api-deployment.yaml lines 31-38: ConnectionStrings__Default \"Host=db;Database=donhang;Username=donhang\", ConnectionStrings__Redis \"redis:6379,abortConnect=false\", Keycloak__MetadataAddress \"http://keycloak:8080/...\". Short Service names, as the lesson says.",
+        "source": "examples/don-hang @ stage-2 deploy/k8s/lessons/api-deployment.yaml:30-38"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "BusyBox v1.37.0 wget --help in caddy:2.10.0 (round 2): \"-T SEC  Network read timeout is SEC seconds\". R3 text \"gives up if the server sends nothing for 5 seconds and keeps the error message, so the failure is printed instead of stopping the script\" = round 2 suggested_text. rv-sd4: wget -q -T 5 -O - http://mailpit/ 2>&1; true -> \"wget: bad address 'mailpit'\" printed, kubectl exit 0. Opened for R3: lesson en.md, service-dns.sh@stage-2, meta.json, quiz.json, refs pages cited in claims 1 and 4.",
+        "source": "kubectl run rv-sd2a (wget --help), rv-sd4 --image=caddy:2.10.0 -n default (round 2); service-dns.sh@stage-2:45"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-04T05:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation, round 3)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "term",
+        "quote": "# search: tried in order after a short name. The host's own search domains,\n# which kind passes on after these, are left out here.",
+        "text": "Section 4 no longer uses 'kind', and the prose gloss ('kind, the tool that created the cluster') now sits right after the first block. But reading in order I still meet 'kind' first in this code comment, where 'which kind passes on' reads like 'which kind (of domains)'. The gloss arrives a few lines later and settles it, so I only paused.",
+        "fix": "Move the gloss earlier, into the prose before the first block, e.g. end its first sentence with '…in the cluster that kind, the tool that created it, runs'; the awk sentence can then say just 'through kind'."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

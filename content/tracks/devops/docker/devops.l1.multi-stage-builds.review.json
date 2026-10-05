@@ -1,0 +1,99 @@
+{
+  "id": "devops.l1.multi-stage-builds",
+  "technical": {
+    "reviewed_at": "2026-09-26T23:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "source": "refs/docker-docs/content/manuals/build/building/multi-stage.md L19-22, L58-61, L90-100",
+        "evidence": "\"Each `FROM` instruction can use a different base, and each of them begins a new stage of the build. You can selectively copy artifacts from one stage to another, leaving behind everything you don't want in the final image.\" / \"The Go SDK and any intermediate artifacts are left behind, and not saved in the final image.\" `--target` stops at another stage. R2: lesson sections 3, 4 and summary line 1 now say \"by default\"; the stage-order sentence is gone."
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "source": "git -C examples/don-hang show stage-1:DonHang.Api/Dockerfile",
+        "evidence": "Lines 1-5 and 19-28 at stage-1 match both lesson blocks character for character. stage-1^{commit} == HEAD == 4fca60af. Line 25 is `COPY --from=build /app .`, line 5 is `FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build`."
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "source": "reviewer run (docker images, docker run); refs/dotnet-docs/docs/core/docker/introduction.md L16",
+        "evidence": "`dotnet --list-sdks` in donhang-api:stage-1 prints nothing; `--list-runtimes` prints Microsoft.AspNetCore.App 10.0.12 and Microsoft.NETCore.App 10.0.12. `docker images`: mcr.microsoft.com/dotnet/sdk:10.0 917MB vs donhang-api:stage-1 241MB (~3.8x). Docs: \"There are runtime images ... for production and SDK images ... for building your code\"."
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "source": "refs/docker-docs/_vendor/github.com/moby/buildkit/frontend/dockerfile/docs/reference.md L1238, L2108; refs/aspnetcore-docs/aspnetcore/fundamentals/servers/kestrel/endpoints.md L30-40",
+        "evidence": "\"The `EXPOSE` instruction doesn't actually publish the port. It functions as a type of documentation ...\" / \"An `ENTRYPOINT` allows you to configure a container that will run as an executable.\" / Kestrel, \"Specify endpoints with URLs\": \"`ASPNETCORE_URLS` environment variable\"."
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "source": "reviewer run, Docker 28 / Docker Desktop, 2026-09-26",
+        "evidence": "`docker images donhang-api` -> one row `donhang-api stage-1 e29a55ac5d91 241MB`. list-sdks: empty; list-runtimes: AspNetCore.App 10.0.12, NETCore.App 10.0.12. `ls /src` -> \"ls: cannot access '/src': No such file or directory\"; `ls /app` lists DonHang.Api.dll among 25 files."
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "source": "refs/docker-docs/content/get-started/docker-concepts/building-images/multi-stage-builds.md L22; refs/docker-docs/content/manuals/build/building/best-practices.md L76",
+        "evidence": "\"By separating the build environment from the final runtime environment, you can significantly reduce the image size and attack surface.\" / \"... dependencies can considerably lower the attack surface.\" R2: the lesson sentence now names the SDK's compiler and build tools and the source code; \"pure risk\" and \"package downloader\" are gone."
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "source": "refs/docker-docs/content/manuals/build/cache/invalidation.md L24-27; devops.l1.dockerfile-for-dotnet.review.json technical claim 11 run",
+        "evidence": "\"For the `ADD` and `COPY` instructions ... the builder calculates a cache checksum from file metadata ... cache is invalidated if the file metadata has changed for any of the files\". Supports R2 wording \"a `COPY` step runs again when the files it copies have changed\". Recorded run (stage-1): after a code edit `[final 4/4] COPY --from=build /app .` executed while final 2/4, 3/4 were CACHED."
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "source": "git -C examples/don-hang show stage-1:DonHang.Api/Dockerfile L14-16",
+        "evidence": "L14 `COPY DonHang.Domain/ DonHang.Domain/`, L15 `COPY DonHang.Infrastructure/ DonHang.Infrastructure/`, L16 `COPY DonHang.Api/ DonHang.Api/`. No other folder is copied (L8-11 copy only global.json, Directory.Packages.props and three .csproj files). \"the API's three source folders\" is true of this code."
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "source": "refs/docker-docs/_vendor/github.com/moby/buildkit/frontend/dockerfile/docs/reference.md L2489-2490; refs/dotnet-docs/docs/core/install/linux-snap-sdk.md L42; reviewer run",
+        "evidence": "\"The `WORKDIR` instruction sets the working directory for any `RUN`, `CMD`, `ENTRYPOINT`, `COPY` and `ADD` instructions that follow it\". \"The SDK includes both the ASP.NET Core and .NET runtime, versioned to the SDK.\" Run: `docker run --rm mcr.microsoft.com/dotnet/sdk:10.0 dotnet --list-runtimes` -> Microsoft.AspNetCore.App 10.0.12, Microsoft.NETCore.App 10.0.12."
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-26T23:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": "devops.l1.multi-stage-builds.q5",
+        "kind": "quiz",
+        "quote": "The runtime image lets the API change its own code while running",
+        "text": "Option d is something nobody would believe, and b contradicts what the lesson says twice (the runtime image cannot build). That leaves a vs c, and a is the only option that restates the attack-surface sentence of section 4 (\"fewer installed programs that an attacker could misuse, and fewer that need security updates\"), so I can pick it by recognition.",
+        "fix": "Replace option d (en and vi) with a plausible wrong reason tied to the lesson, e.g. \"The runtime image starts the API faster because the SDK recompiles it at every start\", and update explanation d to match."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "diagram",
+        "quote": "S -.left behind.-> X[SDK, /src, build files]",
+        "text": "The prose names what is left behind as \"the SDK's compiler and build tools and the full source code\"; the node says \"build files\". I can map it, but I paused over whether \"build files\" is a third thing besides tools and source.",
+        "fix": "Relabel the node to match the prose, e.g. X[SDK compiler and build tools, source in /src]."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

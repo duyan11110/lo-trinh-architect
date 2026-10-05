@@ -1,0 +1,139 @@
+{
+  "id": "devops.l1.what-is-deploy",
+  "technical": {
+    "reviewed_at": "2026-09-26T14:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "stage-1 scripts/up.sh: `docker compose up -d --build --wait`; docker-compose.yml api.build: context `.`, dockerfile `DonHang.Api/Dockerfile`; Dockerfile: `FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build` ... `FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final`. Running lab: `docker image inspect donhang-api:stage-1` -> linux/amd64; /etc/os-release in donhang-api -> Ubuntu 24.04.5 LTS; `dotnet --list-runtimes` -> Microsoft.AspNetCore.App 10.0.12. R2: lesson wording \"the .NET 10 build tools on Linux\" = sdk:10.0 build stage (`RUN dotnet publish`), still supported.",
+        "source": "examples/don-hang@stage-1: scripts/up.sh, docker-compose.yml, DonHang.Api/Dockerfile; docker inspect/exec on running lab"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "api has no `ports:` (docker ps: donhang-api `8080/tcp`, unpublished); host curl to 172.28.0.13:8080 timed out. Caddyfile: `:8080` and `donhang.local:8443`, both `handle /api/v1/* { reverse_proxy api:8080 }`; curl on 8080 and on https://donhang.local:8443 -> 200. Ledger text and lesson (\"its plain-HTTP port, `8080`\") now match.",
+        "source": "examples/don-hang@stage-1: docker-compose.yml, Caddyfile; curl on running lab"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "docker-compose.yml api.environment: `ConnectionStrings__Default: \"Host=db;Database=donhang;...\"`, `Jwt__SigningKey: \"${JWT_SIGNING_KEY}\"`, `ASPNETCORE_ENVIRONMENT: \"Development\"` (exactly three). scripts/dev-secrets.sh: `echo \"JWT_SIGNING_KEY=$(openssl rand -base64 48)\" >> .env`. appsettings.json: Logging, AllowedHosts, Jwt.Issuer, Jwt.Audience only. No appsettings.Development.json or launchSettings.json at the tag. R2: connection string is `Host=db;Database=donhang;Username=donhang;Password=${POSTGRES_PASSWORD}` (address + login, as §5 now says); db image postgres:17.6-alpine.",
+        "source": "examples/don-hang@stage-1: docker-compose.yml, scripts/dev-secrets.sh, DonHang.Api/appsettings.json"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Ran outside the lab (git archive stage-1 to scratch dir, SDK 10.0.300, no config env vars): `dotnet run --project DonHang.Api` -> `Unhandled exception. System.InvalidOperationException: ConnectionStrings:Default is not set at Program.<Main>$ ... Program.cs:line 16`. With only ConnectionStrings__Default set: `Jwt:SigningKey is not set ... line 23`. Confirms order and the two required settings.",
+        "source": "execution: dotnet run on archived examples/don-hang@stage-1"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Compose docs: \"Each container for a service joins the default network and is both reachable by other containers on that network, and discoverable by its service name.\" Execution: inside donhang-api `getent hosts db` -> 172.28.0.11 db; on the host `nslookup db` -> \"can't find db: Non-existent domain\", `curl http://db:5432/` exit 6 (could not resolve host).",
+        "source": "refs/docker-docs/content/manuals/compose/how-tos/networking.md:15; execution on running lab"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "file-path-formats: \"A peculiarity of the Windows file system ... is that path and directory names are case-insensitive.\" \"Starting with .NET 8 on Unix-based operating systems, the runtime no longer converts back slash (\\) characters to directory separators\". package-and-deploy-resources: \"On operating systems with case-sensitive file systems (that is, Linux and macOS)...\"",
+        "source": "refs/dotnet-docs/docs/standard/io/file-path-formats.md:158,206; refs/dotnet-docs/docs/core/extensions/package-and-deploy-resources.md:140"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "ProductsController at stage-1 has `[Route(\"api/v1/products\")]`, `[HttpGet] List()`, no [Authorize]. Running lab: `curl -s -w '%{http_code}' http://localhost:8080/api/v1/products` -> 200, body `[{\"id\":1,\"name\":\"Bàn phím cơ\",\"priceVnd\":1250000},...,{\"id\":8,\"name\":\"Đèn bàn LED\",\"priceVnd\":280000}]`.",
+        "source": "examples/don-hang@stage-1: DonHang.Api/Controllers/ProductsController.cs; curl on running lab"
+      },
+      {
+        "n": 8,
+        "verdict": "not-needed",
+        "evidence": "Definitional: restates the lesson's own definition of deploy (running and reachable) and its consequence; no version-dependent or documented behaviour involved."
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "accuracy",
+        "quote": "2 — other settings (logging, and the JWT issuer and audience), but no connection string and no signing key.",
+        "text": "The parenthesis reads as a complete list, but appsettings.json at stage-1 also has `\"AllowedHosts\": \"*\"`. A learner who opens the file sees a fourth setting the expected result does not mention.",
+        "fix": "Write \"other settings, such as logging and the JWT issuer and audience, but no connection string and no signing key.\""
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-26T16:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior, prompt 05, round 2)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "gap",
+        "quote": "It builds the API from the repository's source, following the steps in `DonHang.Api/Dockerfile`, using the .NET 10 build tools on Linux, whatever your laptop runs.",
+        "text": "I follow that the lab plays the role of a target machine, but I stop at \"on Linux, whatever your laptop runs\" and later \"the lab's own network\": how does my Windows laptop run Linux with its own network? I can accept it and go on, so the main idea survives, but no sentence says the lab behaves like a separate machine inside my laptop.",
+        "fix": "After \"The lab is a small version of this.\" add one sentence: \"It behaves like a small separate Linux machine inside your laptop, with its own settings and its own network.\""
+      },
+      {
+        "severity": "minor",
+        "section": 2,
+        "kind": "term",
+        "quote": "its `localhost` means nothing on anyone else's machine",
+        "text": "\"localhost\" is not in what I know. From IP address and port I can guess it is the name a machine uses for itself, and the Try it command works without knowing, so I am not stuck, only guessing.",
+        "fix": "Write \"its `localhost`, the name a machine uses for itself, means nothing on anyone else's machine\"."
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "term",
+        "quote": "2 — other settings, such as logging and the JWT issuer and audience, but no connection string and no signing key.",
+        "text": "\"issuer\" and \"audience\" are never explained. I only need to recognise them in the file, so this does not stop the exercise, but I wonder whether I should know them.",
+        "fix": "Write \"other settings, such as logging and some JWT settings, but no connection string and no signing key.\""
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "length",
+        "quote": "`docker-compose.yml` gives it a connection string, the setting that tells it where its database is and how to log in, with the address `Host=db`; `db` is a name the lab gives its database, known only on the lab's own network.",
+        "text": "The third paragraph of section 5 now carries connection string, `db`, the JWT key, `dev-secrets.sh`, `.env`, environment variables, `appsettings.json` and the startup error in six sentences. I had to re-read it twice; this first sentence alone holds two definitions joined by a semicolon.",
+        "fix": "Split this sentence at the semicolon into two sentences, and start a new paragraph at \"Start the API straight from your editor without them\"."
+      },
+      {
+        "severity": "minor",
+        "section": "devops.l1.what-is-deploy.q4",
+        "kind": "quiz",
+        "quote": "The code is the same; the lab supplies the connection string as an environment variable and the laptop does not",
+        "text": "The correct option is almost twice as long as each distractor and the only one with two clauses; I can pick it by length alone.",
+        "fix": "Shorten a to \"Same code; only the lab supplies the connection string\", or lengthen the distractors to similar size."
+      },
+      {
+        "severity": "minor",
+        "section": "devops.l1.what-is-deploy.q5",
+        "kind": "quiz",
+        "quote": "The steps were typed differently, since commands wear out over time",
+        "text": "Options a (\"commands wear out\") and c (\"can succeed only once per server\") are things nobody would believe, so I am really choosing between b and d without needing the lesson.",
+        "fix": "Replace a and c with plausible wrong ideas, e.g. \"The code must have changed, because the same code on the same server behaves the same\" and \"The first deploy was only lucky and never really worked\"."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "localhost",
+        "JWT issuer",
+        "JWT audience"
+      ],
+      "skipped_steps": [
+        "Section 5: the lab is treated as a separate Linux machine with its own network, but the lesson never says it behaves like one inside your laptop."
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

@@ -1,0 +1,154 @@
+{
+  "id": "backend.l1.exception-handling-middleware",
+  "technical": {
+    "reviewed_at": "2026-09-27T06:45:00+07:00",
+    "reviewer": "claude-opus-5-5[1m] (technical, round 2 re-run; full re-read of current lesson, code at stage-1 75bf7d2, live Try it, dev-page execution, refs/ greps)",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "git show stage-1:DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs lines 16-30: catch (KeyNotFoundException ex) -> LogWarning + Status404NotFound, \"Not found\", ex.Message; catch (ArgumentException ex) -> LogWarning + Status400BadRequest, \"Invalid request\", ex.Message; catch (Exception ex) -> LogError(ex, \"unhandled exception\") + Status500InternalServerError, \"Server error\", \"something went wrong\". Lesson block equals lines 10-31 verbatim.",
+        "source": "examples/don-hang @ stage-1 (75bf7d2): DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs:10-31"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Verbatim: \"When an exception occurs, the runtime checks catch clauses in the specified order, from top to bottom. At most, only one `catch` block runs for any thrown exception.\" Throw-from-catch part executed (dotnet run, SDK 10.0.300): an exception thrown inside catch (ArgumentException) skipped sibling catch (Exception) and printed 'outer caught InvalidOperationException'.",
+        "source": "refs/dotnet-docs/docs/csharp/language-reference/statements/exception-handling-statements.md:79; scratch run catchtest.cs"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Program.cs lines 67-72: app.UseMiddleware<ExceptionHandlingMiddleware>(); app.UseMiddleware<RequestLoggingMiddleware>(); app.UseCors(); app.UseAuthentication(); app.UseAuthorization(); app.MapControllers(); - first app.Use... call.",
+        "source": "examples/don-hang @ stage-1 (75bf7d2): DonHang.Api/Program.cs:67-72"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Run this session (submodule HEAD 75bf7d2, image donhang-api:stage-1): docker compose stop db; curl -sS -i http://localhost:8080/api/v1/orders/1 -> HTTP/1.1 500, body {\"title\":\"Server error\",\"status\":500,\"detail\":\"something went wrong\"}. docker logs --since 1m: fail: Microsoft.EntityFrameworkCore.Database.Command[20102], fail: Microsoft.EntityFrameworkCore.Query[10100], fail: DonHang.Api.Middleware.ExceptionHandlingMiddleware[0] / 'unhandled exception'. No RequestLoggingMiddleware line for that request. db restarted healthy.",
+        "source": "live run in examples/don-hang, 2026-09-27"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Live curl -i this session: 'Content-Type: application/json; charset=utf-8', body only title/status/detail. WriteProblemAsync sets ContentType = \"application/problem+json\" then WriteAsJsonAsync(problem) with Status/Title/Detail only. Lesson claims only the body shape, not the media type.",
+        "source": "examples/don-hang @ stage-1 (75bf7d2): ExceptionHandlingMiddleware.cs:33-44; live curl via Caddy localhost:8080"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "docker-compose.yml api.environment: ASPNETCORE_ENVIRONMENT: \"Development\"; Program.cs calls AddProblemDetails. Executed minimal app (WebApplication.CreateBuilder + AddProblemDetails, endpoint throws): Development -> 500 application/problem+json, title \"System.InvalidOperationException\", detail = message, exception.details = type+message+stack trace; Production -> 500, Content-Length: 0. Docs: server \"sends a 500 - Internal Server Error response without a response body.\"",
+        "source": "scratch run devpage/app.cs (.NET 10); refs/aspnetcore-docs/aspnetcore/fundamentals/error-handling.md:268; includes/problem-details-service.md"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Code: both specific catches call logger.LogWarning(ex, ...); only catch (Exception ex) calls logger.LogError. Lesson frames it as 'this middleware calls', i.e. this class's own choice.",
+        "source": "examples/don-hang @ stage-1 (75bf7d2): DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs:16-30"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "\"ASP.NET Core apps enable the developer exception page by default when both: Running in the Development environment. The app was created ... by using WebApplication.CreateBuilder\"; \"The developer exception page runs early in the middleware pipeline, so that it can catch unhandled exceptions thrown in middleware that follows.\" Program.cs uses WebApplication.CreateBuilder.",
+        "source": "refs/aspnetcore-docs/aspnetcore/includes/developer-exception-page.md:1-6"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "docker logs donhang-api this session: 'fail: DonHang.Api.Middleware.ExceptionHandlingMiddleware[0]' for the LogError call, followed by the exception type and stack trace; LogWarning entries in the same log print 'warn: ...' and LogInformation 'info: ...'.",
+        "source": "live docker logs donhang-api, 2026-09-27"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "\"Changes to HttpResponse after the response has started throw an exception. For example, setting headers and a status code throw an exception\"; \"If the server catches an exception after response headers are sent, the server closes the connection.\" LogError precedes WriteProblemAsync (lines 28-29); escape past the catch confirmed by claim 2's execution.",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/middleware/index.md:367; fundamentals/error-handling.md:268"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 9,
+        "kind": "accuracy",
+        "quote": "The client only ever sees the generic `detail`; the real exception and its stack trace exist only in the log line beside it.",
+        "text": "Line 5 has no condition. Read alone, it is wrong for the 400/404 catches, whose detail is ex.Message (section 5 says so). It is also wrong for the started-response case, where the client gets a cut-off partial response, not the generic detail. Lines 1 and 3 qualify their statements; line 5 does not.",
+        "fix": "Rewrite line 5 as: \"For an unclassified exception, the client sees only the generic `detail`; the real exception and its stack trace exist only in the log line beside it.\""
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-27T14:00:00+07:00",
+    "reviewer": "claude-opus-5-5[1m] (junior-reader simulation, round 2; known_vocab + prereq five-line summaries only)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "term",
+        "quote": "so `WriteProblemAsync` can no longer set `500`",
+        "text": "First time I meet `WriteProblemAsync` and nothing says what it is; I only learn in section 5 that it is a private helper that writes the title/status/detail body. I could guess from the name, so not stuck, but I paused.",
+        "fix": "At this first mention, add \"(the helper that writes the error body, shown below)\" after `WriteProblemAsync`."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "length",
+        "quote": "A `catch` clause never catches an exception thrown from inside itself or its sibling clauses, so it travels outward past this middleware, and the client keeps whatever partial response already went out, cut off.",
+        "text": "The started-response paragraph is the densest in the lesson; I read it twice. It is followable now (the sibling-clause rule is stated), but this last sentence joins three facts: why it escapes, where it goes, what the client sees.",
+        "fix": "Split after \"past this middleware.\" and start a new sentence: \"The client keeps whatever partial response already went out, cut off.\""
+      },
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "length",
+        "quote": "Without this middleware, a `500` would still come back. But the example app is configured for local development",
+        "text": "The correction of the first misconception carries a second topic (what ASP.NET Core does without this middleware, Development vs outside it). Each part is understandable, but I had to re-read to see how it ties back to \"fails silently\".",
+        "fix": "Start the aside with a linking phrase, e.g. \"Even without this middleware the request would not fail silently: a `500` would still come back, but …\"."
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "term",
+        "quote": "`docker compose stop db`",
+        "text": "Docker/docker compose is not in my vocabulary. Each command's effect is stated right beside it (stop only the database; the API's console log), so I can still run the steps and check the result; noting it only.",
+        "fix": "No change needed if earlier lessons already used these commands; otherwise add \"(stops only the database)\" after the start command as well."
+      },
+      {
+        "severity": "minor",
+        "section": 1,
+        "kind": "term",
+        "quote": "never runs when a handler throws",
+        "text": "\"handler\" is used once instead of \"endpoint\"; I assume it means the same thing but had to guess.",
+        "fix": "Replace \"a handler\" with \"an endpoint\"."
+      },
+      {
+        "severity": "minor",
+        "section": 3,
+        "kind": "style",
+        "quote": "- catch clause order — C# tries a `try` block's `catch` clauses top to bottom",
+        "text": "Core concepts entries are not bolded, so they don't stand out as the lesson's key ideas the way I'd expect.",
+        "fix": "Bold the three concept names: **catch clause order**, **generic `500` response**, **log severity**."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "quote": "`Error` — the other two clauses log at `Warning`, so only the unclassified case is left",
+        "text": "q5's correct answer restates Core concepts almost word for word (\"filtering this middleware's entries on `Error` finds the unclassified ones\"), so I can match it without reasoning. q3's option c similarly echoes the misconception correction.",
+        "fix": "In q5, frame the question around a concrete log excerpt (a `warn:` and a `fail:` entry) and ask which one to investigate, rather than naming the level directly."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

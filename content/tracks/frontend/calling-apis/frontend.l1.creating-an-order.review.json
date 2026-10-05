@@ -1,0 +1,139 @@
+{
+  "id": "frontend.l1.creating-an-order",
+  "technical": {
+    "reviewed_at": "2026-09-26T14:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "OrdersController.cs @stage-1: `[Authorize] [HttpPost] public async Task<ActionResult<OrderDto>> Create(CreateOrderRequest request)` with `var customerId = int.Parse(User.FindFirstValue(JwtRegisteredClaimNames.Sub)!);`. Dtos.cs: `record CreateOrderRequest(List<CreateOrderItemRequest> Items)`, `record CreateOrderItemRequest(int ProductId, int Quantity, int UnitPriceVnd)`. Program.cs sets `MapInboundClaims = false` so `sub` is kept as issued.",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/Controllers/OrdersController.cs:17-21; DonHang.Api/Dtos.cs:11-13; DonHang.Api/Program.cs:31"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Lab (curl via Caddy :8080, valid token): `HTTP/1.1 201 Created`, `Location: http://localhost:8080/api/v1/orders/29`, body `{\"id\":29,\"customerId\":1,\"status\":\"new\",\"placedAt\":\"2026-09-25T21:54:32.92...+00:00\",\"items\":[{\"productId\":1,\"quantity\":1,\"unitPriceVnd\":1250000}]}`. OrderService.PlaceOrderAsync sets `Status = \"new\"`.",
+        "source": "lab run 2026-09-26; examples/don-hang @ stage-1: DonHang.Domain/OrderService.cs:13-17"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Lab: took a real login token, changed the payload `sub` from \"1\" to \"2\" keeping the original signature, POST /api/v1/orders -> `HTTP/1.1 401 Unauthorized`, `Www-Authenticate: Bearer error=\"invalid_token\"`. Program.cs: `ValidateIssuerSigningKey = true` with the HMAC key from config; JwtTokenService signs with HmacSha256.",
+        "source": "lab run 2026-09-26; DonHang.Api/Program.cs:32-41; DonHang.Api/JwtTokenService.cs"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Lab: no Authorization -> `401`, `Content-Length: 0`, `Www-Authenticate: Bearer`. HMAC-signed token with exp 1h in the past -> `401`, `error_description=\"The token expired at ...\"`. `{\"items\":[]}` -> `400` `{\"title\":\"Invalid request\",\"status\":400,\"detail\":\"an order needs at least one item\"}`. db stopped -> `500` `{\"title\":\"Server error\",\"status\":500,\"detail\":\"something went wrong\"}`. 401 has no body; 400/500 carry Problem Details.",
+        "source": "lab run 2026-09-26; DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs; DonHang.Domain/OrderService.cs:10"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "api_client.dart @stage-1 48-58: `http.post(Uri.parse('$baseUrl/orders'), headers: _headers, body: jsonEncode({'items': items.map((item) => item.toJson()).toList()}))`; `if (response.statusCode != 201) throw Exception('failed to create order (${response.statusCode})')`; body not read on failure. models.dart: toJson keys productId/quantity/unitPriceVnd; OrderResult.fromJson reads id, status.",
+        "source": "examples/don-hang @ stage-1: DonHang.App/lib/api_client.dart:12,18-21,48-58; DonHang.App/lib/models.dart:17-41"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "create_order_screen.dart @stage-1: `OrderItemRequest(productId: 1, quantity: 1, unitPriceVnd: 1250000)`; `onPressed: _loading ? null : _placeOrder`; child `CircularProgressIndicator()` while loading. seed.sql: `(1, 'Bàn phím cơ', 1250000)`; GET /products returns id 1 priceVnd 1250000. Flutter API (ElevatedButton): \"If onPressed and onLongPress callbacks are null, then the button will be disabled.\"",
+        "source": "create_order_screen.dart:21-33,43-45; db/seed.sql:6; https://api.flutter.dev/flutter/material/ElevatedButton-class.html"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Headless Chrome on http://localhost:8081, signed in, `docker compose stop db`, tapped \"Order 1 keyboard\": screen text \"Failed: Exception: failed to create order (500)\"; CDP Network: POST /api/v1/orders status 500, response header `Access-Control-Allow-Origin: *`, body `{\"title\":\"Server error\",\"status\":500,\"detail\":\"something went wrong\"}`. db restarted afterwards (healthy).",
+        "source": "lab run 2026-09-26 (Chrome 153 headless + CDP)"
+      },
+      {
+        "n": 8,
+        "verdict": "unverified",
+        "evidence": "Network-tab part verified by the round-1 lab (Chrome 153 headless + CDP): POST /api/v1/orders 201 with request headers `Authorization: Bearer eyJ...`, `Content-Type: application/json`, postData `{\"items\":[...]}`, and the response body; `docker compose stop/start db` stopped/started donhang-db. The F12 key binding: no browser entry in versions.yaml, so no allowed doc root; refs/flutter-website has F12 only as a VS Code binding (tools/vs-code.md:125); a keypress cannot be tested headless.",
+        "source": "lab run 2026-09-26; refs/flutter-website/sites/docs/src/content/tools/vs-code.md:125; content/versions.yaml"
+      },
+      {
+        "n": 9,
+        "verdict": "not-needed",
+        "evidence": "Kind opinion, taken from outline misconception 2; phrased as a consequence for the user, not as a documented rule. The 401/400/500 mapping it relies on is verified under claim 4."
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "ASP.NET Core docs: \"Calling `UseAuthentication` registers the middleware that uses the previously registered authentication schemes.\" and \"An authentication challenge is invoked by Authorization when an unauthenticated user requests an endpoint that requires authentication.\" Example: \"A JWT bearer scheme returning a 401 result with a `www-authenticate: bearer` header.\" Program.cs @stage-1: default scheme JwtBearer, `app.UseAuthentication(); app.UseAuthorization();` (70-71). Lab: no token -> 401.",
+        "source": "refs/aspnetcore-docs/aspnetcore/security/authentication/index.md:44,113-120; DonHang.Api/Program.cs:25,70-71"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "RFC 9110 §9.2.2: \"Of the request methods defined by this specification, PUT, DELETE, and safe request methods are idempotent.\" (POST is not listed). Lab 2026-09-26: two identical POST /api/v1/orders with the same token -> 201 id 31 and 201 id 32, both customerId 1.",
+        "source": "refs/rfc/rfc9110.txt:3862-3867; lab run 2026-09-26"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "@stage-1: api_client.dart:12 `static const String baseUrl = 'http://localhost:8080/api/v1';`; create_order_screen.dart:43-44 `onPressed: _loading ? null : _placeOrder`; login_screen.dart:30-33 after `login` succeeds, `Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => CreateOrderScreen(...)))`, whose AppBar title is 'Place an order'; docker-compose.yml service `db`: `image: postgres:17.6-alpine`, `container_name: donhang-db`.",
+        "source": "examples/don-hang @ stage-1: DonHang.App/lib/api_client.dart:12; screens/create_order_screen.dart:36-45; screens/login_screen.dart:28-33; docker-compose.yml:56-59"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Factual part checked in code: create_order_screen.dart:28-29 `catch (e) { setState(() => _result = 'Failed: $e'); }` and api_client.dart:54-55 `throw Exception('failed to create order (${response.statusCode})')` - one text for every non-201 status, differing only by the code. The \"no advice\" judgement follows from that; opinion part rests on claim 9.",
+        "source": "examples/don-hang @ stage-1: DonHang.App/lib/screens/create_order_screen.dart:28-29; DonHang.App/lib/api_client.dart:54-55"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "Flutter API State.mounted: \"Whether this State object is currently in a tree.\" ... \"The State object remains mounted until the framework calls dispose\" ... \"It is an error to call setState unless mounted is true.\" Code @stage-1: create_order_screen.dart:27,29 unguarded setState; :31 `if (mounted) setState(() => _loading = false);` (last call); login_screen.dart:37 identical `if (mounted) setState(() => _loading = false);`.",
+        "source": "https://api.flutter.dev/flutter/widgets/State/mounted.html; examples/don-hang @ stage-1: DonHang.App/lib/screens/create_order_screen.dart:21-33, login_screen.dart:30,37"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "accuracy",
+        "quote": "Open the browser's developer tools (F12 in most browsers)",
+        "text": "Claim 8 now lists F12, but the key binding cannot be verified from any docs root in versions.yaml (no browser entry) nor by running the lab headless. Hedged with \"most\", kind behavior, so non-blocking; the rest of claim 8 is verified by the lab run.",
+        "fix": "Either keep the text and accept claim 8 as unverified, or drop the dependence: \"Open the browser's developer tools (usually from the browser menu, often also F12) on the Network tab, ...\" Optionally add a browser entry with a docs root to content/versions.yaml so the key binding can be checked."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-26T18:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "gap",
+        "quote": "`if (mounted)` guards this last `setState`: the user may have left the screen while the request was running, and `finally` runs anyway",
+        "text": "The reason is now clear, but it fits the two `setState` calls in `try` and `catch` too: they also run after the request ends, when the user may have left. The code guards only the last one, and I cannot tell from the text whether the other two are fine or just unguarded.",
+        "fix": "Add half a sentence saying what happens to the two earlier `setState` calls if the user has left, or say plainly that only the last one is guarded in this stage."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "style",
+        "quote": "`finally` enables the button again, so a later tap places a second, separate order on purpose; `if (mounted)` guards this last `setState`: the user may have left the screen",
+        "text": "One sentence carries two ideas (the button coming back, and the `mounted` guard) joined by a semicolon and then a colon. I had to read it twice to see where the second idea starts.",
+        "fix": "Split at the semicolon: end the first sentence after \"on purpose.\" and start a new sentence with \"`if (mounted)` guards this last `setState`.\""
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [
+        "Section 5: the `mounted` reason applies to all three `setState` calls, but only the last is guarded; the text does not say why the other two are left as they are."
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

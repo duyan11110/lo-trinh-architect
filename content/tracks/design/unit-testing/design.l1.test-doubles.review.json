@@ -1,0 +1,136 @@
+{
+  "id": "design.l1.test-doubles",
+  "technical": {
+    "reviewed_at": "2026-09-25T20:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "IOrderRepository declares exactly FindAsync, ListByCustomerAsync, AddAsync, SaveChangesAsync. FakeOrderRepository: `private readonly Dictionary<int, Order> orders = [];` `private int nextId = 1;` `order.Id = nextId++;` `public Task SaveChangesAsync() => Task.CompletedTask;` `public void Seed(Order order) => orders[order.Id] = order;`. Code block lines 8-29 match the tag verbatim.",
+        "source": "examples/don-hang @ stage-1: DonHang.Tests/FakeOrderRepository.cs:8-29; DonHang.Domain/IOrderRepository.cs"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "`public sealed class FakeNotifier : INotifier` / `public List<(int OrderId, string Subject)> Sent { get; } = [];` / `public void Send(int orderId, string subject) => Sent.Add((orderId, subject));` — no logger, no other member. Code block lines 6-11 match the tag verbatim.",
+        "source": "examples/don-hang @ stage-1: DonHang.Tests/FakeNotifier.cs:6-11"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "PlaceOrderAsync: `await repository.AddAsync(order);` `await repository.SaveChangesAsync();` `notifier.Send(order.Id, \"order placed\");`. No other repository method is called there.",
+        "source": "examples/don-hang @ stage-1: DonHang.Domain/OrderService.cs (PlaceOrderAsync)"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "CancelOrderAsync_NewOrder_SetsStatusCancelled: `repository.Seed(new Order { Id = 1, CustomerId = 1, PlacedAt = DateTimeOffset.UtcNow, Status = \"new\" });` then `await service.CancelOrderAsync(1);`. CancelOrderAsync calls `repository.FindAsync(orderId) ?? throw new KeyNotFoundException(...)`, so a found order must be put in place first.",
+        "source": "examples/don-hang @ stage-1: DonHang.Tests/Services/OrderServiceTests.cs; DonHang.Domain/OrderService.cs"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Task.CompletedTask: \"Gets a task that has already completed successfully.\" Remarks: \"This property returns a task whose Status property is set to RanToCompletion. To create a task that returns a value and runs to completion, call the FromResult method.\" Also: \"every call to `Task.FromResult(true)` will return the same already-completed `Task<bool>` object.\"",
+        "source": "https://learn.microsoft.com/dotnet/api/system.threading.tasks.task.completedtask (net-10.0); refs/dotnet-docs/docs/core/compatibility/core-libraries/6.0/task-fromresult-returns-singleton.md:16"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Rewritten claim is supported: \"Testing literature and tools use the terms *fake*, *stub*, and *mock* inconsistently.\" \"In classic xUnit and test double literature (for example, Fowler and Meszaros) ... a *fake* is a working alternative implementation.\" \"Fake: A fake is a generic term that can be used to describe either a stub or a mock object.\" The stunt double is now framed as an analogy (\"Think of a stunt double\"), so no etymology needs a source.",
+        "source": "refs/dotnet-docs/docs/core/testing/unit-testing-best-practices.md:53-60 (Unit testing terminology)"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Order.Id is `public int Id { get; set; }` (default 0). With `order.Id = nextId++;` removed, AddAsync does `orders[order.Id] = order;` with key 0 for both orders, so the second assignment replaces the first; ListByCustomerAsync filters `orders.Values` and returns a list of one.",
+        "source": "examples/don-hang @ stage-1: DonHang.Domain/Entities.cs (Order); DonHang.Tests/FakeOrderRepository.cs:16-24"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "`public sealed class EfOrderRepository(DonHangDbContext db) : IOrderRepository`; DonHangDbContext is `public sealed class DonHangDbContext(DbContextOptions<DonHangDbContext> options) : DbContext(options)` — a concrete (and sealed) class, not an interface.",
+        "source": "examples/don-hang @ stage-1: DonHang.Infrastructure/EfOrderRepository.cs:7; DonHang.Infrastructure/DonHangDbContext.cs"
+      },
+      {
+        "n": 9,
+        "verdict": "not-needed",
+        "evidence": "Design guidance restating outline item 3 in the lesson's own terms; no documented default or behaviour to check. Consistent with the .NET docs' description of a stub as \"a controllable replacement for an existing dependency\".",
+        "source": "content/tracks/design/track.yaml (design.l1.test-doubles outline[2]); refs/dotnet-docs/docs/core/testing/unit-testing-best-practices.md:63"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Repo: orders.id is `integer GENERATED BY DEFAULT AS IDENTITY` (db/schema.sql) and the InitialCreate migration annotates it `NpgsqlValueGenerationStrategy.IdentityByDefaultColumn`. EF Core docs: \"EF Core creates temporary key values when tracking new entities that will have real key values generated by the database when SaveChanges is called.\" and \"These values are used by EF Core until SaveChanges is called, at which point real key values are read back from the database.\" EfOrderRepository.AddAsync only calls `db.Orders.AddAsync(order)`.",
+        "source": "examples/don-hang @ stage-1: db/schema.sql:19, Migrations/20260923154631_InitialCreate.cs:50-51; refs/efcore-docs/.../change-tracking/miscellaneous.md:126, explicit-tracking.md:257"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Only two places build DonHangDbContext options, both Npgsql: `services.AddDbContext<DonHangDbContext>(options => options.UseNpgsql(connectionString));` and DesignTimeDbContextFactory `builder.UseNpgsql(...)`. DonHang.Infrastructure.csproj references only the provider package Npgsql.EntityFrameworkCore.PostgreSQL (plus EF Core Design).",
+        "source": "examples/don-hang @ stage-1: DonHang.Infrastructure/ServiceCollectionExtensions.cs:14; DesignTimeDbContextFactory.cs; DonHang.Infrastructure.csproj"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "accuracy",
+        "text": "Round-1 minor only partly resolved. Beyond the signatures, both ListByCustomerAsync bodies share the same LINQ steps: EfOrderRepository `db.Orders.Where(o => o.CustomerId == customerId).Include(o => o.Customer).OrderBy(o => o.Id).ToListAsync()`, fake `orders.Values.Where(o => o.CustomerId == customerId).OrderBy(o => o.Id).ToList()`. A learner doing the comparison the sentence asks for will find them.",
+        "quote": "apart from the method signatures the interface requires, their code has nothing in common",
+        "fix": "Replace with: 'find that they share the interface's method signatures and nothing about storage: one goes through `DonHangDbContext`, the other through a dictionary.'"
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "version",
+        "text": "New claim 10 describes EF Core behaviour (the database-generated key is read back at SaveChanges), but versions_used lists only dotnet.",
+        "quote": "In the real system, PostgreSQL assigns an order's id when `SaveChangesAsync` inserts the row.",
+        "fix": "Add `efcore` to `versions_used` in the front matter and track.yaml entry if the schema allows it there; otherwise note in claim 10 that it rests on efcore 10.0 (versions.yaml)."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-25T21:30:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "diagram",
+        "text": "The repository side shows both the real class and the fake; the notifier side shows only FakeNotifier. Section 2 names LoggingNotifier as the real notifier, but neither the diagram nor section 4's prose says it implements INotifier, so the two halves of the picture are not parallel and I wonder whether INotifier has a real implementation in the running API.",
+        "quote": "In the running API, `EfOrderRepository` implements the first; in a test, `FakeOrderRepository` implements it instead, and `FakeNotifier` implements the second.",
+        "fix": "Add `LoggingNotifier` to the prose sentence: '...and `FakeNotifier` implements the second, where the API uses `LoggingNotifier`.' Optionally add the matching node to the diagram."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "text": "The analogy says the real dependency should not 'send a message' in a test, but section 2 told me the real notifier only writes a log. Why writing a log would be bad in a test is not said; I only get the real reason (the test cannot read what was sent) from the prereq summary, not from this sentence.",
+        "quote": "what the real dependency should not do is reach a database or send a message.",
+        "fix": "Replace 'send a message' with 'write a log line the test cannot read back'."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "text": "q1 is better than round 1, but the correct option still echoes the lesson's phrasing ('does its job, only in a simpler way' / summary line 2), so I can pick it by matching words rather than understanding.",
+        "quote": "It does the job the interface promises, only more simply",
+        "fix": "Paraphrase further, e.g. 'Its methods actually store and return data, just without the real storage behind them'."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

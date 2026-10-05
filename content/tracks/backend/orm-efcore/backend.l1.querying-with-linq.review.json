@@ -1,0 +1,103 @@
+{
+  "id": "backend.l1.querying-with-linq",
+  "technical": {
+    "reviewed_at": "2026-09-27T16:00:00+07:00",
+    "reviewer": "claude-opus-5-5[1m] (prompt 04, round 2; lesson read before .meta.json)",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "how-query-works.md \"When queries are executed\": \"When you call LINQ operators, you're simply building up an in-memory representation of the query. The query is only sent to the database when the results are consumed.\" Listed triggers: \"Iterating the results in a `for` loop\"; \"Using an operator such as `ToList`, `ToArray`, `Single`, `Count`, or the equivalent async overloads\". EfOrderRepository @ stage-1 takes DonHangDbContext db in its primary constructor.",
+        "source": "refs/efcore-docs/entity-framework/core/querying/how-query-works.md"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "how-query-works.md \"The life of a query\": \"The database provider identifies which parts of the query can be evaluated in the database\" / \"These parts of the query are translated to database-specific query language (for example, SQL for a relational database)\". Probe (ToQueryString, stage-1 DonHangDbContext, Npgsql) of Include(Items)+Where(o.Id==1)+Take(1): one statement, \"WHERE o.id = 1 LIMIT @p\", i.e. the predicate is in the SQL.",
+        "source": "refs/efcore-docs/entity-framework/core/querying/how-query-works.md; scratch probe against examples/don-hang @ 75bf7d2"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "single-split-queries.md: \"EF loads related entities by introducing JOINs into a single query.\" and \"EF Core uses single query mode by default in the absence of any configuration.\" git grep SplitQuery|QuerySplitting @ stage-1: none. Probe SQL: \"FROM (SELECT ... FROM orders AS o WHERE o.id = 1 LIMIT @p) AS o1 LEFT JOIN order_items AS o0 ON o1.id = o0.order_id\" - one row per item, order columns repeated, LIMIT applies to the order. Data duplication section: blog properties \"duplicated for each post\".",
+        "source": "refs/efcore-docs/entity-framework/core/querying/single-split-queries.md; probe"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "git show stage-1:DonHang.Infrastructure/EfOrderRepository.cs (tag commit 75bf7d2) is identical to the lesson block lines 1-19. FindAsync => db.Orders.Include(o => o.Items).FirstOrDefaultAsync(o => o.Id == id); ListByCustomerAsync => db.Orders.Where(...).Include(o => o.Customer).OrderBy(o => o.Id).ToListAsync(); both expression-bodied, no async/await.",
+        "source": "examples/don-hang @ stage-1: DonHang.Infrastructure/EfOrderRepository.cs"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Ran the lesson's curl commands against the running stage-1 lab (host :8080, Caddy /api/v1/* -> api:8080). anh.tran: 200, non-empty array (ids 1,2,10,14..40); chau.nguyen: 200, ids 3,4,11. Disjoint. OrdersController.List ([HttpGet], [Authorize]) calls repository.ListByCustomerAsync(customerId) with customerId from the token's sub claim. seed.sql: customers 1 anh.tran, 2 chau.nguyen with orders. curl flags -X/-H/-d as used in scripts/backend/auth-and-orders.sh.",
+        "source": "live run 2026-09-27; DonHang.Api/Controllers/OrdersController.cs; db/seed.sql; Caddyfile @ stage-1"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Compiled probe (dotnet 10 SDK) referencing DonHang.Infrastructure @ 75bf7d2: `var query = db.Orders.Where(o => o.CustomerId == 1); StaticType(query)` with `static string StaticType<T>(T _) => typeof(T).ToString()` printed \"System.Linq.IQueryable`1[DonHang.Domain.Order]\". standard-query-operators/index.md: operators are \"extension members defined in the Enumerable and Queryable classes\" with receiver IEnumerable<T> or IQueryable<T>.",
+        "source": "scratch probe (dotnet run); refs/dotnet-docs/docs/csharp/linq/standard-query-operators/index.md"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "DonHangDbContext.OnModelCreating @ stage-1: Order ToTable(\"orders\"), CustomerId HasColumnName(\"customer_id\"), e.HasMany(o => o.Items).WithOne().HasForeignKey(i => i.OrderId); e.HasOne(o => o.Customer).WithMany().HasForeignKey(o => o.CustomerId); OrderItem ToTable(\"order_items\"), OrderId -> \"order_id\". Probe SQL for ListByCustomerAsync chain: \"FROM orders AS o INNER JOIN customers AS c ON o.customer_id = c.id WHERE o.customer_id = 1 ORDER BY o.id\". Documents opened: how-query-works.md, single-split-queries.md, tracking.md, client-eval.md, standard-query-operators/index.md.",
+        "source": "examples/don-hang @ stage-1: DonHang.Infrastructure/DonHangDbContext.cs; probe"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-27T17:00:00+07:00",
+    "reviewer": "claude-opus-5-5[1m] (junior reader simulation, prompt 05, round 2; known_vocab = 56 terms through migration, lesson vocab: none; other input: five-line summaries of backend.l1.migrations and foundation.l1.sql-join only)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "example",
+        "text": "The correction of misconception 1 ends by saying the declared type shows it. The type only shows that no rows exist yet at .Where(...); it does not show that the later .ToListAsync() filters in PostgreSQL rather than loading everything and filtering in C#. The earlier part of the correction (one SQL statement with WHERE) carries the point; this last sentence overclaims.",
+        "quote": "You notice this in the declared type: until `.ToListAsync()` you hold an `IQueryable<Order>`, a description, never a list of rows that C# could filter.",
+        "fix": "Narrow the sentence to what the type shows: 'You notice the first half in the declared type: until .ToListAsync() you hold an IQueryable<Order>, not rows; the WHERE itself travels in the one SQL statement.'"
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "length",
+        "text": "The FindAsync paragraph packs three ideas (FirstOrDefaultAsync taking a condition, Items joined from order_items, one row per item reassembled into one Order) into one block; I had to re-read it twice to see why 'first' means the first order.",
+        "quote": "That JOIN returns one row per item, each repeating the order's columns; EF Core assembles those rows into one `Order` whose `Items` holds all of them, so \"first\" means the first order, not its first item.",
+        "fix": "Split the paragraph after 'one SQL statement.' so the one-row-per-item sentence stands as its own short paragraph."
+      },
+      {
+        "severity": "minor",
+        "section": "backend.l1.querying-with-linq.q2",
+        "kind": "quiz",
+        "text": "q2's explanation refers to 'section 5', but the lesson's headings are not numbered; the reader has to count headings to find it.",
+        "quote": "As section 5 explains for `FindAsync`",
+        "fix": "Replace 'section 5' with the heading name: 'As \"In the Đơn Hàng system\" explains for FindAsync' (en, vi)."
+      },
+      {
+        "severity": "minor",
+        "section": "backend.l1.querying-with-linq.q6",
+        "kind": "quiz",
+        "text": "q6: the lesson never discusses speed, so I picked d by eliminating a, b, c (each contradicts the lesson), not by understanding 'speed can't show where filtering happens'. Explanation b adds a new idea (C#-side filtering would be slower) the lesson never establishes.",
+        "quote": "and filtering in C# would have to load every row first, which is slower, not faster, on a customer with many orders.",
+        "fix": "Drop the 'slower, not faster' clause from explanation b, keeping only that speed alone proves nothing and the WHERE runs in PostgreSQL (en, vi)."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

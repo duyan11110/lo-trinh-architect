@@ -1,0 +1,226 @@
+{
+  "id": "foundation.l1.ip-and-ports",
+  "technical": {
+    "reviewed_at": "2026-09-27T06:50:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "RFC 791 2.3: \"Addresses are fixed length of four octets (32 bits).\" RFC 1122 3.3.4 describes a multihomed host as having multiple IP addresses. Live `ip -4 addr` in donhang-lab: \"inet 127.0.0.1/8 scope host lo\" and \"inet 172.28.0.12/24 ... eth0\" (one machine, two addresses).",
+        "source": "https://www.rfc-editor.org/rfc/rfc791.txt 2.3; https://www.rfc-editor.org/rfc/rfc1122.txt 3.3.4; docker exec donhang-lab (stage-0 image, live run 2026-09-27)"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "RFC 9293 3.1: \"Source Port: 16 bits. The source port number.\" \"Destination Port: 16 bits. The destination port number.\" A 16-bit unsigned field holds 0..65535.",
+        "source": "https://www.rfc-editor.org/rfc/rfc9293.txt 3.1"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "RFC 1122 3.2.1.3 (g) { 127, <any> }: \"Internal host loopback address. Addresses of this form MUST NOT appear outside a host.\" Lesson says \"usually 127.0.0.1\", consistent with the whole /8 being loopback. Live: \"inet 127.0.0.1/8 scope host lo\".",
+        "source": "https://www.rfc-editor.org/rfc/rfc1122.txt 3.2.1.3 (g); docker exec donhang-lab (stage-0 image, live run 2026-09-27)"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "RFC 6761 6.3 item 1: \"Users may assume that IPv4 and IPv6 address queries for localhost names will always resolve to the respective IP loopback address.\" With RFC 1122 (g) (loopback never leaves the host), localhost names the machine running the command.",
+        "source": "https://www.rfc-editor.org/rfc/rfc6761.txt 6.3"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "RFC 1918 3: \"10.0.0.0 - 10.255.255.255 (10/8 prefix) 172.16.0.0 - 172.31.255.255 (172.16/12 prefix) 192.168.0.0 - 192.168.255.255 (192.168/16 prefix)\"; \"packets with private source or destination addresses should not be forwarded across such links.\" Compose ipam \"subnet: 172.28.0.0/24\" lies inside 172.16/12.",
+        "source": "https://www.rfc-editor.org/rfc/rfc1918.txt 3; examples/don-hang docker-compose.yml @ stage-0"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "compose @ stage-0: lab \"ipv4_address: 172.28.0.12\", db \"ipv4_address: 172.28.0.11\", ipam \"subnet: 172.28.0.0/24\", lab ports \"8080:8080\"; up.sh runs `docker compose up -d --build --wait`. Docker docs: `-p 8080:80` \"creates a mapping between port 8080 on any address on the Docker host, and the container's port 80.\"",
+        "source": "examples/don-hang docker-compose.yml, scripts/up.sh @ stage-0; refs/docker-docs/content/manuals/engine/network/port-publishing.md l.13-15"
+      },
+      {
+        "n": 7,
+        "verdict": "rephrased",
+        "evidence": "Live: `timeout 2 nc -l 2222` (root) -> \"nc: Address in use\", rc=1; same as uid dev. sshd.pam is the 2222 holder (ps). Refusal of a non-sharing later asker on 8080 also confirmed: `busybox nc -l -p 8080` -> \"nc: bind: Address in use\". Mechanism and SSH example hold; \"most [programs] ... do not\" is a population count no document or run supports.",
+        "source": "docker exec donhang-lab (stage-0 image, live run 2026-09-27); examples/don-hang docker-compose.yml @ stage-0 (LISTEN_PORT 2222)",
+        "suggested_text": "Programs can ask to share a number, but the SSH server does not. That is why your own program, which did not ask to share, could not have 8080: Caddy already had it."
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Caddyfile sites \":8080\" and \"donhang.local:8443\"; compose web `network_mode: \"service:lab\"` (docs: \"Gives the container access to the specified container\"). Live netstat: \":::8080\" and \":::8443\" LISTEN; `docker exec donhang-web ps` -> PID 1 \"caddy run\", absent from lab `ps`. `busybox nc -l -p 8080` in lab -> \"nc: bind: Address in use\", rc=1.",
+        "source": "examples/don-hang Caddyfile, docker-compose.yml @ stage-0; refs/docker-docs/content/reference/compose-file/services.md l.1344; docker exec donhang-lab (stage-0 image, live run 2026-09-27)"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Live: `nc -4 -l 9041 &`, kill it, then a new `nc -4 -l 9041 &` -> netstat \"tcp 0 0 0.0.0.0:9041 0.0.0.0:* LISTEN\" for the new process: the number was claimed again once its holder ended.",
+        "source": "docker exec donhang-lab (stage-0 image, live run 2026-09-27)"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "compose lab LISTEN_PORT \"2222\"; both scripts line 5 `[ -f /.dockerenv ] || exec \"$(dirname \"$0\")/../lab-run.sh\" \"$0\" \"$@\"`; lab-run.sh `docker compose exec -T lab bash ...`. Live run of stage-0 who-listens.sh in donhang-lab printed 0.0.0.0:2222, :::2222, :::8080, :::8443 LISTEN and \"localhost:9999 is closed\", identical to the lesson block.",
+        "source": "examples/don-hang scripts/network/who-listens.sh, two-servers.sh, scripts/lab-run.sh, docker-compose.yml @ stage-0; docker exec donhang-lab (stage-0 image, live run 2026-09-27)"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "`nc -h` in donhang-lab: \"-z Zero-I/O mode [used for scanning]\". who-listens.sh uses only nc's exit status to print \"is open\" / \"is closed\".",
+        "source": "docker exec donhang-lab (stage-0 image, live run 2026-09-27) `nc -h`"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "who-listens.sh l.19 `netstat -tln | grep -E ':(2222|8080|8443) ' | sort` -> 5432 cannot pass the filter. Live `getent hosts db` -> \"172.28.0.11 db db\"; live output \"db:5432 is open\".",
+        "source": "scripts/network/who-listens.sh @ stage-0 l.19; docker exec donhang-lab (stage-0 image, live run 2026-09-27)"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Live: `nc -4 -k -l 9042` shows \"0.0.0.0:9042 ... LISTEN\"; `nc -z 127.0.0.1 9042` and `nc -z 172.28.0.12 9042` both \"succeeded!\" (every IPv4 address of the box). Script output lists 2222 twice (0.0.0.0:2222 and :::2222) = one line per address and port.",
+        "source": "docker exec donhang-lab (stage-0 image, live run 2026-09-27)"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "RFC 4291 2.2: \"The use of \\\"::\\\" indicates one or more groups of 16 bits of zeros.\" 2.5.2: \"The address 0:0:0:0:0:0:0:0 is called the unspecified address.\" The \":::2222\" entries are this IPv6 form.",
+        "source": "https://www.rfc-editor.org/rfc/rfc4291.txt 2.2, 2.5.2"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "Live run of stage-0 two-servers.sh in donhang-lab: \"0.0.0.0:9001 ... LISTEN\", \"0.0.0.0:9002 ... LISTEN\", \"nc: Address in use\", \"   nc gave up with exit code 1\" - identical to the lesson block and outputs/stage-0/scripts/network/two-servers.txt. `nc -h`: \"-4 Use IPv4\", \"-l Listen mode, for inbound connects\".",
+        "source": "docker exec donhang-lab (stage-0 image, live run 2026-09-27)"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "Live: `grep -c \"Address in use\"` -> /usr/bin/nc 0, /lib/ld-musl-x86_64.so.1 1 (text comes from the C library linked into nc, not the kernel). BusyBox nc on the same box prints \"nc: bind: Address in use\" for the same refusal, so the wording depends on the program printing it.",
+        "source": "docker exec donhang-lab (stage-0 image, live run 2026-09-27)"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "RFC 9293 3.5.2: \"If the connection does not exist (CLOSED), then a reset is sent in response to any incoming segment except another reset.\" Live `time nc -z -w 3 localhost 9999` -> rc=1, \"real 0m 0.00s\". `nc -h`: \"-w timeout Timeout for connects and final net reads\".",
+        "source": "https://www.rfc-editor.org/rfc/rfc9293.txt 3.5.2; docker exec donhang-lab (stage-0 image, live run 2026-09-27)"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "Live: `nc -z -w 3 localhost 5432` rc=1; `getent hosts db` -> \"172.28.0.11 db db\"; who-listens \"db:5432 is open\". lab/Dockerfile adds postgresql17-client only, no server.",
+        "source": "examples/don-hang docker-compose.yml, lab/Dockerfile @ stage-0; docker exec donhang-lab (stage-0 image, live run 2026-09-27)"
+      },
+      {
+        "n": 19,
+        "verdict": "verified",
+        "evidence": "Compose networking doc: \"Each container can now look up the service name `web` or `db` and get back the appropriate container's IP address.\" Live `getent hosts db` -> \"172.28.0.11 db db\".",
+        "source": "refs/docker-docs/content/manuals/compose/how-tos/networking.md l.41; docker exec donhang-lab (stage-0 image, live run 2026-09-27)"
+      },
+      {
+        "n": 20,
+        "verdict": "verified",
+        "evidence": "Live in donhang-lab bash: `t=db:5432; echo ${t%:*} ${t##*:}` -> \"db 5432\". Live who-listens.sh run reaches the right host/port for all five targets.",
+        "source": "docker exec donhang-lab (stage-0 image, live run 2026-09-27)"
+      },
+      {
+        "n": 21,
+        "verdict": "verified",
+        "evidence": "Live: `bash -c \"sleep 2 & echo pid=$!; jobs -p\"` printed \"pid=5115\" and \"5115\" immediately while sleep was still running: the script carried on past the `&` command.",
+        "source": "docker exec donhang-lab (stage-0 image, live run 2026-09-27)"
+      },
+      {
+        "n": 22,
+        "verdict": "verified",
+        "evidence": "Live: `sleep 2 & echo pid=$!; jobs -p` -> \"pid=5115\" and jobs -p \"5115\": `$!` equals the process id of the most recent background command.",
+        "source": "docker exec donhang-lab (stage-0 image, live run 2026-09-27)"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "quote": "programs can ask to share a number, but most, like the SSH server, do not.",
+        "text": "Claim 7: \"most\" is a count over all programs that no pinned document or run supports. Only the SSH server is shown (live `nc -l 2222` -> \"nc: Address in use\"). The rest of the paragraph is verified.",
+        "fix": "Replace with \"programs can ask to share a number, but the SSH server does not.\" Update claim 7 text in .meta.json to match. No quiz change needed."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-27T14:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "quote": "(Caddy is missing from the box's process list but uses the box's addresses and ports, so treat it as a box program.)",
+        "text": "I was never shown the box's process list, and the lesson just told me a port names a process on that machine. So why is Caddy not in it? The aside tells me how to read on, so I can continue, but it still leaves a question I cannot answer from anything I know.",
+        "fix": "Drop \"is missing from the box's process list but\" and keep only \"(Caddy uses the box's addresses and ports, so treat it as a program on the box.)\"."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "quote": "refuses a later program asking for that same number on that same address while the first holds it; programs can ask to share a number, but most, like the SSH server, do not.",
+        "text": "\"On that same address\" makes me wonder if my program could have had 8080 on some other address, and the lesson never says which address my program asked for. \"Programs can ask to share\" also opens a door (how?) that is never used. I re-read this sentence twice before deciding to ignore both halves.",
+        "fix": "Drop \"on that same address\", or add a few words saying my program asked for 8080 on the same addresses Caddy holds; keep the sharing remark to one short clause."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "length",
+        "quote": "It asks with `netstat -tln`, which prints one line for each address and port something is listening on, ending in `LISTEN`, with the number after the last colon; the script calls each such pair a socket, so a number held on two addresses shows on two lines.",
+        "text": "This paragraph packs five doors, re-running on the lab box, netstat, the output format, the word socket and grep into four sentences. I had to read it twice before the code block made sense.",
+        "fix": "Split the netstat sentence at the semicolon into two sentences, and move the socket/two-lines remark to the paragraph after the output, where I can see the two 2222 lines."
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "gap",
+        "quote": "9001 and 9002 were not in step 1's list, 2222 was, which is why the third run fails.",
+        "text": "Section 5 told me step 1's grep only keeps 2222, 8080 and 8443, so 9001 and 9002 could never have appeared there, just like 5432. The comparison therefore proves nothing about 9001/9002. Also, step 2 does not say whether two-servers.sh moves itself to the lab box like step 1; the 2222 refusal only makes sense if it runs there.",
+        "fix": "Rephrase to \"2222 was already in step 1's list, held by the SSH server, which is why the third run fails; 9001 and 9002 were free.\" and add \"it also runs itself on the lab box\" to step 2."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz q6",
+        "kind": "quiz",
+        "quote": "the words come from the program and the system library it is built on",
+        "text": "Option d's explanation uses \"system library\", which I do not know and the lesson does not mention (the lesson says only \"from the program that prints them\"). It confused me a little after I had already answered correctly.",
+        "fix": "Replace \"the program and the system library it is built on\" with \"the program that prints them\" in the en explanation (and the vi equivalent)."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz q2",
+        "kind": "quiz",
+        "quote": "that refusal goes to a program asking to listen on it, not to a browser asking to connect",
+        "text": "The lesson talks about listening and \"knocking\", but never contrasts a program asking to listen with one asking to connect. The explanation relies on that difference as if taught.",
+        "fix": "Replace \"a browser asking to connect\" with \"a browser knocking on it\", matching the lesson's word."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "system library (quiz q6 explanation only)",
+        "process list (section 4, never shown)"
+      ],
+      "skipped_steps": [
+        "Why Caddy is missing from the box's process list is raised but not answered (minor; the text says to treat it as a box program).",
+        "Which address my own program asked for 8080 on, given the rule says \"on that same address\".",
+        "Try it expected result compares 9001/9002 against a list that could never contain them; whether two-servers.sh runs on the lab box is not said."
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

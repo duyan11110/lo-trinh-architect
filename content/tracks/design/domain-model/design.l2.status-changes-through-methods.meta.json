@@ -1,0 +1,146 @@
+{
+  "id": "design.l2.status-changes-through-methods",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-09-30T22:50:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "At stage-2 Order declares `public string Status { get; private set; }`; CustomerId, PlacedAt and Items also have private setters.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: DonHang.Domain/Entities.cs:33-36",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 2,
+      "text": "A private set accessor lets only code inside the class assign the property, while the public get lets any code read it.",
+      "kind": "syntax",
+      "version_key": "dotnet",
+      "source_hint": "C# docs: Restricting accessor accessibility; Properties",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 3,
+      "text": "Writing `order.Status = \"shipped\";` in OrderService.ShipOrderAsync at stage-2 fails to build with error CS0272: The property or indexer 'Order.Status' cannot be used in this context because the set accessor is inaccessible.",
+      "kind": "behavior",
+      "version_key": "dotnet",
+      "source_hint": "verified: dotnet build of DonHang.Domain from git archive stage-2 with OrderService.cs:57 replaced; C# compiler error CS0272 docs",
+      "needs_verification": true,
+      "section": 2
+    },
+    {
+      "n": 4,
+      "text": "MarkPaid() throws already-cancelled for cancelled, already-paid for any other non-new status, else sets paid; Cancel() throws already-cancelled/already-shipped, else sets cancelled; Ship() throws already-cancelled, already-shipped, or not-paid when not paid, else sets shipped.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: DonHang.Domain/Entities.cs:72-96",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 5,
+      "text": "Given the four statuses allowed by the orders table (new, paid, shipped, cancelled), the allowed changes are exactly new->paid (MarkPaid), paid->shipped (Ship), new->cancelled and paid->cancelled (Cancel); a refused change leaves Status unchanged.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: Entities.cs:72-96; db/schema.sql orders CHECK; OrderTests.cs:96-105 (status stays new)",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 6,
+      "text": "At stage-2 no endpoint calls MarkPaid(); OrderTests uses it to get a paid order.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: Entities.cs:72-74 comment; git grep MarkPaid (only Entities.cs and DonHang.Tests)",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 7,
+      "text": "PATCH /api/v1/orders/{id}/ship carries [Authorize(Policy = \"StaffOnly\")] and its action only calls OrderService.ShipOrderAsync, which finds the order (KeyNotFoundException if missing), calls order.Ship(), notifier.Send, then SaveChangesAsync; neither has a role or status check.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: DonHang.Api/Controllers/OrdersController.cs:86-97; DonHang.Domain/OrderService.cs:51-61",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 8,
+      "text": "The StaffOnly policy runs before the action, so a caller without the staff role gets 403 (401 with no token) and ShipOrderAsync never runs; the policy does not look at the order.",
+      "kind": "behavior",
+      "version_key": "aspnetcore",
+      "source_hint": "ASP.NET Core docs: policy-based authorization, [Authorize] runs before the action; backend.l2.role-based-access (approved)",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 9,
+      "text": "A staff request to the ship endpoint for a cancelled order passes the policy, Ship() throws OrderStatusException already-cancelled, and ExceptionHandlingMiddleware answers 409 with a type ending in already-cancelled.",
+      "kind": "behavior",
+      "version_key": "aspnetcore",
+      "source_hint": "examples/don-hang @ stage-2: Entities.cs:92; ExceptionHandlingMiddleware.cs:34-41",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 10,
+      "text": "An enum limits which values exist, not which value may follow which: any code that can assign an enum property can assign any of its members.",
+      "kind": "behavior",
+      "version_key": "dotnet",
+      "source_hint": "C# docs: Enumeration types",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 11,
+      "text": "Code inside Order can still assign any status through the private setter; a method that sets Status = \"shipped\" with no check compiles and nothing refuses it.",
+      "kind": "behavior",
+      "version_key": "dotnet",
+      "source_hint": "C# docs: accessibility of private members (accessible within the containing type)",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 12,
+      "text": "At stage-2, git grep -n \"Status = \\\"\" -- \"DonHang.Domain/*.cs\" prints five lines, all in Entities.cs: 57 (\"\" in the private constructor kept for EF Core), 69 (\"new\" in the public constructor), 79 (\"paid\", MarkPaid), 87 (\"cancelled\", Cancel), 95 (\"shipped\", Ship); none in OrderService.cs.",
+      "kind": "behavior",
+      "version_key": "git",
+      "source_hint": "verified with git grep on tag stage-2 in examples/don-hang",
+      "needs_verification": true,
+      "section": 7
+    },
+    {
+      "n": 13,
+      "text": "Reading Order alone lists every status change the application's code can make (mark paid, ship, cancel); at stage-1 the two assignments sat as plain lines in OrderService's methods with no check of the starting status.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: Entities.cs:72-96; @ stage-1: OrderService.cs:16,34",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 14,
+      "text": "Two requests changing the same order at once are caught at save time by the Version (xmin) concurrency token, not by the status methods.",
+      "kind": "fact",
+      "source_hint": "backend.l2.optimistic-concurrency (approved) summary; Entities.cs:43-46 @ stage-2",
+      "needs_verification": true,
+      "section": 8
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "outline_items_missing": [],
+    "beyond_scope": []
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1018,
+    "notes": "Round 1 apply-review (minors): claim 13 rephrased and made fact (application code; stage-1 assignments in OrderService); Try it line 57 = private constructor for EF Core; 'In Git Bash'; quiz q1/q2 options reworded."
+  },
+  "open_questions": [],
+  "repo_changes_needed": []
+}

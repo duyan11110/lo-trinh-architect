@@ -1,0 +1,185 @@
+{
+  "id": "devops.l2.centralized-logs",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-09-30T04:16:35+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "Docker keeps a container's output with that container (one log file per container); docker compose logs reads only the service's existing containers, so after a recreate (docker compose up -d with a new image) or docker compose down, the old container's output is out of reach.",
+      "kind": "behavior",
+      "source_hint": "Docker docs: json-file driver (one file per container); compose networking (old container removed on up); guides/golang (container metadata removed); docker compose logs",
+      "needs_verification": true,
+      "section": 2,
+      "version_key": "docker"
+    },
+    {
+      "n": 2,
+      "text": "In Đơn Hàng @stage-2, Alloy (config.alloy) finds the containers of Compose project donhang through the Docker socket (discovery.docker, filter label com.docker.compose.project=donhang, refresh_interval 5s), reads their output (loki.source.docker) and sends every line to Loki (loki.write).",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: deploy/monitoring/alloy/config.alloy:1-34",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 3,
+      "text": "discovery.relabel rule with source_labels [__meta_docker_container_label_com_docker_compose_service] and target_label service (default action replace) gives each stream the label service=<Compose service>, e.g. service=\"api\".",
+      "kind": "syntax",
+      "source_hint": "Grafana Alloy docs: discovery.docker (exported __meta_docker_container_label_<name>), discovery.relabel (rule, default action replace)",
+      "needs_verification": true,
+      "section": 5,
+      "version_key": "alloy"
+    },
+    {
+      "n": 4,
+      "text": "loki.source.docker reads the logs of the given Docker targets through the Docker daemon (host unix:///var/run/docker.sock), applies relabel_rules, and forwards entries to loki.write, which pushes them to http://loki:3100/loki/api/v1/push.",
+      "kind": "behavior",
+      "source_hint": "Grafana Alloy docs: loki.source.docker, loki.write",
+      "needs_verification": true,
+      "section": 5,
+      "version_key": "alloy"
+    },
+    {
+      "n": 5,
+      "text": "docker-compose.yml@stage-2: alloy mounts /var/run/docker.sock read-only; loki (grafana/loki:3.5.12) publishes no port and stores data in the named volume loki-data at /loki; both carry profiles: [monitoring].",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: docker-compose.yml:277-307, deploy/monitoring/loki.yml",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 6,
+      "text": "Because Loki keeps received lines in its own storage (volume loki-data), lines from a removed or recreated container remain queryable in Loki.",
+      "kind": "behavior",
+      "source_hint": "Grafana Loki docs: Loki architecture/storage (filesystem); examples/don-hang @ stage-2 loki.yml",
+      "needs_verification": true,
+      "section": 4,
+      "version_key": "loki"
+    },
+    {
+      "n": 7,
+      "text": "A log stream is the set of log lines sharing the same set of labels; each distinct combination of label values is a separate stream.",
+      "kind": "behavior",
+      "source_hint": "Grafana Loki docs: Labels (Understand labels), Loki overview",
+      "needs_verification": true,
+      "section": 3,
+      "version_key": "loki"
+    },
+    {
+      "n": 8,
+      "text": "Loki indexes only the labels (metadata) of log streams, not the content of log lines; the lines are stored grouped by stream.",
+      "kind": "behavior",
+      "source_hint": "Grafana Loki docs: Loki overview / Get started (index only metadata)",
+      "needs_verification": true,
+      "section": 4,
+      "version_key": "loki"
+    },
+    {
+      "n": 9,
+      "text": "A LogQL log query is a stream selector ({service=\"api\"}) answered from the index, optionally followed by a pipeline of stages after |, which process the lines of the selected streams (filter, parse).",
+      "kind": "syntax",
+      "source_hint": "Grafana Loki docs: LogQL > Log queries (log stream selector, log pipeline)",
+      "needs_verification": true,
+      "section": 4,
+      "version_key": "loki"
+    },
+    {
+      "n": 10,
+      "text": "The | json parser extracts all JSON properties of each line as labels for that query; nested properties are flattened with _ as separator (State.StatusCode -> State_StatusCode).",
+      "kind": "syntax",
+      "source_hint": "Grafana Loki docs: LogQL > Log queries > Parser expression > JSON",
+      "needs_verification": true,
+      "section": 4,
+      "version_key": "loki"
+    },
+    {
+      "n": 11,
+      "text": "A label filter expression such as State_StatusCode >= 500 compares the extracted value as a number and keeps only matching lines; State_Path = \"/api/v1/orders/42\" is a string equality label filter.",
+      "kind": "syntax",
+      "source_hint": "Grafana Loki docs: LogQL > Log queries > Label filter expression",
+      "needs_verification": true,
+      "section": 4,
+      "version_key": "loki"
+    },
+    {
+      "n": 12,
+      "text": "datasources.yml@stage-2:14-20: second data source name Loki, uid loki, type loki, access proxy, url http://loki:3100; Loki has no page of its own in the lab, it is queried from Grafana.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: deploy/monitoring/grafana/provisioning/datasources/datasources.yml:14-20",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 13,
+      "text": "loki-query.sh@stage-2 runs inside the lab box (on the donhang network, via lab-run.sh), places an order for productId 999 (FK -> 500), then queries Loki's query_range API at http://loki:3100 with the LogQL query, retrying up to 30x; last line prints fields with jq.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: scripts/devops/loki-query.sh, outputs/stage-2/scripts/devops/loki-query.txt",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 14,
+      "text": "Filtering by text or by a parsed field reads through the lines of the selected streams in the time range, so a narrow selector and short range reduce the work; {service=\"api\"} | json | State_StatusCode >= 500 over a week is slower than over an hour.",
+      "kind": "behavior",
+      "source_hint": "Grafana Loki docs: Query best practices (narrow label selectors, time range)",
+      "needs_verification": true,
+      "section": 6,
+      "version_key": "loki"
+    },
+    {
+      "n": 15,
+      "text": "Putting an unbounded value such as an order id in a label creates one stream per value (high cardinality), which grows Loki's index and degrades Loki's performance; keep labels to few values and filter lines instead.",
+      "kind": "behavior",
+      "source_hint": "Grafana Loki docs: Cardinality; Label best practices",
+      "needs_verification": true,
+      "section": 6,
+      "version_key": "loki"
+    },
+    {
+      "n": 16,
+      "text": "Grafana Explore (/explore) lets you pick a data source (Loki) and run a LogQL query; the Loki query editor has Builder and Code modes.",
+      "kind": "behavior",
+      "source_hint": "Grafana docs: Explore; Loki data source > Query editor (Builder/Code mode)",
+      "needs_verification": true,
+      "section": 7,
+      "version_key": "grafana"
+    },
+    {
+      "n": 17,
+      "text": "In the running lab, Loki has label service with values incl. api and db; {service=\"db\"} returns PostgreSQL's plain-text lines (e.g. 'LOG:  database system is ready to accept connections') — checked via Loki HTTP API 2026-09-30.",
+      "kind": "fact",
+      "source_hint": "live lab: loki /loki/api/v1/label/service/values, query_range {service=\"db\"}",
+      "needs_verification": true,
+      "section": 7
+    },
+    {
+      "n": 18,
+      "text": "/var/run/docker.sock is the Docker daemon's Unix socket, the file through which a program (client) talks to Docker; docker-compose.yml@stage-2 mounts it read-only into the alloy container.",
+      "kind": "behavior",
+      "source_hint": "Docker docs: engine/manage-resources/contexts (unix:///var/run/docker.sock); examples/don-hang @ stage-2 docker-compose.yml:302",
+      "needs_verification": true,
+      "section": 4,
+      "version_key": "docker"
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "outline_items_missing": [],
+    "beyond_scope": []
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1325,
+    "notes": "Code: config.alloy 12-34 + loki-query.sh 27-38 with output; Loki data source in prose. No retention, object storage, other collectors, k8s, traces, alerts. R1 tech: Docker log wording, filtered query, performance degrades. R2 tech: socket wording + claim 18. R1 junior: Docker socket at first use, lab box reaches loki:3100, jq, db not PostgreSQL, container label, targets=[], State_Path, browser; quiz q2 c/d, q5 stem. R2 junior: script hands work to lab box."
+  },
+  "open_questions": [],
+  "repo_changes_needed": []
+}

@@ -1,0 +1,139 @@
+{
+  "id": "backend.l1.efcore-n-plus-one",
+  "technical": {
+    "reviewed_at": "2026-09-25T00:25:00+07:00",
+    "reviewer": "claude-opus-5[1m] (technical review round 3, prompt 04)",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Re-checked after the round-2 junior edit. §2's new clause \"even repeats of the same customer send a fresh query each time\" is exactly what the docs say: \"EF Core always executes a LINQ query on a DbSet against the database and only returns results based on what is in the database. However, for a tracking query, if the entities returned are already tracked, then the tracked instances are used.\" Statement count is unaffected by tracking. Live today: GET /api/v1/orders as anh.tran returned 7 entries (ids 1,2,10,14,15,16,17), so 7 x FirstOrDefaultAsync + 1 = 8.",
+        "source": "refs/efcore-docs/entity-framework/core/change-tracking/identity-resolution.md:618; live run 2026-09-25 00:21 +07"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Re-ran the lesson's Try it verbatim today. donhang-db logged exactly two `execute <unnamed>: SELECT` matches in the window: the login (`FROM customers AS c / WHERE c.email = $1`) and this call — \"SELECT o.id, o.customer_id, o.placed_at, o.status, c.id, c.city, c.email, c.full_name, c.password_hash / FROM orders AS o / INNER JOIN customers AS c ON o.customer_id = c.id\". One statement for 7 orders. log_statement returned to 'none' afterwards (new psql session: SHOW log_statement -> none).",
+        "source": "live run 2026-09-25 on donhang-db / donhang-api (stage-1 lab)"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Also covers §4's new closing clause (\"each one of those calls is its own round trip to PostgreSQL\"). efficient-querying.md: \"each iteration in the inner foreach triggers an additional database query, in its own roundtrip... this is sometimes called the *N+1* problem\"; \"it is always better to use eager loading, so that EF can fetch all the required data in one roundtrip\"; non-eager loading \"require[s] additional roundtrips to the database, which is source of slowdown\". Docs' example is lazy loading; the per-query roundtrip statement is general.",
+        "source": "refs/efcore-docs/entity-framework/core/performance/efficient-querying.md:97,101,137"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "`git show stage-1:DonHang.Infrastructure/EfOrderRepository.cs | cat -n` lines 9-14 still match the block character-for-character, comment line included: FindAsync = `db.Orders.Include(o => o.Items).FirstOrDefaultAsync(o => o.Id == id)`; ListByCustomerAsync = `db.Orders.Where(o => o.CustomerId == customerId).Include(o => o.Customer).OrderBy(o => o.Id).ToListAsync()`. One Include each. Block unchanged by the round-2 edits (only the prose above it changed).",
+        "source": "examples/don-hang @ stage-1: DonHang.Infrastructure/EfOrderRepository.cs:9-14"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Block still matches `git show stage-1:DonHang.Api/Controllers/OrdersController.cs` lines 48-56 exactly. The rewritten intro sentence is now true of those lines: `repository.ListByCustomerAsync(customerId)` is line 54 and the `.Select(o => ... o.Customer!.FullName ...)` line 55, and `[Authorize]` (49) plus `var customerId = ...` (53) are indeed above them. \"Don't change how many queries run\" confirmed live: the whole GET logged one statement, so `[Authorize]`'s JWT check hits no database.",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/Controllers/OrdersController.cs:48-56; live run 2026-09-25"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Unchanged evidence from round 2 (no lazy loading at stage-1: only `options.UseNpgsql(...)`, no proxies package, sealed entities with non-virtual navigations; fix-up: \"Entity Framework Core will automatically fix-up navigation properties to any other entities that were previously loaded into the context instance\"). §6's new clause \"a separate case from this lesson's loop example above, which always asks for a fresh row\" is consistent with identity-resolution.md:618 — the loop's FirstOrDefaultAsync executes regardless of what is tracked.",
+        "source": "stage-1 ServiceCollectionExtensions.cs:14; refs/efcore-docs/.../related-data/eager.md:28; .../change-tracking/identity-resolution.md:618"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Unchanged since round 2: \"When working against relational databases, EF loads related entities by introducing JOINs into a single query\" and \"EF Core uses single query mode by default in the absence of any configuration.\" No `AsSplitQuery` / `UseQuerySplittingBehavior` anywhere at stage-1. Re-confirmed live today: the single logged statement for GET /api/v1/orders is one `INNER JOIN customers AS c` query.",
+        "source": "refs/efcore-docs/entity-framework/core/querying/single-split-queries.md:12,125; live run 2026-09-25"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "\"routing\" has no referent among the two things named. `[Authorize]` is authorization, not routing; what routes this method is `[HttpGet]` plus the class's `[Route(\"api/v1/orders\")]`, neither of which the sentence mentions. `customerId` is the identity half, so the pair \"routing and identity\" mislabels one of the two lines it is about.",
+        "fix": "Replace \"are just routing and identity\" with \"are just access control and identity\" (or name the third line: \"`[HttpGet]` routes it, `[Authorize]` keeps strangers out, and the `customerId` line says who is calling\").",
+        "quote": "`[Authorize]` and the `customerId` line above them are just routing and identity, and don't change how many queries run."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-25T02:05:00+07:00",
+    "reviewer": "claude-opus-5[1m] (junior reader simulation, prompt 05, round 3; fresh full read of the current text, not only the edited spots; known_vocab = the 57 terms supplied with the task, process .. migration; lesson vocab: n-plus-one, eager-loading; other input: five-line summaries of backend.l1.querying-with-linq and backend.l1.saving-changes only)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 2,
+        "kind": "example",
+        "text": "Every one of the 7 orders belongs to the single customer whose orders I just fetched, so the loop asks for the same row seven times. The clause about repeats tells me the calls still happen, but not why anyone would write it that way, and I spent a moment wondering whether I had misread the method. It did not stop me following the count.",
+        "quote": "Before reaching for `.Include(o => o.Customer)`, they try the version that reads more obviously — fetch the orders, then loop over them and run a query for each order's customer",
+        "fix": "After \"run a query for each order's customer\", add: \"the loop looks up each order's customer on its own, without noticing that this customer's orders all point at the same row\"."
+      },
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "gap",
+        "text": "The clause says a customer loaded earlier into the change tracker keeps `order.Customer` from being null, but nothing in this lesson or the two prerequisites says how an earlier query puts a row onto an unrelated order object. I know the change tracker holds entities in memory; I do not know it fills a property like this in. I read it three times and still cannot picture the case, though the bullet does say it is separate from this lesson.",
+        "quote": "unless an earlier query in the same request had already loaded that customer into the change tracker — a separate case from this lesson's loop example above, which always asks for a fresh row",
+        "fix": "Replace that clause with a shorter out-of-scope note: \"unless that same customer had already been fetched earlier in the same request — a case this lesson does not cover\"."
+      },
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "length",
+        "text": "The first misconception runs five sentences and carries two caveats inside one of them (what fills `Customer` in, plus the change-tracker exception) before the takeaway arrives in the last sentence. I had to re-read from \"Nothing in this project fills\" to find where the answer to the belief actually ended.",
+        "quote": "Nothing in this project fills `order.Customer` in by itself when you read it, so a different method that returned orders without `.Include(o => o.Customer)` would leave `order.Customer` `null`",
+        "fix": "Break that sentence in two: end the first at \"would leave `order.Customer` `null`.\", and start the next sentence with \"The real risk isn't reading `.Customer` in a loop — …\"."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz q1",
+        "kind": "quiz",
+        "text": "The explanation for wrong option b names the other problem with a term I have never met and the lesson never uses. I stopped to work out whether I was supposed to know it; the sentence already told me that option is out of scope without it.",
+        "quote": "a JOIN matching too many rows is a different problem (a cartesian-style overcount), not what this lesson covers",
+        "fix": "Delete the parenthetical: \"...is a different problem, not what this lesson covers.\""
+      },
+      {
+        "severity": "minor",
+        "section": "quiz q1",
+        "kind": "quiz",
+        "text": "In q1 and q2 the correct option is both the longest on screen and an almost word-for-word echo of a sentence I just read (Core concepts' \"instead of one call that returns everything together\"; the misconception's \"Nothing in this project fills `order.Customer` in by itself\"). I could have picked both without understanding either, just by matching phrasing and length.",
+        "quote": "One query for a list of rows, then one more query for each row that query returned, instead of a single call that returns everything together",
+        "fix": "Shorten q1's option a to \"One query for the rows, then one more per row it returned\" and q2's option c to \"False — it is safe only because `ListByCustomerAsync` already loaded `Customer` with `.Include`\", so the right answer is no longer the longest line."
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "example",
+        "text": "Step 2 sends me to another lesson for the login command itself. The email, password and the follow-up curl are all here, so the only thing missing is the login call — but I still have to open a second lesson mid-exercise, and that lesson is not named in \"Before you start\" or \"Connections\". It cost me time rather than blocking me.",
+        "quote": "Run step 1 of `creating-a-resource`'s Try it to log in as `anh.tran@example.com` (`donhang-dev-password`) and copy the token.",
+        "fix": "Inline the login command from `creating-a-resource` step 1 into step 2 so the whole exercise runs from this page, keeping the pointer as a parenthetical (\"same command as `creating-a-resource` step 1\")."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "cartesian-style overcount (quiz q1, explanation of option b) — the only one that made me stop; the rest below were readable from context",
+        "round trip (title, section 4) — glossed in place as \"network time the single-query version never pays\", so it did not stop me",
+        "server-side, result set (section 4)",
+        "`docker exec`, `docker logs`, `psql`, `log_statement`, `pg_reload_conf`, `grep -iA 2` (Try it) — copy-paste commands whose purpose the step states, `-A 2` now explained",
+        "token / `Authorization: Bearer` (Try it step 2) — mechanical, the command is given in full",
+        "`OrderItem` / `Items` (section 5) — the prose calls them the rows an order has, which was enough",
+        "shipped, as in \"the code that actually shipped\" (sections 2, 5, quiz q4)"
+      ],
+      "skipped_steps": [
+        "\"unless an earlier query in the same request had already loaded that customer into the change tracker\" — how an earlier query fills in this property is never said.",
+        "\"Run step 1 of `creating-a-resource`'s Try it\" — the login command itself lives in another lesson."
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

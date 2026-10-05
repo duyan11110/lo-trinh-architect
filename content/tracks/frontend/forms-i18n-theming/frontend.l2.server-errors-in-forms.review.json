@@ -1,0 +1,197 @@
+{
+  "id": "frontend.l2.server-errors-in-forms",
+  "technical": {
+    "reviewed_at": "2026-10-01T00:20:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "OrderService.cs:25 `var order = new Order(customerId, items, DateTimeOffset.UtcNow) { IdempotencyKey = idempotencyKey };` inside PlaceOrderAsync; Entities.cs:64 `if (items.Any(item => item.Quantity < 1)) throw new ArgumentException(\"every item needs a quantity of at least 1\");` in the public Order constructor; OrderTests.Constructor_QuantityBelowOne_Throws asserts Assert.Throws<ArgumentException> for Quantity = 0.",
+        "source": "examples/don-hang @ stage-2: DonHang.Domain/OrderService.cs:15-26; DonHang.Domain/Entities.cs:61-70; DonHang.Tests/Domain/OrderTests.cs:30-36"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "ExceptionHandlingMiddleware: `catch (ArgumentException ex) { ... WriteProblemAsync(context, StatusCodes.Status400BadRequest, \"Invalid request\", ex.Message); }`; WriteProblemAsync leaves Type null and writes with contentType \"application/problem+json\". Registered in Program.cs:107 before auth and MapControllers.",
+        "source": "examples/don-hang @ stage-2: DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs:29-33, 72-84; DonHang.Api/Program.cs:107"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Live lab, customer token (anh.tran), POST /api/v1/orders items [{productId:1,quantity:0,unitPriceVnd:1250000}] -> `HTTP/1.1 400 Bad Request`, `Content-Type: application/problem+json`, body `{\"title\":\"Invalid request\",\"status\":400,\"detail\":\"every item needs a quantity of at least 1\"}`. OrderService.PlaceOrderAsync builds `new Order(...)` before AddAsync/SaveChangesAsync, so nothing is saved.",
+        "source": "execution against http://localhost:8080 (2026-09-30); DonHang.Domain/OrderService.cs @ stage-2"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "OrdersController.Create is [Authorize]; line 35 `if (customer is null) return Forbid();` so only a caller with a customer row reaches PlaceOrderAsync. scripts/backend/auth-and-orders.sh sends POST /api/v1/orders with curl and a customer token. Lesson now says \"Anyone signed in as a customer\", matching the round-1 suggested_text.",
+        "source": "examples/don-hang @ stage-2: DonHang.Api/Controllers/OrdersController.cs:22-46; scripts/backend/auth-and-orders.sh:16-26"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "stage-2 api_client.dart:64-66 `if (response.statusCode != 201) { throw ApiProblem.fromResponse(response); }`; stage-1 api_client.dart:54-56 `if (response.statusCode != 201) { throw Exception('failed to create order (${response.statusCode})'); }`.",
+        "source": "examples/don-hang: stage-2 and stage-1 DonHang.App/lib/api_client.dart"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "api_client.dart:75-101: `class ApiProblem implements Exception`; `type: body['type'] as String? ?? 'about:blank'`, `title: body['title'] as String? ?? 'HTTP ${response.statusCode}'`, `detail: body['detail'] as String? ?? body['title'] as String? ?? 'HTTP ...'`; `_jsonObjectOrEmpty` returns {} for a non-Map decode or a FormatException (empty body).",
+        "source": "examples/don-hang @ stage-2: DonHang.App/lib/api_client.dart:75-101"
+      },
+      {
+        "n": 7,
+        "verdict": "rephrased",
+        "evidence": "stage-1 ExceptionHandlingMiddleware: `catch (ArgumentException ex) { ... WriteProblemAsync(context, 400, \"Invalid request\", ex.Message); }`, registered in Program.cs:67 (file absent at stage-0). stage-1 OrderService only checks items.Count == 0; Order has no constructor check; db/schema.sql:29 `quantity integer NOT NULL CHECK (quantity > 0)`. The DbUpdateException from SaveChangesAsync falls to `catch (Exception)` -> 500 \"something went wrong\". The 500 is written by the middleware, not by the database; the CHECK exists only in a db built from schema.sql (Compose), not by InitialCreate alone.",
+        "source": "examples/don-hang @ stage-1: ExceptionHandlingMiddleware.cs:21-30; Program.cs:67; OrderService.cs:8-22; db/schema.sql:29; Migrations/..._InitialCreate.cs:97",
+        "suggested_text": "before this check existed, the database's `CHECK` refused the same quantity and the middleware answered a generic `500`."
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "create_order_screen_test.dart:37 `locale: Locale('en'),` with AppLocalizations delegates; line 50 `await tester.tap(find.text('Place order'));`; app_en.arb:36 `\"submitOrder\": \"Place order\",`; the button renders `Text(l10n.submitOrder)`.",
+        "source": "examples/don-hang @ stage-2: DonHang.App/test/create_order_screen_test.dart:36-50; DonHang.App/lib/l10n/app_en.arb:36; lib/screens/create_order_screen.dart:110"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "RFC 9457 3.1.1 (WebFetch): \"When this member is not present, its value is assumed to be 'about:blank'.\" 4.2.1: \"The 'about:blank' URI, when used as a problem type, indicates that the problem has no additional semantics beyond that of the HTTP status code.\"",
+        "source": "https://www.rfc-editor.org/rfc/rfc9457 sections 3.1.1, 4.2.1"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "create_order_screen.dart:61-64: `} on ApiProblem catch (problem) { if (mounted) setState(() => _serverError = problem.detail); } on Exception { if (mounted) setState(() => _serverError = AppLocalizations.of(context).orderFailed); }`. The ApiProblem clause comes first, so it wins over `on Exception`.",
+        "source": "examples/don-hang @ stage-2: DonHang.App/lib/screens/create_order_screen.dart:54-67"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "create_order_screen.dart:107-110: `if (_serverError != null) Text(_serverError!, style: TextStyle(color: Theme.of(context).colorScheme.error)), const SizedBox(height: 8), FilledButton(... child: Text(l10n.submitOrder))` in the same ListView, i.e. above the button.",
+        "source": "examples/don-hang @ stage-2: DonHang.App/lib/screens/create_order_screen.dart:106-110"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "The ApiProblem catch only assigns _serverError; context.go runs only after createOrder returns; _product and _quantityController are not touched. Execution: stage-2 test 'shows the API detail and keeps what was typed' passes (`find.widgetWithText(TextFormField, '2')` findsOneWidget after the refusal).",
+        "source": "create_order_screen.dart:48-68 @ stage-2; flutter test on git archive of stage-2 (Flutter 3.47.2)"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "_checkQuantity: `quantity == null || quantity < 1 ? ...quantityInvalid : null`; _submit line 49 `if (!_formKey.currentState!.validate()) return;` before createOrder. Second stage-2 test ('does not send an order the validators reject') passes with '0'. Lesson words it softly (\"hard to reach on purpose\").",
+        "source": "examples/don-hang @ stage-2: create_order_screen.dart:38-41, 49; test/create_order_screen_test.dart:58-80"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "create_order_screen_test.dart:14-25: `class RejectingApiClient extends ApiClient { ... createOrder(...) async { throw ApiProblem(status: 400, type: 'about:blank', title: 'Invalid request', detail: 'every item needs a quantity of at least 1'); } }`.",
+        "source": "examples/don-hang @ stage-2: DonHang.App/test/create_order_screen_test.dart:11-26"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "riverpod 3.0.3 provider.dart: \"Overrides a provider with a value, ejecting the default behavior. ... [overrideWith] allows you to replace the implementation of a provider ... [overrideWithValue] allows you to replace the result of a provider.\" functional_provider.dart: \"Override the provider with a new initialization function.\"",
+        "source": "Pub cache riverpod-3.0.3/lib/src/providers/provider.dart:68-78; lib/src/core/provider/functional_provider.dart:35-45"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "flutter_test controller.dart pumpAndSettle: \"Repeatedly calls [pump] with the given `duration` until there are no longer any frames scheduled.\" widget_tester.dart enterText: \"Give the text input widget specified by [finder] the focus and replace its content with [text], as if it had been provided by the onscreen keyboard.\"",
+        "source": "C:/Flutter/flutter/packages/flutter_test/lib/src/controller.dart:1536-1541; widget_tester.dart:1140-1148 (Flutter 3.47.2)"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "finders.dart: widgetWithText \"Looks for widgets that contain a [Text] descendant with `text` in it\", implemented as find.ancestor(of: find.text(text), matching: find.byType(widgetType)); find.text \"Finds [Text], [EditableText], and optionally [RichText] widgets\", so the field's EditableText holding '2' matches. Line 54 passes at stage-2, fails when the controller is cleared.",
+        "source": "C:/Flutter/flutter/packages/flutter_test/lib/src/finders.dart:94-95, 168-190; execution"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "aspnetcore docs: \"A 401 Unauthorized response indicates that the provided access token doesn't meet the required standards ... Expiration: The token has expired\". Live: POST with an invalid token -> `401 Unauthorized`, `Content-Length: 0`, `Www-Authenticate: Bearer error=\"invalid_token\"`; with an Origin header also `Access-Control-Allow-Origin: *`. fromResponse -> detail 'HTTP 401'.",
+        "source": "refs/aspnetcore-docs/aspnetcore/security/authentication/configure-jwt-bearer-authentication.md:86-91; execution http://localhost:8080"
+      },
+      {
+        "n": 19,
+        "verdict": "verified",
+        "evidence": "git show stage-2:DonHang.App/lib/screens/create_order_screen.dart line 62: `      if (mounted) setState(() => _serverError = problem.detail);`. A sed replacement of exactly the text given in Try it matched that line.",
+        "source": "examples/don-hang @ stage-2: DonHang.App/lib/screens/create_order_screen.dart:62"
+      },
+      {
+        "n": 20,
+        "verdict": "verified",
+        "evidence": "Run 1: `00:02 +2: All tests passed!`. Run 2 (line 62 -> `setState(() { _serverError = problem.detail; _quantityController.clear(); })`): TestFailure `Found 0 widgets with type \"TextFormField\" that are ancestors of widgets with text \"2\"`, caught at test line 54; second test passes; `00:03 +1 -1: Some tests failed.` File restored afterwards.",
+        "source": "flutter test test/create_order_screen_test.dart on git archive of stage-2, Flutter 3.47.2, 2026-09-30"
+      },
+      {
+        "n": 21,
+        "verdict": "verified",
+        "evidence": "Both overrides replace the only network paths: apiClientProvider -> RejectingApiClient (createOrder throws without calling http), productsProvider -> fixed list. The test file ran to completion in about 3 s with no use of the lab.",
+        "source": "test/create_order_screen_test.dart:14-42 @ stage-2; execution"
+      },
+      {
+        "n": 22,
+        "verdict": "not-needed",
+        "evidence": "Stated in the lesson as a consequence tied to the code (\"_submit touches only _serverError\"), not as an unconditional rule; the code comment create_order_screen.dart:45-47 states the same intent. No documentation needed.",
+        "source": "examples/don-hang @ stage-2: create_order_screen.dart:43-47"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Round 2, claim 7: the 500 is not answered by the database; the database refuses the INSERT and the middleware's catch-all writes a generic 500. Also true only for the Compose db built from db/schema.sql, which carries the CHECK.",
+        "quote": "before this check existed, the same quantity got a generic `500` from the database",
+        "fix": "Replace with: \"before this check existed, the database's `CHECK` refused the same quantity and the middleware answered a generic `500`.\""
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-01T00:40:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "text": "Round 2. The new sentence says the widget test fakes the quantity-0 case, but the test in section 5 types `2`. I worked out that the fake refuses a valid form as if the quantity were bad, but I paused on it; the prose never says why the test types a valid value.",
+        "quote": "The diagram follows a quantity of `0` as if the form's quantity check were missing, the case the widget test below fakes.",
+        "fix": "In section 5, add one clause: the test types a valid `2` so the validators pass, and the fake then refuses it as the API would refuse a quantity of `0`."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "code",
+        "text": "Round 2. The locale line is now explained and the prose says the test taps the product's entry in the list, but I still do not know why that line needs `.last`. I can follow the test without it.",
+        "quote": "await tester.tap(find.text('Bàn phím cơ').last);",
+        "fix": "Add half a sentence: `.last` picks the entry in the opened list, because the product name can also appear in the closed drop-down."
+      },
+      {
+        "severity": "minor",
+        "section": "frontend.l2.server-errors-in-forms.q1",
+        "kind": "quiz",
+        "text": "Option a nearly repeats a lesson sentence ('none of the app's checks run then'), so I can match it by wording.",
+        "quote": "Requests can reach `DonHang.Api` without the app, and none of the app's checks run for them",
+        "fix": "Reword a, e.g. 'Some callers never run the app's code, so only the API can stop them'."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [
+        "Why the widget test types a valid `2` while the diagram and its note talk about a quantity of `0`"
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

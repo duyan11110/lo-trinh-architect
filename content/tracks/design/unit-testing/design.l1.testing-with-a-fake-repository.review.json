@@ -1,0 +1,156 @@
+{
+  "id": "design.l1.testing-with-a-fake-repository",
+  "technical": {
+    "reviewed_at": "2026-09-25T22:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "stage-1 OrderServiceTests.cs has exactly five [Fact] methods (lines 11-63). Lines 14-16 and 27-29 build `new OrderService(repository, notifier)` from variables; lines 40, 50, 60 pass `new FakeOrderRepository()` / `new FakeNotifier()` directly (line 50 uses a seeded `repository` variable). dotnet test: Total: 5.",
+        "source": "git -C examples/don-hang show stage-1:DonHang.Tests/Services/OrderServiceTests.cs"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "DonHang.Tests.csproj lines 17-19: the only ProjectReference is `..\\DonHang.Domain\\DonHang.Domain.csproj`. EfOrderRepository.cs and DonHangDbContext.cs are under DonHang.Infrastructure/ (namespace DonHang.Infrastructure). Build output of `dotnet test DonHang.Tests` lists only `DonHang.Domain ->` and `DonHang.Tests ->`.",
+        "source": "stage-1:DonHang.Tests/DonHang.Tests.csproj; stage-1:DonHang.Infrastructure/*.cs; dotnet test on git archive of stage-1"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Round 2 rerun: `dotnet test DonHang.Tests` on a git archive of stage-1, no Postgres or containers running. Build lines: \"DonHang.Domain -> ...\", \"DonHang.Tests -> ...\"; then \"Passed!  - Failed: 0, Passed: 5, Skipped: 0, Total: 5, Duration: 273 ms\". Reworded claim (build, then run under a second) matches the output.",
+        "source": "execution, SDK 10.0.300, stage-1 archive (round 2)"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "xunit.assert 2.9.2 XML docs for Assert.Single<T>(IEnumerable<T>): \"Verifies that the given collection contains only a single element of the given type.\" returns \"The single item in the collection.\"; throws SingleException \"when the collection does not contain exactly one element.\" Also by run: deleting notifier.Send makes SendsOneNotification fail.",
+        "source": "~/.nuget/packages/xunit.assert/2.9.2/lib/net6.0/xunit.assert.xml (xunit 2.9.2 pinned in versions.yaml)"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "OrderServiceTests.cs line 9: `private static OrderItem OneItem => new() { ProductId = 1, Quantity = 2, UnitPriceVnd = 100_000 };` - a static expression-bodied property that returns a new OrderItem on each read.",
+        "source": "stage-1:DonHang.Tests/Services/OrderServiceTests.cs:9"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Executed on stage-1 archive. AddAsync replaced by `public Task AddAsync(Order order) => Task.CompletedTask;`: DonHang.Api builds, tests \"Passed: 5\". Deleting OrderService.cs line 10 (empty-items throw): \"Failed DonHang.Tests.Services.OrderServiceTests.PlaceOrderAsync_NoItems_Throws\", \"Failed: 1, Passed: 4\". Keeping `async` on AddAsync gives CS0201 in Infrastructure, yet tests still pass - see section 7 issue.",
+        "source": "execution on git archive of stage-1"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "DonHang.Tests has no reference to DonHang.Infrastructure (csproj lines 17-19), so no test in this project can run EfOrderRepository; by execution, breaking EfOrderRepository.AddAsync leaves all 5 green. Checking it needs a test that references Infrastructure and runs against a real database. The lesson names it only as 'a different kind of test', consistent with depth_notes.",
+        "source": "stage-1:DonHang.Tests/DonHang.Tests.csproj; execution"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "CS4033: \"The 'await' operator can only be used within an async method.\" OrderServiceTests.cs lines 12/25 are `public async Task ...`. xUnit observes the returned Task: with `notifier.Send` removed (fake completes synchronously, so the Assert exception is stored in the Task, not thrown), run gives \"Failed ...PlaceOrderAsync_ValidItems_SendsOneNotification\", \"Failed: 1, Passed: 4\".",
+        "source": "refs/dotnet-docs/docs/csharp/language-reference/compiler-messages/async-await-errors.md:131; execution on stage-1 archive (round 2)"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "OrderServiceTests.cs line 42 `Assert.ThrowsAsync<ArgumentException>(... items: [])`; lines 49/54 `repository.Seed(new Order { Id = 1, ... Status = \"new\" })` then `Assert.Equal(\"cancelled\", order.Status)`; line 62 `Assert.ThrowsAsync<KeyNotFoundException>(() => service.CancelOrderAsync(999))`.",
+        "source": "stage-1:DonHang.Tests/Services/OrderServiceTests.cs:37-63"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Assertions in OrderServiceTests.cs: Equal(\"new\"), Equal(1, CustomerId), Single(notifier.Sent)+Equal(order.Id), ThrowsAsync<ArgumentException>, Equal(\"cancelled\"), ThrowsAsync<KeyNotFoundException>; none reads the repository. Round 2 run with OrderService.cs lines 19-20 (AddAsync, SaveChangesAsync) deleted: \"Passed: 5, Total: 5, Duration: 34 ms\". FakeOrderRepository has FindAsync, so the read-back check is possible.",
+        "source": "stage-1:DonHang.Tests/Services/OrderServiceTests.cs, DonHang.Tests/FakeOrderRepository.cs; execution on stage-1 archive"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Build output of `dotnet test DonHang.Tests` lists only \"DonHang.Domain ->\" and \"DonHang.Tests ->\". DonHang.Domain.csproj has no PackageReference or ProjectReference; DonHang.Tests.csproj references only Microsoft.NET.Test.Sdk, xunit, xunit.runner.visualstudio and DonHang.Domain. No Directory.Build.props at stage-1; Directory.Packages.props only sets PackageVersion (no GlobalPackageReference).",
+        "source": "stage-1: DonHang.Domain/DonHang.Domain.csproj, DonHang.Tests/DonHang.Tests.csproj, Directory.Packages.props; execution"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "xunit.core 2.9.2 XML docs, FactAttribute: \"Attribute that is applied to a method to indicate that it is a fact that should be run by the test runner.\" xunit.assert 2.9.2, Assert: \"Contains various static methods that are used to verify that conditions are met during the process of running tests.\" DonHang.Tests.csproj references xunit + xunit.runner.visualstudio (2.9.2 / 2.8.2); round-2 `dotnet test DonHang.Tests` ran all 5 [Fact] methods (Total: 5). Round 3: 0 issues; opened only these XML docs, stage-1 sources and round-2 run output.",
+        "source": "~/.nuget/packages/xunit.extensibility.core/2.9.2/lib/net452/xunit.core.xml:132-135; ~/.nuget/packages/xunit.assert/2.9.2/lib/net6.0/xunit.assert.xml:95-98; stage-1:DonHang.Tests/DonHang.Tests.csproj; execution"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-25T23:30:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation, round 2)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "term",
+        "text": "Round-1 [Fact]/Assert gap is fixed, but the new sentence names 'xUnit' as if I know it. It is not in known_vocab. From the sentence I can tell it is the thing `dotnet test` uses to run the tests, so I only paused briefly.",
+        "quote": "`[Fact]` marks each method as a test that `dotnet test` runs through xUnit, and `Assert` holds xUnit's checks.",
+        "fix": "Name what xUnit is at this first use in a few words, e.g. 'runs through xUnit, the testing library `DonHang.Tests` uses,'."
+      },
+      {
+        "severity": "minor",
+        "section": 2,
+        "kind": "term",
+        "text": "'the lab' (section 2 'the lab switched off', section 7 'with the lab stopped') is not in known_vocab. In section 2 the colon list tells me it means PostgreSQL and the database server, so I follow. In Try it I do not know how to stop it; the step still works without stopping, so this did not block me.",
+        "quote": "with the lab switched off: no PostgreSQL, no database server, no database address to connect to",
+        "fix": "In section 7 write 'with the lab (PostgreSQL) stopped' or 'with PostgreSQL not running', so the reader knows what to switch off."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "term",
+        "text": "The new paragraph names `FindAsync` as the way to read an order back. This lesson never shows the repository's methods by name, and the prereq summary only says there are four. The name tells me roughly what it does, so I can go on.",
+        "quote": "a gap a test could close by reading the order back with `FindAsync`",
+        "fix": "Write 'with the repository's `FindAsync`' so it is clear it is an `IOrderRepository` method, not something in xUnit."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "text": "The test-doubles prereq taught me the fake's AddAsync hands out ids because OrderService uses order.Id, and the second test compares order.Id with the notification's id. So when I read that deleting add and save leaves all five green, I stopped: wouldn't the id check notice? The lesson does not say why it does not.",
+        "quote": "so deleting the add and save calls from `PlaceOrderAsync` would leave all five green",
+        "fix": "Add one clause after 'all five green' saying why the id comparison still passes, e.g. that both ids are then the same unset value."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "style",
+        "text": "The third paragraph of section 4 now carries three ideas (what is proved, the add/save gap, the EfOrderRepository limit). I re-read the first sentence twice to see what 'a repository that behaves as the interface promises' was attached to.",
+        "quote": "They prove only what they assert, about `OrderService` and a repository that behaves as the interface promises: the status, the customer, the one notification, the refusals.",
+        "fix": "Split the first sentence in two: 'They prove only what they assert: the status, the customer, the one notification, the refusals. And they prove it only with a repository that behaves as the interface promises.'"
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "text": "q2 option b names `SaveChangesAsync`. The lesson only says 'the calls to add and save' and never gives this method name, so I have to guess it is the 'save' call. It does not change my answer (c is clear).",
+        "quote": "True, because `OrderService` calls `SaveChangesAsync` in every test.",
+        "fix": "Write 'calls the repository's save method' in option b and its explanation, or name `SaveChangesAsync` once in section 4 where 'the calls to add and save' appears."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "xUnit",
+        "lab",
+        "FindAsync",
+        "SaveChangesAsync (quiz q2 only)"
+      ],
+      "skipped_steps": [
+        "Section 4: why deleting add/save leaves SendsOneNotification green, given the prereq says the fake's AddAsync hands out the id that test compares."
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

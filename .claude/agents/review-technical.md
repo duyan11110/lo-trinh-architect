@@ -2,7 +2,7 @@
 name: "review-technical"
 description: "Reviewer kỹ thuật độc lập cho một bài học (prompt 04). Gọi khi cần kiểm tra claims, code, phạm vi và đáp án quiz của bài <id>. Chạy trong ngữ cảnh riêng, không thấy phiên sinh bài."
 tools: Read, Grep, Glob, Write, Bash, WebFetch
-model: opus
+model: claude-opus-5-5
 maxTurns: 60
 ---
 Bạn là reviewer kỹ thuật theo `prompts/04-review-technical.md`. Ngay khi bắt đầu, đọc file đó và tuân thủ TOÀN BỘ phần "System" và "Procedure" trong nó. Không đọc `prompts/00-system.md`, không đọc `prompts/02-lesson.md`.

@@ -1,0 +1,125 @@
+{
+  "id": "backend.l2.offset-pagination",
+  "technical": {
+    "reviewed_at": "2026-09-28T13:00:00+07:00",
+    "reviewer": "claude-opus-5-5[1m] (technical, round 3)",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "git show stage-2:DonHang.Api/Controllers/ProductsController.cs lines 17-27: \"private const int MaxPageSize = 100;\" ... \"[FromQuery, Range(1, MaxPageSize)] int limit = 20,\" \"[FromQuery, Range(0, int.MaxValue)] int offset = 0,\". Tag stage-2^{commit} = 7a131bc = submodule HEAD.",
+        "source": "examples/don-hang @ stage-2 (7a131bc): DonHang.Api/Controllers/ProductsController.cs:17-27"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "ProductsController.cs:29 \"IQueryable<Product> query = db.Products;\" and 38-44 \".OrderBy(p => p.Id) .Skip(offset) .Take(limit) .Select(p => new ProductDto(p.Id, p.Name, p.PriceVnd)) .ToListAsync(); return Ok(page);\". Lines 33-36 conditionally insert .Where(p => p.PriceVnd <= maxPriceVnd) before OrderBy; the claim describes the unfiltered path.",
+        "source": "examples/don-hang @ stage-2: DonHang.Api/Controllers/ProductsController.cs:29-44"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Lab stage-2 after curl \"...?limit=20&offset=40\" and \"?limit=3&offset=2\": docker logs donhang-api (Microsoft.EntityFrameworkCore.Database.Command) \"[Parameters=[@p1='?' (DbType = Int32), @p='?' (DbType = Int32)]] SELECT p.id, p.name, p.price_vnd FROM products AS p ORDER BY p.id LIMIT @p1 OFFSET @p\". Skip->OFFSET, Take->LIMIT, values sent as parameters. Diagram label \"LIMIT @p1 OFFSET @p (20, 40)\" matches: @p1 sits in LIMIT (limit=20), @p in OFFSET (offset=40). R3: new s4 sentence \"`@p1` and `@p` stand for those two numbers\" pairs @p1-20, @p-40 in the order given; matches log.",
+        "source": "lab stage-2, docker logs donhang-api, 2026-09-28 (round 2)"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "PG 17 7.6: \"When using LIMIT, it is important to use an ORDER BY clause that constrains the result rows into a unique order. Otherwise you will get an unpredictable subset of the query's rows.\" ... \"using different LIMIT/OFFSET values to select different subsets of a query result will give inconsistent results unless you enforce a predictable result ordering with ORDER BY.\" 7.5: \"the rows will be returned in an unspecified order ... it must not be relied on.\"",
+        "source": "https://www.postgresql.org/docs/17/queries-limit.html ; https://www.postgresql.org/docs/17/queries-order.html"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "R3: s5 now reads \"ASP.NET Core checks attributes like `Range` on each parameter, and `[ApiController]` on the class (just above this excerpt) makes it answer `400` itself\". web-api/index.md: \"The [ApiController] attribute makes model validation errors automatically trigger an HTTP 400 response.\" validation.md: action parameters are top-level nodes and are validated. stage-2 ProductsController.cs:13 \"[ApiController]\", excerpt starts at line 17. Lab: ?limit=101 -> errors.limit.",
+        "source": "refs/aspnetcore-docs/aspnetcore/web-api/index.md:106; refs/aspnetcore-docs/aspnetcore/mvc/models/validation.md:238-247; examples/don-hang @ stage-2 ProductsController.cs:13-17"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "model-binding.md: \"[FromQuery] - Gets values from the query string.\" Default-value half settled by execution, not docs (docs only say a missing non-nullable value type gets default(T)): curl /api/v1/products with no parameters -> 200 with all 8 seeded products (ids 1-8). With limit=0, Range(1,100) would give 400 or Take(0) an empty array, so limit=20 and offset=0 were applied.",
+        "source": "refs/aspnetcore-docs/aspnetcore/mvc/models/model-binding.md (Sources); lab stage-2 curl"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Code has no clamp (MaxPageSize is used only inside Range). Lab: curl -i \"...?limit=101\" -> \"HTTP/1.1 400 Bad Request\", body errors.limit [\"The field limit must be between 1 and 100.\"]; ?limit=0 -> 400.",
+        "source": "examples/don-hang @ stage-2 ProductsController.cs:17-44; lab stage-2 curl"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "curl -s \"http://localhost:8080/api/v1/products?limit=3&offset=2\" -> [{\"id\":3,\"name\":\"Tai nghe\",...},{\"id\":4,...},{\"id\":5,...}]. curl -i \"...?limit=101\" -> \"HTTP/1.1 400 Bad Request\", \"Content-Type: application/problem+json; charset=utf-8\", {\"title\":\"One or more validation errors occurred.\",\"status\":400,\"errors\":{\"limit\":[\"The field limit must be between 1 and 100.\"]}}.",
+        "source": "lab stage-2 at http://localhost:8080, 2026-09-28"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Bash manual, Lists of Commands: \"If a command is terminated by the control operator '&', the shell executes the command asynchronously in a subshell.\" So an unquoted & ends the curl command there and the rest (offset=2) is parsed as a separate command.",
+        "source": "https://www.gnu.org/software/bash/manual/html_node/Lists.html"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Section 3 now reads \"a `name=value` pair after the `?` in a URL, such as `limit=20`, that the server reads as an option for the request; here the path still points at the product collection\". No longer contradicts RFC 9110 4.2.1 (\"The hierarchical path component and optional query component identify the target resource\"). model-binding.md: \"Looks through the sources and finds \\\"DogsOnly=true\\\" in the query string.\" Lab: ?limit=3&offset=2 binds both by name (ids 3,4,5). Old section-4 sentence removed.",
+        "source": "refs/rfc/rfc9110.txt:1110; refs/aspnetcore-docs/aspnetcore/mvc/models/model-binding.md:47; lab stage-2 curl"
+      },
+      {
+        "n": 11,
+        "verdict": "not-needed",
+        "evidence": "Design reasoning, not version-dependent behaviour. Consistent with the code: without Take/Skip the SQL has no LIMIT, so every row is read, projected and serialized server-side before any response byte reaches the client.",
+        "source": "lesson sections 2 and 6; ProductsController.cs stage-2 for contrast"
+      },
+      {
+        "n": 12,
+        "verdict": "not-needed",
+        "evidence": "Stated with its condition (\"so the client learns its request was wrong\"), and the lesson describes what Đơn Hàng does rather than prescribing it universally. The behaviour half (refuse, not clamp) is verified under claim 7.",
+        "source": "lesson section 5; claim 7 evidence"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "PG17 7.6: \"OFFSET says to skip that many rows before beginning to return rows.\" 13.2.1: a SELECT \"sees only data committed before the query began\"; \"two successive SELECT commands can see different data ... if other transactions commit changes after the first SELECT starts and before the second SELECT starts.\" Each page request is a new SELECT, so positions are counted on the data at that moment; an insert/delete before the offset shifts later rows. Docs opened R3: both pages.",
+        "source": "https://www.postgresql.org/docs/17/queries-limit.html ; https://www.postgresql.org/docs/17/transaction-iso.html"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-28T12:00:00+07:00",
+    "reviewer": "claude-opus-5-5[1m] (junior, round 2)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "diagram",
+        "text": "The diagram arrow shows `LIMIT @p1 OFFSET @p (20, 40)`, but section 4's prose only says Skip becomes OFFSET and Take becomes LIMIT. What @p1, @p and (20, 40) mean is explained only in section 5, so on first reading I could not narrate that arrow and had to read ahead.",
+        "quote": "Ef->>Db: ... ORDER BY p.id LIMIT @p1 OFFSET @p (20, 40)",
+        "fix": "In section 4, after 'Skip becomes OFFSET and Take becomes LIMIT', add a short clause: 'the SQL holds placeholders, and 20 and 40 travel alongside it as their values'."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "code",
+        "text": "The prose says `[ApiController]` is on the class, but the code block starts at `MaxPageSize` and does not show the class line, so I looked for `[ApiController]` in the block and could not find it. The explanation of what it does is now clear.",
+        "quote": "`[ApiController]` on the class makes ASP.NET Core check attributes like `Range` on every parameter",
+        "fix": "Add '(on the class declaration, just above this excerpt)' after '`[ApiController]` on the class'."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [
+        "Placeholders @p1/@p and values (20, 40) in the diagram are explained only in section 5, not in section 4's prose"
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

@@ -1,0 +1,111 @@
+{
+  "id": "design.l2.class-fixtures",
+  "technical": {
+    "reviewed_at": "2026-10-01T23:55:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Round-3 runs on git archive stage-2, `dotnet test DonHang.Tests --filter EfOrderRepositoryTests` verbosity=normal, twice: FindAsync_... [1 s], SaveChangesAsync_... [38 ms] both runs; total 12.1/12.6 s. docker events (image=postgres:17.6-alpine): create 1790865581 -> destroy 1790865589, create 1790865599 -> destroy 1790865607 (8 s each, including ~1 s of tests, so start+migrate is several seconds). Matches 'seconds', 'tens of ms', 'first test up to about a second'; the ledger's '~9 s' is a loose rounding.",
+        "source": "reviewer runs 2026-10-01 round 3 (dotnet test + docker events, scratch copy of stage-2)"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "xunit.net Shared Context (WebFetch): \"xUnit.net creates a new instance of the test class for every test that is run\". Probe run: three tests of one class logged three different instance hashes (32196492, 1533713, 26020167), one constructor call each.",
+        "source": "https://xunit.net/docs/shared-context ; reviewer probe run 2026-10-01"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "xunit.net Shared Context (WebFetch): class fixture is \"shared...among all tests in a test class\"; xUnit will \"pass...to the constructor\" the fixture declared as a parameter. Probe run: all three instances received fixture=36181605 and db=50971707. EfOrderRepositoryTests.cs l.14-15: `(PostgresFixture database) : IClassFixture<PostgresFixture>, IAsyncLifetime`.",
+        "source": "https://xunit.net/docs/shared-context ; EfOrderRepositoryTests.cs:14-15 @ stage-2"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Docs (WebFetch): fixture \"will be created before any of the tests have run\"; \"Once all the tests have finished, it will clean up the fixture\"; page does not state IAsyncLifetime timing for fixtures, so settled by execution (xunit 2.9.2): log `fixture InitializeAsync 36181605` before the first test, `fixture DisposeAsync 36181605` after the class's last test, each once.",
+        "source": "https://xunit.net/docs/shared-context ; reviewer probe run 2026-10-01"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Docs: class fixtures are for \"all tests in a test class\"; collection fixtures for sharing \"among tests in several test classes\". OrdersApiTests.cs l.13 `IClassFixture<ApiFactory>`; ApiFactory.cs `public PostgresFixture Database { get; } = new();`. Probe: two classes declaring IClassFixture<ProbeFixture> got different instances (12036987, 36181605). Full run: docker events showed exactly 2 postgres:17.6-alpine creates.",
+        "source": "https://xunit.net/docs/shared-context ; OrdersApiTests.cs:13, ApiFactory.cs:22 @ stage-2; reviewer runs"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Execution: in a copy of stage-2 with EfOrderRepositoryTests.InitializeAsync changed to Task.CompletedTask (no reset), `dotnet test --filter EfOrderRepositoryTests` -> 1 passed, 1 failed: \"23505: duplicate key value violates unique constraint \\\"IX_customers_email\\\"\" — the first test's customer row was still there for the second.",
+        "source": "reviewer run 2026-10-01 (modified scratch copy, repo untouched)"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Unchanged in substance from round 1; added reason checked against the same probe: each test logged `ctor inst=X`, `InitializeAsync inst=X`, test, `DisposeAsync inst=X` with a different X per test, while the class fixture instance was the same for all. xunit.net Shared Context: \"xUnit.net creates a new instance of the test class for every test that is run\". EfOrderRepositoryTests.cs l.14-19 @ stage-2 matches the quote.",
+        "source": "https://xunit.net/docs/shared-context ; EfOrderRepositoryTests.cs:14-19 @ stage-2; reviewer probe run 2026-10-01"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "git grep at stage-2: `new()` for PostgresFixture appears only in ApiFactory.cs (`Database { get; } = new();`); EfOrderRepositoryTests only declares the constructor parameter. PostgresFixture.cs l.26-33: InitializeAsync -> container.StartAsync() + db.Database.MigrateAsync(); DisposeAsync -> container.DisposeAsync().",
+        "source": "examples/don-hang @ stage-2: PostgresFixture.cs:26-33, ApiFactory.cs:22"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Docs: \"Once all the tests have finished, it will clean up the fixture\" (no failure condition). Execution: probe class with IClassFixture<PostgresFixture> and 2 of 3 tests failing (Assert.True(false), throw) -> `fixture DisposeAsync` logged after the last test; docker events: postgres container create 21:18:14, destroy 21:18:21, right after the failed run.",
+        "source": "https://xunit.net/docs/shared-context ; reviewer probe run 2026-10-01"
+      },
+      {
+        "n": 10,
+        "verdict": "not-needed",
+        "evidence": "Conditioned judgement (\"quick enough to run often\") resting on measured costs in claim 1: several seconds per container start + migration vs 30-56 ms for a repository test. Not stated as a ranking or absolute rule.",
+        "source": "reviewer runs 2026-10-01"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "refs docker_system_events.yaml: \"Using multiple filters is interpreted as a logical `AND`\"; supported filters include \"event (`event=<event action>`)\" and \"image (`image=<repository or tag>`)\"; \"To exit the `docker events` command, use `CTRL+C`.\" Example output line: \"container create 0fdb... (image=alpine:latest, name=test)\". Reviewer run printed one `container create` line per container.",
+        "source": "refs/docker-docs/data/cli/engine/docker_system_events.yaml l.146-164, 260-269"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Reviewer run on stage-2 copy, Docker 28 running, lab up: `dotnet test DonHang.Tests` -> \"Total tests: 24\", all Passed (2 EfOrderRepositoryTests, 5 OrdersApiTests). Concurrent `docker events --filter image=postgres:17.6-alpine --filter event=create` printed exactly two lines: 21:18:55.656 container create e87d1cfd..., 21:18:55.692 container create 2a04fb5c.... R3: zero issues; opened lesson en.md, quiz q5, prior lesson testcontainers-postgresql.en.md (l.87-97 shows the same comment lines).",
+        "source": "reviewer run 2026-10-01"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-01T23:30:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation, round 2)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 2,
+        "kind": "gap",
+        "quote": "takes tens of milliseconds (the class's first test, up to about a second)",
+        "text": "The parenthesis makes me ask why the first test is slower, and nothing later answers it. The comparison still works (a second is still far less than seconds of container start), so I can go on, but I pause here.",
+        "fix": "Add a few words inside the parenthesis saying the first test is slower because it does one-time warm-up work, or drop the parenthesis if the reason cannot be stated."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [
+        "Why the class's first repository test takes up to about a second while later ones take tens of milliseconds."
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

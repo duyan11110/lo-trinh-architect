@@ -1,0 +1,133 @@
+{
+  "id": "design.l2.unit-of-work",
+  "technical": {
+    "reviewed_at": "2026-09-30T16:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "EF docs quote Fowler: \"A Unit of Work keeps track of everything you do during a business transaction that can affect the database. When you're done, it figures out everything that needs to be done to alter the database as a result of your work.\" The .NET microservices guide adds: \"for a specific user action ... all the insert, update, and delete operations are handled in a single transaction.\"",
+        "source": "refs/efcore-docs/entity-framework/core/dbcontext-configuration/index.md:21; refs/dotnet-docs/docs/architecture/microservices/microservice-ddd-cqrs-patterns/infrastructure-persistence-layer-design.md:95"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "\"A DbContext instance is designed to be used for a single unit-of-work.\" Entities become tracked by \"Being returned from a query\" / \"added or attached\"; \"SaveChanges or SaveChangesAsync is called. EF Core detects the changes made and writes them to the database.\" Change detection: \"By default, EF Core creates a snapshot of every entity's property values when it is first tracked ... compared against the current values\".",
+        "source": "refs/efcore-docs/entity-framework/core/dbcontext-configuration/index.md:18,23-31; change-tracking/change-detection.md:20"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "\"By default, if the database provider supports transactions, all changes in a single call to SaveChanges are applied in a transaction. If any of the changes fail, then the transaction is rolled back and none of the changes are applied to the database.\" (Npgsql is a transactional provider.)",
+        "source": "refs/efcore-docs/entity-framework/core/saving/transactions.md:17"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "git show stage-1:DonHang.Domain/IOrderRepository.cs: FindAsync(int), ListByCustomerAsync(int), AddAsync(Order), SaveChangesAsync() - four methods, SaveChangesAsync has no parameter. `git grep -n \"Update\" stage-1 -- \"DonHang.*/*.cs\"` printed nothing (exit 1).",
+        "source": "examples/don-hang @ stage-1: DonHang.Domain/IOrderRepository.cs:5-11"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "OrderService.cs:29-38 matches: FindAsync(orderId), order.Status = \"cancelled\", repository.SaveChangesAsync() with no argument. OrdersController.cs:41-45: [HttpPatch(\"{id:int}/cancel\")] under [Route(\"api/v1/orders\")] calls orderService.CancelOrderAsync(id).",
+        "source": "examples/don-hang @ stage-1: DonHang.Domain/OrderService.cs; DonHang.Api/Controllers/OrdersController.cs"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "\"By default, queries that return entity types are tracking. A tracking query means any changes to entity instances are persisted by SaveChanges\". \"if only a single property value is modified, then a database update will change only that value.\" Code: FindAsync has no AsNoTracking; DonHangDbContext and AddDbContext set no QueryTrackingBehavior (git grep: no match).",
+        "source": "refs/efcore-docs/entity-framework/core/querying/tracking.md:20; change-tracking/index.md:53; examples/don-hang @ stage-1 EfOrderRepository.cs:9-10"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "EfOrderRepository.cs:18 is `public Task SaveChangesAsync() => db.SaveChangesAsync();`. State table: every tracked entity in Added/Modified/Deleted gets Insert/Update/Delete on SaveChanges, regardless of which code tracked it; transactions.md: \"all changes in a single call to SaveChanges\".",
+        "source": "refs/efcore-docs/entity-framework/core/change-tracking/index.md:57-63; saving/transactions.md:17"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "\"The AddDbContext extension method registers DbContext types with a scoped lifetime by default\"; \"each request gets a separate dependency injection scope (and therefore a separate DbContext instance)\". Code: ServiceCollectionExtensions.cs:14-15 AddDbContext<DonHangDbContext> + AddScoped<IOrderRepository, EfOrderRepository>. Section 3 now limits sharing to classes asking for a DonHangDbContext (round-1 suggested_text applied verbatim).",
+        "source": "refs/efcore-docs/entity-framework/core/dbcontext-configuration/index.md:419,421; examples/don-hang @ stage-1: DonHang.Infrastructure/ServiceCollectionExtensions.cs:14-15"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Inspection at stage-1: IOrderRepository.cs is in DonHang.Domain; DonHang.Domain.csproj has no PackageReference/ProjectReference, and `git grep EntityFramework -- DonHang.Domain/` prints nothing, so OrderService calls SaveChangesAsync without naming EF Core. Guide: patterns \"encapsulate the infrastructure persistence layer so it is decoupled from the application and domain-model layers\".",
+        "source": "examples/don-hang @ stage-1: DonHang.Domain/DonHang.Domain.csproj; refs/dotnet-docs/.../infrastructure-persistence-layer-implementation-entity-framework-core.md:170"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "FakeOrderRepository.cs @ stage-1: `private readonly Dictionary<int, Order> orders = [];` (line 10); `FindAsync(int id) => Task.FromResult(orders.GetValueOrDefault(id));` returns the stored reference, so a change to Status is a change to the dictionary's object; `public Task SaveChangesAsync() => Task.CompletedTask;` (line 26).",
+        "source": "examples/don-hang @ stage-1: DonHang.Tests/FakeOrderRepository.cs:10,13-14,26"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Guide: repositories \"rely on EF Core's DbContext implementation of the Repository and Unit of Work patterns using its change tracker, so they don't duplicate this functionality\". New sentence \"Calling the save on one of them also works\" follows from claim 7/3 (SaveChanges writes all tracked changes of the shared context in one transaction); \"a reader cannot tell\" is a conditioned opinion (several repositories), labelled as such.",
+        "source": "refs/dotnet-docs/docs/architecture/microservices/microservice-ddd-cqrs-patterns/infrastructure-persistence-layer-design.md:85; refs/efcore-docs/entity-framework/core/saving/transactions.md:17"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "EF: default SaveChanges transaction covers \"all changes in a single call to SaveChanges\"; a query run before it is outside it unless a transaction is opened by hand. PostgreSQL 17 explicit locking (WebFetch, round 1): plain SELECT takes only ACCESS SHARE; \"FOR UPDATE causes the rows retrieved ... to be locked\"; \"Only an ACCESS EXCLUSIVE lock blocks a SELECT (without FOR UPDATE/SHARE)\". Claim now names the lock part as PostgreSQL behaviour.",
+        "source": "refs/efcore-docs/entity-framework/core/saving/transactions.md:17,25; https://www.postgresql.org/docs/17/explicit-locking.html"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "\"Detached entities are not being tracked by the DbContext\"; state table row `Detached` - tracked: No - SaveChanges action: none. An order object this context never loaded (and never added/attached) is Detached, so its change is written nothing. At stage-1 every repository query is tracking, so \"never loaded\" = \"not tracked\" for orders here.",
+        "source": "refs/efcore-docs/entity-framework/core/change-tracking/index.md:47,57-63; querying/tracking.md:20"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "Ran in examples/don-hang: `git grep -n \"SaveChanges\" stage-1 -- \"DonHang.*/*.cs\"` -> 5 lines: IOrderRepository.cs:10, OrderService.cs:20, OrderService.cs:35, EfOrderRepository.cs:18, FakeOrderRepository.cs:26. `git grep -n \"Update\" stage-1 -- \"DonHang.*/*.cs\"` -> no output, exit 1.",
+        "source": "execution, examples/don-hang @ stage-1"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "stage-2: `public sealed class QueuedNotifier(DonHangDbContext db) : INotifier` with `db.Notifications.Add(new Notification ...` (QueuedNotifier.cs:9,14); registered `AddScoped<INotifier, QueuedNotifier>()`; OrderService.cs comment: \"this one SaveChangesAsync then writes both in one transaction, or neither.\"",
+        "source": "examples/don-hang @ stage-2: DonHang.Infrastructure/QueuedNotifier.cs, ServiceCollectionExtensions.cs:24, DonHang.Domain/OrderService.cs"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "design.l1.the-repository-layer (status approved) summary line 2: \"`IOrderRepository` has four methods; `EfOrderRepository` implements them with `DonHangDbContext` and EF Core.\" IOrderRepository.cs @ stage-1 declares FindAsync, ListByCustomerAsync, AddAsync, SaveChangesAsync(). New wording no longer says \"the fourth\" (which that lesson line 88 assigns to ListByCustomerAsync).",
+        "source": "content/tracks/design/layered/design.l1.the-repository-layer.en.md:68,88,122; examples/don-hang @ stage-1: DonHang.Domain/IOrderRepository.cs:5-11"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-30T17:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation, round 2)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "example",
+        "text": "Round 2, new wording: I understand the rule (only tracked objects are saved), but I cannot picture how I would end up holding a changed order that this context never loaded. In Đơn Hàng every order I have seen comes from FindAsync, which is tracked. The symptom is correct but abstract for me.",
+        "quote": "You notice the real rule when a changed order is one this context never loaded: saving writes nothing for it.",
+        "fix": "Add a short concrete case after the colon, e.g. \"for example, an `Order` built with `new` in code instead of loaded with `FindAsync`: saving writes nothing for it.\""
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

@@ -1,0 +1,188 @@
+{
+  "id": "backend.l1.validating-a-jwt",
+  "technical": {
+    "reviewed_at": "2026-09-25T17:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (technical review round 3)",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "git show stage-1:DonHang.Api/Program.cs 23-42: ValidateIssuer/ValidateAudience/ValidateIssuerSigningKey/ValidateLifetime = true; ValidIssuer = Configuration[\"Jwt:Issuer\"], ValidAudience = Configuration[\"Jwt:Audience\"]; IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey)), signingKey = Configuration[\"Jwt:SigningKey\"]. appsettings.json @ stage-1: Issuer \"donhang-api\", Audience \"donhang-app\". Lesson block matches source verbatim.",
+        "source": "examples/don-hang @ stage-1 (4fca60a = HEAD): DonHang.Api/Program.cs, DonHang.Api/appsettings.json"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Program.cs @ stage-1 line 70 app.UseAuthentication(); 71 app.UseAuthorization(); 72 app.MapControllers(); - below the AddAuthentication/AddJwtBearer block (25-42), so \"added further down, in that order\" holds.",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/Program.cs:25-42, 70-72"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "middleware/index.md: \"Authentication doesn't short-circuit unauthenticated requests.\" authentication/index.md: \"An authentication challenge is invoked by Authorization when an unauthenticated user requests an endpoint that requires authentication.\" Example: \"A JWT bearer scheme returning a 401 result with a www-authenticate: bearer header.\" Live: no-token and bad-token calls to the [Authorize] List -> 401.",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/middleware/index.md; refs/aspnetcore-docs/aspnetcore/security/authentication/index.md"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Re-run live 2026-09-25 (round 3) via Caddy :8080, examples/don-hang HEAD = stage-1^{commit} 4fca60a: no header -> HTTP/1.1 401, Www-Authenticate: Bearer. Bearer abc.def.ghi -> 401, Www-Authenticate: Bearer error=\"invalid_token\". Login token -> GET /api/v1/orders 200 (round 2 run). Section 2 wording \"adds error=\\\"invalid_token\\\" after Bearer\" matches the header exactly.",
+        "source": "live run, examples/don-hang stage-1"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Re-run live round 3: GET /api/v1/orders/1 with Bearer abc.def.ghi -> HTTP/1.1 200 {\"id\":1,\"customerId\":1,\"status\":\"paid\",...}. OrdersController.cs @ stage-1 30-36: Get has no [Authorize]; no class-level [Authorize]; Program.cs 43 AddAuthorization() with no fallback policy - supports summary line 3 and q1 d now scoped to Dong Hang.",
+        "source": "live run; examples/don-hang @ stage-1: OrdersController.cs:10-36, Program.cs:43"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Reproduced: HS256 token signed with .env JWT_SIGNING_KEY, iss donhang-api, aud donhang-app, exp = now-600 s -> 401, Www-Authenticate: Bearer error=\"invalid_token\", error_description=\"The token expired at '09/25/2026 02:08:28'\".",
+        "source": "live run 2026-09-25, GET /api/v1/orders"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "OrdersController.cs @ stage-1 49-56: [Authorize] [HttpGet] public async Task<ActionResult<List<OrderSummaryDto>>> List() { var customerId = int.Parse(User.FindFirstValue(JwtRegisteredClaimNames.Sub)!); ... }. Class route \"api/v1/orders\" (line 11) -> List answers GET /api/v1/orders. Block matches source verbatim.",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/Controllers/OrdersController.cs:11, 49-56"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "RFC 9110 15.5.2: 401 \"lacks valid authentication credentials for the target resource\". 15.5.4: \"If authentication credentials were provided in the request, the server considers them insufficient to grant access. The client SHOULD NOT automatically repeat the request with the same credentials.\" ASP.NET Core: \"forbid action is called by Authorization when an authenticated user attempts to access a resource they're not permitted to access.\" Lesson now says \"the same caller's token\".",
+        "source": "refs/rfc/rfc9110.txt 15.5.2, 15.5.4; refs/aspnetcore-docs/aspnetcore/security/authentication/index.md:122"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "RFC 9110 15.5.2: \"The server generating a 401 response MUST send a WWW-Authenticate header field ... containing at least one challenge\". RFC 6750 s.3 (round 1 WebFetch): resource server SHOULD include error when a token was sent and failed; invalid_token covers expired/malformed. Live: no token -> Bearer; bad token -> Bearer error=\"invalid_token\".",
+        "source": "refs/rfc/rfc9110.txt 15.5.2; RFC 6750 s.3; live run"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "TokenValidationParameters.DefaultClockSkew: \"Default for the clock skew.\" Remarks: \"300 seconds (5 minutes).\" Program.cs sets no ClockSkew. Live, key-signed tokens: exp now-60 s -> 200, now-290 s -> 200, now-310 s -> 401 \"The token expired at ...\", now-600 s -> 401.",
+        "source": "https://learn.microsoft.com/dotnet/api/microsoft.identitymodel.tokens.tokenvalidationparameters.defaultclockskew (WebFetch); live run"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "ValidateIssuerSigningKey: \"controls if validation of the SecurityKey that signed the securityToken is called.\" Remarks: \"The default is false.\" Live: token signed with a different key -> 401 error_description=\"The signature key was not found\"; token signed with the .env key -> 200. Signature check uses IssuerSigningKey; \"only tokens signed with that key can pass\" holds.",
+        "source": "https://learn.microsoft.com/dotnet/api/microsoft.identitymodel.tokens.tokenvalidationparameters.validateissuersigningkey (WebFetch); live run"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "RFC 9110 5.1: \"Field names are case-insensitive\". Live curl -i output prints \"Www-Authenticate:\".",
+        "source": "refs/rfc/rfc9110.txt line 1468; live run"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "authentication/index.md: \"The AddAuthentication parameter JwtBearerDefaults.AuthenticationScheme is the name of the scheme to use by default when a specific scheme isn't requested.\" Scheme-specific methods \"such as AddJwtBearer ... register schemes with appropriate settings.\" \"Calling UseAuthentication registers the middleware that uses the previously registered authentication schemes.\"",
+        "source": "refs/aspnetcore-docs/aspnetcore/security/authentication/index.md:25-45"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "configure-jwt-bearer-authentication.md:16: \"The client that requests the JWT can request data from an API resource by using the Authorization header and a bearer token.\" Live round 3: Authorization: Bearer abc.def.ghi changes the challenge to Bearer error=\"invalid_token\" (header read and token rejected); no header -> plain Bearer.",
+        "source": "refs/aspnetcore-docs/aspnetcore/security/authentication/configure-jwt-bearer-authentication.md:16; live run"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "JwtBearerOptions.MapInboundClaims (aspnetcore-10.0): \"used when determining whether or not to map claim types that are extracted when validating a JwtSecurityToken or a JsonWebToken. If this is set to true, the Claim Type is set to the JSON claim name after translating using this mapping. Otherwise, no mapping occurs. The default value is true.\" Only claim-type mapping is described. claims.md:80 same. Docs opened this round: refs claims.md, configure-jwt-bearer-authentication.md, this API page; live curl.",
+        "source": "https://learn.microsoft.com/dotnet/api/microsoft.aspnetcore.authentication.jwtbearer.jwtbeareroptions.mapinboundclaims?view=aspnetcore-10.0 (WebFetch); refs/aspnetcore-docs/aspnetcore/security/authentication/claims.md:80"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-25T15:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior review round 2)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 2,
+        "kind": "gap",
+        "text": "\"now carries\" reads as if the no-token 401 had no WWW-Authenticate header at all. Core concepts and Try it's Expected result then say every 401 carries it (step 1: `WWW-Authenticate: Bearer`). I resolved it by re-reading, but it made me doubt what step 1 should show.",
+        "quote": "With a made-up token, `abc.def.ghi`, it is `401` again, but the response now carries `WWW-Authenticate: Bearer error=\"invalid_token\"`.",
+        "fix": "Say what changed, e.g. \"it is `401` again, but the `WWW-Authenticate` header, plain `Bearer` before, now reads `Bearer error=\\\"invalid_token\\\"`\"."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "text": "\"the response says so\" does not say where in the response. I only learn in section 6 that `error_description` sits in the `WWW-Authenticate` header. Also the paragraph above says a failed token leaves just \"no caller\", so I wonder how the reason (expired) reaches the 401.",
+        "quote": "the check fails and the response says so: `error_description=\"The token expired at '...'\"`",
+        "fix": "Change to \"the check fails, and the `401`'s `WWW-Authenticate` header says why: `error_description=...`\", and add half a sentence earlier that `UseAuthentication` also notes why a token failed."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "diagram",
+        "text": "The diagram names `UseAuthentication` but has no `UseAuthorization` node, though the prose's second paragraph puts all the rejecting there. I have to guess the two diamonds belong to `UseAuthorization`.",
+        "quote": "The rejecting happens one step later, in `UseAuthorization`, and only for an endpoint marked `[Authorize]`.",
+        "fix": "Label the first diamond \"UseAuthorization: endpoint has Authorize?\" so the prose's second step has a node."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "gap",
+        "text": "The prose explains ValidateIssuer, ValidateAudience, ValidateLifetime and IssuerSigningKey, but skips `ValidateIssuerSigningKey = true`, the one Validate line left. Quiz q5 then offers it as an option, and its explanation (\"validates the signing key itself\") is something the lesson never told me.",
+        "quote": "The signature is checked against `IssuerSigningKey`, built from the same `Jwt:SigningKey` that `JwtTokenService` signs with",
+        "fix": "Change to \"`ValidateIssuerSigningKey` turns on the signature check, against `IssuerSigningKey`, built from ...\"."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "term",
+        "text": "The code comment uses \"the ClaimTypes.NameIdentifier URI\" and \"maps them to by default\" - URI and claim mapping are unknown to me. The prose after the block tells me I only need \"keeps `sub` as issued\", so this does not stop me; kept minor because it lives in quoted code.",
+        "quote": "// Keep claim types exactly as issued (\"sub\", not the ClaimTypes.NameIdentifier",
+        "fix": "Add to the prose sentence: \"(without it, ASP.NET Core would rename `sub` to a longer name and `List` would not find it)\"."
+      },
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "style",
+        "text": "\"never does\" dangles: I had to go back to find what the client never does (send the user to log in). Readable after a second pass.",
+        "quote": "a client that sends the user to log in only on `401` never does, and every call keeps failing.",
+        "fix": "Write \"a client that sends the user to log in only on `401` never sends them there, and every call keeps failing.\""
+      },
+      {
+        "severity": "minor",
+        "section": "backend.l1.validating-a-jwt.q2",
+        "kind": "quiz",
+        "text": "Option c is clearly the longest and nearly repeats the misconception's correction (\"a token well past it is rejected\"), so it is guessable by length and recognition.",
+        "quote": "False, because expiry is checked on its own, apart from the signature, and a token well past `exp` is rejected.",
+        "fix": "Shorten c to \"False: expiry is checked separately from the signature\" and lengthen d to similar size."
+      },
+      {
+        "severity": "minor",
+        "section": "backend.l1.validating-a-jwt.q5",
+        "kind": "quiz",
+        "text": "Explanation b says `ValidateIssuerSigningKey` \"validates the signing key itself\"; the lesson never says what that is versus checking the signature, so the explanation leaves me less sure, not more.",
+        "quote": "This validates the signing key itself; it has nothing to do with `exp`.",
+        "fix": "Write \"This turns on the signature check against `IssuerSigningKey`; it has nothing to do with `exp`.\""
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "URI / claim mapping (ClaimTypes.NameIdentifier, code comment only)"
+      ],
+      "skipped_steps": [
+        "Where 'the response says so' for an expired token, and how the failure reason reaches the 401 (sec 4)",
+        "What ValidateIssuerSigningKey = true does (sec 5)"
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

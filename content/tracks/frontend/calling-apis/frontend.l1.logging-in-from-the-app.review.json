@@ -1,0 +1,146 @@
+{
+  "id": "frontend.l1.logging-in-from-the-app",
+  "technical": {
+    "reviewed_at": "2026-09-26T06:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "AuthController.Login @ stage-1 only reads db.Customers (FirstOrDefaultAsync), then 'return Ok(new LoginResponse(token))' - no write, no SaveChanges. Program.cs: AddJwtBearer + UseAuthentication. ASP.NET Core docs: 'The JwtBearerHandler validates the token and extracts the user's identity from its claims.' Run: same token -> GET /api/v1/orders 200; no header -> 401. The api log line for login is only 'POST /api/v1/auth/login responded 200' (no identity).",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/Controllers/AuthController.cs, Program.cs; refs/aspnetcore-docs/aspnetcore/security/authentication/configure-jwt-bearer-authentication.md line 20"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Lab run via Caddy :8080: correct password -> 'HTTP/1.1 200 OK', 'Content-Type: application/json', body '{\"token\":\"eyJ...\"}' (single field). Wrong password -> 'HTTP/1.1 401 Unauthorized', application/problem+json {type,title,status,traceId}, no token. Unknown email nobody@example.com -> 'HTTP/1.1 401 Unauthorized'. Code: 'return Unauthorized();' / 'Ok(new LoginResponse(token))'; Dtos.cs 'record LoginResponse(string Token)'.",
+        "source": "curl against running lab (docker compose, stage-1); AuthController.cs, Dtos.cs @ stage-1"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Program.cs @ stage-1 TokenValidationParameters: ValidateIssuerSigningKey = true, ValidateLifetime = true (also ValidateIssuer/ValidateAudience - lesson's 'signature and expiry' is a correct subset, not exhaustive). OrdersController [Authorize] on POST. Run: POST /api/v1/orders without header -> 'HTTP/1.1 401 Unauthorized', Content-Length: 0.",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/Program.cs, Controllers/OrdersController.cs; curl against lab"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "api_client.dart @ stage-1 lines 33-45 match block 1 verbatim: headers {'Content-Type': 'application/json'}, jsonEncode({'email': email, 'password': password}), 'if (response.statusCode != 200) { throw Exception('login failed (${response.statusCode})'); }', then ['token'] as String, '_token = token; return token;'.",
+        "source": "examples/don-hang @ stage-1: DonHang.App/lib/api_client.dart"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "api_client.dart @ stage-1 lines 18-21: 'Map<String, String> get _headers => { 'Content-Type': 'application/json', if (_token != null) 'Authorization': 'Bearer $_token', };' line 51 createOrder 'headers: _headers'; line 24 fetchProducts 'http.get(Uri.parse('$baseUrl/products'))' with no headers.",
+        "source": "examples/don-hang @ stage-1: DonHang.App/lib/api_client.dart"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "login_screen.dart @ stage-1 lines 23-39 match block 2 verbatim; line 57 'if (_error != null) Text(_error!, style: const TextStyle(color: Colors.red))' placed before ElevatedButton; line 59 'onPressed: _loading ? null : _submit'; line 60 '_loading ? const CircularProgressIndicator() : const Text('Sign in')'. Headless Chrome on :8081: after wrong password the error node sits at y=184 and the button moves to y=204 (above it).",
+        "source": "examples/don-hang @ stage-1: DonHang.App/lib/screens/login_screen.dart; headless Chrome 153 against lab app-web :8081"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Dart SDK (Flutter 3.47.2) core/exceptions.dart class _Exception: 'if (message == null) return \"Exception\"; return \"Exception: $message\";'. Execution: headless Chrome, wrong password on the lab app -> semantics node text 'Exception: login failed (401)'.",
+        "source": "C:/Flutter/flutter/bin/cache/dart-sdk/lib/core/exceptions.dart; headless Chrome against http://localhost:8081"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Flutter 3.47.2 framework.dart State.mounted: 'Whether this [State] object is currently in a tree. ... The [State] object remains mounted until the framework calls [dispose]'. Flutter guidance: 'After an asynchronous gap, check mounted in a State ... before calling setState, using the context, or doing other work that requires the State to remain in the tree.' LoginScreen is pushed from ProductListScreen, so Back pops and disposes it. Lesson §5 now says 'still in the widget tree after the wait (the user may have left it with Back)'.",
+        "source": "C:/Flutter/flutter/packages/flutter/lib/src/widgets/framework.dart (State.mounted); refs/flutter-website/.agents/skills/write-flutter/SKILL.md lines 71-74"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "JwtTokenService @ stage-1: 'expires: DateTime.UtcNow.AddHours(8)', no revocation store; Program.cs ValidateLifetime = true. Run: token obtained by one curl call, reused from a separate curl with 'Authorization: Bearer <token>' -> GET /api/v1/orders 200; payload decoded shows exp, sub, email, iss, aud and no client binding.",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/JwtTokenService.cs, Program.cs; curl against lab"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "main.dart @ stage-1: DonHangApp.build 'final apiClient = ApiClient();' passed to ProductListScreen; api_client.dart line 14 'String? _token;' (null on a new object); no storage package, only setToken/login write it. Headless Chrome: after successful login, Page.reload -> app starts on product screen again (fresh ApiClient).",
+        "source": "examples/don-hang @ stage-1: DonHang.App/lib/main.dart, api_client.dart; headless Chrome against lab"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Round-1 headless Chrome Network log after Try-it steps 1+2: 'POST .../auth/login 401', 'OPTIONS .../auth/login 204' (preflight), 'POST .../auth/login 200'; the POST 200 body '{\"token\":\"eyJ...\"}' (single field, Dtos.cs 'record LoginResponse(string Token)'); sign-in IconButton at x=944,y=8, top right of AppBar. Lesson §7 step 2 now: 'select the last `login` request, the `POST` with status `200`' - matches.",
+        "source": "headless Chrome 153 (CDP Network) against http://localhost:8081; product_list_screen.dart, Dtos.cs @ stage-1"
+      },
+      {
+        "n": 12,
+        "verdict": "not-needed",
+        "evidence": "Security principle / design consequence (more copies = more exposure; a 401 must surface to the user), consistent with outline item 3 and misconception 2; no version-dependent behavior asserted. Lesson wording has no 'always/never' beyond what it reasons from.",
+        "source": "track.yaml outline entry frontend.l1.logging-in-from-the-app"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "ProductsController.cs @ stage-1: class and both actions ([HttpGet], [HttpGet(\"{id:int}\")]) carry no [Authorize]; Program.cs has plain 'builder.Services.AddAuthorization();' with no fallback policy. Run (lab up): curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/api/v1/products (no Authorization header) -> 200. scripts/backend/auth-and-orders.sh output: 'products (no sign-in needed):' followed by the product JSON.",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/Controllers/ProductsController.cs, Program.cs, outputs/stage-1/scripts/backend/auth-and-orders.txt; curl against lab"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "login_screen.dart @ stage-1 l.18-19: 'TextEditingController(text: 'anh.tran@example.com')', 'TextEditingController(text: 'donhang-dev-password')'; seed.sql customer 1 'anh.tran@example.com'. l.31-33 'Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => CreateOrderScreen(apiClient: widget.apiClient)))'; create_order_screen.dart l.24 'widget.apiClient.createOrder'. Flutter 3.47.2 BuildContext.mounted: 'Accessing the properties of the [BuildContext] or calling any methods on it is only valid while mounted is true.'",
+        "source": "examples/don-hang @ stage-1: login_screen.dart, create_order_screen.dart, db/seed.sql; C:/Flutter/flutter/packages/flutter/lib/src/widgets/framework.dart (BuildContext.mounted, State.context)"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "scripts/up.sh @ stage-1: 'cd \"$(dirname \"$0\")/..\"', 'flutter build web', 'docker compose up -d --build --wait', prints 'app (web)   http://localhost:8081/'; compose app-web ports '8081:8081'. ASP.NET Core docs: 'The network tab on the F12 browser developer tools is useful when testing the sample app.' Round-1 headless Chrome Network log showed the login requests with responses. Opened: lesson diff 9d25045..f473033, stage-1 sources above, framework.dart, refs/aspnetcore-docs.",
+        "source": "examples/don-hang @ stage-1: scripts/up.sh, docker-compose.yml; refs/aspnetcore-docs/aspnetcore/fundamentals/error-handling/includes/error-handling3-7.md line 533"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-26T07:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "diagram",
+        "quote": "The app must treat that as a failure and say so on the login screen, not carry on as if they were signed in;",
+        "text": "Round-1 item partly fixed: section 4 now names the login screen, but the diagram node 'exception: red text' is still not in section 4's prose. I only learn that a 401 becomes an exception shown in red when I reach section 5.",
+        "fix": "Change 'say so on the login screen' to 'throw an exception, which the login screen shows as red text'."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "term",
+        "quote": "an `[Authorize]` endpoint with no caller answers `401`.",
+        "text": "`[Authorize]` is a name I have not seen. From the sentence I can guess it marks an endpoint that needs a signed-in caller, so it does not stop me, but the lesson never says so.",
+        "fix": "Replace 'an `[Authorize]` endpoint' with 'an endpoint marked `[Authorize]`, meaning it needs a signed-in caller,'."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "quote": "a support engineer copies a token from the log into `curl` to reproduce a bug.",
+        "text": "q4 (unchanged): `curl` is not in my known_vocab, the glossary, or this lesson and its prereq summaries. If foundation lessons really use it, I would know it, but from my inputs I don't. I can still answer from 'anyone who can read the log', so it does not block.",
+        "fix": "Either replace 'into `curl`' with 'into a request of their own' (and option d likewise), or keep it if the author confirms curl is used in foundation Try-it steps."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "[Authorize] (guessable from context)",
+        "curl (quiz q4 only)"
+      ],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

@@ -1,0 +1,197 @@
+{
+  "id": "backend.l1.choosing-an-error-status",
+  "technical": {
+    "reviewed_at": "2026-09-25T18:40:00+07:00",
+    "reviewer": "claude-opus-5[1m]",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "tools/extract-code DonHang.Domain/OrderService.cs --tag stage-1 --lines 29-35 returns exactly the seven lines the lesson quotes: `var order = await repository.FindAsync(orderId)` / `?? throw new KeyNotFoundException($\"order {orderId} not found\");` then blank, `order.Status = \"cancelled\";`, `await repository.SaveChangesAsync();`. The `??` is the method's first statement; nothing between it and the assignment reads `order.Status`. Block matches character-for-character.",
+        "source": "examples/don-hang @ stage-1: DonHang.Domain/OrderService.cs:29-35"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Whole method 29-38 at stage-1 has no `if`/`switch`: `order.Status = \"cancelled\"` is unconditional. ExceptionHandlingMiddleware.cs catches only KeyNotFoundException (404), ArgumentException (400), Exception (500) — no 409 path exists anywhere in the app. Lab state also confirms round 1's live cancel was restored: GET /api/v1/orders/2 returns `\"status\":\"shipped\"` today, so the seeded shipped order is intact and still cancellable.",
+        "source": "examples/don-hang @ stage-1: DonHang.Domain/OrderService.cs:29-38, DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs; live GET localhost:8080/api/v1/orders/2"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Re-run live this round: token from POST /api/v1/auth/login (anh.tran@example.com / donhang-dev-password), then `curl -sS -i -X PATCH http://localhost:8080/api/v1/orders/99999/cancel -H \"Authorization: Bearer <token>\"` -> 404 and body `{\"title\":\"Not found\",\"status\":404,\"detail\":\"order 99999 not found\"}`, byte-identical to §2 and §7 (no extra members emitted). The same request without a token returns 401, so §2's new \"(signed in, as in Try it below)\" names the condition the result really depends on.",
+        "source": "live lab localhost:8080 (2026-09-25); DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs @ stage-1"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "refs/rfc/rfc9110.txt:7543-7546 verbatim: \"The 400 (Bad Request) status code indicates that the server cannot or will not process the request due to something that is perceived to be a client error (e.g., malformed request syntax, invalid request message framing, or deceptive request routing).\" All three examples are defects of the request message itself, matching the claim's \"in the request itself\".",
+        "source": "refs/rfc/rfc9110.txt:7543-7546 (RFC 9110 §15.5.1)"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "refs/rfc/rfc9110.txt:7589-7591 verbatim: \"The 404 (Not Found) status code indicates that the origin server did not find a current representation for the target resource or is not willing to disclose that one exists.\" The claim reproduces both halves. The sentence that follows (7591-7594, the 410 preference) is not touched by the lesson.",
+        "source": "refs/rfc/rfc9110.txt:7589-7595 (RFC 9110 §15.5.5)"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "refs/rfc/rfc9110.txt:7652-7654 verbatim: \"The 409 (Conflict) status code indicates that the request could not be completed due to a conflict with the current state of the target resource.\" The section continues \"This code is used in situations where the user might be able to resolve the conflict and resubmit the request\" — consistent with §4's shipped-order framing, which the lesson keeps hypothetical.",
+        "source": "refs/rfc/rfc9110.txt:7652-7657 (RFC 9110 §15.5.10)"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "DonHang.Domain/IOrderRepository.cs @ stage-1: `Task<Order?> FindAsync(int id);`. Sole implementation EfOrderRepository uses `.FirstOrDefaultAsync(o => o.Id == id)`, which yields null for no match rather than throwing. Live this round: authenticated `PATCH /api/v1/orders/-5/cancel` -> 404 `{\"title\":\"Not found\",\"status\":404,\"detail\":\"order -5 not found\"}` — the null became KeyNotFoundException, not a 500, which is what §4's \"still `404` in this app, not `400`\" rests on.",
+        "source": "examples/don-hang @ stage-1: DonHang.Domain/IOrderRepository.cs, DonHang.Infrastructure/EfOrderRepository.cs; live lab"
+      },
+      {
+        "n": 8,
+        "verdict": "rephrased",
+        "evidence": "Still no rfc9457 mirror under refs/rfc (only 6265/9110/9111/9112), so fetched again from www.rfc-editor.org/rfc/rfc9457 this round. §3.1 introduces the list as \"Problem detail objects can have the following members. If a member's value type does not match the specified type, the member MUST be ignored.\" and defines title/status/detail as quoted there. No sentence declaring the members optional was returned; \"can have\" is the strongest wording actually seen, so \"none mandated\" is an inference, not a quote.",
+        "source": "https://www.rfc-editor.org/rfc/rfc9457 §3.1 (WebFetch, 2026-09-25)",
+        "suggested_text": "RFC 9457 §3.1: \"Problem detail objects can have the following members\" — type, status, title, detail, instance; none is stated as required. Đơn Hàng's WriteProblemAsync fills exactly title/status/detail, this app's choice, not a requirement of the format."
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "git show stage-1:db/schema.sql line 23: `CHECK (status IN ('new', 'paid', 'shipped', 'cancelled'))` — exactly these four values. db/seed.sql:24-35 uses 'new', 'paid' and 'shipped'; 'cancelled' is produced by CancelOrderAsync. This anchors §4's reworded \"Every order carries its own `Status` — `\"new\"`, `\"paid\"`, `\"shipped\"`, or `\"cancelled\"`\", which no longer implies a sequence.",
+        "source": "examples/don-hang @ stage-1: db/schema.sql:23, db/seed.sql:24-35"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Orphaned claim added after this round's own review ran, to close its minor issue #1 (the exception handler derives title from the status code, per the lesson's prior wording, when it actually supplies both as literals). Verified using this round's own finding: WriteProblemAsync(context, StatusCodes.Status404NotFound, \"Not found\", ex.Message) passes title as a literal string per catch clause, not computed from the status code.",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs (cited in this review's own minor issue #1)"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "The clause added this round gets the mechanism half right. ExceptionHandlingMiddleware does supply both fields — `WriteProblemAsync(context, StatusCodes.Status404NotFound, \"Not found\", ex.Message)` — but the title is a literal picked per exception type alongside the status code, not derived from it; the wording invites the reader to expect a generic 404 -> \"Not found\" mapping. No ledger claim covers where title/status come from (claim 3 covers only the body as a whole).",
+        "quote": "it fills `title` and `status` itself from the status code it picked, so only `detail` comes from the exception",
+        "fix": "Drop the causal phrase: \"— it supplies `title` and `status` itself, so only `detail` comes from the exception\". Add a `fact` claim to .meta.json with source_hint \"examples/don-hang @ stage-1: DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs — catch (KeyNotFoundException ex) => WriteProblemAsync(context, Status404NotFound, 'Not found', ex.Message)\"."
+      },
+      {
+        "severity": "minor",
+        "section": "backend.l1.choosing-an-error-status.q2",
+        "kind": "quiz",
+        "text": "The key (`c`) and the rewritten option `d` are both sound, but `b`'s explanation now contradicts `d`'s and misstates the class. RFC 9110 §15.5 (refs/rfc/rfc9110.txt:7534-7535): \"The 4xx (Client Error) class of status code indicates that the client seems to have erred.\" So 4xx does say who erred — exactly what `d`'s explanation asserts (\"the server didn't do anything wrong in either case\") — while `b`'s explanation says being 4xx \"only means the client is expected to act differently before retrying\".",
+        "quote": "Being in the same `4xx` class only means the client is expected to act differently before retrying — it says nothing about the two meaning the same specific thing.",
+        "fix": "Reword `b`'s explanation (en and vi) to concede the shared part and deny the rest: \"Both being `4xx` does say the client is the one who erred — it just doesn't say the two errors are the same one: a broken request and a missing id are different failures.\""
+      },
+      {
+        "severity": "minor",
+        "section": "frontmatter",
+        "kind": "scope",
+        "text": "Cross-track note raised in rounds 1 and 2, still unapplied (checked this round in content/tracks/management/track.yaml, entry management.l1.reading-a-300-line-pr). §5, §6 and summary line 4 state the missing shipped-order check outright, while that lesson's outline item 2 reads \"reading it in that order surfaces the missing 'already shipped' check first\", and its depth_notes still says nothing about the reader already knowing the gap.",
+        "quote": "Nothing in this method checks whether `order.Status` is already `\"shipped\"` before the `order.Status = \"cancelled\"` line on the block above sets it.",
+        "fix": "No change to this lesson. Append to management.l1.reading-a-300-line-pr's depth_notes in content/tracks/management/track.yaml: \"Người học đã biết gap shipped-order từ backend.l1.choosing-an-error-status — dạy cách đọc PR để TÌM RA nó, không trình bày như phát hiện mới.\""
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-25T21:10:00+07:00",
+    "reviewer": "claude-opus-5[1m] (junior-reader simulation, round 3)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 2,
+        "kind": "style",
+        "text": "Core concepts calls `400` \"the request itself is invalid\", but §2 calls the empty-items case \"malformed\", and q6's explanation `b` says \"malformed\" would mean the request itself couldn't be understood. An empty item list can be understood perfectly well, so I could not tell whether the empty-items `400` counts as malformed — and that is the word I am then asked to test `-5` against in q6.",
+        "quote": "separate from `validating-input`'s empty-items case, where the request itself was malformed",
+        "fix": "In §2, replace \"where the request itself was malformed\" with \"where the request itself was invalid\", matching the word Core concepts uses for `400`."
+      },
+      {
+        "severity": "minor",
+        "section": 3,
+        "kind": "style",
+        "text": "I re-read this twice. The empty-items `400` comes from `POST /api/v1/orders`, which creates a new order, so there is no order it \"would have applied to\" — the phrase sent me looking for an existing order that is not in the story. The same clause returns in §4 (\"no matter which order it would have applied to\") and in the suggested answer (\"nothing about which order it names was ever the problem\"), so I stumbled three times over one simple idea.",
+        "quote": "that specific check fails the same way regardless of which order it would have applied to",
+        "fix": "Replace the clause in §3 and §4 with \"the empty list is wrong on its own — no existing order is involved at all\"."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "diagram",
+        "text": "Re-raised: the third paragraph stops at the `409` branch, so the `no` arrow out of \"does its state conflict?\" and the `succeeds` box are still never narrated — I had to read that node straight off the picture. Quiz q4 then asks me to place \"None of the three questions found a problem, so the request succeeds\" last, an outcome no sentence of the lesson states.",
+        "quote": "F -->|no| H[succeeds]",
+        "fix": "Add one sentence at the end of §4's third paragraph: \"If none of the three questions finds a problem, the cancel goes through — that's the `succeeds` box.\""
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "example",
+        "text": "`http://localhost:8080` appears for the first time inside the command, and neither step says the app has to be running. \"Before you start\" now says `creating-a-resource` taught me to log in and get a token, but not to start the app, so if nothing is listening my three minutes go into working out why step 1 fails.",
+        "quote": "curl -sS -i -X PATCH http://localhost:8080/api/v1/orders/99999/cancel -H \"Authorization: Bearer <token>\"",
+        "fix": "Add the precondition to step 1: \"With the app running on `http://localhost:8080`, run step 1 of `creating-a-resource`'s Try it …\"."
+      },
+      {
+        "severity": "minor",
+        "section": 2,
+        "kind": "example",
+        "text": "Re-raised: I never extend anything — the `404` already works and Try it only calls it, so \"You're extending\" promises work I never do. This endpoint also shows up here for the first time; neither \"Before you start\" bullet mentions it, so my first question is what cancelling even does, which I only learn in §5.",
+        "quote": "You're extending `PATCH /api/v1/orders/{id}/cancel`.",
+        "fix": "Replace the first sentence with \"You're working on `PATCH /api/v1/orders/{id}/cancel`, the endpoint that sets an order's status to `\"cancelled\"`.\""
+      },
+      {
+        "severity": "minor",
+        "section": "backend.l1.choosing-an-error-status.q1",
+        "kind": "term",
+        "text": "\"controller\" is not a word I know, and neither is \"layer\" in q1's explanation for `c` (\"so which layer noticed isn't what decides the status code\") and q5's explanation for `d` (\"which layer threw the exception\"). I ruled both options out because the lesson's test is the three questions, not because I understood them — the explanations themselves stay closed to me. `endpoint` is a word I do know and would carry the same meaning.",
+        "quote": "Which part of the app noticed the failure — the controller, the service, or the database",
+        "fix": "Replace \"the controller, the service, or the database\" with \"the endpoint, `CancelOrderAsync`, or the database\", and \"which layer noticed\" / \"which layer threw the exception\" with \"which of those noticed it\" / \"which code threw the exception\", in q1 `c` and q5 `d` (both `en` and `vi`)."
+      },
+      {
+        "severity": "minor",
+        "section": "backend.l1.choosing-an-error-status.q2",
+        "kind": "quiz",
+        "text": "I can answer q2 — `c` is the misconception the lesson corrects — but two explanations then tell me things the lesson never says: that `4xx` means the client erred, and that \"the server didn't do anything wrong in either case\". The lesson never groups status codes into classes or talks about fault, so after reading the explanations I am less sure than before whether blame is part of the rule I just learned.",
+        "quote": "Both being in the `4xx` class does mean both are the client's doing rather than the server's",
+        "fix": "Reject `b` with the lesson's own test instead of a class the lesson never teaches: \"A broken request and a missing id are two different failures; the lesson separates them by which of the three questions applies, not by the class the number belongs to.\" (both `en` and `vi`)."
+      },
+      {
+        "severity": "minor",
+        "section": "backend.l1.choosing-an-error-status.q6",
+        "kind": "quiz",
+        "text": "In q6 the key is half again as long as every distractor and the only one that names code from the lesson; q5's key `a` is likewise the longest of its four. I could pick the longest, most detailed option twice and score without having understood the three questions.",
+        "quote": "`404` — `repository.FindAsync(-5)` finds no matching row, exactly the same case as any other id that doesn't currently exist",
+        "fix": "Trim q6 `a` to \"`404` — `FindAsync(-5)` finds no matching row, like any id that doesn't exist\" and give each distractor a clause of similar weight (e.g. `b`: \"`400` — a negative id is malformed input, so the request should never have been accepted\") (both `en` and `vi`); trim q5 `a` the same way."
+      },
+      {
+        "severity": "minor",
+        "section": "backend.l1.choosing-an-error-status.q5",
+        "kind": "style",
+        "text": "Re-raised: the same construction still runs through three of q5's explanations — \"Blame would decide the status code when a team explicitly chose to work that way\", \"That distinction would matter when the plan's only flaw were…\", \"Where the check lives would change the answer when status codes were assigned by which layer threw the exception\". I had to re-read each one to work out that it describes a situation which is not this one.",
+        "quote": "That distinction would matter when the plan's only flaw were picking the wrong exception type",
+        "fix": "Rewrite the three as plain conditionals, e.g. \"Picking the wrong exception type would be the only problem if the status code it produced were right — here it isn't: it produces `400`.\" (both `en` and `vi`)."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "controller (quiz q1 option c and its explanation; quiz q5 option d)",
+        "layer (quiz q1 explanation c, quiz q5 explanation d)",
+        "token / `Authorization: Bearer <token>` (§2, §7) — not a term I know, but \"Before you start\" says `creating-a-resource` taught me to get one, so I could still follow",
+        "curl (§7) — a tool name I have not met; the command is complete and copy-pasteable, so it did not stop me"
+      ],
+      "skipped_steps": [
+        "\"F -->|no| H[succeeds]\" — the no-conflict arrow and the `succeeds` box are never narrated, yet quiz q4 asks me to order that outcome.",
+        "Try it never says the app has to be running; `http://localhost:8080` first appears inside the curl command.",
+        "\"You're extending `PATCH /api/v1/orders/{id}/cancel`\" — what I am extending is never said, and what the endpoint does is only explained in §5.",
+        "\"regardless of which order it would have applied to\" — for `POST /api/v1/orders` no such order exists, so I had to guess what the clause means."
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

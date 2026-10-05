@@ -1,0 +1,112 @@
+{
+  "id": "devops.l2.metrics-endpoint",
+  "technical": {
+    "reviewed_at": "2026-09-30T04:30:00+07:00",
+    "reviewer": "claude-opus-5-5 (round 3: changed parts only)",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Overview: \"time series collection happens via a pull model over HTTP\". Exposition formats: \"Prometheus' text-based format is line oriented\"; sample = `metric_name [ \"{\" labels \"}\" ] value [ timestamp ]`; `# HELP`/`# TYPE` are comment-style lines with no value. New §3 text (\"each metric value sits on its own line\") matches round-1 suggested_text.",
+        "source": "https://prometheus.io/docs/introduction/overview/ ; https://prometheus.io/docs/instrumenting/exposition_formats/"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "git show stage-2:Directory.Packages.props → `<PackageVersion Include=\"prometheus-net.AspNetCore\" Version=\"8.2.1\" />`; git show stage-2:DonHang.Api/Program.cs line 9 → `using Prometheus;`.",
+        "source": "examples/don-hang @ stage-2: Directory.Packages.props, DonHang.Api/Program.cs"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "README: \"Number of HTTP requests in progress. Total number of received HTTP requests. Duration of HTTP requests.\" Live 2026-09-30 (docker exec donhang-lab: curl api:8080/metrics, then grep ^http_requests_received_total): lines only for /health/ready (597) and products/{id:int} (200: 4, 404: 2); no line for /metrics despite repeated calls. \"requests to /metrics itself are left out\" holds.",
+        "source": "https://github.com/prometheus-net/prometheus-net (README, HTTP request metrics); live run 2026-09-30"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "README: \"The default configuration will publish metrics on the `/metrics` URL.\" Source MetricServerMiddlewareExtensions.cs: `MapMetrics(..., string pattern = \"/metrics\")` -> `endpoints.Map(pattern, pipeline)`. New §4 wording \"adds one endpoint at `/metrics`. When some program asks with `GET /metrics`...\" no longer implies a GET-only route. Program.cs@stage-2 has no MetricPusher. Live: GET api:8080/metrics -> 200 with text body.",
+        "source": "https://github.com/prometheus-net/prometheus-net (README; MetricServerMiddlewareExtensions.cs @ master); examples/don-hang @ stage-2 Program.cs; live run 2026-09-30"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Exposition formats: sample line = `... value [ timestamp ]` (one value per sample). Overview: \"Prometheus collects and stores its metrics as time series data, i.e. metrics information is stored with the timestamp at which it was recorded.\" Live: two consecutive curls returned 2/1 then 3/2 for the products lines — one current value each, no history.",
+        "source": "https://prometheus.io/docs/instrumenting/exposition_formats/ ; https://prometheus.io/docs/introduction/overview/ ; live run 2026-09-30"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Exposition formats: HELP -> metric name then docstring; \"If the token is `TYPE`, exactly two more tokens are expected. The first is the metric name, and the second is either `counter`, `gauge`, ...\". Metric types: \"A counter is a cumulative metric that represents a single monotonically increasing counter whose value can only increase or be reset to zero on restart.\" \"a value that only goes up\" is fine given the lesson scopes values to \"since the API started\".",
+        "source": "https://prometheus.io/docs/instrumenting/exposition_formats/ ; https://prometheus.io/docs/concepts/metric_types/"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "HELP (HttpRequestCountMiddleware, and live output): \"Provides the count of HTTP requests that have been processed by the ASP.NET Core pipeline.\" Live: `http_requests_received_total{code=\"200\",method=\"GET\",controller=\"Products\",action=\"Get\",endpoint=\"api/v1/products/{id:int}\"} 4`, same with code=\"404\" -> 2; /health/ready line has controller=\"\",action=\"\". README: captures \"the `action`, `controller` and `endpoint` route parameters\".",
+        "source": "prometheus-net README + HttpRequestCountMiddleware.cs @ master; live run 2026-09-30"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Caddyfile@stage-2 :8080 (root * /srv/www): handle /api/v1/*, /api/v2/*, /openapi/* -> reverse_proxy api:8080; other named handles (/login.html, /admin, /cached.html, /redirect, /conflict, /slow); final `handle { file_server }` catches unmatched paths. /metrics has no rule -> file_server, no file -> 404 (outputs/stage-2/scripts/devops/metrics-endpoint.txt last line `-> 404`; live 2026-09-30). New §4 text and claim 8 text match this.",
+        "source": "examples/don-hang @ stage-2: Caddyfile lines 11-66; outputs/stage-2/scripts/devops/metrics-endpoint.txt; live run 2026-09-30"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "git show stage-2:DonHang.Api/Program.cs lines 95-118: `app.UseHttpMetrics();` (99) precedes `UseMiddleware<RequestLoggingMiddleware>()` and `UseMiddleware<ExceptionHandlingMiddleware>()`; `app.MapMetrics();` (118) follows `app.MapOpenApi();`. Lesson block matches the source character-for-character.",
+        "source": "examples/don-hang @ stage-2: DonHang.Api/Program.cs"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Middleware docs: \"Each delegate can perform operations before and after the next delegate.\" prometheus-net source: `try { await _next(context); } finally { ... CreateChild(context).Inc(exemplar); }` (labels read after next returns). README: \"Exception handler middleware that changes HTTP response codes must be registered after UseHttpMetrics()\". ExceptionHandlingMiddleware@stage-2: `catch (Exception ex)` → Status500InternalServerError.",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/middleware/index.md:45; prometheus-net README + HttpRequestCountMiddleware.cs @ master; DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs @ stage-2"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "docker-compose.yml@stage-2: lab publishes \"8080:8080\"; web has `network_mode: \"service:lab\"` (Caddy shares the lab box's network namespace); api has `hostname: api`, network donhang, and no `ports:` key. Live: lab `curl http://api:8080/metrics` → HTTP/1.1 200, Server: Kestrel; lab `curl localhost:8080/metrics` → 404.",
+        "source": "examples/don-hang @ stage-2: docker-compose.yml; live run 2026-09-30"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Output block matches outputs/stage-2/scripts/devops/metrics-endpoint.txt verbatim. Live replay of the script's commands in donhang-lab: 200, 404; HELP/TYPE lines as shown; two http_requests_received_total lines for products/{id:int} differing only in code; then 404 for localhost:8080/metrics.",
+        "source": "examples/don-hang/outputs/stage-2/scripts/devops/metrics-endpoint.txt; live run 2026-09-30"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Live: before → code=\"200\" 2, code=\"404\" 1; after GET products/1 (200) and products/999 (404) through Caddy → 3 and 2. Each value grew by exactly one.",
+        "source": "live run 2026-09-30 (docker exec donhang-lab curl ...)"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "Data model: \"Labels let you capture different instances of the same metric name. For example: all HTTP requests that used the method `POST` to the `/api/tracks` handler.\" Live /metrics shows the `method` label on http_requests_received_total. POST line not produced live (no data-changing requests allowed); OrdersController@stage-2 [HttpPost] returns CreatedAtAction (201).",
+        "source": "https://prometheus.io/docs/concepts/data_model/ ; DonHang.Api/Controllers/OrdersController.cs @ stage-2"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-30T03:30:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation, round 2: changed parts only)",
+    "issues": [],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

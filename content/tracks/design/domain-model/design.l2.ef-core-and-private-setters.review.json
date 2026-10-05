@@ -1,0 +1,139 @@
+{
+  "id": "design.l2.ef-core-and-private-setters",
+  "technical": {
+    "reviewed_at": "2026-10-01T16:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "stage-2 OrderService.cs:40-47 CancelOrderAsync: `repository.FindAsync(orderId)` → `order.Cancel()` → notifier.Send → `SaveChangesAsync()`; EfOrderRepository.cs:12 `db.Orders.Include(o => o.Items).FirstOrDefaultAsync(...)`; OrdersController.cs:73 `[HttpPatch(\"{id:int}/cancel\")]` under `[Route(\"api/v1/orders\")]`, returns `Ok(ToDto(order))`, OrderDto carries Status; db/seed.sql:29 `( 6, 3, '2026-03-13 05:30:00+07', 'new')`.",
+        "source": "examples/don-hang @ stage-2: DonHang.Domain/OrderService.cs:40-47; DonHang.Infrastructure/EfOrderRepository.cs:12; DonHang.Api/Controllers/OrdersController.cs:73-84,126; db/seed.sql:29"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "stage-2 Entities.cs:32 `public int Id { get; set; }`; :33-36 CustomerId, PlacedAt, Status, Items `{ get; private set; }`; :46 Version `{ get; private set; }`; :55 `private Order()`; :61 `public Order(int customerId, List<OrderItem> items, DateTimeOffset placedAt)`. No other constructor.",
+        "source": "examples/don-hang @ stage-2: DonHang.Domain/Entities.cs:30-70"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "\"Declare the set accessor to be private. The property is settable within the type, but it's immutable to consumers.\" Also: \"Suppose that your Person class should only enable changing the value of the FirstName property from other methods in the class. You could give the set accessor private accessibility\".",
+        "source": "refs/dotnet-docs/docs/csharp/programming-guide/classes-and-structs/how-to-implement-a-lightweight-class-with-auto-implemented-properties.md:18; properties.md:60"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Docs: \"EF Core cannot set navigation properties (such as Blog or Posts above) using a constructor.\" EF Core 10.0.4 assembly resource string (grep of Microsoft.EntityFrameworkCore.dll): \"only mapped properties can be bound to constructor parameters. Navigations to related entities, including references to owned types, cannot be bound.\" Round-1 probe: stage-2 model binds the private .ctor() with 0 params. (Services such as DbContext can also be injected, constructors.md:207; not row values, out of scope here.)",
+        "source": "refs/efcore-docs/entity-framework/core/modeling/constructors.md:85,207; ~/.nuget/packages/microsoft.entityframeworkcore/10.0.4/lib/net10.0/Microsoft.EntityFrameworkCore.dll"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "\"The constructor can be public, private, or have any other accessibility.\" \"EF Core sees a property with a private setter as read-write, which means that all properties are mapped as before\". Sample note: \"The constructor is private, since it is only ever called by EF Core\". Round-1 probe on stage-2 model: `ctor: Void .ctor() public=False params=0 bound=0`.",
+        "source": "refs/efcore-docs/entity-framework/core/modeling/constructors.md:86,134,258; execution scratchpad/dm-b/probe (round 1)"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "\"EF Core sees a property with a private setter as read-write, which means that all properties are mapped as before\"; \"it will first call the default parameterless constructor and then set each property to the value from the database.\" Probe: `prop Status col=status ... setter=private/init`. git grep: stage-1 :44 and stage-2 :45 both `e.Property(o => o.Status).HasColumnName(\"status\");`. (Probe: mode=PreferField, EF writes the backing field; lesson says 'fills', still true.)",
+        "source": "refs/efcore-docs/entity-framework/core/modeling/constructors.md:42,134; examples/don-hang DonHangDbContext.cs @ stage-1:44, stage-2:45"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "\"EF automatically detects changes made to an existing entity that is tracked by the context. This includes entities that you load/query from the database\" / \"Simply modify the values assigned to properties and then call SaveChanges\". Execution (InMemory provider, stage-2 DonHangDbContext): load with Include, Cancel(), SaveChanges → `after save: cancelled`. Not run on PostgreSQL (Docker unavailable); change tracking is provider-independent.",
+        "source": "refs/efcore-docs/entity-framework/core/saving/basic.md:26-28; execution scratchpad/dm-b/probe2"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Execution (stage-2 DonHangDbContext, InMemory provider): order row with no items stored, loaded with `Include(x => x.Items)` → `loaded id=99 status=new items=0 customer=3`, no exception; the bound constructor is the private parameterless one (probe), whose body (Entities.cs:55-58) has no checks. Not run on PostgreSQL; constructor choice is model-level, not provider-level.",
+        "source": "execution scratchpad/dm-b/probe2 and probe; examples/don-hang @ stage-2: DonHang.Domain/Entities.cs:55-58"
+      },
+      {
+        "n": 9,
+        "verdict": "not-needed",
+        "evidence": "Design statement taken from outline item 3; the factual half (rows can be written outside the app) needs no source — seed.sql itself inserts orders by plain SQL (db/seed.sql:23).",
+        "source": "track.yaml outline item 3; examples/don-hang @ stage-2: db/seed.sql:23"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Entities.cs:57 `Status = \"\";`. Docs: EF Core \"will first call the default parameterless constructor and then set each property to the value from the database.\" Status is a mapped property (DonHangDbContext.cs:45), so the placeholder is overwritten during materialization, before FindAsync returns. Round-1 execution: loaded order shows the stored status, not \"\".",
+        "source": "refs/efcore-docs/entity-framework/core/modeling/constructors.md:42; examples/don-hang @ stage-2: DonHang.Domain/Entities.cs:55-58; scratchpad/dm-b/probe2"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "\"EF Core sees a property with a private setter as read-write, which means that all properties are mapped as before and the key can still be store-generated.\" FakeOrderRepository.cs:35 `order.Id = nextId++;`; OrderServiceTests.cs:56,78 `new Order(customerId: 1, OneItem(), DateTimeOffset.UtcNow) { Id = 1 }`.",
+        "source": "refs/efcore-docs/entity-framework/core/modeling/constructors.md:134; examples/don-hang @ stage-2: DonHang.Tests/FakeOrderRepository.cs:35; DonHang.Tests/Services/OrderServiceTests.cs:56,78"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "\"By convention, non-composite primary keys of type short, int, long, or Guid are set up to have values generated for inserted entities\"; \"These values are used by EF Core until SaveChanges is called, at which point real key values are read back from the database.\" schema.sql:19 `id integer GENERATED BY DEFAULT AS IDENTITY`; migration uses UseIdentityByDefaultColumn; EfOrderRepositoryTests.cs:39-41 reads order.Id after SaveChangesAsync.",
+        "source": "refs/efcore-docs/entity-framework/core/modeling/generated-properties.md:56; change-tracking/explicit-tracking.md:257; examples/don-hang @ stage-2: db/schema.sql:19"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "FakeOrderRepository.cs:6-7 \"A dictionary standing in for the database ... so OrderServiceTests runs in milliseconds\"; :11 `private int nextId = 1;` :35 `order.Id = nextId++;`; OrderServiceTests.cs:17,30,42 `new FakeOrderRepository()`.",
+        "source": "examples/don-hang @ stage-2: DonHang.Tests/FakeOrderRepository.cs:6-11,33-38; DonHang.Tests/Services/OrderServiceTests.cs:17"
+      },
+      {
+        "n": 14,
+        "verdict": "not-needed",
+        "evidence": "Design judgement from outline item 4, stated with its reason; no documentation governs it. Order's rules (constructor, MarkPaid, Cancel, Ship) decide on Status/Items, never on Id's value; Id appears only in exception messages (Entities.cs:75-96).",
+        "source": "track.yaml outline item 4; examples/don-hang @ stage-2: DonHang.Domain/Entities.cs:75-96"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "Round 3 re-run (git 2.46.0.windows.1): stage-1 :41 Id, :42 CustomerId, :43 PlacedAt, :44 Status; stage-2 :42-45 the same four texts (each line number +1, 41->42), plus :58 `e.Property(o => o.IdempotencyKey)...` and :65 `e.Property(o => o.Version).IsRowVersion();` = 4 + 6 lines. Stage-2 adds only IdempotencyKey and Version among matched lines. Round-3 docs/files opened: lesson en.md, quiz q2, meta claims, git grep outputs at stage-1/stage-2.",
+        "source": "execution: git grep in examples/don-hang @ stage-1, stage-2 (DonHang.Infrastructure/DonHangDbContext.cs)"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "Round 3 re-run (git 2.46.0.windows.1): lines 33 CustomerId, 34 PlacedAt, 35 Status, 36 Items, 46 Version (`private set`), 55 `private Order()` — 6 lines, as the lesson states.",
+        "source": "execution: git grep in examples/don-hang"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "STAGE.md data flow at stage-2: `API -->|EF Core| P[(PostgreSQL)]`. EfOrderRepository.cs:11-12 `public Task<Order?> FindAsync(int id) => db.Orders.Include(o => o.Items).FirstOrDefaultAsync(o => o.Id == id);` with `DonHangDbContext db` injected; OrderService.cs CancelOrderAsync calls `repository.FindAsync(orderId)`.",
+        "source": "examples/don-hang @ stage-2: STAGE.md:65; DonHang.Infrastructure/EfOrderRepository.cs:7-12; DonHang.Domain/OrderService.cs:40-47"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-01T17:00:00+07:00",
+    "reviewer": "review-junior (prompt 05, round 3)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "style",
+        "quote": "with each line number one higher at `stage-2` (41 becomes 42), which only adds `IdempotencyKey` and `Version`.",
+        "text": "The line-number fix works: I now know what to look for. But the parenthesis sits between 'stage-2' and 'which', so on first read 'which only adds' seemed to refer to '41 becomes 42'. A second read sorted it out; it does not stop me.",
+        "fix": "Split the sentence: end it after '(41 becomes 42).' and start a new one: '`stage-2` only adds `IdempotencyKey` and `Version`.'"
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

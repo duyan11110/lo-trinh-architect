@@ -1,0 +1,80 @@
+{
+  "id": "backend.l1.efcore-n-plus-one",
+  "generated_by": "claude-sonnet-5",
+  "generated_at": "2026-09-25T06:30:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "Live investigation: a temporary, uncommitted version of ListByCustomerAsync that ran a FirstOrDefaultAsync per order instead of .Include, tested against customer 1's 7 orders, logged 8 SELECT statements for GET /api/v1/orders (1 for orders, 7 for customers). Reverted; never committed.",
+      "kind": "behavior",
+      "source_hint": "live run this session: docker compose build/up + docker logs donhang-db, reverted via git checkout afterward",
+      "needs_verification": true,
+      "section": 2
+    },
+    {
+      "n": 2,
+      "text": "Live investigation this session: the real, committed ListByCustomerAsync (using .Include(o => o.Customer)) logged exactly 1 SELECT statement for the same GET /api/v1/orders call, a single query joining orders and customers columns.",
+      "kind": "behavior",
+      "source_hint": "live run this session: docker logs donhang-db after reverting to the committed EfOrderRepository.cs",
+      "needs_verification": true,
+      "section": 2
+    },
+    {
+      "n": 3,
+      "text": "EF Core docs: with lazy loading, each iteration accessing a related collection triggers an additional query, its own round trip; one query for the rows plus one more per row is called the N+1 problem. Eager/explicit loading is recommended since it makes a round trip visible in the source.",
+      "kind": "fact",
+      "source_hint": "EF Core docs, entity-framework/core/performance/efficient-querying.md, \"Beware of lazy loading\"",
+      "version_key": "efcore",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 4,
+      "text": "EfOrderRepository.FindAsync uses db.Orders.Include(o => o.Items).FirstOrDefaultAsync(...); ListByCustomerAsync uses db.Orders.Where(...).Include(o => o.Customer).OrderBy(...).ToListAsync() — both eager-load their related data with one Include call each.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-1: DonHang.Infrastructure/EfOrderRepository.cs:9-14",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 5,
+      "text": "OrdersController.List() reads the signed-in customerId from the token, calls repository.ListByCustomerAsync(customerId), then builds the response with orders.Select(o => new OrderSummaryDto(o.Id, o.Status, o.Customer!.FullName)).ToList().",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-1: DonHang.Api/Controllers/OrdersController.cs:48-56",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 6,
+      "text": "DonHangDbContext configures no lazy loading, so accessing order.Customer never triggers a query; it is populated only if the query eager-loaded it with Include, or if that customer was already loaded into the same DbContext instance (navigation fix-up). Otherwise it stays null.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-1: DonHang.Infrastructure/ServiceCollectionExtensions.cs:14; refs/efcore-docs/entity-framework/core/querying/related-data/eager.md:28",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 7,
+      "text": "EF Core uses single-query mode by default for Include, folding related entities into the same query via a JOIN, unless overridden with AsSplitQuery/UseQuerySplittingBehavior; this project does not change that default.",
+      "kind": "fact",
+      "source_hint": "EF Core docs, entity-framework/core/querying/single-split-queries.md",
+      "version_key": "efcore",
+      "needs_verification": true,
+      "section": 5
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [1, 2, 3],
+    "outline_items_missing": [],
+    "beyond_scope": []
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1100,
+    "notes": "Per DECISIONS.md 2026-09-24 (depth_notes): the 'bad' N+1 version was demonstrated only via a temporary, uncommitted working-tree edit to EfOrderRepository.cs (rebuilt, tested live with Postgres query logging, then reverted via git checkout; examples/don-hang confirmed clean before and after). No fenced code block in this lesson shows the bad version — only the two real, committed files. The exact query counts (8 vs 1) are from that live investigation."
+  },
+  "open_questions": [],
+  "repo_changes_needed": []
+}

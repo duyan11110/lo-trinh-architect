@@ -1,0 +1,110 @@
+{
+  "id": "backend.l1.middleware-pipeline",
+  "technical": {
+    "reviewed_at": "2026-09-27T07:20:00+07:00",
+    "reviewer": "claude-opus-5-5[1m]",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/middleware/index.md:553; fundamentals/middleware/includes/middleware8.md:5,15",
+        "evidence": "index.md:553 (>= aspnetcore-8.0): \"The order that middleware appears in the app's `Program` file defines the order in which middleware are invoked on a request with the reverse order for the response.\" middleware8.md:15: \"User configured middleware and endpoints are added between `UseRouting` and `UseEndpoints`.\" 'usually the last to finish' is correctly hedged: in Development UseDeveloperExceptionPage \"is added first\" (middleware8.md:5), and compose sets ASPNETCORE_ENVIRONMENT=Development."
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/middleware/write.md:50,54,66; fundamentals/middleware/index.md:19; RequestLoggingMiddleware.cs@stage-1:9-11",
+        "evidence": "write.md:50: \"A public method named `Invoke` or `InvokeAsync`.\" write.md:54: \"Additional parameters for the constructor and `Invoke`/`InvokeAsync` are populated by [dependency injection (DI)]\". write.md:66: \"Middleware is constructed once per *application lifetime*.\" index.md:19: \"Can perform work before and after the next middleware in the pipeline.\" Repo class takes (RequestDelegate next, ILogger<...> logger) and InvokeAsync(HttpContext context) only."
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/middleware/index.md:23,127",
+        "evidence": "index.md:23: \"Each middleware in the request pipeline is responsible for invoking the next middleware in the pipeline or short-circuiting the pipeline. When a middleware short-circuits, it's called a *terminal middleware* because it prevents further middleware from processing the request.\" index.md:127: \"Middleware added to the pipeline before the terminal middleware still processes code after their `next.Invoke` statements.\" The 'moved below UseAuthorization -> not logged' consequence follows directly."
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "source": "refs/aspnetcore-docs/aspnetcore/security/authentication/index.md:113,116,122,125; fundamentals/middleware/index.md:639,653; fundamentals/routing.md:110-113",
+        "evidence": "middleware/index.md:653: \"Authentication doesn't short-circuit unauthenticated requests.\" auth index.md:113/116: challenge \"invoked by Authorization when an unauthenticated user requests an endpoint that requires authentication\" e.g. \"A JWT bearer scheme returning a 401\"; :122/125 forbid for \"an authenticated user\" not permitted, \"A JWT bearer scheme returning a 403\". index.md:639: UseCors, UseAuthentication, UseAuthorization \"must appear in the order shown.\" routing.md:113: authorization applied \"before UseEndpoints dispatches to the endpoint\"."
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "source": "examples/don-hang@stage-1 (75bf7d2): DonHang.Api/Program.cs:64-74; DonHang.Api/Controllers/OrdersController.cs:17-19",
+        "evidence": "git show stage-1:DonHang.Api/Program.cs lines 67-72: UseMiddleware<ExceptionHandlingMiddleware>, UseMiddleware<RequestLoggingMiddleware>, UseCors, UseAuthentication, UseAuthorization, MapControllers. OrdersController.cs:17-19: \"[Authorize]\" / \"[HttpPost]\" / \"public async Task<ActionResult<OrderDto>> Create(CreateOrderRequest request)\"."
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "source": "examples/don-hang@stage-1: DonHang.Api/Middleware/RequestLoggingMiddleware.cs:11-22; docker compose logs api (run 2026-09-27)",
+        "evidence": "Code: await next(context); then logger.LogInformation(\"{Method} {Path} responded {StatusCode} in {ElapsedMs}ms\", ...). Output after the curl in claim 7: \"donhang-api  | info: DonHang.Api.Middleware.RequestLoggingMiddleware[0]\" followed by \"donhang-api  |       POST /api/v1/orders responded 401 in 13ms\" - an info: header line naming the class, message on the next line."
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "source": "examples/don-hang stage-1 lab (HEAD = 75bf7d2 = stage-1^{commit}); scripts/up.sh@stage-1; Caddyfile@stage-1",
+        "evidence": "curl -i -X POST http://localhost:8080/api/v1/orders -> \"HTTP/1.1 401 Unauthorized\", \"Www-Authenticate: Bearer\", \"Via: 1.1 Caddy\". docker compose logs api -> \"POST /api/v1/orders responded 401 in 13ms\". up.sh runs `flutter build web` then `docker compose up -d --build --wait` under set -euo pipefail, so Docker and Flutter SDK preconditions are right; Caddyfile :8080 proxies /api/v1/* to api:8080."
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/middleware/includes/middleware8.md:7,9,15; fundamentals/routing.md:53,179; fundamentals/middleware/index.md:615",
+        "evidence": "middleware8.md:7: \"UseRouting is added second, if the user code didn't already call UseRouting and endpoints are configured\"; :9: \"UseEndpoints is added at the end of the middleware pipeline\"; :15: user middleware \"added between UseRouting and UseEndpoints\". routing.md:53: UseEndpoints \"runs the delegate associated with the selected endpoint\"; :179: \"The UseEndpoints middleware is **terminal** when a match is found.\""
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "quote": "\"Terminal\" in the comment is loose: in this lesson's sense only the endpoint is terminal, and the auth steps stop only the requests they reject.",
+        "text": "The docs' own term is broader than the lesson's: middleware/index.md:23 \"When a middleware short-circuits, it's called a *terminal middleware*\". By that definition UseAuthorization IS terminal for the requests it rejects, so the repo comment is not 'loose'; the lesson narrows the word. A learner who later reads the docs meets 'terminal middleware' used for any short-circuit and sees a contradiction.",
+        "fix": "Replace with: \"'Terminal' in the comment means what ASP.NET Core's docs mean: a step that can end the request without calling next. The auth steps do that only for requests they reject; the endpoint does it for every request it handles.\" No claim change needed (claim 3 evidence already covers the definition)."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-04T08:24:15+07:00",
+    "reviewer": "claude-opus-5-5 (junior-reader simulation, round 4, scoped to section 7 step 1)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "style",
+        "quote": "ASP.NET Core adds steps of its own, such as routing below; \"Đơn Hàng's own\" middleware means the `app.Use...` lines in `Program.cs`. Before any of those runs, one such added step, routing, works out",
+        "text": "'Below' is confusing: the diagram is above, and routing is introduced twice in two sentences. The quoted label \"Đơn Hàng's own\" is defined before it is used anywhere. I re-read the paragraph twice.",
+        "fix": "Drop \"such as routing below\" from the first sentence, since the next sentence already introduces routing as one such added step."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "quote": "`UseAuthorization` decides what an already-identified caller may do, and is what can short-circuit here",
+        "text": "In the situation the caller was NOT identified, yet this sentence says UseAuthorization is about already-identified callers. I paused until the later '401 when no caller was identified' sentence resolved it.",
+        "fix": "Replace \"decides what an already-identified caller may do\" with \"decides whether the caller UseAuthentication identified (or failed to identify) may reach this endpoint\"."
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "length",
+        "quote": "start the lab with `scripts/up.sh`, which runs Đơn Hàng on your machine. Then run `curl -i -X POST http://localhost:8080/api/v1/orders` (`localhost` means your own machine) with no `Authorization` header (`curl` sends",
+        "text": "Step 1 packs four parenthetical glosses into two sentences; I lost track of which command to type first and had to re-read.",
+        "fix": "Split step 1 into two numbered steps: one to start the lab with `scripts/up.sh`, one to send the curl request, each keeping its own glosses."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

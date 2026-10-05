@@ -1,0 +1,311 @@
+{
+  "lesson": "backend.l2.cache-invalidation",
+  "stage": 2,
+  "questions": [
+    {
+      "id": "backend.l2.cache-invalidation.q1",
+      "type": "truefalse",
+      "bloom": "understand",
+      "difficulty": 2,
+      "skills": ["backend.cache.invalidation"],
+      "section_ref": 6,
+      "question": {
+        "en": "Statement: since `PATCH /api/v1/products/{id}` now deletes `product:{id}` after every save, Đơn Hàng could store product copies in Redis with no TTL at all.",
+        "vi": "Nhận định: vì `PATCH /api/v1/products/{id}` giờ xóa `product:{id}` sau mỗi lần lưu, Đơn Hàng có thể cất bản sao sản phẩm trong Redis mà không cần TTL nào."
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "True, because every price change deletes the copy, so no copy can stay stale.",
+          "vi": "Đúng, vì mọi lần đổi giá đều xóa bản sao, nên không bản sao nào cũ được.",
+          "polarity": "true",
+          "misconception": "With the key deleted on every update, the TTL is no longer needed."
+        },
+        {
+          "id": "b",
+          "en": "True, because after a delete the next read always loads the price from PostgreSQL.",
+          "vi": "Đúng, vì sau khi xóa, lần đọc kế tiếp luôn lấy giá từ PostgreSQL.",
+          "polarity": "true"
+        },
+        {
+          "id": "c",
+          "en": "False, because if Redis is down during a `PATCH`, only the TTL removes the old copy.",
+          "vi": "Sai, vì nếu Redis không chạy trong lúc `PATCH`, chỉ TTL gỡ được bản sao cũ.",
+          "polarity": "false"
+        },
+        {
+          "id": "d",
+          "en": "False, because Redis can only delete a key that was stored with a TTL.",
+          "vi": "Sai, vì Redis chỉ xóa được key đã được cất kèm TTL.",
+          "polarity": "false"
+        }
+      ],
+      "answer": ["c"],
+      "explanation": {
+        "en": {
+          "correct": "The delete fails while Redis is down, a slow read can write the old price after the delete, and a change made outside the API deletes nothing. In each case only the 5-minute TTL ends the stale copy.",
+          "a": "It is true that every `PATCH` tries to delete the key, which makes this tempting. But trying is not succeeding: `RemoveAsync` only logs a warning when Redis fails, and the copy stays.",
+          "b": "Right after a successful delete, this holds. It does not cover the cases where the delete never happened or a late `SET` put the old price back.",
+          "d": "Nothing in `KeyDeleteAsync` depends on a TTL: it asks Redis to delete a key and its value, and the script's `EXISTS product:3` printing `0` shows it works. The reason to keep the TTL is missed deletes, not the delete itself."
+        },
+        "vi": {
+          "correct": "Lệnh xóa thất bại khi Redis không chạy, một lần đọc chậm có thể ghi giá cũ sau lần xóa, và thay đổi làm ngoài API thì không xóa gì. Trong mọi trường hợp đó, chỉ TTL 5 phút chấm dứt bản sao cũ.",
+          "a": "Đúng là mọi `PATCH` đều cố xóa key, nên ý này hấp dẫn. Nhưng cố xóa không có nghĩa là xóa được: khi Redis lỗi, `RemoveAsync` chỉ ghi một cảnh báo, và bản sao vẫn nằm đó.",
+          "b": "Ngay sau một lần xóa thành công thì điều này đúng. Nó không bao được trường hợp lệnh xóa không hề xảy ra, hoặc một `SET` đến muộn đã đặt lại giá cũ.",
+          "d": "`KeyDeleteAsync` không phụ thuộc vào TTL nào: nó yêu cầu Redis xóa một key cùng giá trị của nó, và `EXISTS product:3` in `0` trong script cho thấy lệnh xóa chạy được. Lý do giữ TTL là những lần xóa bị lỡ, không phải bản thân lệnh xóa."
+        }
+      }
+    },
+    {
+      "id": "backend.l2.cache-invalidation.q2",
+      "type": "order",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["backend.cache.invalidation"],
+      "section_ref": 4,
+      "question": {
+        "en": "`product:3` holds `890000` in Redis, and a staff member sends `PATCH /api/v1/products/3` with `priceVnd` `950000`. Put these steps in the order they happen.",
+        "vi": "`product:3` đang giữ `890000` trong Redis, và một nhân viên gửi `PATCH /api/v1/products/3` với `priceVnd` là `950000`. Sắp xếp các bước sau theo đúng thứ tự xảy ra."
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "`ProductCache` deletes `product:3` from Redis",
+          "vi": "`ProductCache` xóa `product:3` khỏi Redis"
+        },
+        {
+          "id": "b",
+          "en": "The next customer read misses and stores a copy with `950000`",
+          "vi": "Lần đọc kế tiếp của khách bị miss và cất một bản sao với `950000`"
+        },
+        {
+          "id": "c",
+          "en": "`ProductsController.UpdatePrice` calls `UpdatePriceAsync(3, 950000)`",
+          "vi": "`ProductsController.UpdatePrice` gọi `UpdatePriceAsync(3, 950000)`"
+        },
+        {
+          "id": "d",
+          "en": "The API answers `200` with the new price",
+          "vi": "API trả `200` kèm giá mới"
+        },
+        {
+          "id": "e",
+          "en": "`EfProductRepository` saves `950000` in PostgreSQL",
+          "vi": "`EfProductRepository` lưu `950000` vào PostgreSQL"
+        }
+      ],
+      "answer": ["c", "e", "a", "d", "b"],
+      "explanation": {
+        "en": {
+          "correct": "The controller hands the change to `ProductCache`, which lets `EfProductRepository` save it first and deletes the key only after the save returned the product. The controller then answers `200`, and the next read is a miss that loads the new price."
+        },
+        "vi": {
+          "correct": "Controller giao thay đổi cho `ProductCache`; nó để `EfProductRepository` lưu trước và chỉ xóa key sau khi lần lưu đã trả về sản phẩm. Sau đó controller trả `200`, và lần đọc kế tiếp là một miss nạp giá mới."
+        }
+      }
+    },
+    {
+      "id": "backend.l2.cache-invalidation.q3",
+      "type": "single",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["backend.cache.invalidation"],
+      "section_ref": 4,
+      "question": {
+        "en": "A teammate swaps the two steps in `ProductCache.UpdatePriceAsync`, so `product:3` is deleted first and `950000` is saved second. A customer opens product 3 between the two steps. What does `product:3` hold once both steps are done?",
+        "vi": "Một đồng đội đảo hai bước trong `ProductCache.UpdatePriceAsync`, để `product:3` bị xóa trước và `950000` được lưu sau. Một khách mở sản phẩm 3 đúng lúc giữa hai bước. Khi cả hai bước xong, `product:3` giữ gì?"
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "The old price `890000`, with a fresh 5-minute TTL",
+          "vi": "Giá cũ `890000`, với TTL 5 phút mới tinh"
+        },
+        {
+          "id": "b",
+          "en": "Nothing: the key stays deleted until the next read",
+          "vi": "Không gì cả: key vẫn bị xóa cho tới lần đọc sau",
+          "misconception": "It is safer to delete the cached copy first and update the database afterwards."
+        },
+        {
+          "id": "c",
+          "en": "The new price `950000`, stored by the customer's read",
+          "vi": "Giá mới `950000`, do lần đọc của khách cất vào"
+        },
+        {
+          "id": "d",
+          "en": "The old price `890000`, with its original TTL left",
+          "vi": "Giá cũ `890000`, với phần TTL cũ còn lại"
+        }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "The customer's read misses, and PostgreSQL still has `890000` because the save has not happened yet. `ProductCache` stores that old price with a new 5-minute TTL, so the delete achieved nothing.",
+          "b": "Deleting first feels safe because no copy exists for a moment. But a read in that moment refills the key, and the save that follows does not touch Redis.",
+          "c": "The customer's read does store a copy, which makes this plausible. It reads PostgreSQL before the save, so the copy it stores has the old price.",
+          "d": "The old price is right, but the old key and its TTL were deleted. The read writes a new key, and every `SET` from `ProductCache` gives it the full 5 minutes."
+        },
+        "vi": {
+          "correct": "Lần đọc của khách bị miss, và PostgreSQL vẫn có `890000` vì lần lưu chưa xảy ra. `ProductCache` cất giá cũ đó với TTL 5 phút mới, nên lần xóa chẳng được gì.",
+          "b": "Xóa trước có vẻ an toàn vì trong một lúc không còn bản sao nào. Nhưng một lần đọc đúng lúc đó sẽ điền lại key, và lần lưu theo sau không đụng tới Redis.",
+          "c": "Lần đọc của khách đúng là có cất một bản sao, nên ý này nghe hợp lý. Nhưng nó đọc PostgreSQL trước khi lưu, nên bản sao nó cất mang giá cũ.",
+          "d": "Giá cũ thì đúng, nhưng key cũ và TTL của nó đã bị xóa. Lần đọc ghi một key mới, và mọi `SET` của `ProductCache` đều cho nó đủ 5 phút."
+        }
+      }
+    },
+    {
+      "id": "backend.l2.cache-invalidation.q4",
+      "type": "multi",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["backend.cache.invalidation"],
+      "section_ref": 4,
+      "question": {
+        "en": "A staff `PATCH /api/v1/products/3` to `950000` has answered `200`. Which of these can still leave `890000` in `product:3` afterwards? Select all that apply.",
+        "vi": "Một `PATCH /api/v1/products/3` của nhân viên đổi sang `950000` đã trả `200`. Những tình huống nào sau đây vẫn có thể để lại `890000` trong `product:3`? Chọn tất cả đáp án đúng."
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "Redis was down during the `PATCH`, so the delete failed and was only logged",
+          "vi": "Redis không chạy trong lúc `PATCH`, nên lệnh xóa thất bại và chỉ được ghi log"
+        },
+        {
+          "id": "b",
+          "en": "A read that missed loaded `890000` just before the save and wrote it to Redis just after the delete",
+          "vi": "Một lần đọc bị miss đã lấy `890000` ngay trước khi lưu và ghi nó vào Redis ngay sau khi xóa"
+        },
+        {
+          "id": "c",
+          "en": "A customer read that started after the delete missed and wrote its copy",
+          "vi": "Một lần đọc của khách bắt đầu sau khi xóa, bị miss và ghi bản sao của nó",
+          "misconception": "It is safer to delete the cached copy first and update the database afterwards."
+        },
+        {
+          "id": "d",
+          "en": "Another customer read product 3 from Redis a few seconds before the `PATCH`",
+          "vi": "Một khách khác đọc sản phẩm 3 từ Redis vài giây trước `PATCH`"
+        }
+      ],
+      "answer": ["a", "b"],
+      "explanation": {
+        "en": {
+          "correct": "A failed delete leaves the old copy, and a slow read can put the old price back after a successful one. Both end only when the 5-minute TTL runs out.",
+          "c": "A read that misses sounds like the risky moment from the delete-first order. Here the save came first, so a read that starts after the delete loads `950000`.",
+          "d": "Reads before the `PATCH` do see the old price, which is expected. A cache hit writes nothing, and the delete afterwards removes the copy it read."
+        },
+        "vi": {
+          "correct": "Lệnh xóa thất bại để lại bản sao cũ, và một lần đọc chậm có thể đặt lại giá cũ sau một lần xóa thành công. Cả hai chỉ chấm dứt khi TTL 5 phút hết.",
+          "c": "Một lần đọc bị miss nghe giống thời điểm rủi ro của cách xóa trước. Nhưng ở đây lưu đã xảy ra trước, nên lần đọc bắt đầu sau khi xóa sẽ nạp `950000`.",
+          "d": "Các lần đọc trước `PATCH` thấy giá cũ là điều bình thường. Một cache hit không ghi gì, và lần xóa sau đó gỡ luôn bản sao nó đã đọc."
+        }
+      }
+    },
+    {
+      "id": "backend.l2.cache-invalidation.q5",
+      "type": "single",
+      "bloom": "understand",
+      "difficulty": 2,
+      "skills": ["backend.cache.invalidation"],
+      "section_ref": 5,
+      "question": {
+        "en": "A price for product 5 is corrected straight in PostgreSQL with `psql`, one minute after a customer read put `product:5` into Redis. What do customers who open product 5 see?",
+        "vi": "Giá của sản phẩm 5 được sửa thẳng trong PostgreSQL bằng `psql`, một phút sau khi một lần đọc của khách đã đưa `product:5` vào Redis. Khách mở sản phẩm 5 sẽ thấy gì?"
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "The old price until the copy's TTL runs out, then the new one",
+          "vi": "Giá cũ cho tới khi TTL của bản sao hết, rồi mới tới giá mới"
+        },
+        {
+          "id": "b",
+          "en": "The new price at once, because PostgreSQL has already saved it",
+          "vi": "Giá mới ngay lập tức, vì PostgreSQL đã lưu nó rồi",
+          "misconception": "Once PostgreSQL has the new price, every customer sees it."
+        },
+        {
+          "id": "c",
+          "en": "The new price at once, because `ProductCache` deletes the key on a change",
+          "vi": "Giá mới ngay lập tức, vì `ProductCache` xóa key khi có thay đổi"
+        },
+        {
+          "id": "d",
+          "en": "The old price until someone sends a `PATCH` for product 5",
+          "vi": "Giá cũ cho tới khi có người gửi `PATCH` cho sản phẩm 5"
+        }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "Nothing deletes `product:5`: only `ProductCache.UpdatePriceAsync` does that, and `psql` does not go through it. Reads keep hitting the copy for about four more minutes, until its 5-minute TTL ends.",
+          "b": "PostgreSQL does hold the new price, so this feels obvious. But reading one product asks Redis first, and Redis does not watch the `products` table.",
+          "c": "`ProductCache` does delete the key, which is why this is tempting. It only does so inside `UpdatePriceAsync`, which a change made with `psql` never calls.",
+          "d": "A `PATCH` would indeed delete the copy. But the TTL ends it anyway, so customers see the new price within minutes even if nobody sends one."
+        },
+        "vi": {
+          "correct": "Không có gì xóa `product:5`: chỉ `ProductCache.UpdatePriceAsync` làm việc đó, và `psql` không đi qua nó. Các lần đọc tiếp tục hit bản sao thêm khoảng bốn phút, tới khi TTL 5 phút hết.",
+          "b": "PostgreSQL đúng là giữ giá mới, nên điều này có vẻ hiển nhiên. Nhưng việc đọc một sản phẩm hỏi Redis trước, và Redis không theo dõi bảng `products`.",
+          "c": "`ProductCache` đúng là có xóa key, nên ý này hấp dẫn. Nhưng nó chỉ xóa bên trong `UpdatePriceAsync`, thứ mà một thay đổi bằng `psql` không bao giờ gọi.",
+          "d": "Một `PATCH` đúng là sẽ xóa bản sao. Nhưng TTL vẫn tự chấm dứt nó, nên khách thấy giá mới trong vài phút dù không ai gửi `PATCH`."
+        }
+      }
+    },
+    {
+      "id": "backend.l2.cache-invalidation.q6",
+      "type": "scenario",
+      "bloom": "evaluate",
+      "difficulty": 4,
+      "skills": ["backend.cache.invalidation"],
+      "section_ref": 4,
+      "context": {
+        "en": "Đơn Hàng caches each product in Redis for 5 minutes, and staff change prices only through `PATCH /api/v1/products/{id}`, which deletes the copy after the save. Staff change a few prices a week. A teammate notices that most product reads now hit Redis and proposes to cut PostgreSQL load further by raising the TTL to 24 hours. Their argument: every price change already deletes the key, so the TTL no longer decides how long an old price is shown.",
+        "vi": "Đơn Hàng cache từng sản phẩm trong Redis 5 phút, và nhân viên chỉ đổi giá qua `PATCH /api/v1/products/{id}`, vốn xóa bản sao sau khi lưu. Nhân viên đổi vài giá mỗi tuần. Một đồng đội thấy phần lớn lần đọc sản phẩm giờ đã hit Redis, và đề xuất giảm tải PostgreSQL thêm bằng cách nâng TTL lên 24 giờ. Lập luận của họ: mọi lần đổi giá đều đã xóa key, nên TTL không còn quyết định giá cũ được hiển thị bao lâu."
+      },
+      "question": {
+        "en": "What do you recommend?",
+        "vi": "Bạn khuyên gì?"
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "Keep the 5-minute TTL as the limit on how long a missed delete can show an old price",
+          "vi": "Giữ TTL 5 phút làm giới hạn cho thời gian một lần xóa bị lỡ còn hiển thị giá cũ"
+        },
+        {
+          "id": "b",
+          "en": "Raise the TTL to 24 hours, since each price change deletes the key anyway",
+          "vi": "Nâng TTL lên 24 giờ, vì dù sao mỗi lần đổi giá cũng xóa key",
+          "misconception": "With the key deleted on every update, the TTL is no longer needed."
+        },
+        {
+          "id": "c",
+          "en": "Raise the TTL, and delete the key before the save so no read can slip in",
+          "vi": "Nâng TTL, và xóa key trước khi lưu để không lần đọc nào chen vào được",
+          "misconception": "It is safer to delete the cached copy first and update the database afterwards."
+        },
+        {
+          "id": "d",
+          "en": "Stop caching products, so no customer can ever see an old price",
+          "vi": "Bỏ cache sản phẩm, để không khách nào có thể thấy giá cũ"
+        }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "Deletes can be missed: Redis may be down during a `PATCH`, or a slow read may write the old price after the delete. A missed delete is ended only by the TTL, so 24 hours stretches that worst case from 5 minutes to a day.",
+          "b": "The argument is right about the normal path, which is why it convinces. It ignores the missed deletes, and with 24 hours a single one shows a wrong price all day. It fits when the data never changes, so there is nothing to go stale.",
+          "c": "Stopping reads from slipping in is the right worry, but deleting first opens exactly that gap: a read between the steps stores the old price again. It is harmless only when no read can arrive between the two steps, which Đơn Hàng cannot promise.",
+          "d": "No cache means no stale copy, which is appealing. But the stale window is already at most 5 minutes and rare. It is the right choice when prices change so often that even a few minutes of an old price is not acceptable."
+        },
+        "vi": {
+          "correct": "Lần xóa có thể bị lỡ: Redis có thể không chạy trong lúc `PATCH`, hoặc một lần đọc chậm có thể ghi giá cũ sau lần xóa. Một lần xóa bị lỡ chỉ được TTL chấm dứt, nên 24 giờ kéo trường hợp xấu nhất đó từ 5 phút thành một ngày.",
+          "b": "Lập luận đúng với đường đi bình thường, nên nghe thuyết phục. Nó bỏ qua những lần xóa bị lỡ, và với 24 giờ, chỉ một lần lỡ là hiển thị giá sai cả ngày. Cách này hợp khi dữ liệu không bao giờ đổi, nên không có gì để cũ đi.",
+          "c": "Lo lần đọc chen vào là đúng, nhưng xóa trước lại mở đúng khe hở đó: một lần đọc giữa hai bước sẽ cất lại giá cũ. Nó chỉ vô hại khi không lần đọc nào có thể tới giữa hai bước, điều Đơn Hàng không hứa được.",
+          "d": "Không cache thì không có bản sao cũ, nghe hấp dẫn. Nhưng khoảng thời gian giá cũ vốn đã tối đa 5 phút và hiếm gặp. Đây là lựa chọn đúng khi giá đổi thường tới mức ngay cả vài phút giá cũ cũng không chấp nhận được."
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,134 @@
+{
+  "id": "design.l1.the-di-container",
+  "technical": {
+    "reviewed_at": "2026-09-25T21:10:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "git show stage-1: OrdersController.cs:12 `public sealed class OrdersController(OrderService orderService, IOrderRepository repository) : ControllerBase`; OrderService.cs:6 `(IOrderRepository repository, INotifier notifier)`; EfOrderRepository.cs:7 `(DonHangDbContext db) : IOrderRepository`; LoggingNotifier.cs:9 `(ILogger<LoggingNotifier> logger) : INotifier`.",
+        "source": "examples/don-hang @ stage-1 (4fca60a)"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "`git grep -n \"new OrderService\" stage-1` returns only DonHang.Tests/Services/OrderServiceTests.cs lines 16, 29, 40, 50, 60; no match under DonHang.Api.",
+        "source": "examples/don-hang @ stage-1 (4fca60a)"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "ServiceCollectionExtensions.cs:14-16 `services.AddDbContext<DonHangDbContext>(...)`, `services.AddScoped<IOrderRepository, EfOrderRepository>();`, `services.AddScoped<INotifier, LoggingNotifier>();`; Program.cs:18-19 `builder.Services.AddDonHangInfrastructure(connectionString);` `builder.Services.AddScoped<OrderService>();` — all before `builder.Build()` (line 52).",
+        "source": "examples/don-hang @ stage-1: DonHang.Infrastructure/ServiceCollectionExtensions.cs:14-16; DonHang.Api/Program.cs:18-19,52"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "\"It's common to use DI in a chained fashion. Each requested dependency in turn requests its own dependencies. The container resolves the dependencies in the graph and returns the fully resolved service.\" Execution (net10.0 scratch app, Svc(IOrderRepository) registered, IOrderRepository not): \"InvalidOperationException: Unable to resolve service for type 'IOrderRepository' while attempting to activate 'Svc'.\" — parameters are resolved before activation.",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/dependency-injection.md:201; scratch run with Microsoft.AspNetCore.App 10.0"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Execution: class OrderRepository : IOrderRepository present but not registered → `sp.GetService<IOrderRepository>() is not null` printed \"False\". Docs: \"To switch from MessageWriter to LoggingMessageWriter, simply update the call to AddSingleton to register this new IMessageWriter implementation\" — the implementation is chosen by the registration.",
+        "source": "refs/dotnet-docs/docs/core/extensions/dependency-injection/overview.md:68-72; scratch run net10.0"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "\"By default, ASP.NET Core doesn't register controllers as services in the DI container. The runtime uses the DefaultControllerActivator to create controller instances and resolves services from the DI container for constructor parameters, but the controller itself isn't resolved from the container.\" \"Calling AddControllersAsServices registers all controllers as services\". actions.md:17 \"Controllers are activated and disposed on a per request basis.\"",
+        "source": "refs/aspnetcore-docs/aspnetcore/mvc/controllers/dependency-injection.md (Controllers as services, moniker >= aspnetcore-8.0); mvc/controllers/actions.md:17"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "\"When using any of the available host or app-builder patterns, defaults are applied and services are registered by the framework\", list includes WebApplication.CreateBuilder; table row ILogger`1 | Singleton. Execution: WebApplication.CreateBuilder app with no logging registration → `GetService<ILogger<Svc>>() is not null` printed \"True\".",
+        "source": "refs/dotnet-docs/docs/core/extensions/dependency-injection/service-registration.md:15-34; scratch run net10.0"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "\"The DbContext itself and any dependencies in its constructor need to be registered as services ... achieved by having a constructor on the DbContext that takes an instance of DbContextOptions<TContext> ... and using the AddDbContext<TContext> method.\" / \"must expose a public constructor with a DbContextOptions<ApplicationDbContext> parameter. This is how context configuration from AddDbContext is passed to the DbContext.\" DonHangDbContext.cs:7 matches.",
+        "source": "refs/efcore-docs/entity-framework/core/cli/dbcontext-creation.md:25; dbcontext-configuration/index.md:61"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "OrderService.cs:12 `var order = new Order`; OrdersController.cs:58-63 `private static OrderDto ToDto(Order order) => new(...)`. Every Add* call at stage-1 (git grep): AddScoped<OrderService>, AddSingleton<JwtTokenService>, AddScoped<IOrderRepository, EfOrderRepository>, AddScoped<INotifier, LoggingNotifier>, AddDbContext<DonHangDbContext> — none for Order/OrderDto.",
+        "source": "examples/don-hang @ stage-1: OrderService.cs:12; OrdersController.cs:58-63; Program.cs:13-20; ServiceCollectionExtensions.cs:14-16"
+      },
+      {
+        "n": 10,
+        "verdict": "not-needed",
+        "evidence": "Argument that follows from claims 1 and 3 (the constructor chain the lesson lists); no external fact. The count in section 5 is now claim 12; \"only the constructor changes, plus one new registration for the new type\" follows from claim 4 (constructor read at build time) and claim 5.",
+        "source": "derived from claims 1, 3"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Execution, round 2 (net10.0 scratch app, WebApplication.CreateBuilder, builder.Services.AddScoped<Other>() after builder.Build()): printed \"InvalidOperationException: The service collection cannot be modified because it is read-only.\" Đơn Hàng's Program.cs:10 uses WebApplication.CreateBuilder. No doc sentence found in refs/ (grep 'read-only|cannot be modified' in aspnetcore fundamentals and dotnet DI docs).",
+        "source": "scratch run, Microsoft.AspNetCore.App 10.0; examples/don-hang @ stage-1: DonHang.Api/Program.cs:10"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "git show stage-1: OrdersController.cs:12 (OrderService, IOrderRepository); OrderService.cs:6 (IOrderRepository, INotifier); EfOrderRepository.cs:7 (DonHangDbContext); LoggingNotifier.cs:9 (ILogger<LoggingNotifier>); DonHangDbContext.cs:7 (DbContextOptions<DonHangDbContext>). Distinct objects with one shared repository: context, repository, logger, notifier, service, controller = 6; options and anything the logger needs add more, so \"at least\" holds.",
+        "source": "examples/don-hang @ stage-1"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "example",
+        "text": "Round 2 made section 5 say DonHangDbContext asks for its options and the container passes them in. The Try-it instruction says to continue until a class needs nothing else \"you know about\", so a reader following the lesson adds DonHangDbContext -> its options, but the expected result stops at DonHangDbContext. Not wrong, but the learner's correct answer does not match the key.",
+        "quote": "each `IOrderRepository` → `EfOrderRepository` → `DonHangDbContext`;",
+        "fix": "Change to: \"each `IOrderRepository` → `EfOrderRepository` → `DonHangDbContext` → its options;\"."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-25T22:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior reader)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "example",
+        "text": "The instruction says to stop at 'a class the container can build without asking for anything else', but the expected result ends at 'its options' (not a class name) and at `ILogger<LoggingNotifier>` (an interface; the lesson never says which class answers it). I would know I succeeded, but I briefly wondered whether I should go past the logger.",
+        "quote": "keep going until every branch ends at a class the container can build without asking for anything else you know about.",
+        "fix": "Replace 'ends at a class the container can build' with 'ends at something the lesson does not take further'."
+      },
+      {
+        "severity": "minor",
+        "section": 2,
+        "kind": "term",
+        "text": "`DonHangDbContext` is used from the situation onward, but no sentence says what kind of object it is. From section 5 ('which database to connect to', 'connection settings') I guessed it is the database-access object of the ORM, but I had to guess.",
+        "quote": "`EfOrderRepository` asks for a `DonHangDbContext`",
+        "fix": "At its first mention in section 5, add a few words saying what `DonHangDbContext` is (e.g. 'Đơn Hàng's ORM class for talking to the database')."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "diagram",
+        "text": "The diagram node says `ILogger` while the prose and code say `ILogger<LoggingNotifier>`. I assumed they are the same, but the mismatch made me look twice.",
+        "quote": "N --> L[ILogger]",
+        "fix": "Label the node `ILogger<LoggingNotifier>` (or add 'the logger (`ILogger<LoggingNotifier>`)' in the prose)."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

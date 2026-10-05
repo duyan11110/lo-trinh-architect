@@ -1,0 +1,123 @@
+{
+  "id": "devops.l1.dockerfile-for-dotnet",
+  "technical": {
+    "reviewed_at": "2026-09-26T17:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "`git -C examples/don-hang show stage-1:DonHang.Api/Dockerfile` lines 5-17 match the lesson's block character for character. Line 25 `COPY --from=build /app .` is the later use of the `AS build` name the prose mentions; line 19 is the second FROM.",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/Dockerfile:5-28"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "\"There are runtime images for production and SDK images for building your code\". Measured locally: mcr.microsoft.com/dotnet/sdk:10.0 = 917MB; the built donhang-api:stage-1 (aspnet:10.0 base + app) = 241MB.",
+        "source": "refs/dotnet-docs/docs/core/docker/introduction.md (.NET images); docker image ls"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Lesson now uses the R1 suggested_text. publish: \"publishes the resulting set of files to a directory\"; \"the hosting system may or may not have the .NET shared runtime installed\" (framework-dependent here, no --self-contained). restore: \"uses NuGet to look for these dependencies and download them\". -c Release: \"optimized for production deployment\". --no-restore: \"Doesn't execute an implicit restore\".",
+        "source": "refs/dotnet-docs/docs/core/tools/dotnet-publish.md:42; dotnet-restore.md; core/deploying/includes/cli-c-release.md"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "stage-1 global.json: {\"version\": \"10.0.300\", \"rollForward\": \"latestFeature\"}. global-json.md: rollForward is \"a directive to use a later version\"; latestFeature accepts later feature bands/patches. \"says which SDK versions the repository accepts\" matches (image SDK 10.0.401 is accepted).",
+        "source": "refs/dotnet-docs/docs/core/tools/global-json.md; examples/don-hang @ stage-1: global.json"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Lesson and claim now say step 1 \"is reused but not marked `CACHED`\". R3 run (docker 28.0.1, compose v2.33.1, stage-1 copy): `#6 [build  1/11] FROM mcr.microsoft.com/dotnet/sdk:10.0` DONE 0.0s; steps 2-11 `CACHED`. After a unique edit to Program.cs: steps 2-9 CACHED, `[build 10/11] COPY DonHang.Api/` DONE 0.1s, `[build 11/11] RUN dotnet publish` DONE 12.7s.",
+        "source": "docker build --progress=plain on a git-archive copy of examples/don-hang @ stage-1; scripts/up.sh"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Now covers the general rule. optimize.md: \"a layer is reused from the build cache if the instruction and the files it depends on hasn't changed since it was previously built.\" invalidation.md: \"Once the cache is invalidated, all subsequent Dockerfile commands generate new images and the cache isn't used.\" R1 run: csproj edit -> 2-5 CACHED, 6-11 DONE.",
+        "source": "refs/docker-docs/content/manuals/build/cache/optimize.md:9; invalidation.md:40"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Lesson now reads \"Given the same SDK version and source files as on your own machine, ... builds the same app, and the output runs outside a container too.\" dotnet-publish.md: output is \"ready for deployment to a hosting system\"; runtime condition stated in Core concepts. The condition is explicit; no contradiction with the next sentence.",
+        "source": "refs/dotnet-docs/docs/core/tools/dotnet-publish.md:42"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "\".NET images are regularly updated whenever a new .NET patch is published or when an operating system base image is updated.\" The lesson says only that builds using the same image use the same SDK, which holds; it no longer claims every machine gets the same SDK.",
+        "source": "refs/dotnet-docs/docs/core/docker/introduction.md:18"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "\"Docker already has all the layers from the first image, so it doesn't need to pull them again\". A machine with none of the layers must download all of them, so \"every new machine has to download all of it\" holds.",
+        "source": "refs/docker-docs/content/manuals/engine/storage/drivers/_index.md:219"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "cli-c-release.md: \"sets the build configuration to Release, which is optimized for production deployment.\" cli-configuration-publish-pack.md: \"The default build configuration is `Debug` for earlier versions\". Dockerfile line 19: `FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final`; it is the last stage, so compose builds it and prints its steps (R1 run built donhang-api:stage-1 on aspnet:10.0).",
+        "source": "refs/dotnet-docs/docs/core/deploying/includes/cli-c-release.md; core/tools/includes/cli-configuration-publish-pack.md; examples/don-hang @ stage-1: DonHang.Api/Dockerfile:19"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "R3 run, stage-1 copy: unique edit -> `[final 4/4] COPY --from=build /app .` DONE 0.1s (final 2/4, 3/4 CACHED). Revert -> all build 2-11 and final 2-4 CACHED. optimize.md: reused \"if the instruction and the files it depends on hasn't changed since it was previously built\" (any earlier build kept in cache, not only the last).",
+        "source": "docker build --progress=plain on a stage-1 copy; refs/docker-docs/content/manuals/build/cache/optimize.md:9"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "example",
+        "quote": "2 — steps up to `9/11`, `COPY DonHang.Infrastructure/ ...`, are `CACHED`",
+        "text": "Observed in R3: rebuilding with exactly the blank-line edit was all CACHED, because that variant had been built before and stays in the cache (the same reason the lesson gives for result 3). A learner who repeats the exercise will see this in step 2. Not wrong for a first run; advisory only.",
+        "fix": "Optional: append to result 3: \"For the same reason, if you repeat this exercise, step 2 may also show everything as `CACHED`.\" No claim change needed (claim 11 covers it)."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-26T18:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "term",
+        "quote": "\"The same base image should run the app in production as compiled it, since that avoids extra steps.\"",
+        "text": "Still open from R2, kept minor: \"production\" and \"base image\" are not in known_vocab or defined. The correction after the arrow uses only known words (SDK image, runtime, image size), and I can guess \"base image\" is the image in `FROM`, so the main idea is not blocked. Wording is fixed by the outline.",
+        "fix": "If the outline can be changed: reword to \"The image that compiled the app should also run it for real users, since that avoids extra steps.\" Otherwise leave as is."
+      },
+      {
+        "severity": "minor",
+        "section": "devops.l1.dockerfile-for-dotnet.q5",
+        "kind": "quiz",
+        "quote": "The same app, if the SDK version and source files match",
+        "text": "Still open from R2: the correct option repeats the key words of §4 (\"Given the same SDK version and source files\") and summary line 3, so it can be picked by word matching. The wrong options are clearly refuted by the text and I could answer from understanding, so minor.",
+        "fix": "Optional: reword as \"An ordinary .NET app, identical to a laptop build made with the same SDK from the same code\"."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "production",
+        "base image"
+      ],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

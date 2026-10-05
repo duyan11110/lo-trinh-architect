@@ -1,0 +1,266 @@
+{
+  "id": "backend.l1.efcore-mapping",
+  "technical": {
+    "reviewed_at": "2026-09-25T01:30:00+07:00",
+    "reviewer": "claude-opus-5[1m]",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "`git -C examples/don-hang show stage-1:DonHang.Infrastructure/DonHangDbContext.cs` lines 9-14: Customers, Products, Orders, OrderItems, Payments, Notifications, each expression-bodied over `Set<T>()`. Line 10 is exactly `public DbSet<Product> Products => Set<Product>();`, the string §5 quotes inline. Live `psql \\dt` on donhang-db lists exactly those six application tables (plus EF's own `__EFMigrationsHistory`, which has no DbSet and is the migrations lesson's subject). Tag stage-1 -> commit 4fca60a.",
+        "source": "examples/don-hang @ stage-1: DonHang.Infrastructure/DonHangDbContext.cs lines 9-14; live psql \\dt"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "refs/efcore-docs/entity-framework/core/index.md line 22: \"With EF Core, data access is performed using a model. A model is made up of entity classes and a context object that represents a session with the database. The context object allows querying and saving data.\" Line 34: \"Instances of your entity classes are retrieved from the database using Language Integrated Query (LINQ).\" Supports §3's `DbContext` bullet (\"asking it for data returns C# objects, not the rows a query hands back\").",
+        "source": "refs/efcore-docs/entity-framework/core/index.md (\"The model\", \"Querying\")"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Verbatim, refs/efcore-docs/entity-framework/core/modeling/entity-properties.md line 30 (\"Column names\"): \"By convention, when using a relational database, entity properties are mapped to table columns having the same name as the property.\" Followed by \"If you prefer to configure your columns with different names...\" with Data Annotations and Fluent API tabs. The negative form in section 4 also holds: core/extensions/index.md line 154 lists snake_case naming as a third-party plugin, and grep of what-is-new/ef-core-10.0/ for \"naming convention\"/\"snake\" returns nothing.",
+        "source": "refs/efcore-docs .../modeling/entity-properties.md line 30; core/extensions/index.md line 154; what-is-new/ef-core-10.0/"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "`git show stage-1:DonHang.Domain/Entities.cs` lines 17-22 are character-for-character the lesson's first code block (`public sealed class Product` + `Id`, `required string Name`, `PriceVnd`). Exactly three properties, no attributes, no base class; the file opens with `namespace DonHang.Domain;` and has no using of Microsoft.EntityFrameworkCore — nothing in the class refers to a database. §5's \"Three properties, no attributes, no base class\" is true of this code.",
+        "source": "examples/don-hang @ stage-1: DonHang.Domain/Entities.cs lines 17-22"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "DonHangDbContext.cs lines 30-36 match the lesson's second block character-for-character, 8-space indentation included: `modelBuilder.Entity<Product>(e => { e.ToTable(\"products\"); e.Property(p => p.Id).HasColumnName(\"id\"); e.Property(p => p.Name).HasColumnName(\"name\"); e.Property(p => p.PriceVnd).HasColumnName(\"price_vnd\"); });`. Documented shape: refs/efcore-docs samples/core/Modeling/EntityProperties/FluentAPI/ColumnName.cs, and modeling/entity-types.md line 50 for the table-name convention `ToTable` overrides.",
+        "source": "examples/don-hang @ stage-1: DonHangDbContext.cs lines 30-36; refs/efcore-docs samples/.../FluentAPI/ColumnName.cs"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Live this session against the running stage-1 lab (donhang-api:stage-1, donhang-db postgres:17.6-alpine): `curl -s http://localhost:8080/api/v1/products/1` -> `{\"id\":1,\"name\":\"Bàn phím cơ\",\"priceVnd\":1250000}`, byte-identical to §7's expected result. `docker exec donhang-db psql -U donhang -d donhang -c '\\d products'` -> columns `id`, `name`, `price_vnd`. C# property is `PriceVnd` (Entities.cs line 21). Route `api/v1/products` + `{id:int}` matches ProductsController's attributes.",
+        "source": "live run: curl http://localhost:8080/api/v1/products/1; psql \\d products"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Live: `docker exec donhang-db psql -U donhang -d donhang -c 'select \"PriceVnd\" from products limit 1'` -> `ERROR:  column \"PriceVnd\" does not exist` + `HINT:  Perhaps you meant to reference the column \"products.price_vnd\".` An error at query time, not a silent null/0. The same check on `\"Id\"` -> `ERROR:  column \"Id\" does not exist`, which is what makes §5's \"required for all three properties\" true here. §5's wording is now non-literal (\"an error saying the column `PriceVnd` does not exist\"), so it is not tied to one exact message.",
+        "source": "live run: psql against donhang-db (stage-1 lab)"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Verbatim, refs/efcore-docs/entity-framework/core/querying/how-query-works.md line 34: \"When you call LINQ operators, you're simply building up an in-memory representation of the query. The query is only sent to the database when the results are consumed.\" Supports §6's \"a `DbSet<Product>` is a standing question you can ask about a table, holding nothing until it is asked\". Note it covers LINQ, not `FindAsync` — claim 11 covers that.",
+        "source": "refs/efcore-docs/entity-framework/core/querying/how-query-works.md (\"The life of a query\")"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "refs/aspnetcore-docs/aspnetcore/web-api/advanced/formatting.md line 322: \"Features for the `System.Text.Json` based formatters can be configured using JsonOptions.JsonSerializerOptions. The default formatting is camelCase.\" Line 122/554 repeat it (\"instead of the default camelCase formatting\"). stage-1 Program.cs registers `builder.Services.AddControllers();` with no `AddJsonOptions` override, and the live response field is `priceVnd` (claim 6), so the default is what §7 sees.",
+        "source": "refs/aspnetcore-docs/aspnetcore/web-api/advanced/formatting.md; examples/don-hang @ stage-1: DonHang.Api/Program.cs line 13"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "refs/efcore-docs/entity-framework/core/modeling/index.md: \"You can override the `OnModelCreating` method in your derived context and use the fluent API to configure your model… Fluent API configuration has the highest precedence and will override conventions and data annotations.\" Same page: the model is customized by \"calls to the ModelBuilder methods (also known as fluent API) in DbContext.OnModelCreating\". Repo matches: `protected override void OnModelCreating(ModelBuilder modelBuilder)` (DonHangDbContext.cs line 17).",
+        "source": "refs/efcore-docs/entity-framework/core/modeling/index.md (\"Use fluent API to configure a model\")"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Verbatim, refs/efcore-docs/entity-framework/core/change-tracking/entity-entries.md line 315: \"Find first checks if the entity is already tracked, and if so returns the entity immediately. A database query is only made if the entity is not tracked locally.\" §6's sentence stays true for `Get(int id)`: `AddDbContext` registers the context scoped (dbcontext-configuration/index.md line 419), so each request gets a fresh, empty context and the single `FindAsync(id)` always reaches PostgreSQL.",
+        "source": "refs/efcore-docs .../change-tracking/entity-entries.md line 315; .../dbcontext-configuration/index.md line 419"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "`git show stage-1:DonHang.Infrastructure/ServiceCollectionExtensions.cs` line 14: `services.AddDbContext<DonHangDbContext>(options => options.UseNpgsql(connectionString));`, called from Program.cs line 18 via `AddDonHangInfrastructure`. ProductsController's primary constructor is `ProductsController(DonHangDbContext db)`. refs/efcore-docs .../dbcontext-configuration/index.md line 59: AddDbContext \"registers `ApplicationDbContext`… as a scoped service in the ASP.NET Core app service provider\" — one instance per request, as §5 says.",
+        "source": "examples/don-hang @ stage-1: ServiceCollectionExtensions.cs line 14, Program.cs line 18, ProductsController.cs line 10"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "`git show stage-1:DonHang.Api/Controllers/ProductsController.cs` lines 22-28: `[HttpGet(\"{id:int}\")] public async Task<ActionResult<ProductDto>> Get(int id) { var product = await db.Products.FindAsync(id); if (product is null) return NotFound(); return Ok(new ProductDto(product.Id, product.Name, product.PriceVnd)); }`. `Dtos.cs` line 5: `public sealed record ProductDto(int Id, string Name, int PriceVnd);`. §7's \"`ProductsController` reads `product.PriceVnd` into a `ProductDto`\" and quiz q4's ordering step are both true of this code.",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/Controllers/ProductsController.cs lines 22-28; DonHang.Api/Dtos.cs line 5"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "Claim added after this same round-3 pass, using this reviewer's own already-gathered evidence (issue #1 of this review): the `Entity<TEntity>(Action<EntityTypeBuilder<TEntity>>)` overload passes an `EntityTypeBuilder<Product>` as the lambda's own parameter, `e`; every call inside the block (`ToTable`, `Property`) is a method on that `e`, confirmed against `DonHangDbContext.cs` lines 30-36.",
+        "source": "EF Core docs, entity-framework/core/modeling/index.md; examples/don-hang/DonHang.Infrastructure/DonHangDbContext.cs at tag stage-1, lines 30-36"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "`Entity<Product>(e => ...)` passes the builder into the block; it does not return it. The overload is `ModelBuilder.Entity<TEntity>(Action<EntityTypeBuilder<TEntity>>)`, whose own return value is the `ModelBuilder`, so \"hands back `e`\" reads as if `e` came back to the caller. The sentence is new since the last technical round and has no entry in `.meta.json` (claim 10 covers `OnModelCreating` and `modelBuilder` only), though its substance checks out: what-is-new/ef-core-10.0/whatsnew.md line 179 uses `modelBuilder.Entity<Blog>(b => ...)`. A ledger gap plus one misleading word.",
+        "quote": "opens the description of `Product` specifically, and hands back `e`, the thing every line inside the block calls `ToTable` and `Property` on",
+        "fix": "Write \"…opens the description of `Product` specifically and hands the block an `e`, the thing every line inside it calls `ToTable` and `Property` on\". Add one claim (kind `fact`, version_key `efcore`, section 5) for the `Entity<T>(e => …)` form, sourced to refs/efcore-docs/entity-framework/core/what-is-new/ef-core-10.0/whatsnew.md line 179."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "`get-and-status-codes` is not the previous lesson. content/tracks/backend/track.yaml orders module `rest-api` as rest-resources -> dtos-and-serialization -> get-and-status-codes -> creating-a-resource -> rest-for-writes, and `orm-efcore` starts after it; the lesson immediately before this one is `backend.l1.rest-for-writes`, three lessons later than the one being pointed at. A reader who goes back one lesson lands on the wrong page.",
+        "quote": "`Products => Set<Product>()` is what `Get(int id)`, from the last lesson, reaches through",
+        "fix": "Replace \"from the last lesson\" with \"from `get-and-status-codes`\" — the name Before you start and Connections already use — or drop the aside."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "version",
+        "text": "\"Case counts as a difference\" is true here because of PostgreSQL, not because of anything EF Core checks. EF Core never compares names against the database: it puts the configured (or default) name into the SQL, Npgsql quotes identifiers, and PostgreSQL treats `\"Id\"` and `id` as different columns. Verified live: `select \"Id\" from products` -> `ERROR:  column \"Id\" does not exist`. On a case-insensitive database the same three properties would map without `HasColumnName`, so the rule as stated is broader than the pinned stack supports.",
+        "quote": "Case counts as a difference, the same way `PriceVnd` and `price_vnd` do",
+        "fix": "Tie it to this database: \"Against this PostgreSQL database, case counts as a difference, the same way `PriceVnd` and `price_vnd` do…\". Optionally extend claim 7 with the second live check (`select \"Id\" from products` -> `column \"Id\" does not exist`)."
+      },
+      {
+        "severity": "minor",
+        "section": "backend.l1.efcore-mapping.q2",
+        "kind": "quiz",
+        "text": "The key (c) is the right answer, but its reason names a step that does not exist: nothing compares the two names. EF Core uses the property's own spelling as the column name (modeling/entity-properties.md line 30: \"entity properties are mapped to table columns having the same name as the property\") and PostgreSQL is what reports the missing column. A reader who takes \"compared as plain strings\" literally will look for a comparison EF Core never performs. Options a, b and d remain correctly wrong.",
+        "quote": "False, because the two names are compared as plain strings, so the mapping has to name `price_vnd` itself.",
+        "fix": "Reword option c (en and vi): \"False — EF Core uses the property's own spelling as the column name, so the mapping has to name `price_vnd` itself.\" Key stays `c`."
+      },
+      {
+        "severity": "minor",
+        "section": "backend.l1.efcore-mapping.q5",
+        "kind": "quiz",
+        "text": "The key (a) is right, but its second branch does not happen on this stack. With `stock_count` unmapped, EF Core puts `StockCount` into the SQL and PostgreSQL fails the query — reproduced live for the identical shape: `select \"PriceVnd\" from products` -> `ERROR:  column \"PriceVnd\" does not exist`. There is no path where the query succeeds and the property is merely left without a real value; that outcome is what option c (wrongly) describes.",
+        "quote": "the query fails or the property never gets a real value",
+        "fix": "Trim option a (en and vi) to \"EF Core looks for a column named `StockCount`, which doesn't exist — the query fails\". Key stays `a`; explanations need no change."
+      },
+      {
+        "severity": "minor",
+        "section": "backend.l1.efcore-mapping.q6",
+        "kind": "quiz",
+        "text": "Option d is not false as a statement — a name ending in `Row` would indeed document the mapping wherever the class is used — it is wrong only as an answer to \"what should the reviewer point out\", and its own explanation concedes the content (\"This would hold when the rename's only cost was picking a new name\"). A reader who judges options on truth rather than on the stem can defend d against the key. Options b and c are correctly wrong (c is contradicted by modeling/entity-types.md line 50 and by `ToTable(\"products\")`).",
+        "quote": "That a name ending in `Row` documents the mapping at every place the class is used",
+        "fix": "Make d false on its own terms, e.g. \"That a name ending in `Row` is what lets EF Core find the `products` table\" (en and vi) — the lesson contradicts that directly with `ToTable(\"products\")`. Key stays `a`."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-24T22:10:00+07:00",
+    "reviewer": "junior-sim/claude-opus-5[1m] (round 3)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "style",
+        "text": "Two sentences earlier I was told `HasColumnName` is required for all three properties, \"none of the three is relying on a name matching by accident\". Then \"it breaks without it\" is said about `PriceVnd` alone, and I first read it as: only this one breaks. Both \"it\"s are also unclear — the first is the query, the second is the `HasColumnName` call, and I had to work that out.",
+        "quote": "`PriceVnd` is just the one where the two spellings look least alike; it breaks without it: left unconfigured, EF Core would ask PostgreSQL for a column literally named `PriceVnd`",
+        "fix": "Replace \"it breaks without it:\" with \"and its break is the easiest to see — left unconfigured, EF Core would ask PostgreSQL for a column literally named `PriceVnd`…\", so the sentence stays about visibility, not about being the only one that fails."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "length",
+        "text": "The paragraph under the `OnModelCreating` block is three sentences, two of them about 55 words each, with a colon, a semicolon and two em-dash asides inside them. I had to re-read the second one twice to find its actual claim (all three properties need `HasColumnName`) under the `Id`/`id`, `Name`/`name` examples.",
+        "quote": "Against this PostgreSQL database, case counts as a difference, the same way `PriceVnd` and `price_vnd` do: `Id` is not the same string as `id`, and neither is `Name` against `name`, so `HasColumnName` is required for all three properties",
+        "fix": "Split it: \"Against this PostgreSQL database, case counts as a difference, the same way `PriceVnd` and `price_vnd` do: `Id` is not the same string as `id`, nor `Name` the same as `name`. So `HasColumnName` is required for all three properties — none of them is relying on a name matching by accident.\""
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "code",
+        "text": "\"every line calls `ToTable` and `Property` on\" reads as if each line inside the block calls both. In the block, one line calls `ToTable` and three call `Property`; no line calls both. The trailing \"one call per property\" then does not match the `ToTable` line either, so I stopped to check whether I was looking at the right block.",
+        "quote": "gives the code inside the block a parameter, `e`, that every line calls `ToTable` and `Property` on — one call per property",
+        "fix": "Replace with \"gives the code inside the block a parameter, `e`: the first line calls `ToTable` on it to name the table, and each line after it calls `Property`, one per property\"."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "code",
+        "text": "The prose explains `e`, but every `Property` line also contains `p => p.Id`, and nothing says what `p` is or how that names a property. I know lambda syntax, so I can read it as a function, but I cannot tell what a function returning `p.Id` has to do with configuring a column — I guessed it names which property the call is about.",
+        "quote": "e.Property(p => p.Id).HasColumnName(\"id\");",
+        "fix": "In the sentence after the block, add one clause: \"each `Property(p => p.Id)` names which property of `Product` that line configures\", before \"says which column that one property reads and writes\"."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "text": "\"That means\" makes the second sentence sound like it follows from the first, but defining what a schema is does not tell me the mapping never invents one. The real reason arrives only in the next sentence (\"the table came first\"), and that is simply stated about Đơn Hàng, so on first read I looked back for an argument I had missed.",
+        "quote": "A schema is the tables and columns the database already has. That means the mapping does not invent a schema; it is written against one that already exists.",
+        "fix": "Replace \"That means the mapping\" with \"In Đơn Hàng the tables were created before this C# code, so the mapping\" — then the reason is in the sentence that makes the claim."
+      },
+      {
+        "severity": "minor",
+        "section": 0,
+        "kind": "style",
+        "text": "I read the title as \"classes map to tables, not tables to classes\", which then seemed to clash with the diagram's second arrow (rows becoming `Product` objects) and with section 4 saying `Product` describes a row that already exists. The intended meaning — the database is not generated from the class — only became clear at summary line 5.",
+        "quote": "A DbContext maps classes to tables, not the other way around",
+        "fix": "In section 4's third paragraph, after \"the table came first\", add: \"— that is what the title means: the class is written to fit the table, and the table is never generated from the class.\""
+      },
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "example",
+        "text": "Core concepts told me `db.Products` stands for the whole table, so \"turns `db.Products` into a real row\" sounds like the `DbSet` itself becomes a row. The bullet's own last sentence says it better (holds nothing until asked), so the middle sentence is the one that made me stop.",
+        "quote": "`Get(int id)`'s `FindAsync(id)` call is what turns `db.Products` into a real row read from PostgreSQL",
+        "fix": "Replace \"turns `db.Products` into a real row read from PostgreSQL\" with \"makes EF Core actually read one row from PostgreSQL and hand back a `Product` built from it\"."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "gap",
+        "text": "I am told ASP.NET Core hands `db` to `ProductsController`, but not how or where that is set up, and nothing says whether I should be able to find it. It does not block the mapping idea — I can accept `db` as given — but I paused to check whether I had forgotten something from an earlier lesson.",
+        "quote": "`db` being a `DonHangDbContext` that ASP.NET Core hands to `ProductsController` when the request is served",
+        "fix": "Add \"(how that handing-over is wired up is not this lesson's subject)\" after \"when the request is served\", so I know I am not missing anything."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz q1",
+        "kind": "quiz",
+        "text": "Option a is clearly the longest of the four (about 94 characters against 55-70 for the rest) and the only one with a qualifying clause. I picked it before checking it against Core concepts, so the question does not really test whether I understood `DbSet<T>`.",
+        "quote": "The `products` table as a whole, which only produces `Product` objects once something queries it",
+        "fix": "Shorten option a to roughly the others' length, e.g. \"The `products` table as a whole, holding no `Product` objects until something queries it\"."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz q2",
+        "kind": "quiz",
+        "text": "Option b turns on \"the PostgreSQL driver EF Core talks to\", and \"driver\" is a word this lesson never uses. The lesson only rules out the framework doing the translation, so to reject b I had to assume a driver counts as part of the same thing. I got there, but by assumption rather than from the text.",
+        "quote": "True, because the PostgreSQL driver EF Core talks to converts snake_case column names to PascalCase before EF Core sees them.",
+        "fix": "In option b (en and vi), replace \"the PostgreSQL driver EF Core talks to converts\" with \"PostgreSQL itself converts\" — a name the lesson does use."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz q5",
+        "kind": "quiz",
+        "text": "After picking a, I read explanation c to check myself and came away less sure: \"a mapping problem EF Core has to resolve one way or another\" does not tell me what actually happens, and \"one way or another\" sounds like there might be a path where the query still runs — which is what option c claimed.",
+        "quote": "an unconfigured property with no matching column is a mapping problem EF Core has to resolve one way or another, not a value it quietly defaults to `0`",
+        "fix": "Replace that clause (en and vi) with \"EF Core still asks PostgreSQL for a `StockCount` column, and PostgreSQL answers with an error — the query fails instead of leaving `StockCount` at `0`\"."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz q6",
+        "kind": "quiz",
+        "text": "Options c and d say nearly the same thing (a suffix on the class name drives the table mapping) and their explanations are almost word for word identical. That leaves a real choice between only a and b, and a is again the longest option by a wide margin, so I could shortlist it without using the lesson.",
+        "quote": "That a name ending in `Row` is what tells EF Core which table the class maps to",
+        "fix": "Replace option d (en and vi) with a different wrong idea, e.g. \"That renaming the class to `ProductRow` would also rename the `products` table, since the table follows the class name\" — the lesson contradicts it with `ToTable(\"products\")`."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "driver (quiz q2 option b; the lesson never uses the word)",
+        "default convention (quiz q2/q5 explanations; the lesson only ever says \"by default\")"
+      ],
+      "skipped_steps": [
+        "Section 5: \"it breaks without it\" after being told all three properties need `HasColumnName` — reads as if only `PriceVnd` fails",
+        "Section 5: `p => p.Id` inside `e.Property(...)` is never explained, though `e` is",
+        "Section 4: \"A schema is … That means the mapping does not invent a schema\" — the conclusion does not follow from the definition",
+        "Section 5: ASP.NET Core \"hands\" `db` to `ProductsController` — no indication whether I should know how"
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

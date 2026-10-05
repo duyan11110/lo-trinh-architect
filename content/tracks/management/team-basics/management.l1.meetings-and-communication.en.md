@@ -1,0 +1,127 @@
+---
+id: management.l1.meetings-and-communication
+lang: en
+track: management
+level: 1
+stage: 0
+module: team-basics
+main_path: true
+title: "Useful meetings and written communication"
+duration_min: 10
+skills: [management.process.meetings]
+prereqs: [management.l1.scrum-from-junior-seat]
+related: [foundation.l2.asking-good-questions]
+vocab: []
+example_tag: stage-0
+versions_used: []
+content_version: 1
+status: approved
+approved_by: auto
+reviewed_at: "2026-09-28T13:00:00+07:00"
+---
+
+## Before you start
+
+- [[management.l1.scrum-from-junior-seat]] — the meetings a sprint already contains, and why the sentence naming what blocks you is the one worth saying out loud.
+
+## The situation
+
+A week into the sprint you pick up the work that makes a `paid` order impossible to cancel — orders in Đơn Hàng carry one named state each, `paid` and `shipped` among them. You were not in the meeting that decided this one. One teammate remembers the payment gateway, the outside service the payment goes through; another, something about refunds; neither is sure. Then somebody points you at `docs/team/meeting-notes-example.md`, kept in Đơn Hàng at `stage-0`, the version this course starts from: one page that settles what the meeting spent twenty minutes on. The meeting is gone; the page is not. What has to be on a page for it to outlive its meeting?
+
+## Core concepts
+
+- the purpose — the one question a meeting exists to answer, fixed before anyone is invited; without it, nothing tells the meeting what finishing means, only the time box tells it when to stop.
+- the output — what the meeting leaves behind: a decision, or actions with a name and a deadline against each.
+- the note — the page that carries the decision, its reason, the actions and what is still open.
+- the reason — why the decision went this way and not the other; the part a later reader cannot reconstruct, and the part that stops the team deciding it twice.
+- a status update — three lines saying where the work stands, what blocks it and what comes next, so nobody calls a meeting to find out.
+- a disagreement — an argument about the work, carrying a reason, made while the question is open and dropped once it is decided.
+
+## How it works
+
+```mermaid
+flowchart LR
+  Q["A question you cannot answer alone"] --> D{"Does it need people talking, now?"}
+  D -->|no| W["Write it: chat, the story, pull request description"]
+  D -->|yes| M["Meeting: purpose, the people who decide, a time box"]
+  M --> O["Output: the decision and its reason"]
+  O --> N["Note: decision, reason, actions with names, open questions"]
+  W --> N
+  N --> R["The next person, reading weeks later"]
+```
+
+In the situation above, the question is whether a `paid` order can be cancelled from the application. Nobody answers it alone: the product owner, the two developers and the tester each hold a piece — the meeting branch of the diagram.
+
+Most questions are not like that, which is what the other branch says. A question with one obvious owner costs less in writing — in chat, on the story, or in the pull request description — because the person you asked answers when they next look at their messages, and the answer stays where the next person looks. A meeting costs everyone in the room at once — four people for twenty minutes is over an hour of the team — and is worth paying when talking is what unlocks the answer.
+
+Whichever branch you take, both end at the same note box: the write branch goes straight there, because the written message or the story is itself the note, and the meeting branch through its output. A meeting has left nothing behind until its output is written down somewhere the next person looks. A decision nobody wrote down is one the team can end up making again, differently, later. The note holds four things: what was decided, why, who does what next, and what is still open. The reason is the part a later reader cannot reconstruct: without it, a new reader has to reopen the argument to get it back.
+
+The next person is you, and what reaches you is the file, not the conversation. The write branch also runs before anyone asks: a status update answers what a teammate would otherwise ask you — where your work stands, what blocks it.
+
+## In the Đơn Hàng system
+
+The note is written for the team, in Vietnamese, on one page; everything described next sits above the lines quoted below. Three lines stand under the title, before the first section heading. `Mục đích` names what the meeting has to decide: whether a `paid` order may be cancelled. `Người dự` lists the four people there. `Thời lượng` says twenty minutes.
+
+Under `Quyết định` come two sentences: a `paid` order cannot be cancelled from the application, and the customer has to ask for a refund. Under `Lý do` comes why: a refund has to be matched against what the payment gateway recorded; the team has not built that part; and cancelling without refunding would leave an order cancelled after the money was taken, a state nobody can handle. That last clause is what makes the reason usable later: it names the state the team refused to create.
+
+`Lý do` records a reason, not a preference. That is also the form a disagreement should take while a question is open: about the work, with something behind it. Once the decision is written, act on it; reopening it needs something new, not the old argument.
+
+Under `Việc phải làm` the decision turns into work; `API hủy` is the note's name for the cancel-order piece the team still has to change.
+
+```markdown file=docs/team/meeting-notes-example.md tag=stage-0 lines=19-23
+| Việc | Ai | Khi nào |
+|---|---|---|
+| Thêm điều kiện trạng thái vào API hủy | Dev 1 | Trong sprint này |
+| Ẩn nút "Hủy đơn" với đơn `paid` | Dev 2 | Trong sprint này |
+| Viết story cho luồng hoàn tiền | PO | Trước sprint sau |
+```
+
+Each row carries a `Việc`, an `Ai` and a `Khi nào` — a piece of work, a person, a deadline. Two go to developers inside this sprint, the refund story to the product owner before the next sprint. No row says the team will look into it: every row is a piece of work someone can finish. The heading after the table, `Câu chưa trả lời`, holds what the meeting did not settle — what a `shipped` order the customer refuses counts as — and who will go and ask. Writing the open question down costs a line; a question nobody wrote down has to be asked again, often in another meeting.
+
+Then the file shows the other half.
+
+```markdown file=docs/team/meeting-notes-example.md tag=stage-0 lines=33-38
+> Đang làm: API hủy đơn, xong phần kiểm tra trạng thái.
+> Vướng: chưa rõ đơn `shipped` bị từ chối nhận thì xử lý thế nào — đã hỏi PO.
+> Tiếp theo: viết test cho trường hợp hủy hai lần, xong trong hôm nay.
+
+Ba dòng này thay được một cuộc họp. Nêu vấn đề sớm kèm phương án, đừng nêu muộn
+kèm lời xin lỗi.
+```
+
+These three lines are a status update, and each does one job: what is being worked on, what blocks it and who has been asked, what comes next and by when. The file says they can stand in for a meeting, and the middle line makes that true, because it is the one somebody else usually has to clear. The two lines after them give the rule for problems: raise them early with an option, not late with an apology. Early, the refused `shipped` order is a question, and the answer can still change what the team builds this sprint; at the end, it is work that did not get finished in the sprint.
+
+## Beginners often think…
+
+- **"Juniors should stay quiet in meetings until asked."** → Actually a new person asking what was just decided and what they do next costs almost nothing: the answer has to exist anyway, and others in the room are often unsure too. You notice this when a meeting ends and four people leave with three different understandings.
+- **"If I mention a problem, I will be blamed for it."** → Actually a problem raised while there is still time is a question the team answers; raised at the end, it is a promise the team broke, which is the one that gets discussed. You notice this when a blocked line is answered the same morning and the blocker nobody wrote down stops the work for days.
+- **"We talked it through, so the meeting was useful."** → Actually a meeting with no decision and no note leaves nothing for anyone who was not in the room. You notice this when the same question comes back weeks later and nobody can say what was concluded or why.
+
+## Try it (3 minutes)
+
+1. Take the open question at the end of the note: does a `shipped` order the customer refuses count as cancelled? Write the message, in five lines or fewer, that sends it to one person instead of to a meeting. Name what you want decided — which state the refused order gets — not the area it is about, and say what you do if no answer comes today.
+2. Write your own three lines in the shape of the file's status update — doing, blocked, next — for whatever you are working on now. Cross out any line nobody else could act on.
+
+Expected result: your message names a decision rather than a topic, fits in five lines and ends with what you will do if no answer comes today; of the three lines, the blocked one survives the crossing out, often as the only one.
+
+<details><summary>Suggested answer</summary>
+
+A message that works: "For the refused `shipped` order, does it become `cancelled` or a new state? Reusing `cancelled` loses the difference between a customer who cancelled and one who refused delivery. If I hear nothing today I will leave the case out and write a story for it."
+
+The first line survives when it hands something over, the third when somebody waits on the date, and the middle one nearly always.
+
+</details>
+
+## Connections
+
+- [[foundation.l2.asking-good-questions]] — this lesson says put it in writing; that one says what to put in it so the answer comes back the first time.
+- [[management.l1.scrum-from-junior-seat]] — the meetings a sprint already contains; this lesson covers the questions that fall between them.
+- [[management.l1.code-review-basics]] — the same rule pointed at a change: a pull request description is the meeting note written in advance.
+
+## Five-line summary
+
+1. A meeting needs a purpose, an output and somebody writing it down; without them it is a conversation that leaves nothing behind.
+2. Write the decision, its reason, the actions with names, and what is still open; the reason is what a later reader cannot reconstruct.
+3. What is written outlives the meeting and reaches the next person instead of you being asked again; write it for them.
+4. A status update is three lines — doing, blocked, next — and the blocked line is usually the one that earns it.
+5. Raise a problem early with an option; disagree about the work with a reason, and once the decision is written, act on it.

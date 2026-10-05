@@ -1,0 +1,149 @@
+{
+  "id": "backend.l2.no-tracking-queries",
+  "technical": {
+    "reviewed_at": "2026-09-28T23:55:00+07:00",
+    "reviewer": "claude-opus-5-5 (prompt 04, round 1)",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Tracking queries: \"By default, queries that return entity types are tracking.\" Run: after FindAsync(5), ChangeTracker.Entries().Count() = 2 (order + item), entry state Unchanged. DonHangDbContext/AddDbContext at stage-2 set no QueryTrackingBehavior (git grep).",
+        "source": "refs/efcore-docs/entity-framework/core/querying/tracking.md; scratchpad ntq_r1: DonHangDbContext+EfOrderRepository from stage-2, Npgsql.EntityFrameworkCore.PostgreSQL 10.0.3, interceptors capture commands, no DB"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "change-detection: \"By default, EF Core creates a snapshot of every entity's property values when it is first tracked by a DbContext instance. The values stored in this snapshot are then compared against the current values...\" efficient-querying: \"Before handing a loaded instance to the application, EF *snapshots* that instance... When SaveChanges is called, the application's instance is compared with the snapshot\".",
+        "source": "refs/efcore-docs/entity-framework/core/change-tracking/change-detection.md; refs/efcore-docs/entity-framework/core/performance/efficient-querying.md"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "change-tracking/index 'Tracking from queries': \"Updates are limited to only those values that have actually changed.\" Run: tracked FindAsync(5), order.Cancel(), SaveChangesAsync sent exactly: UPDATE orders SET status = @p0 WHERE id = @p1 AND xmin = @p2 RETURNING xmin; (only status set).",
+        "source": "refs/efcore-docs/entity-framework/core/change-tracking/index.md; scratchpad ntq_r1: DonHangDbContext+EfOrderRepository from stage-2, Npgsql.EntityFrameworkCore.PostgreSQL 10.0.3, interceptors capture commands, no DB"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "efficient-querying 'Tracking, no-tracking and identity resolution': \"Before handing a loaded instance to the application, EF *snapshots* that instance and keeps the snapshot internally... The snapshot takes up more memory, and the snapshotting process itself takes time\". Snapshot is taken at load, so independent of a later SaveChanges.",
+        "source": "refs/efcore-docs/entity-framework/core/performance/efficient-querying.md"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "tracking.md: \"No-tracking queries are useful when the results are used in a read-only scenario. They're generally quicker to execute because there's no need to set up the change tracking information.\" / \"No-tracking queries: Don't use the change tracker\". efficient-querying: \"In read-only scenarios where changes aren't saved back to the database, the above overheads can be avoided by using no-tracking queries.\"",
+        "source": "refs/efcore-docs/entity-framework/core/querying/tracking.md; refs/efcore-docs/entity-framework/core/performance/efficient-querying.md"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Run: CommandText captured from real FindAsync(1) and FindForReadingAsync(1) (FirstOrDefaultAsync executed, reader suppressed). Both: SELECT o1.id, ..., o1.xmin, o0.order_id, ... FROM (SELECT ... FROM orders AS o WHERE o.id = @id LIMIT 1) AS o1 LEFT JOIN order_items AS o0 ON o1.id = o0.order_id ORDER BY o1.id, o0.order_id. String comparison a == b: True.",
+        "source": "scratchpad ntq_r1: DonHangDbContext+EfOrderRepository from stage-2, Npgsql.EntityFrameworkCore.PostgreSQL 10.0.3, interceptors capture commands, no DB"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "change-tracking/index: \"`Detached` entities are not being tracked by the DbContext\"; state table: Detached, tracked No, SaveChanges action '-'. Run: after FindForReadingAsync(5) Entries().Count() = 0, Entry(o).State = Detached; o.Cancel(); SaveChangesAsync returned normally with 0 commands sent.",
+        "source": "refs/efcore-docs/entity-framework/core/change-tracking/index.md; scratchpad ntq_r1: DonHangDbContext+EfOrderRepository from stage-2, Npgsql.EntityFrameworkCore.PostgreSQL 10.0.3, interceptors capture commands, no DB"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "git show stage-2:DonHang.Infrastructure/EfOrderRepository.cs lines 11-16: FindAsync => db.Orders.Include(o => o.Items).FirstOrDefaultAsync(o => o.Id == id); FindForReadingAsync => db.Orders.AsNoTracking().Include(o => o.Items).FirstOrDefaultAsync(o => o.Id == id). db is the DonHangDbContext constructor parameter.",
+        "source": "examples/don-hang@stage-2 DonHang.Infrastructure/EfOrderRepository.cs"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "git show stage-2:DonHang.Domain/OrderService.cs: CancelOrderAsync/ShipOrderAsync: var order = await repository.FindAsync(orderId) ?? throw...; order.Cancel()/order.Ship(); notifier.Send(...); await repository.SaveChangesAsync(). EfOrderRepository.SaveChangesAsync => db.SaveChangesAsync().",
+        "source": "examples/don-hang@stage-2 DonHang.Domain/OrderService.cs"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "git show stage-2:DonHang.Api/Controllers/OrdersController.cs: Get (l.59) repository.FindForReadingAsync(id); Cancel (l.76-82) FindForReadingAsync(id), AuthorizeAsync(User, existing, \"OrderOwner\"), then orderService.CancelOrderAsync(id); Ship (l.95) only orderService.ShipOrderAsync(id).",
+        "source": "examples/don-hang@stage-2 DonHang.Api/Controllers/OrdersController.cs"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Run on the untracked copy: o.Cancel(); SaveChangesAsync sent 0 commands and returned normally, while in-memory o.Status = \"cancelled\" (what ToDto would put in a 200 response). Same basis as claim 7 (Detached entities are not tracked).",
+        "source": "scratchpad ntq_r1: DonHangDbContext+EfOrderRepository from stage-2, Npgsql.EntityFrameworkCore.PostgreSQL 10.0.3, interceptors capture commands, no DB; refs/efcore-docs/entity-framework/core/change-tracking/index.md"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Conditioned recommendation, supported by tracking.md: \"If the entities retrieved from the database don't need to be updated, then a no-tracking query should be used.\" and \"A tracking query means any changes to entity instances are persisted by SaveChanges.\"",
+        "source": "refs/efcore-docs/entity-framework/core/querying/tracking.md"
+      },
+      {
+        "n": 13,
+        "verdict": "rephrased",
+        "evidence": "Docs hedge: tracking.md \"They're generally quicker to execute\"; for a tracking query that finds an entity already in the context \"the same instance is returned, which can potentially use less memory and be faster than a no-tracking query\"; efficient-querying: no-tracking \"duplicates the same Blog 100 times\". The benchmark (380.11 KB -> 232.89 KB, 1,414.7 us -> 993.3 us) supports the usual case, not every endpoint.",
+        "source": "refs/efcore-docs/entity-framework/core/querying/tracking.md; refs/efcore-docs/entity-framework/core/performance/efficient-querying.md",
+        "suggested_text": "You notice this when an endpoint that returns many entities usually uses less time and memory after adding `AsNoTracking()`, with its SQL unchanged."
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "accuracy",
+        "quote": "You notice this when an endpoint that returns many entities uses less time and memory after adding `AsNoTracking()`, with its SQL unchanged.",
+        "text": "Unconditional. Docs say no-tracking is 'generally quicker' and that a tracking query can 'potentially use less memory and be faster' (identity resolution; no-tracking duplicates a row referenced many times). Claim 13 rephrased.",
+        "fix": "Insert 'usually': '...an endpoint that returns many entities usually uses less time and memory after adding `AsNoTracking()`, with its SQL unchanged.' Update claim 13 text to match. Do not explain identity resolution (depth_notes)."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-28T23:59:00+07:00",
+    "reviewer": "claude-opus-5-5 (prompt 05, round 1)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 3,
+        "kind": "term",
+        "quote": "the part of a `DbContext` that remembers the entities it has loaded",
+        "text": "`DbContext` is not in known_vocab or the prereq summaries, and it is the base of the change tracker's definition. I can only work it out two sections later from \"`db` is the api's `DonHangDbContext`\" and `db.Orders...`, so minor.",
+        "fix": "In the change tracker definition, name what a DbContext is in a few words, e.g. 'the part of a `DbContext` (the EF Core object, `db` in Đơn Hàng, that you query and save through) that remembers...'."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "term",
+        "quote": "`GET /api/v1/orders/{id}` only reads, so its action calls `FindForReadingAsync`",
+        "text": "\"action\" is used as a word for a controller method (\"its action\", \"the actions `Get`, `Cancel` and `Ship`\"). It is not in known_vocab; I can guess it from the `Cancel(int id)` method shown, but I stop for a moment.",
+        "fix": "At the first use, say 'its controller method (action)' or 'the controller's `Get` method'."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "style",
+        "quote": "the methods of `OrderService` that change an order, `CancelOrderAsync` and `ShipOrderAsync`, load it with `FindAsync`, call the order's method that changes its status, and then call `SaveChangesAsync`.",
+        "text": "One sentence carries two lists (which methods, then three steps) separated only by commas; I had to re-read it to see where the list of methods ends and the steps begin.",
+        "fix": "Split in two: 'The methods of `OrderService` that change an order are `CancelOrderAsync` and `ShipOrderAsync`. Each loads the order with `FindAsync`, calls the order's method that changes its status, then calls `SaveChangesAsync`.'"
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "quote": "Nothing: it receives the same SQL and does the same work",
+        "text": "q1: the correct option is almost verbatim from section 4 (\"PostgreSQL does exactly the same work either way, because it receives the same SQL\"), so it can be picked by matching words rather than understanding.",
+        "fix": "Reword option b so it states the consequence rather than the lesson's sentence, e.g. 'Nothing: the command log would show the identical SELECT for both methods'."
+      }
+    ],
+    "readability": {
+      "unknown_terms": ["DbContext", "action (controller method)"],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

@@ -1,0 +1,132 @@
+{
+  "id": "devops.l2.counters-and-rate",
+  "technical": {
+    "reviewed_at": "2026-09-30T05:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (round 2)",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Metric types: \"A counter is a cumulative metric that represents a single monotonically increasing counter whose value can only increase or be reset to zero on restart.\" Live stage-2 /metrics (docker exec donhang-lab curl http://api:8080/metrics): \"# TYPE http_requests_received_total counter\".",
+        "source": "https://prometheus.io/docs/concepts/metric_types/ ; live http://api:8080/metrics"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Metric types: \"A gauge is a metric that represents a single numerical value that can arbitrarily go up and down.\" Live /metrics: \"# HELP http_requests_in_progress The number of requests currently in progress in the ASP.NET Core pipeline.\" and \"# TYPE http_requests_in_progress gauge\"; every series value 0 between requests.",
+        "source": "https://prometheus.io/docs/concepts/metric_types/ ; live http://api:8080/metrics"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "OrderMetrics.cs@stage-2 lines 5-14 identical to the lesson block. OrdersController.cs:46 and V2/OrdersV2Controller.cs:36 both \"if (created) OrderMetrics.OrdersPlaced.Inc();\" after PlaceOrderAsync, then CreatedAtAction (201). OrderService: \"if (earlier is not null) return (earlier, Created: false);\".",
+        "source": "examples/don-hang@stage-2: DonHang.Api/Monitoring/OrderMetrics.cs, DonHang.Api/Controllers/OrdersController.cs, DonHang.Api/Controllers/V2/OrdersV2Controller.cs, DonHang.Domain/OrderService.cs"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Querying basics: operators \"=\" (equal) and \"=~\" (regex match); \"Regex matches are fully anchored.\" Live Prometheus 3.5.5: {code=~\"4..\", method=\"GET\"} returns only the code=\"404\" series; {code=~\"0\"} and {code=~\"04\"} return [] although codes contain those characters, confirming anchoring.",
+        "source": "https://prometheus.io/docs/prometheus/latest/querying/basics/ ; live http://localhost:9090/api/v1/query"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Querying basics, instant vector selectors: in the simplest form only a metric name (e.g. http_requests_total) is given, which returns all time series with that name; label matchers in curly braces filter further.",
+        "source": "https://prometheus.io/docs/prometheus/latest/querying/basics/"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Functions, rate(): \"calculates the per-second average rate of increase of the time series in the range vector. Breaks in monotonicity (such as counter resets due to target restarts) are automatically adjusted for.\" rate \"should only be used with counters\". Two-sample need not stated for rate on the page; settled by read-only run on Prometheus 3.5.5 (scrape 5s): count_over_time(up{job=\"api\"}[5s]) = 1 -> rate(...[5s]) = []; [11s] = 2 samples -> rate = [\"0\"].",
+        "source": "https://prometheus.io/docs/prometheus/latest/querying/functions/#rate ; live http://prometheus:9090/api/v1/query"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Operators: \"sum(v) sums up sample values in v\"; \"by does the opposite and drops labels that are not listed in the by clause\". Live query sum by (code) (rate(...{method=\"GET\", endpoint=\"api/v1/products/{id:int}\"}[5m])) returned metrics {\"code\":\"200\"} and {\"code\":\"404\"} only.",
+        "source": "https://prometheus.io/docs/prometheus/latest/querying/operators/#aggregation-operators ; live http://localhost:9090/api/v1/query"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Live /metrics: http_requests_received_total{code=\"200\",method=\"GET\",controller=\"Products\",action=\"Get\",endpoint=\"api/v1/products/{id:int}\"}; Prometheus query result adds instance=\"api:8080\", job=\"api\". prometheus-net README: labels code, method, controller, action, endpoint.",
+        "source": "live http://api:8080/metrics ; https://github.com/prometheus-net/prometheus-net"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Jobs and instances: \"job: The configured job name that the target belongs to.\" \"instance: The <host>:<port> part of the target's URL that was scraped.\" Live result labels: \"instance\":\"api:8080\",\"job\":\"api\".",
+        "source": "https://prometheus.io/docs/concepts/jobs_instances/"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "outputs/stage-2/scripts/devops/promql-rate.txt matches the lesson output block line for line (two \"-> 201\", \"went up by: 1\", one 404 series, {\"code\":\"200\"}/{\"code\":\"404\"}, {\"instance\":\"api:8080\",\"job\":\"api\"}). Script was not re-run (it creates orders); live read-only queries 1 and 2 give the same label sets.",
+        "source": "examples/don-hang/outputs/stage-2/scripts/devops/promql-rate.txt"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "promql-rate.sh@stage-2 lines 9-24: promql() curls http://prometheus:9090/api/v1/query and jq prints \"\\(.metric | del(.__name__) | tojson) => \\(.value[1])\"; orders_placed() reads donhang_orders_placed_total from http://api:8080/metrics via sed; place_order POSTs /api/v1/orders with \"Idempotency-Key: $key\".",
+        "source": "examples/don-hang@stage-2:scripts/devops/promql-rate.sh"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "prometheus-net README: \"Metrics without labels are published immediately after the Metrics.CreateX() call.\" CA2207 doc: with inline static init the compiler emits a static constructor \"guaranteed to run before any static fields of the type are accessed\". OrderMetrics is referenced only in the two Create actions (git grep @stage-2). Live read-only: curl api:8080/metrics | grep -c ^donhang_orders_placed_total -> 0 (no order since api start).",
+        "source": "https://github.com/prometheus-net/prometheus-net ; refs/dotnet-docs/docs/fundamentals/code-analysis/quality-rules/ca2207.md ; live http://api:8080/metrics"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "promql-rate.sh@stage-2: line 20 key; line 26 place_order >/dev/null (order 1); line 28 new key; lines 30-31 two POSTs, same key (order 2) = two orders, three POSTs. Lines 35-37: 10x /products/1, 3x /products/999, sleep 11; prometheus.yml scrape_interval: 5s. Live read-only GET: /api/v1/products/1 -> 200, /999 -> 404. Output file matches the lesson.",
+        "source": "examples/don-hang@stage-2: scripts/devops/promql-rate.sh, deploy/monitoring/prometheus.yml, outputs/stage-2/scripts/devops/promql-rate.txt"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": "quiz q2",
+        "kind": "quiz",
+        "quote": "so only the requests after it are counted.",
+        "text": "Key c is still the only correct option, but its reason is inaccurate: rate over a window that spans the restart also counts the increase before the drop (resets are \"adjusted for\", not cut off). The lesson itself says rate \"keeps counting the increase after it\", not that it discards what came before.",
+        "fix": "Replace option c (en) with: \"False, because the fall to near zero is read as the API restarting, not as lost requests, so counting simply goes on from the new low value.\" and the vi text to match: \"Sai, vì cú rơi xuống gần 0 được hiểu là API khởi động lại, không phải request bị mất, nên việc đếm cứ tiếp tục từ giá trị thấp mới.\""
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-30T06:00:00+07:00",
+    "reviewer": "claude-review-junior (prompt 05, round 2)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": "quiz q2",
+        "kind": "quiz",
+        "quote": "False, because the fall to near zero is read as the API restarting, not as lost requests, so counting simply goes on from the new low value.",
+        "text": "No longer a copy of the lesson, but option c is now about twice as long as a, b and d, so I could pick it by length alone.",
+        "fix": "Shorten c, e.g. \"False, because the drop is read as a restart, not as lost requests.\", or lengthen one wrong option to a similar size."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz q3",
+        "kind": "quiz",
+        "quote": "Complete the script's query: `sum by (code) (___(http_requests_received_total{method=\"GET\", endpoint=\"api/v1/products/{id:int}\"}[5m]))`",
+        "text": "The stem now explains why the blank is needed, which helps, but the full query is still line 95 of the script, so I can fill `rate` by lookup.",
+        "fix": "Drop \"the script's\" and change the selector so it is not a copy, e.g. `{method=\"POST\"}` without `endpoint`."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

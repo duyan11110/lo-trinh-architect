@@ -1,0 +1,141 @@
+{
+  "id": "k8s.l1.rollbacks",
+  "technical": {
+    "reviewed_at": "2026-10-04T05:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Docs: 'new revision is created if and only if the Deployment's Pod template (.spec.template) is changed'. Execution (rv-rb2, caddy, kubectl v1.34.3): history 1,2,3, one per template; get rs -o wide showed the current RS at 2 and the two old ones at 0, matching the section 3 definition 'each kept in a ReplicaSet; the old ones are scaled to 0'.",
+        "source": "refs/kubernetes-website content/en/docs/concepts/workloads/controllers/deployment.md (line 386); kind donhang v1.34.11 run"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Docs: '.spec.revisionHistoryLimit is an optional field that specifies the number of old ReplicaSets to retain'; 'You can set .spec.revisionHistoryLimit field in a Deployment ...'. Cluster read: kubectl get deploy api -n donhang -o jsonpath '{.spec.revisionHistoryLimit}' -> 10 (field absent from api-deployment*.yaml@stage-2, so the default applies).",
+        "source": "refs/kubernetes-website deployment.md (Revision History Limit, lines 1083, 1356); kind donhang read"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Docs: 'The status ImagePullBackOff means that a container could not start because Kubernetes could not pull a container image ... The BackOff part indicates that Kubernetes will keep trying to pull the image, with an increasing back-off delay.' ErrImagePull is not in the en docs; execution (rv-rb2, caddy:0.0.0-nonexistent) polled the waiting reason: ContainerCreating x2, ErrImagePull x7, then ImagePullBackOff.",
+        "source": "refs/kubernetes-website content/en/docs/concepts/containers/images.md (ImagePullBackOff); kind donhang run"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Execution (rv-rb2, replicas 2, default strategy, bad tag): get pods showed two old Pods 1/1 Running and one new Pod 0/1 ImagePullBackOff; events show only 'Scaled up replica set rv-rb2-6b4f44f7ff from 0 to 1', no scale-down of the old RS. Matches outputs/stage-2/scripts/k8s/rollback.txt.",
+        "source": "kind donhang run; examples/don-hang outputs/stage-2/scripts/k8s/rollback.txt"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Docs: 'Kubernetes takes no action on a stalled Deployment other than to report a status condition with reason: ProgressDeadlineExceeded.' Describe example: 'Conditions: ... Progressing False ProgressDeadlineExceeded'. kubectl explain deployment.spec.progressDeadlineSeconds: 'The maximum time in seconds for a deployment to make progress before it is considered to be failed ... Defaults to 600s.' Unrelated to rollout status --timeout=10s.",
+        "source": "refs/kubernetes-website deployment.md (Failed Deployment, lines 958-967, 1030-1034); kubectl v1.34.3 explain"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Execution (rv-rb2): after undo of the stuck rollout, the only new event was 'Scaled down replica set rv-rb2-6b4f44f7ff from 1 to 0'; the 2.10.2 RS stayed 2/2/2 with the same two Pod names before and after (no new Pod). Docs (Rolling Back to a Previous Revision) events likewise show DeploymentRollback then only a scale-down. Lesson text now says exactly this, with 'had it been at 0 ... scale it back up' as the conditional.",
+        "source": "kind donhang run; refs/kubernetes-website deployment.md (Rolling Back to a Previous Revision)"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Execution (rv-rb2): history 1,2,3 -> after undo 1,3,4. Docs example after undo shows 'deployment.kubernetes.io/revision=4'. rollback.txt shows the same lists.",
+        "source": "kind donhang run; refs/kubernetes-website deployment.md; examples/don-hang outputs/stage-2/scripts/k8s/rollback.txt"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Execution (rv-rb2): after undo, last-applied-configuration still held caddy:0.0.0-nonexistent (file unchanged; re-applying it sets the image back). Registry: docker manifest inspect ghcr.io/duyan11110/donhang-api:1.0.0 -> exists; the sha- plus 40 zeros tag -> not found. Undo created no Pod; rollback.sh has no build step.",
+        "source": "kind donhang run; ghcr.io manifest check; refs/kubernetes-website tasks/manage-kubernetes-objects/declarative-config.md"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "rollback.txt@stage-2 has 'Waiting for deployment \"api\" rollout to finish: 1 out of 2 new replicas have been updated...' then 'error: timed out waiting for the condition'; lesson output block matches the capture line for line. Same wording in rv-rb2 run (kubectl v1.34.3).",
+        "source": "examples/don-hang outputs/stage-2/scripts/k8s/rollback.txt; kind donhang run"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "git show stage-2:deploy/k8s/lessons/api-deployment-bad-tag.yaml line 21: 'image: ghcr.io/duyan11110/donhang-api:sha-0000000000000000000000000000000000000000' (40 zeros); lines 1-35 otherwise identical to api-deployment-1.0.0.yaml except the header comment. Lesson block = lines 1-21 verbatim.",
+        "source": "examples/don-hang @ stage-2"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "rollback.sh@stage-2: lines 12 and 14 apply api-deployment.yaml (sha-bb18...) then api-deployment-1.0.0.yaml; 18 history; 19 bad apply; 21-25 'for _ in $(seq 360)' with jsonpath '{.items[*].status.containerStatuses[0].state.waiting.reason}' and 'sleep 0.5'; 29 '--timeout=10s || true'; 34 undo; 36 history; 37 get -o wide; 42 apply 1.0.0. Lesson block = lines 19-43 verbatim.",
+        "source": "examples/don-hang @ stage-2 scripts/k8s/rollback.sh"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Docs: new revision 'if and only if the Deployment's Pod template (.spec.template) is changed'. Execution (rv-rb2): applying the manifest equal to the current template kept history 1,3,4; get rs -o wide: current image at 2, the other two at 0 (three RS, one per image).",
+        "source": "refs/kubernetes-website deployment.md line 386; kind donhang run"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Docs: 'CHANGE-CAUSE is copied from the Deployment annotation kubernetes.io/change-cause to its revisions upon creation. You can specify the CHANGE-CAUSE message by: Annotating the Deployment with kubectl annotate deployment/nginx-deployment kubernetes.io/change-cause=\"image updated to 1.16.1\"'. No Don Hang manifest@stage-2 sets it; rollback.txt shows <none> on every revision.",
+        "source": "refs/kubernetes-website deployment.md (Checking Rollout History, lines 518-520)"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "Docs: apply 'sets the kubectl.kubernetes.io/last-applied-configuration annotation ... The annotation contains the contents of the object configuration file'. Execution (rv-rb2) after undo: annotation image caddy:0.0.0-nonexistent; applying the good file printed 'deployment.apps/rv-rb2 configured', annotation became caddy:2.10.2, history stayed 1,3,4, same two Pods. Opened: deployment.md, images.md, declarative-config.md; no issues in changed parts.",
+        "source": "refs/kubernetes-website tasks/manage-kubernetes-objects/declarative-config.md (line 64); kind donhang run"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-04T06:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "style",
+        "text": "In section 4 no script has been shown yet (the situation mentions none), so 'the script's 10-second timeout' made me stop and ask which script. It resolves in section 5, but the sentence also nests two asides and I had to read it twice.",
+        "quote": "after a deadline, a Deployment setting unrelated to the script's 10-second timeout, it only reports the update as not progressing",
+        "fix": "Replace 'the script's 10-second timeout' with 'the 10-second timeout the script in the next section gives rollout status', or split it: one sentence for the deadline and the report under Conditions, one saying it is not the script's 10 s."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "text": "From the prereq I know maxUnavailable is 25% by default, but I had to guess that 25% of two Pods means zero may be missing, and that an old Pod would only go once a new one became available. The q1 explanation says the second part; the lesson body does not.",
+        "quote": "With two replicas, none may be missing, so neither old Pod is removed",
+        "fix": "Add a clause: 'With two replicas, the default 25% allows no Pod to be missing, and an old Pod goes only once a new one is available, so neither old Pod is removed.'"
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "gap",
+        "text": "I did not know the cluster remembers which file was applied last, or where. If the apply changes nothing, I cannot tell what 'records' adds beyond the habit of applying the good file.",
+        "quote": "it records `api-deployment-1.0.0.yaml` as the manifest last applied, so Git and the cluster agree on `1.0.0`",
+        "fix": "Either say in one clause what keeps that record (the Deployment stores the manifest last applied to it), or drop 'records…' and say: it changes nothing, but now the file you apply is the one that runs, so Git and the cluster agree on 1.0.0."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [
+        "Section 4: 'the script's 10-second timeout' refers to a script not yet shown",
+        "Section 4: why two replicas means none may be missing (25% of 2)",
+        "Section 5: what 'records ... as the manifest last applied' means and where it is kept"
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

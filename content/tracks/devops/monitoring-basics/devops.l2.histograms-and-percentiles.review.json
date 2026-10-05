@@ -1,0 +1,94 @@
+{
+  "id": "devops.l2.histograms-and-percentiles",
+  "technical": {
+    "reviewed_at": "2026-09-30T16:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Arithmetic: (90*5 + 10*500)/100 = 54.5 ms, so 'about 55 ms' (section 4) and 'about 50 ms' (section 6) both hold; 500/54.5 = 9.2, 'about ten times'. Histograms and summaries: a phi-quantile is the observation at rank phi*N; 0.95*100 = 95th, positions 91-100 are 500 ms, so p95 = 500 ms.",
+        "source": "https://prometheus.io/docs/practices/histograms/"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Histograms and summaries (WebFetch summary, round 1): a phi-quantile is the observation value at rank phi*N among N observations; the 0.95-quantile is the 95th percentile, so 95% of observations are at or below it. Lesson section 3 ('at or below' / 'took at most'), section 4 and summary line 2 now match this wording and the worked example.",
+        "source": "https://prometheus.io/docs/practices/histograms/"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Metric types, Histogram: \"cumulative counters for the observation buckets, exposed as <basename>_bucket{le=\"<upper inclusive bound>\"}\", \"the total sum of all observed values, exposed as <basename>_sum\", \"the count of events that have been observed, exposed as <basename>_count (identical to <basename>_bucket{le=\"+Inf\"} above)\"; buckets are cumulative, \"every bucket counts all observations less than or equal to the upper boundary\".",
+        "source": "https://prometheus.io/docs/concepts/metric_types/"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Live stage-2 (docker exec donhang-lab curl -sS http://api:8080/metrics): \"# TYPE http_request_duration_seconds histogram\"; series \"http_request_duration_seconds_bucket{code=\"200\",method=\"GET\",controller=\"Products\",action=\"Get\",endpoint=\"api/v1/products/{id:int}\",le=\"0.001\"}\" and a separate bucket set for code=\"404\". prometheus-net README: exposes \"Duration of HTTP requests\"; \"The action, controller and endpoint route parameters are always captured by default.\" Program.cs@stage-2 line 99: app.UseHttpMetrics();",
+        "source": "live http://api:8080/metrics @ stage-2; https://github.com/prometheus-net/prometheus-net; DonHang.Api/Program.cs@stage-2"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "outputs/stage-2/scripts/devops/promql-latency.txt and a live /metrics read: le values 0.001, 0.002, 0.004, 0.008, 0.016, 0.032, 0.064, 0.128, 0.256, 0.512, 1.024, 2.048, 4.096, 8.192, 16.384, 32.768, +Inf (16 finite bounds, each double the previous). README does not list default buckets, so the evidence comes from execution only.",
+        "source": "examples/don-hang outputs/stage-2/scripts/devops/promql-latency.txt; live http://api:8080/metrics"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Functions, histogram_quantile(): le is \"the inclusive upper bound\"; \"assumes a uniform distribution of observations within the bucket\"; le \"has to be included in the by clause\". Round 3: section 4 now states the target as 95% of the +Inf rate, which is the value histogram_quantile actually ranks against (its input is the rated buckets). Prometheus 3.5.5 run: buckets 0.005:90, 0.5:100, +Inf:100 -> 0.2525 (first bucket reaching 95 is le=0.5); result {\"metric\":{}}.",
+        "source": "https://prometheus.io/docs/prometheus/latest/querying/functions/ ; live http://localhost:9090/api/v1/query @ stage-2 lab"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Histograms and summaries: rate(http_request_duration_seconds_sum[5m]) / rate(http_request_duration_seconds_count[5m]) gives the average request duration over the last 5 minutes. Metric types: _sum and _count are cumulative; a counter's value \"can only increase or be reset to zero on restart\", so raw _sum/_count is the average since the process started. Lab run (round 1): query 2 returned {\"metric\":{}} with 0.0021 s.",
+        "source": "https://prometheus.io/docs/practices/histograms/ ; https://prometheus.io/docs/concepts/metric_types/"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Operators: aggregation without by/without aggregates over all dimensions (query 2 -> no labels). Functions: le is required in the by clause for histogram_quantile, which consumes it. Execution: lab query 1 returned {\"metric\":{},...\"0.008\"} (round 1); synthetic histogram_quantile over vectors labelled only le returned {\"metric\":{}} on Prometheus 3.5.5. Section 5 now explains both queries separately.",
+        "source": "https://prometheus.io/docs/prometheus/latest/querying/operators/ ; .../querying/functions/ ; live Prometheus 3.5.5"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "git show stage-2:scripts/devops/promql-latency.sh lines 14-28 = lesson block (identical after CRLF strip). ProductsController.cs@stage-2: [Route(\"api/v1/products\")] on the class (line 14), [HttpGet(\"{id:int}\")] on method Get (line 51) -> template api/v1/products/{id:int}; section 5 round 3 wording ('on the class plus {id:int} on the method that answers the GET') matches. sleep 11 with scrape_interval 5s gives two scrapes.",
+        "source": "examples/don-hang@stage-2: scripts/devops/promql-latency.sh, deploy/monitoring/prometheus.yml, DonHang.Api/Controllers/ProductsController.cs, outputs/stage-2/scripts/devops/promql-latency.txt"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Metric types: a histogram exposes only _bucket counters, _sum and _count. Live /metrics @ stage-2 for this endpoint has only those lines (e.g. \"_sum{...} 0.5016429\", \"_count{...} 5\", bucket counts); no per-request duration appears, and Prometheus stores only what it scrapes (prometheus.yml@stage-2: one job, target api:8080).",
+        "source": "https://prometheus.io/docs/concepts/metric_types/ ; live http://api:8080/metrics ; deploy/monitoring/prometheus.yml@stage-2"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Re-ran the script's steps in donhang-lab (round 1): buckets never decrease; le=\"+Inf\" 25 = _count 25; both queries {\"metric\":{}}. Round 3 re-check opened: lesson sections 4-5, quiz q2/q6 (en+vi), meta claims 6/9, ProductsController.cs@stage-2 lines 12-56, Prometheus docs Functions and Metric types (earlier rounds). q2 correct now says 'took at most'; q6 b en/vi now describe the average as time per request.",
+        "source": "live stage-2 lab; https://prometheus.io/docs/concepts/metric_types/ ; .../querying/functions/"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-30T17:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation)",
+    "issues": [],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

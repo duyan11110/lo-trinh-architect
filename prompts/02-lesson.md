@@ -22,7 +22,13 @@ Write lesson `{{id}}` in English, following `lesson.template.md` exactly, and it
 {{validation_errors}}{{/if}}
 {{#if apply-review}}Review to apply (fix every `blocker` and `major`; for `minor`, apply if it costs one sentence or less;
 for claim verdicts `wrong` → correct or remove the statement; `rephrased` → use `suggested_text`; `unverified` on
-`number`/`syntax` claims → rewrite at the level of principle so the claim disappears):
+`number`/`syntax` claims → rewrite at the level of principle so the claim disappears). **Budget as you go, not after:**
+adding review sentences is what most often pushes a lesson over §4's 150–300 words or the 900–1,600/2,000 total (§ Hard
+constraints below) — cut an equal amount of prose the review did *not* ask about as you add, don't add first and trim
+later. Same discipline for `.meta.json`: `claims[].text` ≤ 300 chars, `claims` ≤ 25 total, `self_check.notes` ≤ 500
+chars — a review that adds claims eats this budget too; merge a new fact into an existing claim's table/list before
+adding a new entry. Running out of round budget fighting these caps instead of the review's actual content is a real,
+observed failure mode (tools/gen pilot, 2026-09-07).
 {{review_json}}{{/if}}
 
 ### Inputs

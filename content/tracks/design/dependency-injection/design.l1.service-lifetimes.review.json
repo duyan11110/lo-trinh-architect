@@ -1,0 +1,115 @@
+{
+  "id": "design.l1.service-lifetimes",
+  "technical": {
+    "reviewed_at": "2026-09-26T08:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Transient: \"created each time it's requested from the service container.\" Scoped: \"created once per client request (connection).\" Singleton: \"created either: The first time they're requested. ... Every subsequent request of the service implementation from the dependency injection container uses the same instance.\" \"singleton services are disposed when the ServiceProvider is disposed on application shutdown.\"",
+        "source": "refs/dotnet-docs/docs/core/extensions/dependency-injection/service-lifetimes.md:13,19,39-44,48"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "\"The framework creates a scope per request, and RequestServices exposes the scoped service provider. All scoped services are valid for as long as the request is active.\" \"In apps that process requests, scoped services are disposed at the end of the request.\" Lesson §4 now says \"disposes it, with its scoped objects, when the request ends\" — matches.",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/dependency-injection.md:818; refs/dotnet-docs/docs/core/extensions/dependency-injection/service-lifetimes.md:19"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "\"Entity Framework Core does not support multiple parallel operations being run on the same DbContext instance.\" \"When EF Core detects an attempt to use a DbContext instance concurrently, you'll see an InvalidOperationException\" \"When concurrent access goes undetected, it can result in undefined behavior, application crashes and data corruption.\" \"In many web applications, each HTTP request corresponds to a single unit-of-work.\" Supports §4 \"throws when it detects that, and when it does not, the results can be wrong\".",
+        "source": "refs/efcore-docs/entity-framework/core/dbcontext-configuration/index.md:43,401,403,407"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "\"The AddDbContext extension method registers DbContext types with a scoped lifetime by default.\" Same sentence in the .NET DI note: \"When using Entity Framework Core, the AddDbContext extension method registers DbContext types with a scoped lifetime by default.\"",
+        "source": "refs/efcore-docs/entity-framework/core/dbcontext-configuration/index.md:419; refs/dotnet-docs/docs/core/extensions/dependency-injection/service-lifetimes.md:22"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "ServiceCollectionExtensions.cs:14-16 `services.AddDbContext<DonHangDbContext>(options => options.UseNpgsql(connectionString));` `services.AddScoped<IOrderRepository, EfOrderRepository>();` `services.AddScoped<INotifier, LoggingNotifier>();`. Program.cs:18-20 `AddDonHangInfrastructure(connectionString);` `AddScoped<OrderService>();` `AddSingleton<JwtTokenService>();`.",
+        "source": "examples/don-hang @ stage-1: DonHang.Infrastructure/ServiceCollectionExtensions.cs:14-16; DonHang.Api/Program.cs:18-20"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "OrdersController.cs:12 `OrdersController(OrderService orderService, IOrderRepository repository)`; OrderService.cs:6 `OrderService(IOrderRepository repository, INotifier notifier)`; EfOrderRepository.cs:7 `EfOrderRepository(DonHangDbContext db)`. All scoped (claim 5), and scoped = \"created once per client request\" (claim 1) → one EfOrderRepository and one DonHangDbContext per request.",
+        "source": "examples/don-hang @ stage-1: OrdersController.cs:12, OrderService.cs:6, EfOrderRepository.cs:7; refs/dotnet-docs/.../service-lifetimes.md:19"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "JwtTokenService.cs:11 `JwtTokenService(IConfiguration configuration)`; IssueToken reads configuration[\"Jwt:SigningKey\"], [\"Jwt:Issuer\"], [\"Jwt:Audience\"] on each call; no fields declared. AuthController.cs `[HttpPost(\"login\")] ... tokenService.IssueToken(customer.Id, customer.Email)` — called at login.",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/JwtTokenService.cs:11-33; DonHang.Api/Controllers/AuthController.cs:11-22"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Program.cs:57-62 `using (var scope = app.Services.CreateScope()) { var context = scope.ServiceProvider.GetRequiredService<DonHangDbContext>(); ... }`. Docs: \"The following code shows how to resolve a scoped service for a limited duration when the app starts: using (var serviceScope = app.Services.CreateScope())\"; \"Scoped services are disposed by the container that created them.\"",
+        "source": "examples/don-hang @ stage-1: DonHang.Api/Program.cs:57-62; refs/aspnetcore-docs/aspnetcore/fundamentals/dependency-injection.md:792-805; refs/dotnet-docs/.../overview.md:160"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Transient: \"created each time it's requested from the service container\" → controller and OrderService each get a new EfOrderRepository. \"It's also fine to: ... Resolve a scoped service from another scoped or transient service.\" Scoped: \"created once per client request\" → both repositories receive the same DonHangDbContext.",
+        "source": "refs/dotnet-docs/docs/core/extensions/dependency-injection/service-lifetimes.md:13,19,30-33"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Supported, not just opinion: \"Do not resolve a scoped service directly from a singleton ... Doing so causes the scoped service to behave like a singleton, which can lead to incorrect state when processing subsequent requests.\" EF: \"When concurrent access goes undetected, it can result in undefined behavior, application crashes and data corruption.\" Round 2: opened refs dotnet service-lifetimes.md, aspnetcore dependency-injection.md, efcore dbcontext-configuration/index.md; source at stage-1.",
+        "source": "refs/dotnet-docs/.../service-lifetimes.md:26; refs/efcore-docs/entity-framework/core/dbcontext-configuration/index.md:407"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-25T23:30:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "code",
+        "text": "The prose says context is resolved from scope.ServiceProvider, but never says what ServiceProvider is. I guess it is the container, limited to this scope, from the CreateScope sentence; I would like that confirmed.",
+        "quote": "It is resolved from `scope.ServiceProvider`, and when the `using` block ends, the scope is disposed",
+        "fix": "Add a few words after `scope.ServiceProvider`: \"(the container, working inside this scope)\"."
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "example",
+        "text": "Try-it question 2 asks how many contexts \"exist\" across two requests handled one after the other. The lesson says the first request's context is disposed when it ends, so for a moment I thought the answer could be one at a time. The expected result (two) settles it, but only after I check.",
+        "quote": "How many `DonHangDbContext` objects exist across two requests handled one after the other?",
+        "fix": "Replace \"exist across\" with \"does the container build for\"."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "text": "q5 option a is still almost the lesson's sentence (\"at startup no request has opened one yet\"), so I can match wording instead of reasoning. q1's question also repeats the scoped Core concepts line, which makes \"Scoped\" a word match. q2 option c is now reworded — resolved.",
+        "quote": "At startup no request has opened a scope, and the scoped context needs one",
+        "fix": "Reword q5 option a, e.g. \"The context lives per scope, and nothing has created a scope before the first request\"."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "ServiceProvider"
+      ],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

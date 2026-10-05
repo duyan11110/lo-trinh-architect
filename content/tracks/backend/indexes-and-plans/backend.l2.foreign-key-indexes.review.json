@@ -1,0 +1,131 @@
+{
+  "id": "backend.l2.foreign-key-indexes",
+  "technical": {
+    "reviewed_at": "2026-09-29T00:40:00+07:00",
+    "reviewer": "claude-opus-5-5 (prompt 04, round 2)",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "11.6: \"PostgreSQL automatically creates a unique index when a unique constraint or primary key is defined for a table. ... and is the mechanism that enforces the constraint.\" 5.5.3: \"Unique constraints ensure that the data contained in a column, or a group of columns, is unique among all the rows in the table.\" The gloss 'no two rows share a value' ignores NULLs (not equal by default); harmless here, customers.email is NOT NULL.",
+        "source": "https://www.postgresql.org/docs/17/indexes-unique.html; https://www.postgresql.org/docs/17/ddl-constraints.html (5.5.3)"
+      },
+      {
+        "n": 2,
+        "verdict": "rephrased",
+        "evidence": "5.5.5: \"...the declaration of a foreign key constraint does not automatically create an index on the referencing columns.\" 11.1: \"This adds overhead to data manipulation operations. Indexes can also prevent the creation of heap-only tuples.\" But 5.5.5 also: \"a DELETE of a row from the referenced table or an UPDATE of a referenced column will require a scan of the referencing table\", so an FK index can pay back with no app query; and 'each write' overstates (HOT updates).",
+        "source": "https://www.postgresql.org/docs/17/ddl-constraints.html (5.5.5); https://www.postgresql.org/docs/17/indexes-intro.html",
+        "suggested_text": "Indexing them is left to you, because not every foreign key needs one: every index adds work to writes on its table, which an index that is rarely searched may not pay back."
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "\"By convention, an index is created in each property (or set of properties) that are used as a foreign key.\" Execution: stage-1 AddOrderCustomerNavigation.Up has CreateIndex IX_orders_customer_id beside AddForeignKey; DonHangDbContext has no HasIndex for CustomerId; snapshot has b.HasIndex(\"CustomerId\").",
+        "source": "refs/efcore-docs/entity-framework/core/modeling/indexes.md:25; examples/don-hang@stage-1 Migrations/20260924092625_AddOrderCustomerNavigation.cs:13-16"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "\"EF does not create indexes for properties that are already covered by an existing index or primary key constraint.\" Execution: InitialCreate@stage-1 declares PK_order_items (order_id, product_id) and FK_order_items_orders_order_id with no CreateIndex for order_items; snapshot has no HasIndex on OrderItem.",
+        "source": "refs/efcore-docs/entity-framework/core/modeling/relationships/conventions.md:433; examples/don-hang@stage-1 Migrations/20260923154631_InitialCreate.cs:91-115"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "conventions.md:20 \"Relationship discovery begins by discovering navigations between entity types.\" navigations.md:145 \"Navigations are included in the model as part of configuring a relationship. That is, by convention, or using HasOne, HasMany, etc. in the model building API.\" Code@stage-1: HasOne/HasMany appear only at DonHangDbContext.cs:45-46 (Order); Payment block 59-67 maps columns only; snapshot has no relationship for Payment.",
+        "source": "refs/efcore-docs/entity-framework/core/modeling/relationships/conventions.md:20; navigations.md:145; examples/don-hang@stage-1"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "git show stage-1:db/schema.sql: lines 20, 27, 28, 36 carry REFERENCES on orders.customer_id, order_items.order_id, order_items.product_id, payments.order_id; line 31 PRIMARY KEY (order_id, product_id); line 14 email ... UNIQUE; no CREATE INDEX in file (notifications.order_id also REFERENCES, line 44, not mentioned by the lesson).",
+        "source": "examples/don-hang@stage-1 db/schema.sql"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "tools/extract-code AddOrderCustomerNavigation.cs --tag stage-1 --lines 13-16 matches the lesson block exactly: CreateIndex(name: \"IX_orders_customer_id\", table: \"orders\", column: \"customer_id\"). DonHangDbContext.cs:46 e.HasOne(o => o.Customer).WithMany().HasForeignKey(o => o.CustomerId); db/schema.sql has no CREATE INDEX (grep -i index: no match).",
+        "source": "examples/don-hang@stage-1 DonHang.Infrastructure/Migrations/20260924092625_AddOrderCustomerNavigation.cs:13-16; DonHangDbContext.cs:46"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "DonHangDbContext.cs@stage-1 contains exactly one HasIndex: line 27 e.HasIndex(c => c.Email).IsUnique();",
+        "source": "examples/don-hang@stage-1 DonHang.Infrastructure/DonHangDbContext.cs"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Generated migrations name IX_orders_customer_id (table orders, column customer_id) and IX_customers_email, i.e. table + column, which is what the lesson says. Note: the docs wording is \"named IX_<type name>_<property name>\", which would give IX_Order_CustomerId; the generated code (relational table/column names) is the evidence here, not that sentence.",
+        "source": "examples/don-hang@stage-1 AddOrderCustomerNavigation.cs:14, InitialCreate.cs:112; refs/efcore-docs/entity-framework/core/modeling/indexes.md:141"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "InitialCreate.cs:91-115: PK_order_items (order_id, product_id) + FK_order_items_orders_order_id, only CreateIndex in Up is IX_customers_email. MigrationBaseline.cs:10-11 \"This marks InitialCreate as already applied on a DB whose tables came from schema.sql, so Migrate() only ever runs what comes after it.\" docker-compose.yml:67 mounts db/schema.sql into docker-entrypoint-initdb.d, so the example system's db always has the tables; Program.cs:60-61 ApplyIfNeeded then Migrate().",
+        "source": "examples/don-hang@stage-1 InitialCreate.cs, MigrationBaseline.cs, docker-compose.yml, DonHang.Api/Program.cs"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Entities.cs:45-52 Payment { Id, OrderId, PaidAt, AmountVnd, Method } — no navigation; DonHangDbContext.cs:59-67 maps columns only; no migration at stage-1 references payments except InitialCreate CreateTable (PK_payments only). Live lab db (stage-2 state) still lists only payments_pkey for payments.",
+        "source": "examples/don-hang@stage-1; docker exec donhang-db psql pg_indexes (2026-09-28)"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Docs: \"The view pg_indexes provides access to useful information about each index in the database.\" Tutorial 3.2: a view gives \"a name to the query that you can refer to like an ordinary table.\" Live (donhang, read-only, 2026-09-28): pg_class.relkind for pg_indexes = 'v'; Try-it query returns 2 rows: order_items_pkey UNIQUE btree (order_id, product_id), payments_pkey UNIQUE btree (id). Round 1 scratch idxb_fk (stage-1 schema) gave the same.",
+        "source": "https://www.postgresql.org/docs/17/view-pg-indexes.html; https://www.postgresql.org/docs/17/tutorial-views.html; docker exec donhang-db psql"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "\"With no advance preparation, the system would have to scan the entire test1 table, row by row, to find all matching entries. ... But if the system has been instructed to maintain an index on the id column, it can use a more efficient method for locating matching rows.\"",
+        "source": "https://www.postgresql.org/docs/17/indexes-intro.html"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "11.3: \"A multicolumn B-tree index can be used with query conditions that involve any subset of the index's columns, but the index is most efficient when there are constraints on the leading (leftmost) columns. The exact rule is that equality constraints on leading columns ... will be used to limit the portion of the index that is scanned.\" Lesson's 'later columns do not count the same way' is consistent (not 'cannot be used').",
+        "source": "https://www.postgresql.org/docs/17/indexes-multicolumn.html"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Claim 2 rephrased. 'each write' overstates: PostgreSQL docs only say indexes add overhead to data manipulation and can prevent HOT updates. 'no query searches by never pays back' ignores 5.5.5: a DELETE of a parent row or UPDATE of a referenced column scans the referencing table, so an FK index can pay back with no application query.",
+        "quote": "every index adds work to each write, which a foreign key no query searches by never pays back",
+        "fix": "Replace with: \"every index adds work to writes on its table, which an index that is rarely searched may not pay back.\" Update claim 2 text to match."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-09-29T01:10:00+07:00",
+    "reviewer": "review-junior (prompt 05), round 2",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": "quiz q5",
+        "kind": "quiz",
+        "quote": "so the running lab database would never get the index",
+        "text": "Round 1's 'lab database' wording was replaced in q3, q4, q6 and the q5 context, but the q5 explanation for option d (en, and 'database đang chạy của lab' in vi) still says 'lab database', a phrase the lesson never uses. I can still follow it, but it makes me wonder whether it is a different database from 'Đơn Hàng's running database'.",
+        "fix": "In q5 explanation d, replace 'the running lab database' with 'Đơn Hàng's running database' (en) and 'database đang chạy của lab' with 'database đang chạy của Đơn Hàng' (vi)."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

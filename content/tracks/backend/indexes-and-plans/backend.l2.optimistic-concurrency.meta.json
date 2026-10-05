@@ -1,0 +1,151 @@
+{
+  "id": "backend.l2.optimistic-concurrency",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-09-28T22:10:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "Optimistic concurrency takes no locks; it makes the data modification fail on save if the data changed since it was queried, and the failure is reported to the application.",
+      "kind": "behavior",
+      "version_key": "efcore",
+      "source_hint": "EF Core docs: Handling Concurrency Conflicts, 'Optimistic concurrency'",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 2,
+      "text": "xmin is a system column present on every PostgreSQL row (the id of the transaction that wrote that row version); an UPDATE creates a new row version with a new xmin.",
+      "kind": "behavior",
+      "version_key": "postgresql",
+      "source_hint": "PostgreSQL docs 5.6 System Columns (xmin); 13.1 MVCC introduction",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 3,
+      "text": "With the Npgsql EF Core provider, IsRowVersion() on a uint property maps it to PostgreSQL's xmin system column and makes it a concurrency token.",
+      "kind": "syntax",
+      "version_key": "npgsql_efcore",
+      "source_hint": "Npgsql EF Core docs: Concurrency Tokens (xmin, IsRowVersion); DonHangDbContext.cs:61-65 @ stage-2",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 4,
+      "text": "A concurrency token's value is loaded and tracked with the entity; on UPDATE, EF Core adds a condition on the token's original value to the WHERE clause.",
+      "kind": "behavior",
+      "version_key": "efcore",
+      "source_hint": "EF Core docs: Handling Concurrency Conflicts (UPDATE ... WHERE [PersonId] = @p1 AND [Version] = @p2)",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 5,
+      "text": "When the guarded UPDATE affects zero rows instead of the expected one, SaveChanges throws DbUpdateConcurrencyException.",
+      "kind": "behavior",
+      "version_key": "efcore",
+      "source_hint": "EF Core docs: Handling Concurrency Conflicts",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 6,
+      "text": "Under Read Committed the waiting UPDATE re-evaluates its WHERE on the updated row version after the lock holder commits; with the new xmin the condition fails and the row is not updated.",
+      "kind": "behavior",
+      "version_key": "postgresql",
+      "source_hint": "PostgreSQL docs 13.2.1 Read Committed (re-evaluates WHERE on updated version); concurrency-conflict.sh comment @ stage-2",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 7,
+      "text": "When SaveChanges fails, the transaction it started rolls back and none of its changes apply, so the notification row the cancel's save adds (notifier.Send before SaveChangesAsync) is not written either.",
+      "kind": "behavior",
+      "version_key": "efcore",
+      "source_hint": "EF Core docs: Transactions, Default transaction behavior; OrderService.cs:40-49 @ stage-2 (notifier.Send before SaveChangesAsync)",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 8,
+      "text": "Inside one transaction under Read Committed, SELECT ... FOR UPDATE locks the rows it returns; a second transaction trying to lock them waits until the first ends, then gets the updated row and reads the committed status.",
+      "kind": "behavior",
+      "version_key": "postgresql",
+      "source_hint": "PostgreSQL docs: SELECT, The Locking Clause; 13.3.2 Row-Level Locks",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 9,
+      "text": "When many writers compete for one row, waiting in line can cost less than failing and reloading repeatedly; with rare conflicts the token adds little: one more WHERE condition, and a failure's cost only when one happens.",
+      "kind": "opinion",
+      "source_hint": "EF Core docs: Handling Concurrency Conflicts ('assumes that concurrency conflicts are relatively rare'; pessimistic approaches lock up-front)",
+      "needs_verification": false,
+      "section": 4
+    },
+    {
+      "n": 10,
+      "text": "Order.Version is a uint with a private setter; the AddOrderVersionToken migration writes no SQL with the Npgsql provider because xmin already exists, so orders gets no new column.",
+      "kind": "fact",
+      "version_key": "npgsql_efcore",
+      "source_hint": "examples/don-hang @ stage-2: Entities.cs:43-46; Migrations/20260927103157_AddOrderVersionToken.cs comment",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 11,
+      "text": "ExceptionHandlingMiddleware catches DbUpdateConcurrencyException and answers 409 with title 'Order was changed by another request', detail 'reload the order and try again', type .../concurrent-update and orderId from ex.Entries.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs:42-51",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 12,
+      "text": "Under Repeatable Read, an UPDATE of a row that a concurrent transaction changed and committed makes the transaction fail with a serialization error, SQLSTATE 40001, and the whole transaction must be retried from the beginning.",
+      "kind": "behavior",
+      "version_key": "postgresql",
+      "source_hint": "PostgreSQL docs 13.2.2 Repeatable Read Isolation Level; 13.4 Serialization Failure Handling",
+      "needs_verification": true,
+      "section": 2
+    },
+    {
+      "n": 13,
+      "text": "Calling SaveChangesAsync again without refreshing sends the same UPDATE with the same original token, matching no row again; overwriting the token's original value with the database's current one and saving makes the save succeed.",
+      "kind": "behavior",
+      "version_key": "efcore",
+      "source_hint": "EF Core docs: Handling Concurrency Conflicts, Resolving concurrency conflicts (original values must be refreshed)",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 14,
+      "text": "concurrency-conflict.sh ships order 5 in a psql session holding the row ~2 s, cancels via the API meanwhile: the API answers 409 with type .../concurrent-update and orderId 5, the ship shows UPDATE 1 and COMMIT, order 5 ends shipped, then reset to paid.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: scripts/backend/concurrency-conflict.sh; outputs/stage-2/scripts/backend/concurrency-conflict.txt; live run 2026-09-28",
+      "needs_verification": true,
+      "section": 7
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "outline_items_missing": [],
+    "beyond_scope": []
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1145,
+    "notes": "Generated. Round 1 tech: claim 12 sentence (catch order) removed, claim 12 replaced by the section 2 Repeatable Read claim; claims 8, 9 suggested_text; misconception 2 reworded (token's original value); q5 c 'adds little'. Junior r1: psql session glossed, notification row, 409 link in s4, s4 split, Npgsql provider, status rule example, forcing explained, Order.Cancel(), q2 c, q4 a. Tech r2: claim 12 ledger replaced (suggested_text)."
+  },
+  "open_questions": [],
+  "repo_changes_needed": []
+}
