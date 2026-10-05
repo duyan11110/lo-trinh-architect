@@ -15,7 +15,7 @@ vocab: [problem-details]
 example_tag: stage-0
 versions_used: [http_problem_details, http, caddy]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-09-25T19:00:00+07:00"
 ---

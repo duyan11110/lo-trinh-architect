@@ -15,7 +15,7 @@ vocab: [change-tracker]
 example_tag: stage-2
 versions_used: [efcore]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-09-28T23:18:46+07:00"
 ---

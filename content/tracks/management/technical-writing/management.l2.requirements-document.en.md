@@ -15,7 +15,7 @@ vocab: [requirements-document]
 example_tag: stage-2
 versions_used: []
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-03T19:14:29+07:00"
 ---

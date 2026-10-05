@@ -15,7 +15,7 @@ vocab: [refresh-token]
 example_tag: stage-2
 versions_used: [keycloak, oauth2, jwt, aspnetcore]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-09-28T12:53:00+07:00"
 ---

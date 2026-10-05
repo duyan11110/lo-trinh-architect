@@ -15,7 +15,7 @@ vocab: [builder-pattern]
 example_tag: stage-1
 versions_used: [dotnet, aspnetcore, efcore, npgsql_efcore]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-09-29T21:42:51+07:00"
 ---

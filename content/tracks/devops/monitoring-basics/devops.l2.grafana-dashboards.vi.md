@@ -15,7 +15,7 @@ vocab: [grafana, dashboard]
 example_tag: stage-2
 versions_used: [grafana, prometheus, docker]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-09-30T04:04:19+07:00"
 ---

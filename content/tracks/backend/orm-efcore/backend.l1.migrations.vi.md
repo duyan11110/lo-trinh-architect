@@ -15,7 +15,7 @@ vocab: [migration]
 example_tag: stage-1
 versions_used: [efcore, postgresql]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-09-25T03:30:00+07:00"
 ---

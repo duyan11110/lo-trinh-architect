@@ -15,7 +15,7 @@ vocab: [anemic-domain-model]
 example_tag: stage-1
 versions_used: [dotnet, git]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-09-30T21:52:42+07:00"
 ---

@@ -15,7 +15,7 @@ vocab: [riverpod]
 example_tag: stage-2
 versions_used: [flutter, riverpod]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-09-29T17:39:13+07:00"
 ---

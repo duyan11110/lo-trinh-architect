@@ -15,7 +15,7 @@ vocab: [pagination, query-parameter]
 example_tag: stage-2
 versions_used: [aspnetcore, efcore, npgsql_efcore, postgresql]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-09-28T06:06:10+07:00"
 ---

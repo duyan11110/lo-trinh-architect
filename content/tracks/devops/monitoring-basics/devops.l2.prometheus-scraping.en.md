@@ -15,7 +15,7 @@ vocab: [scrape, time-series, compose-profile]
 example_tag: stage-2
 versions_used: [prometheus, docker]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-09-30T01:20:01+07:00"
 ---

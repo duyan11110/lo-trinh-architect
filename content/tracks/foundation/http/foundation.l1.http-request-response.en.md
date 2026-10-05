@@ -15,7 +15,7 @@ vocab: [header, status-code]
 example_tag: stage-0
 versions_used: [http]
 content_version: 1
-status: approved
+status: published
 approved_by: owner
 reviewed_at: "2026-09-06T21:00:00+07:00"
 ---

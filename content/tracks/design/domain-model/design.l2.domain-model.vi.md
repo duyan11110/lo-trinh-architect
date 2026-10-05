@@ -15,7 +15,7 @@ vocab: [domain-model]
 example_tag: stage-2
 versions_used: [dotnet, aspnetcore, git]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-09-30T22:39:58+07:00"
 ---

@@ -15,7 +15,7 @@ vocab: [redis, key-value-store, ttl]
 example_tag: stage-2
 versions_used: [redis, docker]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-09-28T19:05:00+07:00"
 ---

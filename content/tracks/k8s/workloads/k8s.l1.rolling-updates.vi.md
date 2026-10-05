@@ -15,7 +15,7 @@ vocab: [rolling-update]
 example_tag: stage-2
 versions_used: [kubernetes]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-04T01:09:23+07:00"
 ---

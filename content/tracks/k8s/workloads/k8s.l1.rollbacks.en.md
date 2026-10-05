@@ -15,7 +15,7 @@ vocab: [rollout-history]
 example_tag: stage-2
 versions_used: [kubernetes]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-04T01:50:09+07:00"
 ---

@@ -15,7 +15,7 @@ vocab: [etcd, kube-scheduler, kubelet, control-loop]
 example_tag: stage-2
 versions_used: [kubernetes, kind]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-03T20:15:22+07:00"
 ---

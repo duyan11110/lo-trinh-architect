@@ -15,7 +15,7 @@ vocab: []
 example_tag: stage-1
 versions_used: [aspnetcore, http]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-09-26T07:00:00+07:00"
 ---

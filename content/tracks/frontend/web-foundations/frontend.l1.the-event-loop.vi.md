@@ -15,7 +15,7 @@ vocab: [event-loop]
 example_tag: stage-0
 versions_used: []
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-09-26T20:50:00+07:00"
 ---

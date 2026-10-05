@@ -15,7 +15,7 @@ vocab: []
 example_tag: stage-1
 versions_used: [dotnet, efcore]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-09-27T14:00:00+07:00"
 ---

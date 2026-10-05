@@ -15,7 +15,7 @@ vocab: [query-plan, query-planner]
 example_tag: stage-2
 versions_used: [postgresql, docker]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-09-28T14:59:21+07:00"
 ---

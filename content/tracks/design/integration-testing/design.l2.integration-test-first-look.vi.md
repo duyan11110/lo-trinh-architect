@@ -15,7 +15,7 @@ vocab: [integration-test]
 example_tag: stage-1
 versions_used: [dotnet, efcore, postgresql, xunit]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-01T20:21:45+07:00"
 ---

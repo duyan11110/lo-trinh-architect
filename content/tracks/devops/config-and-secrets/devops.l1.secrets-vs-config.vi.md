@@ -15,7 +15,7 @@ vocab: [secret]
 example_tag: stage-1
 versions_used: [docker]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-09-27T23:00:00+07:00"
 ---

@@ -15,7 +15,7 @@ vocab: []
 example_tag: stage-2
 versions_used: [github_actions, docker, dotnet, twelve_factor]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-02T22:17:01+07:00"
 ---

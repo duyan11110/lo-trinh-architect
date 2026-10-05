@@ -15,7 +15,7 @@ vocab: [service-lifetime]
 example_tag: stage-1
 versions_used: [dotnet, aspnetcore, efcore]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-09-26T08:20:00+07:00"
 ---

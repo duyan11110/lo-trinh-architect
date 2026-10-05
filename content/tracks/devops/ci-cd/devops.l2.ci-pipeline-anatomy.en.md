@@ -15,7 +15,7 @@ vocab: [github-actions, workflow, runner]
 example_tag: stage-1
 versions_used: [github_actions]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-02T20:31:12+07:00"
 ---

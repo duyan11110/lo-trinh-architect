@@ -15,7 +15,7 @@ vocab: [histogram, percentile]
 example_tag: stage-2
 versions_used: [prometheus, prometheus_net]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-09-30T03:26:50+07:00"
 ---

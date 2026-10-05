@@ -15,7 +15,7 @@ vocab: [k8s-label, label-selector]
 example_tag: stage-2
 versions_used: [kubernetes]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-03T21:01:32+07:00"
 ---

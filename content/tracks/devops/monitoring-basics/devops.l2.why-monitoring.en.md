@@ -15,7 +15,7 @@ vocab: [monitoring, metric]
 example_tag: stage-1
 versions_used: [docker, aspnetcore, caddy]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-09-29T23:43:23+07:00"
 ---

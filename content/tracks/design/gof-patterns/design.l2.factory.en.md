@@ -15,7 +15,7 @@ vocab: [factory]
 example_tag: stage-2
 versions_used: [dotnet, aspnetcore]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-09-29T21:37:00+07:00"
 ---

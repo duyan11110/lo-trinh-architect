@@ -15,7 +15,7 @@ vocab: [optimistic-concurrency, concurrency-token]
 example_tag: stage-2
 versions_used: [efcore, npgsql_efcore, postgresql, aspnetcore]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-09-28T22:41:21+07:00"
 ---

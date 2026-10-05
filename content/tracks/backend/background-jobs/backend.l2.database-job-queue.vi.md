@@ -15,7 +15,7 @@ vocab: [job-queue]
 example_tag: stage-2
 versions_used: [aspnetcore, efcore, postgresql, mailpit, docker]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-09-28T18:48:46+07:00"
 ---

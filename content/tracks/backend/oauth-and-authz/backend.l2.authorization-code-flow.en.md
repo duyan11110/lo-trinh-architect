@@ -15,7 +15,7 @@ vocab: [authorization-code-flow, pkce, oauth-scope]
 example_tag: stage-2
 versions_used: [keycloak, oauth2, oauth2_pkce]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-09-28T10:10:28+07:00"
 ---

@@ -15,7 +15,7 @@ vocab: [quality-gate]
 example_tag: stage-2
 versions_used: [github_actions, dotnet, aspnetcore, docker, testcontainers, flutter]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-02T21:21:22+07:00"
 ---

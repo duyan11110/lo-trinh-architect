@@ -15,7 +15,7 @@ vocab: [ephemeral-state, app-state]
 example_tag: stage-1
 versions_used: [flutter]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-09-29T16:40:16+07:00"
 ---
