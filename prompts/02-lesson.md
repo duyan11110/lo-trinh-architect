@@ -29,6 +29,13 @@ later. Same discipline for `.meta.json`: `claims[].text` ≤ 300 chars, `claims`
 chars — a review that adds claims eats this budget too; merge a new fact into an existing claim's table/list before
 adding a new entry. Running out of round budget fighting these caps instead of the review's actual content is a real,
 observed failure mode (tools/gen pilot, 2026-09-07).
+A fix must not create the next round's issue — at stage 3 most open majors were sentences an earlier fix added
+(2026-10-07): (1) a sentence you add that states a default, limit, behaviour or cause gets a claim in `.meta.json`; with
+no evidence for it, hedge it or move it to `open_questions` — never infer; (2) do not put back a sentence an earlier
+technical review removed or narrowed, even if the junior review asks about it — answer the junior's gap another way
+(scope wins, DECISIONS.md); (3) after changing the lesson, update any quiz answer or explanation that still states the
+old wording; (4) a sentence about code says only what the quoted lines show, or names the file and says the part is
+outside the excerpt.
 {{review_json}}{{/if}}
 
 ### Inputs

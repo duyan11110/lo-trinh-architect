@@ -15,7 +15,7 @@ vocab: []
 example_tag: stage-3
 versions_used: [efcore, npgsql_efcore, aspnetcore, git]
 content_version: 1
-status: reviewed
+status: draft
 approved_by: null
 reviewed_at: "2026-10-07T20:37:09+07:00"
 ---

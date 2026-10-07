@@ -15,7 +15,7 @@ vocab: [ddd-entity]
 example_tag: stage-2
 versions_used: [dotnet, efcore, git]
 content_version: 1
-status: reviewed
+status: draft
 approved_by: null
 reviewed_at: "2026-10-07T14:10:32+07:00"
 ---

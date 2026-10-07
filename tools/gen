@@ -150,7 +150,7 @@ call_subagent() {
   local prompt="$1 (chạy subagent này ở foreground, đợi nó trả kết quả xong hẳn rồi mới trả lời — đừng chạy nền / báo lại sau)"
   TOTAL_CALLS=$((TOTAL_CALLS + 1))
   local cmd=(claude -p "$prompt" --model "$CLAUDE_MODEL_MAIN" --max-turns "$MAX_TURNS" --output-format json
-    --allowedTools "Agent,Read,Write,Edit,Glob,Grep,Bash(tools/*),Bash(git show *),Bash(git -C examples/don-hang *)")
+    --allowedTools "Agent,Read,Write,Edit,Glob,Grep,WebFetch,Bash(tools/*),Bash(git show *),Bash(git -C examples/don-hang *)")
   log "CALL #$TOTAL_CALLS (subagent): ${cmd[*]}"
   if ! run_with_rate_limit_retry "${cmd[@]}"; then
     log "CALL #$TOTAL_CALLS: claude -p thoát khác 0 (có thể hết --max-turns) — coi là chưa xong, để vòng lặp round/fix-validation bắt lại."
@@ -165,6 +165,21 @@ validate_lesson() {
   else
     return 1
   fi
+}
+
+# validate_with_fixes ID: validate, and on errors run fix-validation (lesson,
+# then quiz) up to MAX_FIX_VALIDATION times.
+validate_with_fixes() {
+  local id="$1" fix_tries=0
+  while ! validate_lesson "$id"; do
+    fix_tries=$((fix_tries + 1))
+    if [ "$fix_tries" -gt "$MAX_FIX_VALIDATION" ]; then
+      log "$id: validate vẫn lỗi sau $MAX_FIX_VALIDATION lần fix-validation — đi tiếp, ghi lại reviewed."
+      return 1
+    fi
+    call_claude "/lesson $id fix-validation" "$CLAUDE_MODEL_MAIN"
+    call_claude "/quiz $id fix-validation" "$CLAUDE_MODEL_MAIN"
+  done
 }
 
 # set_lesson_status ID STATUS APPROVED_BY
@@ -219,32 +234,27 @@ process_lesson() {
   local final_status="reviewed"
   local approved_by=""
 
+  # known_vocab goes in a file, not in the prompt: by stage 3 it is over
+  # 100 KB, past Windows' 32K command-line limit, and claude -p failed at
+  # once with no review written (2026-10-07). The subagent has Read.
+  local known_vocab_file="logs/known-vocab/$id.json"
+  mkdir -p logs/known-vocab
+  tools/known-vocab --before "$id" >"$known_vocab_file" 2>>"$LOG_FILE" || echo '[]' >"$known_vocab_file"
+  local junior_vocab="known_vocab: danh sách đầy đủ (kèm định nghĩa) nằm trong file $known_vocab_file — ghi đường dẫn này trong lời giao việc và dặn subagent đọc nó bằng Read trước khi review"
+
+  # Round 1 reviews the whole lesson; rounds 2 and 3 re-review only what the
+  # apply-review just changed, for both reviewers, as /gen-module step 6 does.
+  # Reviewing the whole lesson again every round (what this did until
+  # 2026-10-07) never converged at stage 3: each full pass drew new issues,
+  # often from the previous fix itself, and the last round's findings were
+  # never applied. Analysis: DECISIONS.md §3, 2026-10-07.
+  validate_with_fixes "$id" || true
+  call_subagent "Dùng subagent review-technical cho bài $id"
+  call_subagent "Dùng subagent review-junior cho bài $id; $junior_vocab"
+
   while [ "$round" -lt "$MAX_ROUNDS" ]; do
     round=$((round + 1))
     log "--- $id: vòng $round ---"
-
-    local fix_tries=0
-    while [ "$fix_tries" -le "$MAX_FIX_VALIDATION" ]; do
-      if validate_lesson "$id"; then
-        break
-      fi
-      fix_tries=$((fix_tries + 1))
-      if [ "$fix_tries" -gt "$MAX_FIX_VALIDATION" ]; then
-        log "$id: validate vẫn lỗi sau $MAX_FIX_VALIDATION lần fix-validation — đi tiếp, ghi lại reviewed."
-        break
-      fi
-      call_claude "/lesson $id fix-validation" "$CLAUDE_MODEL_MAIN"
-      call_claude "/quiz $id fix-validation" "$CLAUDE_MODEL_MAIN"
-    done
-
-    call_subagent "Dùng subagent review-technical cho bài $id"
-    # known_vocab goes in a file, not in the prompt: by stage 3 it is over
-    # 100 KB, past Windows' 32K command-line limit, and claude -p failed at
-    # once with no review written (2026-10-07). The subagent has Read.
-    local known_vocab_file="logs/known-vocab/$id.json"
-    mkdir -p logs/known-vocab
-    tools/known-vocab --before "$id" >"$known_vocab_file" 2>>"$LOG_FILE" || echo '[]' >"$known_vocab_file"
-    call_subagent "Dùng subagent review-junior cho bài $id; known_vocab: danh sách đầy đủ (kèm định nghĩa) nằm trong file $known_vocab_file — ghi đường dẫn này trong lời giao việc và dặn subagent đọc nó bằng Read trước khi review"
 
     local has_blocker=0 has_major=0
     if review_has_open_severity "$review_file" "blocker"; then has_blocker=1; fi
@@ -265,8 +275,20 @@ process_lesson() {
 
     call_claude "/lesson $id apply-review" "$CLAUDE_MODEL_MAIN"
     call_claude "/quiz $id apply-review" "$CLAUDE_MODEL_MAIN"
-    validate_lesson "$id" || true
-    call_subagent "Dùng subagent review-technical cho bài $id (chỉ claim đã đổi)"
+    validate_with_fixes "$id" || true
+
+    # What changed, for the targeted re-review: the apply-review's own notes,
+    # copied out of .meta.json so the junior reviewer never opens the meta.
+    local changes_file="logs/rereview/$id.round$round.txt"
+    mkdir -p logs/rereview
+    python - "$meta_file" >"$changes_file" 2>>"$LOG_FILE" <<'PY' || echo "(không đọc được self_check.notes — đọc lại các mục mà issue blocker/major cũ chỉ tới)" >"$changes_file"
+import json, sys
+notes = json.load(open(sys.argv[1], encoding="utf-8")).get("self_check", {}).get("notes", "")
+print(notes if isinstance(notes, str) else "\n".join(map(str, notes)))
+PY
+    local targeted="Re-review có mục tiêu, vòng $((round + 1)) (không review lại toàn bài): danh sách thay đổi của lần apply-review vừa rồi nằm trong file $changes_file. Chỉ đọc lại các mục/câu quiz đã đổi và đối chiếu từng issue blocker/major cũ của chính phần review này trong .review.json. Ghi đè phần review đó: bỏ issue đã được sửa; giữ issue cũ còn đúng (ghi 'Carried from round $round'); chỉ thêm issue mới nếu nó nằm trong phần đã đổi; verdict tổng theo kết quả đó."
+    call_subagent "Dùng subagent review-technical cho bài $id. $targeted"
+    call_subagent "Dùng subagent review-junior cho bài $id; $junior_vocab. $targeted"
   done
 
   # Second, independent line of defense against the 2026-09-08 incident: even

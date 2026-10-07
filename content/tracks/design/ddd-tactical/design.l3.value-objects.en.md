@@ -15,7 +15,7 @@ vocab: [value-object]
 example_tag: stage-3
 versions_used: [dotnet, xunit, git]
 content_version: 1
-status: reviewed
+status: draft
 approved_by: null
 reviewed_at: "2026-10-07T15:40:35+07:00"
 ---
