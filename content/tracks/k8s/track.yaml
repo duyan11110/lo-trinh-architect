@@ -844,7 +844,7 @@ levels:
       - "`apps/traefik.yaml` is an Application whose source is a chart repository, a chart name and an exact chart version; the chart version is not the Traefik version it installs (`appVersion`)."
       - "The Application holds only the values Đơn Hàng changes; `helm show values` at the pinned chart version lists every key the chart accepts, with its default."
       - "Argo CD renders the chart itself, as `helm template` does, and syncs the result like a folder of manifests: `helm list -A` shows no release, and going back means reverting the commit."
-      - "A new chart version can change many objects at once; `traefik-install.sh` renders the pinned version and the next one with `helm template` and diffs them, as a review would before the commit."
+      - "A new chart version can change many objects at once; `traefik-install.sh` renders the version before the pin and the pinned one with `helm template` and diffs them, as a review of the version bump would."
       misconceptions:
       - "Seniors often assume a chart that Argo CD installed can still be upgraded or rolled back with the `helm` command."
       - "Seniors often assume copying the chart's whole `values.yaml` into the repository is the safest way to configure it."
@@ -892,7 +892,7 @@ levels:
       - scripts/k8s/gateway.sh
       outline:
       - "The Ingress API is frozen: it stays available but gets no new features, and the Kubernetes project recommends Gateway API instead, so Đơn Hàng routes its own traffic with Gateway API."
-      - "Gateway API is not built into Kubernetes: its kinds of objects are added by installing them, here together with Traefik, which implements both Ingress and Gateway API."
+      - "Gateway API is not built into Kubernetes, and Traefik's chart does not bring it: its kinds of objects are installed first from a pinned copy of the project's release; Traefik then implements both Ingress and Gateway API."
       - "A `GatewayClass` names the controller; a Gateway asks it for listeners, each a port, a protocol and an optional hostname; an HTTPRoute attaches to a Gateway through `parentRefs`."
       - "The split follows roles: whoever runs the platform owns the Gateway, and each team writes HTTPRoutes for its own Services without editing the shared entry point."
       - "Đơn Hàng's HTTPRoutes send `/api/v1`, `/api/v2` and `/openapi` to the api Service and Keycloak's host to the keycloak Service, the routes Caddy holds in Compose."
@@ -979,7 +979,7 @@ levels:
       - ".github/workflows/ci.yml"
       outline:
       - "Argo CD renders a folder with Kustomize when it finds a `kustomization.yaml` there, so the Application for `envs/staging` needs no change when that folder becomes an overlay."
-      - "`kustomize-config-repo.sh` commits the conversion; Argo CD then finds a difference only in the api's ConfigMap, now generated with a hash, and the api Pods roll once."
+      - "`kustomize-config-repo.sh` commits the conversion with automated sync paused for a moment: Argo CD finds only the api's ConfigMap, now generated with a hash, and the api Deployment different, and the api Pods roll once."
       - "Promotion becomes one change to the `images` entry of `envs/production/kustomization.yaml`, which can name the verified digest just as `api.yaml` did before."
       - "A change meant for every environment, such as a new probe, is made once in the base; by the same token, one wrong change to the base reaches every environment at its next sync."
       - "CI renders every overlay and checks the output with kubeconform, since a mistake in the base or in a patch shows only in the rendered manifests."
@@ -1146,7 +1146,7 @@ levels:
       - "`notifications` and `payments` each migrate their own database with a hook in wave 1, as the api does, before their Deployments are applied in wave 2."
       - "The HTTPRoute sends `/api/v1/refunds` to the `payments` Service, because Payments, not the api, answers that path, as Caddy routes it in Compose."
       - "Switching `db` from a Deployment with `emptyDir` to a StatefulSet starts once from an empty claim, so the init scripts seed it; after that a sync or a restart no longer reseeds."
-      - "With `notifications` scaled to 0, the script places an order, deletes `db-0` and `rabbitmq-0`, and finds the order and its waiting message after both Pods return."
+      - "With automated sync paused, since self-heal would undo it, the script scales `notifications` to 0, places an order, deletes `db-0` and `rabbitmq-0`, and finds the order and its waiting message after both Pods return."
       - "The claims still live on staging's single node: deleting the cluster, as `dr-drill.sh` does, loses them, so the drill still starts from seed data."
       misconceptions:
       - "Seniors often assume a sync from Git can wipe and reseed the database once it has a claim."
@@ -1176,7 +1176,7 @@ levels:
       - "Seniors often assume a backup written to a volume in the cluster survives losing the cluster."
       - "Seniors often assume a CronJob keeps retrying a failed backup until it works."
       - "Seniors often assume a Job starts its Pod again after it succeeds, as a Deployment would."
-      depth_notes: "Không dạy volume snapshot (k8s/bare-metal), Velero, backup etcd (k8s/operators-and-cluster-lifecycle), timeZone, startingDeadlineSeconds, completions/parallelism, alert khi Job lỗi (GĐ4). Migration vẫn là hook Pod. Không dạy lại pg_dump — devops.l3.logical-backups."
+      depth_notes: "Không dạy volume snapshot (k8s/bare-metal), Velero, backup etcd, timeZone, startingDeadlineSeconds, completions/parallelism, alert khi Job lỗi (GĐ4). Migration vẫn là hook Pod. Output có cảnh báo PodSecurity: Job vẫn chạy. Không dạy lại pg_dump — devops.l3.logical-backups."
     - id: k8s.l2.database-in-the-cluster
       title:
         vi: "Chạy PostgreSQL trong cluster thì việc vận hành nó là của bạn"
@@ -1238,7 +1238,7 @@ levels:
       example_files: [scripts/k8s/api-request-checks.sh]
       outline:
       - "Every request to the API server passes three checks in order: authentication finds out who sent it, authorization decides whether that caller may do this action, and admission controllers inspect the object before etcd stores it."
-      - "Kubernetes keeps no user accounts: a person is whoever a certificate or token the API server trusts names; `kubectl auth whoami` prints the user and groups that kind's kubeconfig signs you in as."
+      - "Kubernetes keeps no user accounts: a person is whoever a certificate or token the API server trusts names; `kubectl auth whoami` shows kind's kubeconfig signs you in as `kubernetes-admin` in group `kubeadm:cluster-admins`."
       - "Credentials the API server cannot verify get `401 Unauthorized`; a known caller without permission gets `403 Forbidden`, which kubectl prints as `Error from server (Forbidden)`."
       - "`kubectl auth can-i` asks only the authorization step and changes nothing; with `--as` an administrator asks on behalf of another user, as `api-request-checks.sh` does for a user `junior-dev`."
       - "Authorization sees only who, which verb, which kind of object and which namespace; checks on the object's content, such as which image a Pod runs, belong to admission controllers."
@@ -1380,7 +1380,7 @@ levels:
       - "`enforce` checks Pods, not the Deployments that create them: a violating Deployment is accepted, its ReplicaSet's Pods are refused, and the reason shows only in the ReplicaSet's events."
       - "`pod-security.sh` applies a Pod without a securityContext to the `restricted` namespace `pod-security-lessons` and gets a message listing each failed check; the same template in a Deployment produces no Pods."
       - "Adding `--dry-run=server` to `kubectl label` on an existing namespace lists the running Pods that would violate a level without enforcing it; `pod-security.sh` runs it on staging's `donhang`."
-      - "Staging's `donhang` gets its labels from the OpenTofu module `donhang-platform`: `enforce` at the strictest level that all its Pods pass, `warn` and `audit` at `restricted`."
+      - "Staging's `donhang` has carried its labels since `tofu-env.sh staging up` created it, from the OpenTofu module `donhang-platform`: `enforce` at `baseline`, the strictest level all its Pods pass, `warn` and `audit` at `restricted`."
       misconceptions:
       - "Seniors often assume `kubectl apply` fails when a Deployment breaks the namespace's Pod Security level."
       - "Seniors often assume Pod Security admission changes Pods so that they pass."
@@ -1466,7 +1466,7 @@ levels:
       - "Kubernetes states the rules of its network model but does not carry them out itself: every Pod gets its own IP address, and every Pod can connect to every other Pod's address, on any node."
       - "No address is rewritten between Pods: `pod-network.sh` calls `echo-ip` Pods on another node by Pod IP address, and each one answers with the caller's own Pod IP address."
       - "Each node owns a range of Pod addresses, shown as `spec.podCIDR` on the node, and a new Pod gets a free address from the range of the node it was scheduled to."
-      - "All containers of one Pod share its IP address and its ports: `two-container-pod.yaml` has one container reach the other on `localhost`, and two of them cannot listen on the same port."
+      - "All containers of one Pod share its IP address and its ports: in `two-container-pod.yaml` one container reaches the other on `localhost`, and `nc -l -p 80` in the second fails with `Address in use`."
       - "In Compose only containers on the same Docker network reach each other; the Pod network is one flat network for the whole cluster, open between all Pods until NetworkPolicies limit it."
       misconceptions:
       - "Seniors often assume a Pod on one node can reach a Pod on another node only through a Service."
@@ -1591,7 +1591,7 @@ levels:
       - "Seniors often assume looking up an outside name from a Pod sends exactly one DNS query."
       - "Seniors often assume `dnsPolicy: Default` is the policy a Pod gets when none is set."
       - "Seniors often assume extra DNS queries cost nothing because CoreDNS caches the answers."
-      depth_notes: "Không dạy dnsPolicy None/ClusterFirstWithHostNet chi tiết, hostNetwork, khác biệt giữa các thư viện tra tên (glibc, musl), timeout/attempts, NodeLocal DNSCache. Bật log CoreDNS chỉ trên cluster `donhang`, không trên staging."
+      depth_notes: "Không dạy dnsPolicy None/ClusterFirstWithHostNet chi tiết, hostNetwork, khác biệt giữa các thư viện tra tên (glibc, musl), timeout/attempts, NodeLocal DNSCache. Bật log CoreDNS chỉ trên cluster `donhang`, không trên staging. Script tra bằng `getent ahostsv4`; `example.com` cần internet."
     - id: k8s.l3.egress-policies
       title:
         vi: "Policy chặn kết nối đi ra phải chừa DNS, nếu không mọi tên đều hỏng"
@@ -1613,7 +1613,7 @@ levels:
       - "Blocking all outgoing connections blocks DNS too: after `deny-egress.yaml`, a Pod in `network-lessons` can no longer resolve `echo-ip`, because it cannot reach CoreDNS."
       - "`allow-dns-egress.yaml` allows UDP and TCP port 53 to Pods labelled `k8s-app: kube-dns` in the namespace whose `kubernetes.io/metadata.name` label is `kube-system`."
       - "Egress rules see a connection after kube-proxy has replaced the cluster IP, so a rule names the target Pods by label and their `targetPort`, not the Service's address and port."
-      - "Staging's base adds a deny-all egress policy for `donhang` and one policy per service listing what it calls, such as the api to `db`, `redis` and `rabbitmq`; `egress-policy.sh` checks the api still answers."
+      - "Staging's base adds a deny-all egress policy for `donhang`, one for DNS and one per service listing what it calls, such as the api to `db`, `redis`, `rabbitmq` and Keycloak's port 8080; `egress-policy.sh` checks the api still answers."
       - "Egress policies cover only connections that Pods open: the kubelet pulls images and runs probes from the node itself, so neither is blocked."
       misconceptions:
       - "Seniors often assume a deny-all egress policy still lets Pods resolve names, because DNS is part of the cluster."
@@ -1723,7 +1723,7 @@ levels:
       - "In layer 2 mode the speakers choose one node per Service address, and only that node's speaker answers ARP for it; the address is set on no network card."
       - "All traffic to the address enters through that node, and kube-proxy there forwards each connection to a Pod on any node, so load spreads over Pods but never over several nodes' network links."
       - "`metallb-l2.sh` shows which node announces `echo-loadbalancer`'s address and the hardware address a client container learned for it, then pauses that node's container."
-      - "The other speakers notice the node has stopped answering and another node takes over the address; connections fail until it does, which makes layer 2 mode a failover, not load balancing."
+      - "The other speakers notice the node has stopped answering and one of them announces the address from its own node; calls in the meantime can fail, which makes layer 2 mode a failover, not load balancing."
       - "MetalLB's other mode announces addresses to the network's routers, which can spread traffic over several nodes; the lab has no such router, so the module uses layer 2 mode only."
       misconceptions:
       - "Seniors often assume layer 2 mode spreads incoming traffic across all the nodes."
@@ -1746,7 +1746,7 @@ levels:
       - deploy/k8s/lessons/echo-loadbalancer-local.yaml
       - scripts/k8s/external-traffic-policy.sh
       outline:
-      - "With the default `externalTrafficPolicy: Cluster`, the receiving node may forward outside traffic to a Pod on another node and replaces the source address with its own, so `echo-ip` reports a node's address."
+      - "With the default `externalTrafficPolicy: Cluster`, the receiving node may forward outside traffic to a Pod on another node and replaces the source address with one of its own, so `echo-ip` reports a node address, not the client's."
       - "With `externalTrafficPolicy: Local`, a node sends outside traffic only to the Service's Pods on that same node and keeps the source address, so `echo-ip` reports the client container's address."
       - "A node with no ready Pod of a `Local` Service has nowhere to send its traffic, so MetalLB's speakers announce the address only from nodes that run a ready Pod of it."
       - "`external-traffic-policy.sh` calls `echo-loadbalancer` and `echo-loadbalancer-local` from the client container and prints the address `echo-ip` reports for each."
@@ -1852,7 +1852,7 @@ levels:
       - "A highly available control plane runs the API server, etcd and the other control-plane components on several nodes; kind builds one with three from `kind-ha-config.yaml`, as the cluster `donhang-ha`."
       - "Clients reach the API servers through one address in front of them: kind adds a load balancer container and writes its address into the kubeconfig; on your own machines you provide that address."
       - "etcd accepts a change only once a quorum, a majority of its members, has it; with one of three control-plane nodes paused, `kubectl get nodes` still works."
-      - "Pausing a second control-plane node leaves no majority, and `kubectl` requests fail even though one API server is still running."
+      - "Pausing a second control-plane node leaves no majority, and `kubectl` requests time out or fail with an error even though one API server is still running."
       - "Four members need three for a majority, so they survive only one failure, as three do; this is why control planes run an odd number of nodes."
       misconceptions:
       - "Seniors often assume the applications stop when the control plane goes down."
@@ -1897,7 +1897,7 @@ levels:
       - "`backup-policy-crd.yaml` defines a kind `BackupPolicy` with an OpenAPI schema; `custom-resources.sh` applies it and one object, and the API server rejects an object whose fields break the schema."
       - "A CRD only stores objects: the `BackupPolicy` is accepted and listed, yet no backup runs and no Job appears, because nothing watches that kind."
       - "A CRD is cluster-wide: deleting it deletes every object of its kind in every namespace, which is why Helm installs a chart's `crds/` folder on install and never upgrades or deletes it."
-      - "Argo CD renders a chart's CRDs and syncs them like any other manifest, so a new chart version can change a CRD that every object of its kind depends on, as a review of the diff should show."
+      - "Argo CD syncs a chart's CRDs like any other manifest, as it does for the kinds Traefik's chart brings, so a new chart version can change a CRD that every object of its kind depends on, as a review of the diff should show."
       misconceptions:
       - "Seniors often assume creating a custom resource makes something happen in the cluster by itself."
       - "Seniors often assume a CRD is a plugin that changes the API server's own code."
@@ -1930,7 +1930,7 @@ levels:
       - "Seniors often assume a Certificate object holds the certificate and its private key itself."
       - "Seniors often assume a renewed certificate lands in a new Secret that every Gateway must be pointed at."
       - "Seniors often assume cert-manager can only get certificates from a public certificate authority over the internet."
-      depth_notes: "Không dạy ACME và challenge HTTP-01/DNS-01, ClusterIssuer chi tiết, tích hợp Gateway tự tạo Certificate, trust-manager, cmctl; staging giữ chứng chỉ sealed. Không dạy lại TLS ở Gateway — k8s.l2.tls-at-the-gateway. Lab trên `donhang`, namespace `operator-lessons`."
+      depth_notes: "Không dạy ACME và challenge HTTP-01/DNS-01, ClusterIssuer chi tiết, tích hợp Gateway tự tạo Certificate, trust-manager, cmctl; staging giữ chứng chỉ sealed. Không dạy lại TLS ở Gateway — k8s.l2.tls-at-the-gateway. Lab trên `donhang`, namespace `operator-lessons`. Manifest: 3 Deployment, 6 CRD."
     - id: k8s.l3.operator-pattern
       title:
         vi: "Operator là controller vận hành hộ một phần mềm"
@@ -1958,7 +1958,7 @@ levels:
       - "Seniors often assume a controller reacts to each change event once, so a missed event is lost for good."
       - "Seniors often assume a database operator removes the need to understand how the database replicates and fails over."
       - "Seniors often assume installing an operator only adds a few harmless new kinds to the cluster."
-      depth_notes: "Không viết operator (SDK, thư viện client), finalizer, owner reference, leader election, OperatorHub; không nêu tên hay cài operator PostgreSQL (chưa có trong versions.yaml). Không dạy lại control loop — k8s.l1.control-plane-components."
+      depth_notes: "Không viết operator (SDK, thư viện client), finalizer, owner reference, leader election, OperatorHub; không nêu tên hay cài operator PostgreSQL (chưa có trong versions.yaml). Không dạy lại control loop — k8s.l1.control-plane-components. Sau cấp lại chỉ còn CertificateRequest `api-cert-2`."
     - id: k8s.l3.kubeadm
       title:
         vi: "kubeadm dựng control plane từ chứng chỉ và static Pod"
@@ -2055,9 +2055,9 @@ levels:
       example_files: [deploy/k8s/lessons/web-pdb.yaml, deploy/k8s/lessons/web-pdb-strict.yaml, scripts/k8s/drain.sh]
       outline:
       - "`kubectl cordon` marks a node unschedulable while its Pods keep running; `kubectl drain` cordons the node, then evicts its Pods so their controllers start replacements on other nodes."
-      - "An eviction is a deletion the API server checks first; `kubectl drain` needs `--ignore-daemonsets` to skip Pods that run one per node, such as kindnet's, and stops at Pods no controller would replace."
+      - "An eviction is a deletion the API server checks first; `kubectl drain` evicts nothing while the node runs Pods that run one per node, such as kindnet's (`--ignore-daemonsets`), Pods with an `emptyDir`, or Pods no controller would replace."
       - "A PodDisruptionBudget selects Pods by label and sets `minAvailable` or `maxUnavailable`; the API server refuses an eviction that would break it, and `kubectl drain` keeps retrying until it can proceed."
-      - "`drain.sh` drains a worker under `web-pdb.yaml`, 2 of 3 `web` Pods available, which finishes Pod by Pod; under `web-pdb-strict.yaml`, 3 of 3, drain retries until its timeout and the node is uncordoned."
+      - "`drain.sh` drains a worker with `--pod-selector=app=web`, leaving other lessons' Pods alone: under `web-pdb.yaml`, 2 of 3 `web` Pods available, it finishes Pod by Pod; under `web-pdb-strict.yaml`, 3 of 3, it retries until its timeout."
       - "Budgets limit evictions only: a node that fails, a direct `kubectl delete pod` and a Deployment's rolling update are not held back by them."
       - "A Pod whose claim is on kind's `standard` class cannot move: after a drain it stays `Pending` until its node is uncordoned, so draining the node of a single-copy store is an outage."
       misconceptions:
