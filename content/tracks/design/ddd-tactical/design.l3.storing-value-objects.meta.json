@@ -1,37 +1,37 @@
 {
   "id": "design.l3.storing-value-objects",
   "generated_by": "claude-opus-5-5",
-  "generated_at": "2026-10-07T16:30:00+07:00",
+  "generated_at": "2026-10-07T19:10:00+07:00",
   "claims": [
     {
       "n": 1,
-      "text": "At stage-3 order_items keeps the column unit_price_vnd (integer) from stage-2; between the stage-2 and stage-3 tags the model snapshot only renames the property UnitPriceVnd to UnitPrice, and no new migration's Up method touches unit_price_vnd.",
+      "text": "At stage-3, OrderItem declares public Vnd UnitPrice { get; private set; }; until stage-2 it was an int property UnitPriceVnd. Vnd is a sealed record with a get-only int Amount and no Id; its constructor throws for a negative amount.",
       "kind": "fact",
-      "source_hint": "examples/don-hang: git diff stage-2 stage-3 -- DonHang.Infrastructure/Migrations (DonHangDbContextModelSnapshot.cs and the new migration .cs files)",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Domain/Entities.cs:191-192, DonHang.Domain/Vnd.cs:8-16",
       "needs_verification": true,
       "section": 2
     },
     {
       "n": 2,
-      "text": "OrderItemDto is record OrderItemDto(int ProductId, int Quantity, int UnitPriceVnd) at both stage-2 and stage-3; at stage-3 OrdersController fills it with i.UnitPrice.Amount, and GET /api/v1/orders/{id} returns these items.",
+      "text": "No migration added for stage-3 changes order_items.unit_price_vnd: among non-Designer migration files, only 20260923154631_InitialCreate.cs mentions the column, creating it as table.Column<int>(type: \"integer\", nullable: false).",
       "kind": "fact",
-      "source_hint": "examples/don-hang: DonHang.Api/Dtos.cs (stage-2 line 12, stage-3 lines 12-15); stage-3 DonHang.Api/Controllers/OrdersController.cs:182",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Infrastructure/Migrations/ (InitialCreate.cs:98; stage-3 migrations 20261005*, 20261006*)",
       "needs_verification": true,
       "section": 2
     },
     {
       "n": 3,
-      "text": "A value object has no id, so nothing in it can serve as a row's key, and EF Core needs a key to track a row. So a value object that holds a single value, like Vnd, gets no table or key of its own: its value is stored in a column of its owner's row.",
+      "text": "A value object has no id of its own, so it cannot have rows of its own. In Đơn Hàng, Vnd is mapped with a value converter into its owner's row: no table or key, its single value is a column of order_items.",
       "kind": "behavior",
       "version_key": "efcore",
-      "source_hint": "EF Core docs: Keys; Keyless entity types (not tracked); Value Conversions; outline item 1",
+      "source_hint": "EF Core docs: Value Conversions (Simple value objects); examples/don-hang @ stage-3 DonHangDbContext.cs:93-95",
       "needs_verification": true,
       "section": 4
     },
     {
       "n": 4,
-      "text": "PropertyBuilder.HasConversion(convertToProviderExpression, convertFromProviderExpression): the first expression is applied when EF Core writes the value to the database, the second when it reads the column value back into the property.",
-      "kind": "syntax",
+      "text": "HasConversion(convertToProviderExpression, convertFromProviderExpression): EF Core applies the first expression when writing the property's value to the database and the second when reading the column value back into the property's type.",
+      "kind": "behavior",
       "version_key": "efcore",
       "source_hint": "EF Core docs: Value Conversions (Configuring a value converter; HasConversion with two expressions)",
       "needs_verification": true,
@@ -39,80 +39,105 @@
     },
     {
       "n": 5,
-      "text": "A property mapped with a value converter is stored in one column of the converter's provider type (int, PostgreSQL integer here) in the owning entity's table, and the model snapshot records it as Property<int> with HasColumnType(\"integer\").",
+      "text": "The column type follows the converter's provider type, not the model type. With provider type int, EF Core (Npgsql) maps the property to integer, as for an int property; the stage-3 snapshot records b.Property<int>(\"UnitPrice\").HasColumnType(\"integer\").HasColumnName(\"unit_price_vnd\").",
       "kind": "behavior",
-      "version_key": "efcore",
-      "source_hint": "EF Core docs: Value Conversions (provider type); examples/don-hang @ stage-3 DonHangDbContextModelSnapshot.cs (OrderItem.UnitPrice)",
+      "version_key": "npgsql_efcore",
+      "source_hint": "EF Core docs: Value Conversions (model/provider type; Column facets); Npgsql EF Core type mapping (int -> integer); DonHangDbContextModelSnapshot.cs:123-125",
       "needs_verification": true,
       "section": 4
     },
     {
       "n": 6,
-      "text": "When EF Core loads an Order it uses Order's private parameterless constructor, so the public constructor's checks do not run (still true at stage-3).",
-      "kind": "fact",
-      "source_hint": "examples/don-hang @ stage-3: DonHang.Domain/Entities.cs:69 (private Order()), :78 (public Order(...)); prereq design.l2.ef-core-and-private-setters",
+      "text": "The from-provider expression amount => new Vnd(amount) calls Vnd's constructor on every load, so a negative value in unit_price_vnd makes loading that row throw an exception instead of returning an item.",
+      "kind": "behavior",
+      "version_key": "efcore",
+      "source_hint": "EF Core docs: Value Conversions (conversion runs when reading values); examples/don-hang @ stage-3: DonHangDbContext.cs:95, Vnd.cs:12-16; proposed test in repo_changes_needed",
       "needs_verification": true,
       "section": 4
     },
     {
       "n": 7,
-      "text": "If the read conversion throws (new Vnd(-1) throws ArgumentOutOfRangeException), the exception propagates out of the query and the load fails; EF Core does not return the row with an unconverted value.",
-      "kind": "behavior",
-      "version_key": "efcore",
-      "source_hint": "EF Core docs: Value Conversions; examples/don-hang @ stage-3 DonHang.Domain/Vnd.cs:12-16, DonHang.Tests/Domain/VndTests.cs:22-24",
+      "text": "Loading an Order through EF Core uses its private parameterless constructor, which checks nothing (contrast with Vnd, whose checking constructor the converter calls).",
+      "kind": "fact",
+      "source_hint": "prereq design.l2.ef-core-and-private-setters summary lines 3-4; examples/don-hang @ stage-3: DonHang.Domain/Entities.cs (Order private constructor)",
       "needs_verification": true,
       "section": 4
     },
     {
       "n": 8,
-      "text": "At stage-3 db/schema.sql declares unit_price_vnd integer NOT NULL CHECK (unit_price_vnd > 0), so a table created from it refuses a negative unit price; the EF Core migrations add no such check.",
+      "text": "At stage-3, DonHangDbContext maps OrderItem.UnitPrice with HasColumnName(\"unit_price_vnd\").HasConversion(price => price.Amount, amount => new Vnd(amount)); there is no Entity<Vnd>, DbSet<Vnd>, HasKey or ToTable for Vnd. At stage-2 the int UnitPriceVnd mapped to the same column name.",
       "kind": "fact",
-      "version_key": "postgresql",
-      "source_hint": "examples/don-hang @ stage-3: db/schema.sql:30; DonHang.Infrastructure/Migrations/20260923154631_InitialCreate.cs (order_items, no check constraint)",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Infrastructure/DonHangDbContext.cs:8-15, 80-96; @ stage-2: same file, OrderItem mapping",
       "needs_verification": true,
-      "section": 4
+      "section": 5
     },
     {
       "n": 9,
-      "text": "At stage-3 DonHangDbContext maps OrderItem to order_items with key (OrderId, ProductId) and maps UnitPrice to unit_price_vnd with HasConversion(price => price.Amount, amount => new Vnd(amount)); it has no Entity<Vnd> and no DbSet<Vnd>.",
+      "text": "At stage-3, OrderItemDto is record OrderItemDto(int ProductId, int Quantity, int UnitPriceVnd), and OrdersController builds it with new OrderItemDto(i.ProductId, i.Quantity, i.UnitPrice.Amount).",
       "kind": "fact",
-      "source_hint": "examples/don-hang @ stage-3: DonHang.Infrastructure/DonHangDbContext.cs:8-15, 80-96",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Api/Dtos.cs:15, DonHang.Api/Controllers/OrdersController.cs:182",
       "needs_verification": true,
       "section": 5
     },
     {
       "n": 10,
-      "text": "ASP.NET Core's default JSON options for controllers (web defaults) serialize the property UnitPriceVnd as \"unitPriceVnd\" (camelCase), so a client sees \"unitPriceVnd\": 450000 for a seed item priced 450000.",
+      "text": "ASP.NET Core's default JSON options (web defaults) serialize an int property UnitPriceVnd as a JSON number under the camelCase name unitPriceVnd.",
       "kind": "behavior",
       "version_key": "aspnetcore",
-      "source_hint": "ASP.NET Core docs: Format response data / System.Text.Json web defaults (JsonSerializerDefaults.Web, camelCase); examples/don-hang db/seed.sql (order 1, product 2)",
+      "source_hint": "ASP.NET Core docs: Format response data / JsonSerializerDefaults.Web (camelCase property naming)",
       "needs_verification": true,
       "section": 5
     },
     {
       "n": 11,
-      "text": "Keeping Vnd out of the DTO is worth it when clients already depend on the JSON shape: nesting the amount in an object would be a breaking change with no gain for them. Opposing context: a new API version with no existing clients may weigh a richer money shape.",
-      "kind": "opinion",
-      "source_hint": "outline item 5; prior lessons on breaking change and API versioning",
-      "needs_verification": false,
+      "text": "At stage-3, DonHang.App's models.dart reads an order item's price with json['unitPriceVnd'] as int.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.App/lib/models.dart:24, 38",
+      "needs_verification": true,
       "section": 5
     },
     {
       "n": 12,
-      "text": "git diff <rev1> <rev2> -- <path> shows the changes to <path> between the two revisions, with unchanged context lines around each change.",
+      "text": "Changing unitPriceVnd to an object would break a client that reads it as a number, such as DonHang.App, and adds no protection when the domain already refuses negative amounts. Opposing view: a structured money object is right when the API must carry several currencies.",
+      "kind": "opinion",
+      "source_hint": "outline item 5, misconception 3",
+      "needs_verification": false,
+      "section": 6
+    },
+    {
+      "n": 13,
+      "text": "git grep -n -e <p1> -e <p2> <tree> -- <path> ':!<glob>' searches the given tag's tree for either pattern, prints line numbers, and excludes paths matching the ':!' (exclude) pathspec.",
       "kind": "syntax",
       "version_key": "git",
-      "source_hint": "git-diff documentation: git diff <commit> <commit> -- <path>; -U<n>, default 3 context lines",
+      "source_hint": "git-grep documentation (-e, -n, <tree>); gitglossary: pathspec, exclude magic ':!'",
       "needs_verification": true,
       "section": 7
     },
     {
-      "n": 13,
-      "text": "The read conversion calls new Vnd(amount), Vnd's public constructor, which holds the check that throws for a negative amount.",
+      "n": 14,
+      "text": "At stage-3 the Try-it command prints exactly three lines: InitialCreate.cs:98 and DonHangDbContextModelSnapshot.cs:123 and :125.",
       "kind": "fact",
-      "source_hint": "examples/don-hang @ stage-3: DonHang.Domain/Vnd.cs:12-16; DonHang.Infrastructure/DonHangDbContext.cs:95",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Infrastructure/Migrations/ (non-Designer files)",
       "needs_verification": true,
-      "section": 4
+      "section": 7
+    },
+    {
+      "n": 15,
+      "text": "EF Core keeps a model snapshot file (<Context>ModelSnapshot.cs) in the Migrations folder recording the current mapping (model); DonHangDbContextModelSnapshot.cs at stage-3 records UnitPrice as int in an integer column.",
+      "kind": "behavior",
+      "version_key": "efcore",
+      "source_hint": "EF Core docs: Managing Migrations (files added: migration, .Designer.cs, ModelSnapshot.cs); DonHangDbContextModelSnapshot.cs:123-125",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 16,
+      "text": "dotnet ef migrations add generates, next to each migration file, a <name>.Designer.cs metadata file.",
+      "kind": "behavior",
+      "version_key": "efcore",
+      "source_hint": "EF Core docs: Managing Migrations (Add a migration)",
+      "needs_verification": true,
+      "section": 7
     }
   ],
   "coverage": {
@@ -126,14 +151,16 @@
     "code_from_repo": true,
     "no_external_urls": true,
     "word_count": 1300,
-    "notes": "apply-review: s4 'only constructor' -> new Vnd(amount) public ctor (claim 13); s6 bullet 1 per review; Connections 'public one'; summary line 1 = claim 3 shortened (25-word cap). Round 2: s4 'A table needs a key' -> 'EF Core needs a key...' (claim 3 = suggested_text, now behavior/efcore); s7 snapshot sentence per review. Quiz q1/q5/q6 left to /quiz apply-review. Claim 7 test in repo_changes_needed."
+    "notes": "apply-review 2: claim 3 -> behavior; claims 15-16 (snapshot, .Designer.cs); s3 column type split; s4 no-key cause sentence, 'never reaches the API's JSON', diagram exception arrow; s5 Entity/ToTable/HasKey gloss; s6 'record of its mapping', second-field clause; s7 'if the line names one'; summary 5. Quiz q4/q5 left to /quiz apply-review. Claim 6 still unverified (repo test pending)."
   },
-  "open_questions": [],
+  "open_questions": [
+    "Junior review proposes adding value-converter to this lesson's vocab in track.yaml (Core concepts defines it plainly, unbolded). Needs owner approval."
+  ],
   "repo_changes_needed": [
     {
       "lesson": "design.l3.storing-value-objects",
-      "need": "Execution evidence for claim 7 (a throwing converter fails the load): an integration test that inserts an order_items row with unit_price_vnd = -1 into a migrations-created database and asserts loading the order throws (prompt 08); then cite it in claim 7's source_hint.",
-      "suggested_path": "DonHang.Tests/Integration"
+      "need": "Claim 6 is unverified: an integration test that inserts unit_price_vnd = -1 into a migrations-created database and asserts that loading the order throws (prompt 08).",
+      "suggested_path": "DonHang.Tests"
     }
   ]
 }
