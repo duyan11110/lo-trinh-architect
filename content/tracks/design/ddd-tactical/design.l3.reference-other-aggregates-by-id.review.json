@@ -1,0 +1,122 @@
+{
+  "id": "design.l3.reference-other-aggregates-by-id",
+  "technical": {
+    "reviewed_at": "2026-10-07T20:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "tools/extract-code --tag stage-2: Entities.cs:33 `public int CustomerId { get; private set; }`, :49 `public Customer? Customer { get; set; }`, :66 `CustomerId = customerId;` inside `public Order(int customerId, ...)`. git grep (lab box, git 2.54) for `Customer(Id)? = ` in stage-2 *.cs outside Migrations: only Entities.cs:66. DonHangDbContext.cs:47 `e.HasOne(o => o.Customer).WithMany().HasForeignKey(o => o.CustomerId);`.",
+        "source": "examples/don-hang @ stage-2: DonHang.Domain/Entities.cs; DonHang.Infrastructure/DonHangDbContext.cs"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Entities.cs @ stage-2 MarkPaid/Cancel/Ship compare `Status` and pass `Id` to `new OrderStatusException(Id, ...)` and the message; none touches CustomerId or Customer. The ledger is right; the lesson body (s4 'reads `Status` and nothing else') is not: see minor issue.",
+        "source": "examples/don-hang @ stage-2: DonHang.Domain/Entities.cs (MarkPaid, Cancel, Ship)"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Entities.cs @ stage-2: `public sealed class OrderItem { public int OrderId { get; set; } public int ProductId { get; set; } ... }` and `public sealed class Payment { public int Id ...; public int OrderId { get; set; } ... }`; neither class declares a Product or Order property. DonHangDbContext Payment mapping configures only columns.",
+        "source": "examples/don-hang @ stage-2: DonHang.Domain/Entities.cs; DonHang.Infrastructure/DonHangDbContext.cs"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "EfOrderRepository.cs:11-12 @ stage-2 `db.Orders.Include(o => o.Items).FirstOrDefaultAsync(o => o.Id == id);`. OrderService.cs:42 and :54 (`CancelOrderAsync`, `ShipOrderAsync`) both start with `await repository.FindAsync(orderId)`.",
+        "source": "examples/don-hang @ stage-2: DonHang.Infrastructure/EfOrderRepository.cs; DonHang.Domain/OrderService.cs"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "related-data/index.md:12-14 lists eager (\"as part of the initial query\"), explicit and lazy loading (\"when the navigation property is accessed\"). lazy.md:13 lazy loading needs the Microsoft.EntityFrameworkCore.Proxies package and `UseLazyLoadingProxies`; :30 navigation \"must be `virtual` and on a class that can be inherited from\". Stage-2: no Proxies package in Directory.Packages.props, `Order` is sealed, `Customer` not virtual.",
+        "source": "refs/efcore-docs/entity-framework/core/querying/related-data/index.md:12-14, lazy.md:13,30; examples/don-hang @ stage-2 Directory.Packages.props"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Lab box `git grep -n -E \"\\.Customer\\b\" stage-2 -- \"*.cs\"` outside Migrations/model config: NotificationSender.cs:69 `var customer = notification.Order!.Customer!;` (then reads customer.Email, customer.FullName at :70-71), EfOrderRepository.cs:28 projection, NotificationQueue.cs:28 `.ThenInclude(o => o.Customer)`. No assignment to Customer/FullName/Email/City through an order in non-test code.",
+        "source": "docker exec donhang-lab git grep on tag stage-2"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "tracking.md:67 \"If the result set doesn't contain any entity types, then no tracking is done.\" OrderSummary.cs @ stage-2: `public sealed record OrderSummary(int Id, string Status, string CustomerName);`, not mapped in DonHangDbContext. The JOIN half is not asserted in the lesson body (only in the quoted code comment); not separately checked.",
+        "source": "refs/efcore-docs/entity-framework/core/querying/tracking.md:67; examples/don-hang @ stage-2 DonHang.Domain/OrderSummary.cs"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "OrderService.cs @ stage-2 :26 `await repository.AddAsync(order);` :31 `notifier.Send(order, \"order placed\");` :32 `await repository.SaveChangesAsync();`; Cancel :45-47 and Ship :57-59 same pattern. QueuedNotifier.cs:14-22 `db.Notifications.Add(new Notification { Order = order, ..., Status = \"pending\", ... })`.",
+        "source": "examples/don-hang @ stage-2: DonHang.Domain/OrderService.cs; DonHang.Infrastructure/QueuedNotifier.cs"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "transactions.md:17 \"By default, if the database provider supports transactions, all changes in a single call to `SaveChanges` are applied in a transaction. If any of the changes fail, then the transaction is rolled back and none of the changes are applied to the database.\"",
+        "source": "refs/efcore-docs/entity-framework/core/saving/transactions.md:17"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "NotificationQueue.cs @ stage-2 ClaimDueAsync selects `status = 'pending'` rows `FOR UPDATE SKIP LOCKED`; NotificationSender.cs:65-80 sends via IEmailSender, sets `notification.Status = \"sent\"`, `SentAt`; CompleteAsync saves and commits. Runs from BackgroundService ExecuteAsync, not from OrderService.",
+        "source": "examples/don-hang @ stage-2: DonHang.Infrastructure/NotificationQueue.cs; DonHang.Api/Jobs/NotificationSender.cs"
+      },
+      {
+        "n": 11,
+        "verdict": "not-needed",
+        "evidence": "Design trade-off stated in s5 with its condition and the opposing case in the next sentence ('When the second change could safely happen later...'); no docs root in versions.yaml governs it. Factual premises are claims 8, 9, 10.",
+        "source": "claims 8, 9, 10"
+      },
+      {
+        "n": 12,
+        "verdict": "not-needed",
+        "evidence": "Design guideline; the lesson frames it as a guideline (s3 'the guideline that one save changes one aggregate', s6 'the guideline is about what a use case loads'), not as an EF Core rule. No versions.yaml docs root covers DDD. Code facts behind it are claims 3, 4, 6.",
+        "source": "claims 3, 4, 6"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "db/schema.sql:20 @ stage-2 `customer_id integer NOT NULL REFERENCES customers (id),`. PostgreSQL 17 s5.5.5: \"A foreign key constraint specifies that the values in a column (or a group of columns) must match the values appearing in some row of another table.\" and, for the example orders table, \"it is impossible to create orders with non-NULL product_no entries that do not appear in the products table.\"",
+        "source": "examples/don-hang @ stage-2 db/schema.sql; https://www.postgresql.org/docs/17/ddl-constraints.html (5.5.5)"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "Entities.cs @ stage-2 :8-11 `public int Id { get; set; }`, `public required string FullName { get; set; }`, `public required string Email { get; set; }`, `public required string City { get; set; }`; :49 `public Customer? Customer { get; set; }`.",
+        "source": "examples/don-hang @ stage-2: DonHang.Domain/Entities.cs"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "Run in lab box (git version 2.54.0, /repo): `git grep -n \"Customer!\" stage-2 -- \"*.cs\"` printed exactly two lines: `stage-2:DonHang.Api/Jobs/NotificationSender.cs:69:            var customer = notification.Order!.Customer!;` and `stage-2:DonHang.Infrastructure/EfOrderRepository.cs:28:            .Select(o => new OrderSummary(o.Id, o.Status, o.Customer!.FullName))`.",
+        "source": "docker exec donhang-lab git grep (run 2026-10-07)"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Contradicts the code and the ledger (claim 2): Cancel() also reads `Id`, passing it to `new OrderStatusException(Id, ...)` and the message. Same wording in quiz q1 explanation.correct ('`Cancel()` reads only `Status`', en and vi).",
+        "quote": "`Order.Cancel()` reads `Status` and nothing else",
+        "fix": "s4: \"`Order.Cancel()` reads only its own fields: `Status` to decide, and `Id` for the error message.\" Quiz q1 explanation.correct en: \"`Cancel()` reads only the order's own fields (`Status`, and `Id` for its error message)...\"; vi: \"`Cancel()` chỉ đọc field của chính đơn (`Status`, và `Id` cho thông báo lỗi)...\""
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "The lesson says the notifications row 'is not part of the order' and that every arrow crossing a boundary is an id, but at stage-2 `Notification` holds `public Order? Order { get; set; }`, QueuedNotifier sets `Order = order`, and the email job reaches the customer through `notification.Order!.Customer!`. A reader sent 'further down the file' (s5) meets this object reference right after Payment, with no explanation.",
+        "quote": "That row is not part of the order: `NotificationSender` later claims, sends and updates it on its own.",
+        "fix": "Append to that sentence: \"(`Notification` does keep an `Order` navigation: `QueuedNotifier` sets it so EF Core fills in `order_id`, and the email job reads through it; nothing changes an order through it.)\""
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  }
+}

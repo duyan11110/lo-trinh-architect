@@ -1,0 +1,319 @@
+{
+  "lesson": "design.l3.dispatching-domain-events",
+  "stage": 3,
+  "questions": [
+    {
+      "id": "design.l3.dispatching-domain-events.q1",
+      "type": "single",
+      "bloom": "understand",
+      "difficulty": 2,
+      "skills": ["design.ddd.domain-events"],
+      "section_ref": 3,
+      "question": {
+        "en": "A customer cancels an order whose status is `new`. Inside `CancelOrderAsync`, `DispatchAsync` has just returned without error, and `SaveChangesAsync` has not started yet. What does the database hold for this order at this moment?",
+        "vi": "Một khách hủy một đơn có trạng thái `new`. Bên trong `CancelOrderAsync`, `DispatchAsync` vừa trả về không lỗi, còn `SaveChangesAsync` chưa bắt đầu. Lúc này database đang giữ gì cho đơn này?"
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "Its old status and no new rows: the change and both rows exist only in the `DbContext` so far.",
+          "vi": "Trạng thái cũ và không có dòng mới nào: thay đổi và cả hai dòng tới giờ chỉ nằm trong `DbContext`."
+        },
+        {
+          "id": "b",
+          "en": "The `cancelled` status, since `Cancel()` returned before any handler was called.",
+          "vi": "Trạng thái `cancelled`, vì `Cancel()` đã trả về trước khi handler nào được gọi.",
+          "misconception": "Domain event handlers run after the order is saved, so a failing handler cannot affect the order."
+        },
+        {
+          "id": "c",
+          "en": "The row for the email and the history row, each saved by its own handler.",
+          "vi": "Dòng cho email và dòng lịch sử, mỗi dòng do handler của nó tự lưu.",
+          "misconception": "With domain events, `OrderService` no longer calls `SaveChangesAsync`, since each handler saves its own work."
+        },
+        {
+          "id": "d",
+          "en": "The `cancelled` status and both rows, since `DispatchAsync` saves what the handlers added.",
+          "vi": "Trạng thái `cancelled` và cả hai dòng, vì `DispatchAsync` lưu những gì các handler đã thêm."
+        }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "Handlers only add rows to the shared `DonHangDbContext`, and the dispatcher only hands events over and clears them. Nothing reaches the database until the single `SaveChangesAsync` that ends the use case.",
+          "b": "`Cancel()` has indeed returned, so the order looks finished. But returning changes only the object in memory; the status is written by the save, which comes after the handlers.",
+          "c": "Each handler does its own reaction, so it is natural to think it also stores its own work. But no handler saves: each only adds to the `DbContext`, and the use case saves once.",
+          "d": "The dispatcher is the code that runs right before the save, so it can look like the step that stores things. But it only hands each event to its handlers and clears the list; writing is left to `SaveChangesAsync`."
+        },
+        "vi": {
+          "correct": "Handler chỉ thêm dòng vào `DonHangDbContext` dùng chung, còn dispatcher chỉ chuyển event đi rồi xóa chúng. Chưa có gì tới database cho tới lần `SaveChangesAsync` duy nhất kết thúc use case.",
+          "b": "`Cancel()` đúng là đã trả về, nên đơn trông như đã xong. Nhưng trả về chỉ đổi object trong bộ nhớ; trạng thái được ghi bởi lần lưu, mà lần lưu đến sau các handler.",
+          "c": "Mỗi handler làm một phản ứng của riêng nó, nên dễ nghĩ nó cũng tự lưu việc của mình. Nhưng không handler nào lưu: mỗi handler chỉ thêm vào `DbContext`, và use case lưu một lần.",
+          "d": "Dispatcher là đoạn code chạy ngay trước lần lưu, nên trông như bước ghi dữ liệu. Nhưng nó chỉ chuyển từng event cho các handler rồi xóa danh sách; việc ghi để cho `SaveChangesAsync`."
+        }
+      }
+    },
+    {
+      "id": "design.l3.dispatching-domain-events.q2",
+      "type": "order",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["design.ddd.domain-events"],
+      "section_ref": 4,
+      "question": {
+        "en": "At stage-3, a customer cancels an order whose status is `new`, and the cancel succeeds. Put these steps of `CancelOrderAsync` in the order they happen.",
+        "vi": "Ở stage-3, một khách hủy một đơn có trạng thái `new`, và việc hủy thành công. Hãy sắp xếp các bước sau của `CancelOrderAsync` theo đúng thứ tự xảy ra."
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "`SaveChangesAsync` writes the status change and the handlers' rows in one transaction.",
+          "vi": "`SaveChangesAsync` ghi thay đổi trạng thái và các dòng của handler trong một giao dịch."
+        },
+        {
+          "id": "b",
+          "en": "Each handler registered for `OrderCancelled` adds its row to `DonHangDbContext`.",
+          "vi": "Mỗi handler được đăng ký cho `OrderCancelled` thêm dòng của nó vào `DonHangDbContext`."
+        },
+        {
+          "id": "c",
+          "en": "`order.Cancel()` changes the status and records `OrderCancelled`.",
+          "vi": "`order.Cancel()` đổi trạng thái và ghi lại `OrderCancelled`."
+        },
+        {
+          "id": "d",
+          "en": "The dispatcher clears the order's events.",
+          "vi": "Dispatcher xóa các event của đơn."
+        },
+        {
+          "id": "e",
+          "en": "`CancelOrderAsync` calls `DispatchAsync(order)`.",
+          "vi": "`CancelOrderAsync` gọi `DispatchAsync(order)`."
+        }
+      ],
+      "answer": ["c", "e", "b", "d", "a"],
+      "explanation": {
+        "en": {
+          "correct": "The order decides first, then the dispatcher hands its event to every registered handler and clears the list, and only then does the use case save. Because the save comes last, the status change and every handler's row are written together."
+        },
+        "vi": {
+          "correct": "Đơn quyết định trước, rồi dispatcher chuyển event của nó cho mọi handler đã đăng ký và xóa danh sách, và chỉ sau đó use case mới lưu. Vì lần lưu đến cuối cùng, thay đổi trạng thái và dòng của mọi handler được ghi cùng nhau."
+        }
+      }
+    },
+    {
+      "id": "design.l3.dispatching-domain-events.q3",
+      "type": "truefalse",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["design.ddd.domain-events"],
+      "section_ref": 6,
+      "question": {
+        "en": "At stage-3, a customer cancels an order whose status is `new`, and the customer lookup inside `NotifyCustomerOnOrderEvents` throws. Statement: the order is stored as `cancelled` anyway, and only the email is lost.",
+        "vi": "Ở stage-3, một khách hủy một đơn có trạng thái `new`, và bước tìm khách hàng bên trong `NotifyCustomerOnOrderEvents` ném lỗi. Nhận định: đơn vẫn được lưu là `cancelled`, chỉ có email bị mất."
+      },
+      "options": [
+        {
+          "id": "a",
+          "polarity": "true",
+          "en": "True, because handlers run after the order is saved, so their failure cannot reach it.",
+          "vi": "Đúng, vì handler chạy sau khi đơn đã được lưu, nên lỗi của chúng không chạm tới đơn.",
+          "misconception": "Domain event handlers run after the order is saved, so a failing handler cannot affect the order."
+        },
+        {
+          "id": "b",
+          "polarity": "true",
+          "en": "True, because `Cancel()` had already changed the status before `DispatchAsync` was called.",
+          "vi": "Đúng, vì `Cancel()` đã đổi trạng thái trước khi `DispatchAsync` được gọi."
+        },
+        {
+          "id": "c",
+          "polarity": "false",
+          "en": "False, because the exception skips `SaveChangesAsync`, so neither the status nor any row is written.",
+          "vi": "Sai, vì exception làm bỏ qua `SaveChangesAsync`, nên cả trạng thái lẫn mọi dòng đều không được ghi."
+        },
+        {
+          "id": "d",
+          "polarity": "false",
+          "en": "False, because the order is stored as `cancelled` but its history row is lost along with the email.",
+          "vi": "Sai, vì đơn được lưu là `cancelled` nhưng dòng lịch sử của nó cũng mất cùng với email."
+        }
+      ],
+      "answer": ["c"],
+      "explanation": {
+        "en": {
+          "correct": "`DispatchAsync` runs before `SaveChangesAsync`, so the exception leaves the use case before anything is written. The order keeps its old status in the database, and the cancel request returns an error.",
+          "a": "Reactions such as an email feel like things that happen after the fact, so this ordering seems natural. But at stage-3 the dispatcher runs between `order.Cancel()` and the save, so a throwing handler stops the save.",
+          "b": "The status did change in the `Order` object, so the first half sounds right. But that change lives only in the `DbContext` until the save, and the exception means the save never runs.",
+          "d": "\"False\" is the right verdict, so this option is tempting. But the reason is wrong: nothing from this request is stored, not the status either; the order's change and its reactions are kept or lost together."
+        },
+        "vi": {
+          "correct": "`DispatchAsync` chạy trước `SaveChangesAsync`, nên exception thoát khỏi use case trước khi có gì được ghi. Trong database, đơn giữ trạng thái cũ, và request hủy trả về lỗi.",
+          "a": "Những phản ứng như gửi email có vẻ là việc xảy ra sau, nên thứ tự này nghe tự nhiên. Nhưng ở stage-3, dispatcher chạy giữa `order.Cancel()` và lần lưu, nên một handler ném lỗi sẽ chặn lần lưu.",
+          "b": "Trạng thái đúng là đã đổi trong object `Order`, nên vế đầu nghe đúng. Nhưng thay đổi đó chỉ nằm trong `DbContext` cho tới lần lưu, và exception khiến lần lưu không bao giờ chạy.",
+          "d": "Kết luận \"Sai\" là đúng, nên đáp án này hấp dẫn. Nhưng lý do sai: không có gì từ request này được lưu, kể cả trạng thái; thay đổi của đơn và các phản ứng với nó được giữ hoặc mất cùng nhau."
+        }
+      }
+    },
+    {
+      "id": "design.l3.dispatching-domain-events.q4",
+      "type": "multi",
+      "bloom": "analyze",
+      "difficulty": 4,
+      "skills": ["design.ddd.domain-events"],
+      "section_ref": 5,
+      "question": {
+        "en": "At stage-3, the support team wants a third reaction to every cancelled order: one more row, in a table they read each morning. Besides the table itself, what does the stage-3 design need for this reaction? Select all that apply.",
+        "vi": "Ở stage-3, nhóm hỗ trợ khách hàng muốn có phản ứng thứ ba cho mọi đơn bị hủy: thêm một dòng vào một bảng họ đọc mỗi sáng. Ngoài chính cái bảng, thiết kế của stage-3 cần gì cho phản ứng này? Chọn tất cả đáp án đúng."
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "A new class implementing `IDomainEventHandler<OrderCancelled>` that adds the row.",
+          "vi": "Một class mới implement `IDomainEventHandler<OrderCancelled>` để thêm dòng đó."
+        },
+        {
+          "id": "b",
+          "en": "One more `AddScoped` line in `AddDonHangInfrastructure` for that class.",
+          "vi": "Thêm một dòng `AddScoped` trong `AddDonHangInfrastructure` cho class đó."
+        },
+        {
+          "id": "c",
+          "en": "A new `case` for `OrderCancelled` in the dispatcher's loop.",
+          "vi": "Một `case` mới cho `OrderCancelled` trong vòng lặp của dispatcher."
+        },
+        {
+          "id": "d",
+          "en": "A call to the new class in `CancelOrderAsync`, right after `order.Cancel()`.",
+          "vi": "Một lời gọi tới class mới trong `CancelOrderAsync`, ngay sau `order.Cancel()`."
+        },
+        {
+          "id": "e",
+          "en": "A `SaveChangesAsync` call at the end of the new handler, so its row is not lost.",
+          "vi": "Một lời gọi `SaveChangesAsync` ở cuối handler mới, để dòng của nó không bị mất.",
+          "misconception": "With domain events, `OrderService` no longer calls `SaveChangesAsync`, since each handler saves its own work."
+        }
+      ],
+      "answer": ["a", "b"],
+      "explanation": {
+        "en": {
+          "correct": "A new reaction is one handler class and one registration line. The container passes the dispatcher every registered `IDomainEventHandler<OrderCancelled>`, so it finds the new one without any change to `Order` or `CancelOrderAsync`.",
+          "c": "The dispatcher does have a `case` per kind of event, so adding one looks necessary. But `OrderCancelled` already has its `case`; only a new kind of event needs one, and a new reaction to an existing kind does not.",
+          "d": "Calling the reaction where the cancel happens is how stage-2 worked, so it feels like the obvious place. But `CancelOrderAsync` names no handler: the dispatcher reaches every registered one, and calling it here too would run it twice.",
+          "e": "Saving in the handler sounds like a way to make sure the row is kept. But the use case's own save already writes everything the `DbContext` tracks; an extra save inside one handler would break the rule that the cancel and its reactions are kept or lost together."
+        },
+        "vi": {
+          "correct": "Một phản ứng mới là một class handler và một dòng đăng ký. Container truyền cho dispatcher mọi `IDomainEventHandler<OrderCancelled>` đã đăng ký, nên nó tìm thấy handler mới mà không cần sửa `Order` hay `CancelOrderAsync`.",
+          "c": "Dispatcher đúng là có một `case` cho mỗi loại event, nên thêm một cái trông có vẻ cần. Nhưng `OrderCancelled` đã có `case` của nó; chỉ loại event mới mới cần thêm, còn một phản ứng mới cho loại đã có thì không.",
+          "d": "Gọi phản ứng ngay chỗ hủy đơn là cách stage-2 đã làm, nên đây trông như chỗ hiển nhiên. Nhưng `CancelOrderAsync` không gọi tên handler nào: dispatcher tới được mọi handler đã đăng ký, và gọi thêm ở đây sẽ khiến nó chạy hai lần.",
+          "e": "Lưu ngay trong handler nghe như cách đảm bảo dòng được giữ lại. Nhưng lần lưu của chính use case đã ghi mọi thứ `DbContext` theo dõi; một lần lưu thêm trong một handler sẽ phá quy tắc rằng việc hủy và các phản ứng với nó được giữ hoặc mất cùng nhau."
+        }
+      }
+    },
+    {
+      "id": "design.l3.dispatching-domain-events.q5",
+      "type": "scenario",
+      "bloom": "evaluate",
+      "difficulty": 4,
+      "skills": ["design.ddd.domain-events"],
+      "section_ref": 4,
+      "context": {
+        "en": "Đơn Hàng is at stage-3. The marketing team uses an outside mailing service, reached over the network through HTTP, and wants it told about every cancelled order so the customer stops receiving offers about it. A teammate is writing a new `IDomainEventHandler<OrderCancelled>` for this and asks you how the handler should do its work. One rule is fixed: the outside service must never be told about a cancellation that was not saved in `orders`.",
+        "vi": "Đơn Hàng đang ở stage-3. Nhóm marketing dùng một dịch vụ gửi thư bên ngoài, gọi qua mạng bằng HTTP, và muốn dịch vụ đó được báo về mọi đơn bị hủy để khách không còn nhận ưu đãi về đơn đó. Một đồng nghiệp đang viết một `IDomainEventHandler<OrderCancelled>` mới cho việc này và hỏi bạn handler nên làm việc của nó thế nào. Có một quy tắc cố định: dịch vụ bên ngoài không bao giờ được báo về một lần hủy chưa được lưu trong `orders`."
+      },
+      "question": {
+        "en": "Which approach should you recommend?",
+        "vi": "Bạn nên đề xuất cách nào?"
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "Call the service in `HandleAsync`; if the call fails, the exception stops the cancel before the save.",
+          "vi": "Gọi dịch vụ trong `HandleAsync`; nếu lời gọi lỗi, exception chặn việc hủy trước lần lưu."
+        },
+        {
+          "id": "b",
+          "en": "Add a row describing the cancellation to the `DbContext`, and let a separate program tell the service after the save.",
+          "vi": "Thêm vào `DbContext` một dòng mô tả việc hủy, và để một chương trình riêng báo cho dịch vụ sau lần lưu."
+        },
+        {
+          "id": "c",
+          "en": "Call the service in `HandleAsync`, then call `SaveChangesAsync` there too, so the call and the save happen together.",
+          "vi": "Gọi dịch vụ trong `HandleAsync`, rồi gọi luôn `SaveChangesAsync` ở đó, để lời gọi và lần lưu diễn ra cùng nhau.",
+          "misconception": "With domain events, `OrderService` no longer calls `SaveChangesAsync`, since each handler saves its own work."
+        },
+        {
+          "id": "d",
+          "en": "Call the service from `Order.Cancel()`, right after the status checks pass, so only valid cancels reach it.",
+          "vi": "Gọi dịch vụ từ `Order.Cancel()`, ngay sau khi các bước kiểm tra trạng thái qua, để chỉ lần hủy hợp lệ mới tới nó."
+        }
+      ],
+      "answer": ["b"],
+      "explanation": {
+        "en": {
+          "correct": "A row added to the `DbContext` joins the use case's one save, so it is stored exactly when the cancel is. The network call happens only after that, from a separate program, the same way the cancellation email is sent.",
+          "a": "A failed call does stop the cancel, so the rule looks protected. But a call that succeeds cannot be taken back if the save then fails, and the service would know about a cancel that `orders` never stored. It is right only when telling the service about an unsaved cancel does no harm.",
+          "c": "Putting the call and a save side by side feels like doing them as one step. But a network call cannot join the database transaction: the save can still fail after the call succeeded, and earlier handlers' rows would be written early. It fits only if the service's side could be undone when the save fails.",
+          "d": "Checking validity first sounds safer than reacting later. But `Order` calls no one, and the call would still happen before the save, so a failed save leaves the same mismatch. Checking validity first is right when it decides whether the event is recorded at all, and `Cancel()` already does that before any handler runs."
+        },
+        "vi": {
+          "correct": "Một dòng thêm vào `DbContext` đi cùng lần lưu duy nhất của use case, nên nó được lưu đúng khi việc hủy được lưu. Lời gọi qua mạng chỉ diễn ra sau đó, từ một chương trình riêng, giống cách email báo hủy được gửi.",
+          "a": "Lời gọi lỗi đúng là chặn việc hủy, nên quy tắc trông như được bảo vệ. Nhưng một lời gọi thành công thì không lấy lại được nếu lần lưu sau đó lỗi, và dịch vụ sẽ biết về một lần hủy mà `orders` chưa bao giờ lưu. Cách này chỉ đúng khi báo cho dịch vụ về một lần hủy chưa lưu không gây hại gì.",
+          "c": "Đặt lời gọi và lần lưu cạnh nhau trông như làm chúng thành một bước. Nhưng lời gọi qua mạng không tham gia được giao dịch của database: lần lưu vẫn có thể lỗi sau khi lời gọi đã thành công, và dòng của các handler trước sẽ bị ghi sớm. Cách này chỉ hợp nếu phía dịch vụ có thể hoàn tác khi lần lưu lỗi.",
+          "d": "Kiểm tra hợp lệ trước nghe an toàn hơn phản ứng sau. Nhưng `Order` không gọi ai, và lời gọi vẫn diễn ra trước lần lưu, nên lần lưu lỗi vẫn để lại đúng sự lệch đó. Kiểm tra hợp lệ trước chỉ đúng khi nó quyết định event có được ghi lại hay không, và `Cancel()` đã làm việc đó trước khi handler nào chạy."
+        }
+      }
+    },
+    {
+      "id": "design.l3.dispatching-domain-events.q6",
+      "type": "single",
+      "bloom": "understand",
+      "difficulty": 2,
+      "skills": ["design.ddd.domain-events"],
+      "section_ref": 6,
+      "question": {
+        "en": "At stage-3, a customer cancels an order. The API answers at once, and the cancellation email appears in Mailpit a moment later. Where was the email when the API answered?",
+        "vi": "Ở stage-3, một khách hủy một đơn. API trả lời ngay, và email báo hủy xuất hiện trong Mailpit một lúc sau. Khi API trả lời, email đang ở đâu?"
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "Already sent: `NotifyCustomerOnOrderEvents` sent it while `DispatchAsync` was running.",
+          "vi": "Đã gửi rồi: `NotifyCustomerOnOrderEvents` gửi nó trong lúc `DispatchAsync` đang chạy.",
+          "misconception": "Because the event is handled in the same use case, the email is sent at the moment the order is cancelled."
+        },
+        {
+          "id": "b",
+          "en": "As a row saved in the same transaction as the cancelled order, to be passed on to `DonHang.Notifications` after the save.",
+          "vi": "Là một dòng đã được lưu trong cùng giao dịch với đơn bị hủy, sẽ được chuyển tiếp tới `DonHang.Notifications` sau lần lưu."
+        },
+        {
+          "id": "c",
+          "en": "Only tracked by the `DbContext`; it is written once `DonHang.Notifications` reads it.",
+          "vi": "Chỉ được `DbContext` theo dõi; nó được ghi khi `DonHang.Notifications` đọc tới nó."
+        },
+        {
+          "id": "d",
+          "en": "Nowhere yet: handlers run after the response, once the order has been saved.",
+          "vi": "Chưa ở đâu cả: handler chạy sau khi trả lời, khi đơn đã được lưu.",
+          "misconception": "Domain event handlers run after the order is saved, so a failing handler cannot affect the order."
+        }
+      ],
+      "answer": ["b"],
+      "explanation": {
+        "en": {
+          "correct": "The handler added a row, and the use case's one `SaveChangesAsync` stored it with the cancelled order before the API answered. After that the row is passed on, and `DonHang.Notifications` sends the email.",
+          "a": "The handler is called `NotifyCustomer...` and runs inside the use case, so it sounds like it sends the email. But it only adds a row to the `DbContext`; no email exists until another program sends it.",
+          "c": "It is true that the row is first only tracked by the `DbContext`. But the use case saves before it returns, so by the time the API answers the row is already in the database; what comes later only passes it on.",
+          "d": "The email arriving late suggests the reaction itself ran late. But the handler ran before the save, inside the request; what comes later is only the separate program that sends the email."
+        },
+        "vi": {
+          "correct": "Handler đã thêm một dòng, và lần `SaveChangesAsync` duy nhất của use case đã lưu nó cùng đơn bị hủy trước khi API trả lời. Sau đó dòng được chuyển tiếp, và `DonHang.Notifications` gửi email.",
+          "a": "Handler có tên `NotifyCustomer...` và chạy bên trong use case, nên nghe như nó gửi email. Nhưng nó chỉ thêm một dòng vào `DbContext`; chưa có email nào cho tới khi một chương trình khác gửi đi.",
+          "c": "Đúng là lúc đầu dòng đó chỉ được `DbContext` theo dõi. Nhưng use case lưu trước khi trả về, nên lúc API trả lời thì dòng đã nằm trong database; những gì đến sau chỉ chuyển tiếp nó.",
+          "d": "Email tới muộn khiến ta nghĩ chính phản ứng chạy muộn. Nhưng handler đã chạy trước lần lưu, bên trong request; thứ đến sau chỉ là chương trình riêng gửi email."
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,120 @@
+{
+  "id": "design.l3.storing-value-objects",
+  "technical": {
+    "reviewed_at": "2026-10-07T23:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "rephrased",
+        "evidence": "git not runnable here; read the working tree (= stage-3 commit 5e918aa + one CI-only commit, per .git/logs/HEAD). Snapshot: `b.Property<int>(\"UnitPrice\").HasColumnType(\"integer\").HasColumnName(\"unit_price_vnd\")`; last stage-2 migration 20260927112811 Designer: `b.Property<int>(\"UnitPriceVnd\")` with the same two lines. No non-Designer migration except InitialCreate.cs:98 mentions unit_price_vnd. Between the tags the snapshot changes far more than this property, so 'only renames' is too broad.",
+        "source": "examples/don-hang working tree: DonHang.Infrastructure/Migrations/DonHangDbContextModelSnapshot.cs:123-125, 20260927112811_AddNotificationQueueColumns.Designer.cs:177-179, 20260923154631_InitialCreate.cs:98",
+        "suggested_text": "At stage-3 order_items keeps the column unit_price_vnd (integer) from stage-2; around that column the model snapshot's only change between the stage-2 and stage-3 tags is the property name UnitPriceVnd -> UnitPrice, and no new migration's Up method touches unit_price_vnd."
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Dtos.cs:15 `public sealed record OrderItemDto(int ProductId, int Quantity, int UnitPriceVnd);`. OrdersController.cs:13 `[Route(\"api/v1/orders\")]`, :66 `[HttpGet(\"{id:int}\")]`, :182 `order.Items.Select(i => new OrderItemDto(i.ProductId, i.Quantity, i.UnitPrice.Amount))`. Execution captures: outputs/stage-2/scripts/backend/staff-only.txt and outputs/stage-3/scripts/backend/staff-only.txt both show `\"unitPriceVnd\":450000` in an order's items.",
+        "source": "examples/don-hang working tree: DonHang.Api/Dtos.cs, DonHang.Api/Controllers/OrdersController.cs; outputs/stage-2 and outputs/stage-3 staff-only.txt"
+      },
+      {
+        "n": 3,
+        "verdict": "rephrased",
+        "evidence": "Key part holds: keyless-entity-types.md:36 keyless types \"Are never tracked for changes in the DbContext and therefore are never inserted, updated or deleted\". But 'no id, so no table' is not an EF Core consequence: owned-entities.md:134 \"owned types can be stored in a separate table from the owner ... simply call ToTable\", with a shadow key equal to the owner's (:50). Vnd gets no table because it is mapped with a value converter, not because it has no id.",
+        "source": "refs/efcore-docs/entity-framework/core/modeling/keyless-entity-types.md:36; owned-entities.md:50,134",
+        "suggested_text": "A value object has no id, so nothing in it can serve as a row's key, and EF Core needs a key to track a row. Mapped with a value converter, a single-valued value object like Vnd gets no table or key of its own: its value is stored in a column of its owner's row."
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "\"Value converters allow property values to be converted when reading from or writing to the database.\" \"you simply need to provide one function which converts from the ModelClrType to the ProviderClrType, and another for the opposite conversion\". Value-object example :369-373 `.HasConversion(v => v.Amount, v => new Dollars(v))`, :366 \"converted to the underlying decimal when stored in the database\". Model->provider is the write direction, provider->model the read direction.",
+        "source": "refs/efcore-docs/entity-framework/core/modeling/value-conversions.md:10,45,366-373"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "\"The model type is the .NET type of the property in the entity type. The provider type is the .NET type understood by the database provider.\" Repo: snapshot inside the OrderItem entity records `b.Property<int>(\"UnitPrice\") .HasColumnType(\"integer\") .HasColumnName(\"unit_price_vnd\");` while Entities.cs:192 declares `public Vnd UnitPrice`.",
+        "source": "refs/efcore-docs/entity-framework/core/modeling/value-conversions.md:17; examples/don-hang DonHangDbContextModelSnapshot.cs:123-125, DonHang.Domain/Entities.cs:192"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "constructors.md:42 \"it will first call the default parameterless constructor and then set each property to the value from the database. However, if EF Core finds a parameterized constructor with parameter names and types that match those of mapped properties...\"; :85 \"EF Core cannot set navigation properties ... using a constructor.\" Entities.cs:69 `private Order()`; :78 public `Order(int customerId, IEnumerable<OrderItem> items, DateTimeOffset placedAt)` takes the Items navigation and holds the checks.",
+        "source": "refs/efcore-docs/entity-framework/core/modeling/constructors.md:42,85; examples/don-hang DonHang.Domain/Entities.cs:65-88"
+      },
+      {
+        "n": 7,
+        "verdict": "unverified",
+        "evidence": "No EF Core doc sentence says an exception thrown by a read converter propagates out of the query; Grep exception|throw in value-conversions.md finds none, and :207 only says built-in conversions \"will fail if the string values cannot be parsed\". Could not execute code this session (git/script commands blocked by permissions). No repo test loads a -1 row (VndTests covers only the constructor). An earlier review reported a scratch run; not reproduced here.",
+        "source": "refs/efcore-docs/entity-framework/core/modeling/value-conversions.md:207; examples/don-hang DonHang.Domain/Vnd.cs:12-16, DonHang.Tests/Domain/VndTests.cs:24"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "db/schema.sql:30 `unit_price_vnd integer NOT NULL CHECK (unit_price_vnd > 0),`. InitialCreate.cs:98 `unit_price_vnd = table.Column<int>(type: \"integer\", nullable: false)`; the only AddCheckConstraint calls in non-Designer migrations are in 20260927112811 and 20261005231738 (the latter = orders_status_check per snapshot:105); none on order_items.",
+        "source": "examples/don-hang db/schema.sql:30; DonHang.Infrastructure/Migrations/*.cs (grep CheckConstraint)"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "DonHangDbContext.cs:82-83 `e.ToTable(\"order_items\"); e.HasKey(i => new { i.OrderId, i.ProductId });`, :93-95 `e.Property(i => i.UnitPrice).HasColumnName(\"unit_price_vnd\").HasConversion(price => price.Amount, amount => new Vnd(amount));`. DbSets (:10-15): Customer, Order, OrderItem, OrderStatusHistoryEntry, OutboxMessage, InboxMessage. 'Vnd' appears only in comments :89/:91 and in :95. Lesson blocks match DonHangDbContext.cs:80-96 and Dtos.cs:12-15 verbatim.",
+        "source": "examples/don-hang DonHang.Infrastructure/DonHangDbContext.cs; DonHang.Api/Dtos.cs"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "\"Features for the System.Text.Json based formatters can be configured using ... JsonOptions.JsonSerializerOptions. The default formatting is camelCase.\" DonHang.Api has no AddJsonOptions/naming policy (grep). seed.sql:38 `( 1, 2, 2,  450000)`. Execution: outputs/stage-3/scripts/backend/auth-and-orders.txt shows `\"unitPriceVnd\":450000`.",
+        "source": "refs/aspnetcore-docs/aspnetcore/web-api/advanced/formatting.md:322; examples/don-hang db/seed.sql, outputs/stage-3/scripts/backend/auth-and-orders.txt"
+      },
+      {
+        "n": 11,
+        "verdict": "not-needed",
+        "evidence": "Opinion stated with its condition (\"worth it when clients already depend on the JSON shape\") and an opposing context (\"A new API version, with no existing clients to break, is where a richer money shape could be weighed instead\"). No unconditioned ranking. Consistent with stage-3 OrderLineV2Dto, which also keeps `int UnitPriceVnd`.",
+        "source": "lesson section 5; examples/don-hang DonHang.Api/Dtos.cs:33"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Synopsis `git diff [<options>] <commit> <commit> [--] [<path>...]`: \"This form is to view the changes between two arbitrary <commit>.\" \"The <path> parameters, when given, are used to limit the diff to the named paths\". -U<n>: \"The number of context lines defaults to diff.context or 3 if the configuration variable is unset.\" (WebFetch summary.) The Try-it command was not executed; the expected output matches the two snapshot versions read from the working tree.",
+        "source": "https://git-scm.com/docs/git-diff"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Vnd.cs:12-16 `public Vnd(int amount) { if (amount < 0) throw new ArgumentOutOfRangeException(nameof(amount), \"an amount in VND cannot be negative\"); Amount = amount; }`; DonHangDbContext.cs:95 `amount => new Vnd(amount)`.",
+        "source": "examples/don-hang DonHang.Domain/Vnd.cs:12-16; DonHang.Infrastructure/DonHangDbContext.cs:95"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 9,
+        "kind": "accuracy",
+        "text": "Claim 3 rephrased: 'has no id, so it gets no table' presents a design choice as an EF Core consequence. EF Core can store an owned value object in a separate table (owned-entities.md:134). Here the converter, not the missing id, is why Vnd has no table. Same causal 'so' in s4 ('So a `Vnd` never gets a table or a key of its own'), q1 explanation.correct and q3 explanation d.",
+        "quote": "A single-valued value object like `Vnd` has no id, so it gets no table or key: its value is a column in its owner's row.",
+        "fix": "Summary line 1 -> \"A single-valued value object like `Vnd` has no id; mapped with a value converter, its value is a column in its owner's row.\" In s4 replace \"So a `Vnd` never gets a table or a key of its own.\" with \"So in Đơn Hàng a `Vnd` gets no table or key of its own.\" In q1 correct and q3 d (en+vi) drop the causal 'so/because it has no id' in favour of 'it is stored through a converter in the item's own row'."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Over-general quantifier: the converter runs only when EF Core materialises UnitPrice; a query that projects other columns (e.g. Select of Quantity, or OrderSummaryDto) builds no Vnd, so the check does not run 'on every row loaded'. Same wording in q6 explanation.correct ('runs on each row loaded').",
+        "quote": "so the check runs on every row loaded",
+        "fix": "s4: \"so the check runs every time EF Core builds a `UnitPrice` from a row.\" q6 explanation.correct (en): \"...so the \\\"never negative\\\" check runs each time a `UnitPrice` is built from a row.\" and the matching vi sentence."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Claim 7 is unverified. No EF Core doc says an exception thrown by a read conversion propagates out of the query, and the repo has no test that loads a row holding a negative unit price. Outline item 4, the diagram's third row, summary line 4 and q6 a/b/d all rest on it.",
+        "quote": "building the `Vnd` throws, and the query fails instead of handing the code a negative price",
+        "fix": "Apply the repo_changes_needed entry already in .meta.json: add an integration test in DonHang.Tests/Integration that inserts unit_price_vnd = -1 into a migrations-created database and asserts that loading the order throws (prompt 08). Then cite the test in claim 7's source_hint. The lesson text does not change."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  }
+}

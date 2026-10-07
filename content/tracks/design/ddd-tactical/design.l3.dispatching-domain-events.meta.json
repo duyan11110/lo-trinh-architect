@@ -1,0 +1,176 @@
+{
+  "id": "design.l3.dispatching-domain-events",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-10-07T23:00:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "At stage-2 CancelOrderAsync called order.Cancel(), then notifier.Send (QueuedNotifier adds a pending notifications row to the DbContext), then one SaveChangesAsync that wrote both.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: DonHang.Domain/OrderService.cs; DonHang.Infrastructure/QueuedNotifier.cs",
+      "needs_verification": true,
+      "section": 2
+    },
+    {
+      "n": 2,
+      "text": "At stage-3 CancelOrderAsync calls repository.FindAsync, order.Cancel(), events.DispatchAsync(order), repository.SaveChangesAsync() in that order and no longer calls notifier.Send; events is a DomainEventDispatcher received through OrderService's constructor.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Domain/OrderService.cs:9, 59-68",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 3,
+      "text": "DomainEventDispatcher takes one IEnumerable<IDomainEventHandler<T>> per event kind; DispatchAsync loops over order.DomainEvents, switches on type, awaits each HandleAsync, then order.ClearDomainEvents(), so a second dispatch repeats nothing; a new kind needs one more parameter and case.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Domain/IDomainEventHandler.cs:13-55",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 4,
+      "text": "IDomainEventHandler<in TEvent> where TEvent : IDomainEvent declares one method, Task HandleAsync(TEvent domainEvent).",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Domain/IDomainEventHandler.cs:8-11",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 5,
+      "text": "At stage-3 two handlers are registered for OrderCancelled: NotifyCustomerOnOrderEvents (looks up the customer, adds an outbox_messages row through IOutbox/EfOutbox, as QueuedNotifier added a notifications row at stage-2) and RecordOrderStatusHistory (adds an order_status_history row); neither saves.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Domain/NotifyCustomerOnOrderEvents.cs; DonHang.Infrastructure/RecordOrderStatusHistory.cs; EfOutbox.cs",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 6,
+      "text": "EfOutbox and RecordOrderStatusHistory both add to the injected scoped DonHangDbContext, the same instance EfOrderRepository uses within a request, so OrderService's one SaveChangesAsync writes the order's change and both rows.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Infrastructure/EfOutbox.cs, RecordOrderStatusHistory.cs, ServiceCollectionExtensions.cs:17 (AddDbContext, scoped)",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 7,
+      "text": "AddDbContext registers the DbContext with a scoped lifetime by default, so in ASP.NET Core every class resolved in one request shares the same instance.",
+      "kind": "behavior",
+      "version_key": "efcore",
+      "source_hint": "EF Core docs: DbContext Lifetime, Configuration, and Initialization — DbContext in dependency injection for ASP.NET Core",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 8,
+      "text": "SaveChangesAsync, when no transaction is open, wraps all changes it writes in one database transaction: either all are applied or, on failure, none are.",
+      "kind": "behavior",
+      "version_key": "efcore",
+      "source_hint": "EF Core docs: Saving Data — Transactions (default transaction behavior)",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 9,
+      "text": "SaveChanges/SaveChangesAsync writes every change the DbContext tracks at that moment, and only it writes them; if never called, nothing tracked is written. So a handler saving the shared context would also write the order's cancel.",
+      "kind": "behavior",
+      "version_key": "efcore",
+      "source_hint": "EF Core docs: Saving Data — Basic Save; Change Tracking overview",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 10,
+      "text": "An exception thrown from an awaited HandleAsync propagates out of DispatchAsync and out of CancelOrderAsync, so the following SaveChangesAsync line is not executed.",
+      "kind": "behavior",
+      "version_key": "dotnet",
+      "source_hint": "C# docs: Exception handling (async/await exception propagation); OrderService.cs:65-66",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 11,
+      "text": "Resolving IEnumerable<T> from the .NET DI container returns an instance of every service registered for T.",
+      "kind": "behavior",
+      "version_key": "dotnet",
+      "source_hint": ".NET docs: Dependency injection — Service registration methods (multiple registrations, IEnumerable<T>)",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 12,
+      "text": "ServiceCollectionExtensions.AddDonHangInfrastructure, called once by DonHang.Api's Program.cs, registers at stage-3 each of the six event interfaces once for NotifyCustomerOnOrderEvents and once for RecordOrderStatusHistory with AddScoped, then DomainEventDispatcher.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Infrastructure/ServiceCollectionExtensions.cs:8-11, 26-42; DonHang.Api/Program.cs:38",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 13,
+      "text": "Every use case in OrderService at stage-3 (PlaceOrderAsync, CancelOrderAsync, ShipOrderAsync, RequestRefundAsync, CompleteRefundAsync, FailRefundAsync) calls events.DispatchAsync(order) immediately before repository.SaveChangesAsync().",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Domain/OrderService.cs:49-50, 65-66, 77-78, 92-93, 105-106, 117-118",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 14,
+      "text": "At stage-3 the IOutbox row is saved with the order; after the save OutboxRelay, a hosted service run by DonHang.Api, passes it on, and the separate program DonHang.Notifications, which now runs the NotificationSender that ran inside the API at stage-2, emails Mailpit; the API does not wait.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Messaging/OutboxRelay.cs:8-11; DonHang.Api/Program.cs:48; DonHang.Notifications/Program.cs:20-31; STAGE.md (NotificationSender now in Notifications)",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 15,
+      "text": "NotifyCustomerOnOrderEvents throws InvalidOperationException when the order's customer is not found by ICustomerRepository.FindAsync.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Domain/NotifyCustomerOnOrderEvents.cs (AddMessage)",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 16,
+      "text": "A handler that calls another program over the network cannot undo that call if the later save fails; keeping handlers to rows in the same DbContext is this module's choice. Opposing view: some designs dispatch after commit when side effects outside the database are needed.",
+      "kind": "opinion",
+      "source_hint": "outline item 4; depth_notes (outbox in backend/messaging)",
+      "needs_verification": false,
+      "section": 4
+    },
+    {
+      "n": 17,
+      "text": "Adding a reaction as a new handler plus one registration leaves Order and CancelOrderAsync unchanged, which is the Open/Closed Principle applied; it holds for new reactions, not for new event kinds (new constructor parameter and case).",
+      "kind": "opinion",
+      "source_hint": "outline item 5; ServiceCollectionExtensions.cs:26-29 comment; IDomainEventHandler.cs:13-16 comment",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 18,
+      "text": "`git grep -n -A1 \"events.DispatchAsync\" stage-3 -- DonHang.Domain/OrderService.cs` in examples/don-hang prints six matches, one per use case, each followed by a line holding `await repository.SaveChangesAsync();`; -n prints line numbers, -A1 one line after each match.",
+      "kind": "syntax",
+      "version_key": "git",
+      "source_hint": "git-grep documentation (-n, -A, <tree>, pathspec); verify by running in examples/don-hang",
+      "needs_verification": true,
+      "section": 7
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [1, 2, 3, 4, 5],
+    "outline_items_missing": [],
+    "beyond_scope": [
+      "RecordOrderStatusHistory named as the second handler (plain words, no read-model term)",
+      "One sentence: a new event kind needs one more case in the dispatcher (from the code comment)",
+      "One sentence: OutboxRelay passes the row on and DonHang.Notifications (running NotificationSender) sends the email, plain words; how the row travels is deferred to the outbox lesson"
+    ]
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1450,
+    "notes": "generate; fix-validation; apply-review x2. Round 2: s7 expected result drops line numbers (tag checked via tools/extract-code: 49..117). s4 split in 3 paras, outbox_messages in plain words, NotificationSender hosted not replaced, row travel deferred to outbox lesson, why events are cleared. s5 block 59-68, IEnumerable sentence, ctor param per kind, composition root clause. Core concepts bold not applied: vocab [], bold reserved. Quiz q5/q6 left to /quiz."
+  },
+  "open_questions": [],
+  "repo_changes_needed": []
+}

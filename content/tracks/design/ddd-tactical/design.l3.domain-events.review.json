@@ -1,0 +1,188 @@
+{
+  "id": "design.l3.domain-events",
+  "technical": {
+    "reviewed_at": "2026-10-08T03:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "git show needed approval this session. Evidence: the stage-2 block quoted in backend.l2.transactions-in-practice (file=DonHang.Domain/OrderService.cs tag=stage-2 lines=40-61, checked verbatim by tools/validate): CancelOrderAsync `order.Cancel(); notifier.Send(order, \"order cancelled\"); await repository.SaveChangesAsync();`; ShipOrderAsync `order.Ship(); notifier.Send(order, \"order shipped\"); await repository.SaveChangesAsync();`.",
+        "source": "examples/don-hang @ stage-2: DonHang.Domain/OrderService.cs:40-61 (via validated block in backend.l2.transactions-in-practice.en.md:75-98)"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Validated stage-2 block (QueuedNotifier.cs tag=stage-2 lines=9-24): `public void Send(Order order, string subject) { ... db.Notifications.Add(new Notification { Order = order, Channel = \"email\", Subject = subject, Status = \"pending\", ... }); }` — stages a pending email row on the same DbContext; OrderService then calls SaveChangesAsync. Note: ledger lists section 9, but the lesson states it in s2 too (see issue).",
+        "source": "examples/don-hang @ stage-2: DonHang.Infrastructure/QueuedNotifier.cs:9-24 (via backend.l2.database-job-queue.en.md:92-109)"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Entities.cs:47-50 `private readonly List<IDomainEvent> domainEvents = [];` `public IReadOnlyList<IDomainEvent> DomainEvents => domainEvents.AsReadOnly();` `public void ClearDomainEvents() => domainEvents.Clear();`. Order (29-178) has no `event` member and no notifier/handler field or ctor parameter. Read from the submodule working tree (master, descendant of stage-3; git diff unavailable this session).",
+        "source": "examples/don-hang: DonHang.Domain/Entities.cs:29-178"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Entities.cs:121-133: four `if (Status == \"cancelled\"|\"shipped\"|\"paid\"|\"refunding\") throw new OrderStatusException(...)`, then `Status = \"cancelled\";`, then `domainEvents.Add(new OrderCancelled(this, DateTimeOffset.UtcNow));`. No other call. Lesson block lines=121-133 matches character for character.",
+        "source": "examples/don-hang: DonHang.Domain/Entities.cs:121-133"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "DomainEvents.cs:9-13 `public interface IDomainEvent { Order Order { get; } DateTimeOffset OccurredAt { get; } }`; 15/17/19 OrderPlaced, OrderCancelled, OrderShipped and 23/25/27 OrderRefundRequested, OrderRefunded, OrderRefundFailed, each `public sealed record X(Order Order, DateTimeOffset OccurredAt) : IDomainEvent;`. Lesson block lines=3-19 matches exactly.",
+        "source": "examples/don-hang: DonHang.Domain/DomainEvents.cs:1-28"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Entities.cs:78-88 public ctor ends `domainEvents.Add(new OrderPlaced(this, placedAt));` and never sets Id. EfOrderRepository.cs:40-45 AddAsync: `order.Id = await db.Database.SqlQuery<int>($\"SELECT nextval(pg_get_serial_sequence('orders', 'id'))::int AS \\\"Value\\\"\").SingleAsync(); await db.Orders.AddAsync(order);`. OrderService.PlaceOrderAsync:40-50: new Order -> AddAsync -> DispatchAsync.",
+        "source": "examples/don-hang: DonHang.Domain/Entities.cs:78-88; DonHang.Infrastructure/EfOrderRepository.cs:36-46; DonHang.Domain/OrderService.cs:40-50"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "OrderTests.cs:168-176 Cancel_NewOrder_RecordsOrderCancelled: NewOrder(); order.ClearDomainEvents(); order.Cancel(); Assert.IsType<OrderCancelled>(Assert.Single(order.DomainEvents)). 179-189 Cancel_ShippedOrder_RecordsNothing: NewOrder(); MarkPaid(); Ship(); ClearDomainEvents(); Assert.Throws<OrderStatusException>(order.Cancel); Assert.Empty(order.DomainEvents). No fake in either.",
+        "source": "examples/don-hang: DonHang.Tests/Domain/OrderTests.cs:167-189"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "events/index.md:24: \"When an event has multiple subscribers, the event handlers are invoked synchronously when an event is raised.\" using-delegates.md:48: \"When allMethodsDelegate is invoked, all three methods are called in order.\" and an uncaught exception \"is passed to the caller of the delegate\".",
+        "source": "refs/dotnet-docs/docs/csharp/programming-guide/events/index.md:24; refs/dotnet-docs/docs/csharp/programming-guide/delegates/using-delegates.md:48"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "OrderEvents.cs: `namespace DonHang.Samples.Design;` `public sealed class OrderEvents { public event Action<int>? OrderPlaced; public void Place(int orderId) { ... OrderPlaced?.Invoke(orderId); } }` — a sample class in samples/, separate from Order in DonHang.Domain.",
+        "source": "examples/don-hang: samples/DonHang.Samples/Samples/Design/OrderEvents.cs:1-16"
+      },
+      {
+        "n": 10,
+        "verdict": "not-needed",
+        "evidence": "Design guidance, labelled opinion in the ledger; the lesson argues it from its own consequence (a name tied to one reaction becomes false once a second reaction is added). No pinned-version behaviour; matches outline misconception 3.",
+        "source": "content/tracks/design/track.yaml (design.l3.domain-events misconceptions)"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Lesson s6 now says a separate step with its own DTO holding values such as the order id. OrderMessage.cs:8 `public sealed record OrderMessage(int OrderId, string CustomerEmail, string CustomerName, DateTimeOffset OccurredAt);`; NotifyCustomerOnOrderEvents.cs:17,34 maps OrderCancelled to `outbox.Add(routingKey, new OrderMessage(order.Id, ...))`. OrderCancelled itself holds `Order Order` (DomainEvents.cs:17). Ledger text is stale (see issue).",
+        "source": "examples/don-hang: DonHang.Domain/OrderMessage.cs:8; DonHang.Domain/NotifyCustomerOnOrderEvents.cs:17,29-35; DonHang.Domain/DomainEvents.cs:17"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "git-grep docs: \"<tree>… Instead of searching tracked files in the working tree, search blobs in the given trees.\"; \"-n … Prefix the line number to matching lines.\" Could not run git this session; Grep of DonHang.Domain: `domainEvents.Add` only in Entities.cs at 87,132,142,155,165,176 (six). `Status = ` at 71 (private ctor), 86, 113 (MarkPaid 109-114, no Add), 127,141,154,164,175 (each followed by Add). MarkPaid: new -> paid (112 throws unless new).",
+        "source": "https://git-scm.com/docs/git-grep; examples/don-hang: DonHang.Domain/Entities.cs:69-177"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "OrderService.cs:59-68 CancelOrderAsync: `order.Cancel(); await events.DispatchAsync(order); await repository.SaveChangesAsync(); return order;`. Primary ctor `OrderService(IOrderRepository repository, IProductPrices prices, DomainEventDispatcher events)` — no notifier. Comment 7-8: \"From stage-3 it no longer notifies anyone itself\".",
+        "source": "examples/don-hang: DonHang.Domain/OrderService.cs:7-9,59-68"
+      },
+      {
+        "n": 14,
+        "verdict": "not-needed",
+        "evidence": "Hypothetical reasoning, worded as a conditional in s6 (\"If a subscriber sent the email at once and the save then failed\"), resting on claim 8 (handlers invoked synchronously when raised). Not asserted as Đơn Hàng behaviour; no library fact beyond claim 8.",
+        "source": "claim 8: refs/dotnet-docs/docs/csharp/programming-guide/events/index.md:24"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "text": "q6 is set at stage-3, but option a says the reaction \"adds the cancellation email job\". At stage-3 the OrderCancelled reaction (NotifyCustomerOnOrderEvents.HandleAsync) adds an outbox message `order.cancelled`; the Notifications service sends the email. The `notifications` email job is stage-2 (QueuedNotifier). Key c,e,b,d,a is still correct; only option a's wording is inaccurate for stage-3.",
+        "quote": "Code outside `Order` reads `DomainEvents` and adds the cancellation email job.",
+        "fix": "Reword q6 option a (en and vi) to \"Code outside `Order` reads `DomainEvents` and reacts to the `OrderCancelled`.\"; in the explanation replace \"the email job cannot be added inside `Cancel()`\" with \"no reaction can run inside `Cancel()`\"."
+      },
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "accuracy",
+        "text": "Ledger out of sync with the lesson: claim 11 still says \"data for another service is plain data made in a separate step\", but s6 now says \"its own DTO, holding values such as the order id instead of the `Order` object\". The new wording is supported by the repo (OrderMessage), but the ledger must describe what the lesson asserts.",
+        "quote": "Sending something to another program is a separate step with its own DTO, holding values such as the order id instead of the `Order` object, taught in the messaging lessons.",
+        "fix": "In .meta.json claim 11, replace \"data for another service is plain data made in a separate step (backend/messaging)\" with \"data for another program is a separate DTO holding values such as the order id (OrderMessage, backend/messaging), made in a separate step\"; add DonHang.Domain/OrderMessage.cs to source_hint."
+      },
+      {
+        "severity": "minor",
+        "section": 2,
+        "kind": "accuracy",
+        "text": "Claim 2 is filed under section 9, but the same fact is asserted in section 2 (\"which adds an email job to the `notifications` job queue\"), where a reader meets it first.",
+        "quote": "then `notifier.Send(order, \"order cancelled\")`, which adds an email job to the `notifications` job queue, then saves.",
+        "fix": "In .meta.json claim 2, change \"section\": 9 to \"section\": 2."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-08T04:30:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation, prompt 05)",
+    "issues": [
+      {
+        "severity": "major",
+        "section": 7,
+        "kind": "term",
+        "text": "\"with stage-3 checked out\": I know a branch, a commit and a git tag, but not what checking out is or which command does it. The only commands the lesson gives are two `git grep`s, so at step 2 I would stop, unsure how to get the stage-3 version of Entities.cs in front of me.",
+        "quote": "open `DonHang.Domain/Entities.cs` with stage-3 checked out and go to each line number.",
+        "fix": "Replace \"with stage-3 checked out\" with the exact command to run first, e.g. \"after running `git checkout stage-3`\", or show the file at the tag with `git show stage-3:DonHang.Domain/Entities.cs`."
+      },
+      {
+        "severity": "minor",
+        "section": 2,
+        "kind": "example",
+        "text": "The situation's task is to let the warehouse's own program hear about cancellations, but section 6 later says sending to another program is a separate step taught in the messaging lessons, and section 4 leaves who reads the list to the next lesson. The closing question (what to record) is answered, yet the concrete task I was given stays undone.",
+        "quote": "besides the email, the warehouse's own program should hear about it.",
+        "fix": "Add one sentence at the end of section 4 saying that telling the warehouse's program needs two more steps: the next lesson's reaction code, and the messaging lessons."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "length",
+        "text": "The paragraph after the first code block packs four ideas: the `OrderPlaced` name clash with the Observer lesson, why the event holds `Order` not its id, what handlers are, and the refund events. I re-read it twice before the id part made sense.",
+        "quote": "This `OrderPlaced` is a record, a different type from the C# `OrderPlaced` event of the Observer pattern lesson, which lives in a separate sample class `OrderEvents`, not on `Order`.",
+        "fix": "Split the paragraph after the sentence about `OrderEvents`, so the name clash and the id explanation stand in separate paragraphs."
+      },
+      {
+        "severity": "minor",
+        "section": 3,
+        "kind": "style",
+        "text": "\"record\" is used in two senses: the plain-English \"a record that something happened\" in Core concepts, and the C# `record` type in section 5. I briefly wondered whether a domain event must be a C# record.",
+        "quote": "This `OrderPlaced` is a record, a different type from the C# `OrderPlaced` event",
+        "fix": "In section 5 write \"is a C# `record` type\" instead of \"is a record\", so the keyword is visibly different from the everyday word in the definition."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "style",
+        "text": "\"pins both sides\" is casual jargon; I guessed it means the tests check both the success and the refusal, but had to infer it from the next sentences.",
+        "quote": "`OrderTests` pins both sides of this.",
+        "fix": "Replace with \"`OrderTests` checks both cases: a cancel that succeeds and one that is refused.\""
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "text": "q2: the correct option c is nearly the lesson's own sentence from section 6 (\"would call its subscribers inside `Cancel()`, before the use case has saved anything\"), so I can match wording instead of reasoning.",
+        "quote": "False, because the email code would run inside `Cancel()`, before the use case saves.",
+        "fix": "Reword option c in terms of the scenario, e.g. \"False: the email code would already have run by the time `Cancel()` returns.\""
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "checked out (stage-3)"
+      ],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "fix-required"
+  }
+}
