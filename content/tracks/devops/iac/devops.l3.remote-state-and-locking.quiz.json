@@ -1,0 +1,283 @@
+{
+  "lesson": "devops.l3.remote-state-and-locking",
+  "stage": 3,
+  "questions": [
+    {
+      "id": "devops.l3.remote-state-and-locking.q1",
+      "type": "single",
+      "bloom": "understand",
+      "difficulty": 2,
+      "skills": ["devops.iac.state"],
+      "section_ref": 4,
+      "question": {
+        "en": "`donhang-staging` exists. A teammate clones the repository at stage-3 on their own laptop, fills `.env` with the team's values, and plans staging's cluster layer. The plan proposes no new cluster. Why does their fresh copy know about it?",
+        "vi": "`donhang-staging` đang tồn tại. Một đồng đội clone repository ở stage-3 về laptop của mình, điền `.env` bằng các giá trị của team, rồi plan cluster layer của staging. Plan không đề xuất tạo cluster mới. Vì sao bản sao mới tinh của họ biết cluster đó?"
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "Its `backend.tf` points at the `pg` backend, so the plan reads the same row of `donhang_tofu` as yours.",
+          "vi": "`backend.tf` của nó trỏ tới backend `pg`, nên plan đọc cùng một hàng trong `donhang_tofu` với bạn."
+        },
+        {
+          "id": "b",
+          "en": "The repository carries `terraform.tfstate`, so every clone starts with the latest state.",
+          "vi": "Repository mang theo `terraform.tfstate`, nên bản clone nào cũng bắt đầu với state mới nhất.",
+          "misconception": "Committing `terraform.tfstate` to Git is a fine way to share it with the team."
+        },
+        {
+          "id": "c",
+          "en": "The plan takes the state lock, and taking it copies your state into their folder.",
+          "vi": "Plan lấy khóa state, và việc lấy khóa chép state của bạn vào thư mục của họ."
+        },
+        {
+          "id": "d",
+          "en": "Their `.env` holds `TOFU_STATE_PASSPHRASE`, and the passphrase is what tells OpenTofu the cluster exists.",
+          "vi": "`.env` của họ chứa `TOFU_STATE_PASSPHRASE`, và chính passphrase cho OpenTofu biết cluster đã tồn tại."
+        }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "Staging's folders name the `pg` backend, which keeps the state as a row in the `staging_cluster` schema of `donhang_tofu`. Every copy that can reach that database plans from the same row, so the cluster is already recorded.",
+          "b": "Sharing a file through Git is the usual way a team shares anything, so it looks like the answer. But `.gitignore` keeps state files out of Git, and the lesson's Try it shows no state file under `deploy/tofu/envs` at all.",
+          "c": "The lock and the shared state arrive in the same lesson, so they are easy to merge. But the lock only stops a second command from working on the state at the same time; it copies nothing into any folder.",
+          "d": "Without the right passphrase the plan cannot read the row, so the passphrase does matter here. But it only decrypts the state; what the state records comes from the row the `pg` backend keeps."
+        },
+        "vi": {
+          "correct": "Các thư mục của staging khai báo backend `pg`, nơi giữ state dưới dạng một hàng trong schema `staging_cluster` của `donhang_tofu`. Bản sao nào kết nối được tới database đó cũng plan từ cùng một hàng, nên cluster đã được ghi sẵn.",
+          "b": "Chia sẻ file qua Git là cách team thường chia sẻ mọi thứ, nên nó trông như câu trả lời. Nhưng `.gitignore` giữ các file state ngoài Git, và phần Thử ngay của bài cho thấy không có file state nào trong `deploy/tofu/envs`.",
+          "c": "Khóa và state dùng chung xuất hiện trong cùng một bài, nên dễ bị gộp làm một. Nhưng khóa chỉ ngăn lệnh thứ hai làm việc trên state cùng lúc; nó không chép gì vào thư mục nào.",
+          "d": "Không có đúng passphrase thì plan không đọc được hàng đó, nên passphrase quả thật có vai trò ở đây. Nhưng nó chỉ dùng để giải mã state; điều state ghi lại đến từ hàng mà backend `pg` giữ."
+        }
+      }
+    },
+    {
+      "id": "devops.l3.remote-state-and-locking.q2",
+      "type": "truefalse",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["devops.iac.state"],
+      "section_ref": 4,
+      "question": {
+        "en": "Your `tofu apply` on staging's platform layer shows its plan and waits for `yes`. Meanwhile a teammate runs `tofu apply` on the same layer from their laptop, with no extra options. Statement: their apply waits until yours ends, then runs.",
+        "vi": "Lệnh `tofu apply` của bạn trên platform layer của staging hiện plan và chờ `yes`. Trong lúc đó một đồng đội chạy `tofu apply` trên cùng layer từ laptop của họ, không thêm tùy chọn nào. Nhận định: lệnh apply của họ chờ tới khi lệnh của bạn kết thúc rồi mới chạy."
+      },
+      "options": [
+        {
+          "id": "a",
+          "polarity": "true",
+          "en": "True, because the backend queues lock requests, the way a second `FOR UPDATE` waits for the first transaction.",
+          "vi": "Đúng, vì backend xếp hàng các yêu cầu khóa, giống cách một `FOR UPDATE` thứ hai chờ transaction thứ nhất.",
+          "misconception": "If two people apply at the same time, the second apply simply waits for the first one to finish."
+        },
+        {
+          "id": "b",
+          "polarity": "true",
+          "en": "True, because only a plan is refused; an apply that finds the state locked waits for it.",
+          "vi": "Đúng, vì chỉ plan bị từ chối; apply gặp state đang bị khóa thì sẽ chờ."
+        },
+        {
+          "id": "c",
+          "polarity": "false",
+          "en": "False, because finding the state locked, their apply stops with an error right away; only `-lock-timeout` would make it retry.",
+          "vi": "Sai, vì gặp state đang bị khóa, lệnh apply của họ dừng với lỗi ngay lập tức; chỉ `-lock-timeout` mới khiến nó thử lại."
+        },
+        {
+          "id": "d",
+          "polarity": "false",
+          "en": "False, because the lock is taken only when you type `yes`, so both applies run side by side.",
+          "vi": "Sai, vì khóa chỉ được lấy khi bạn gõ `yes`, nên hai lệnh apply chạy song song."
+        }
+      ],
+      "answer": ["c"],
+      "explanation": {
+        "en": {
+          "correct": "Your apply holds the lock for the whole wait for `yes`, and a second command that finds the state locked is refused at once. With `-lock-timeout` it would retry for that long instead of failing.",
+          "a": "A row lock taken with `FOR UPDATE` does make a second transaction wait, so the same behaviour seems natural here. But OpenTofu's default is the opposite: no retry at all.",
+          "b": "The lesson's demonstration uses a plan in the second terminal, so it can look as if only plans are refused. But the lock covers any command working on the state, an apply included.",
+          "d": "The verdict is right. But the reason is wrong: the lock is taken when the command starts and held during the wait, because the plan shown was worked out from the state as it is now."
+        },
+        "vi": {
+          "correct": "Lệnh apply của bạn giữ khóa suốt lúc chờ `yes`, và lệnh thứ hai gặp state đang bị khóa sẽ bị từ chối ngay. Có `-lock-timeout` thì nó sẽ thử lại trong khoảng thời gian đó thay vì thất bại.",
+          "a": "Row lock lấy bằng `FOR UPDATE` đúng là làm transaction thứ hai chờ, nên cách cư xử đó có vẻ tự nhiên ở đây. Nhưng mặc định của OpenTofu thì ngược lại: không thử lại chút nào.",
+          "b": "Phần minh họa của bài dùng một lệnh plan ở terminal thứ hai, nên trông như chỉ plan mới bị từ chối. Nhưng khóa áp dụng cho mọi lệnh làm việc trên state, kể cả apply.",
+          "d": "Kết luận đúng. Nhưng lý do sai: khóa được lấy khi lệnh bắt đầu và giữ suốt lúc chờ, vì plan được hiện ra đã tính từ state ở thời điểm hiện tại."
+        }
+      }
+    },
+    {
+      "id": "devops.l3.remote-state-and-locking.q3",
+      "type": "fill",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["devops.iac.state"],
+      "section_ref": 5,
+      "question": {
+        "en": "Staging's cluster layer must keep its state as a row in a table of `donhang_tofu`, where every teammate's copy of the repository finds it, and not as a `terraform.tfstate` file in the folder. Fill in the blank in `deploy/tofu/envs/staging/cluster/backend.tf`:\n\n`backend \"___\" {`",
+        "vi": "Cluster layer của staging phải giữ state của nó dưới dạng một hàng trong một bảng của `donhang_tofu`, nơi bản sao repository của mọi đồng đội tìm thấy nó, chứ không phải một file `terraform.tfstate` trong thư mục. Điền vào chỗ trống trong `deploy/tofu/envs/staging/cluster/backend.tf`:\n\n`backend \"___\" {`"
+      },
+      "answer": ["pg"],
+      "explanation": {
+        "en": {
+          "correct": "The `pg` backend keeps each state as a row of a table in PostgreSQL, here in the `staging_cluster` schema of `donhang_tofu`. Without a `backend` block OpenTofu would use the `local` backend, a `terraform.tfstate` file that only your copy has."
+        },
+        "vi": {
+          "correct": "Backend `pg` giữ mỗi state dưới dạng một hàng của một bảng trong PostgreSQL, ở đây là trong schema `staging_cluster` của `donhang_tofu`. Không có khối `backend`, OpenTofu sẽ dùng backend `local`, một file `terraform.tfstate` mà chỉ bản sao của bạn có."
+        }
+      }
+    },
+    {
+      "id": "devops.l3.remote-state-and-locking.q4",
+      "type": "multi",
+      "bloom": "analyze",
+      "difficulty": 4,
+      "skills": ["devops.iac.state"],
+      "section_ref": 6,
+      "question": {
+        "en": "A teammate proposes dropping the `pg` backend for staging: keep `terraform.tfstate` in each folder, remove it from `.gitignore`, and commit it after every apply. What goes wrong with this plan? Select all that apply.",
+        "vi": "Một đồng đội đề xuất bỏ backend `pg` cho staging: giữ `terraform.tfstate` trong từng thư mục, bỏ nó khỏi `.gitignore`, và commit nó sau mỗi lần apply. Kế hoạch này hỏng ở đâu? Chọn tất cả đáp án đúng."
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "Anyone able to read the repository, today or through its history, can read the cluster's `client_key` and other credentials.",
+          "vi": "Bất kỳ ai đọc được repository, hôm nay hay qua lịch sử của nó, đều đọc được `client_key` và các credential khác của cluster."
+        },
+        {
+          "id": "b",
+          "en": "Git holds no lock on the file, so two teammates can apply to staging at the same moment from their own clones.",
+          "vi": "Git không giữ khóa nào trên file, nên hai đồng đội có thể apply lên staging cùng một lúc từ bản clone riêng của mình."
+        },
+        {
+          "id": "c",
+          "en": "A fresh clone would have no state, so its first plan would propose creating `donhang-staging` again.",
+          "vi": "Một bản clone mới sẽ không có state, nên plan đầu tiên của nó sẽ đề xuất tạo lại `donhang-staging`."
+        },
+        {
+          "id": "d",
+          "en": "Nothing, as long as everyone pulls before applying; Git then gives each person the latest state.",
+          "vi": "Không có gì, miễn là ai cũng pull trước khi apply; khi đó Git đưa cho mỗi người state mới nhất.",
+          "misconception": "Committing `terraform.tfstate` to Git is a fine way to share it with the team."
+        }
+      ],
+      "answer": ["a", "b"],
+      "explanation": {
+        "en": {
+          "correct": "The state holds attributes in plain text, so Git hands `client_key` to every reader and keeps it in the history. Git also has no lock, so two applies from separate copies can run at once and each commit a state the other never saw.",
+          "c": "A clone without state planning everything again is the lesson's opening problem, so it comes to mind first. But here the file is committed, so a fresh clone does get a state; the trouble is what the file exposes and that nothing locks it.",
+          "d": "Pulling first does give each person the last committed state, which feels like enough. But nothing stops two people from pulling the same commit and applying at once, and the credentials sit in the repository either way. You see it as a conflict inside `terraform.tfstate` on `git pull`."
+        },
+        "vi": {
+          "correct": "State chứa thuộc tính ở dạng văn bản thường, nên Git trao `client_key` cho mọi người đọc và giữ nó trong lịch sử. Git cũng không có khóa, nên hai lần apply từ hai bản sao có thể chạy cùng lúc và mỗi bên commit một state mà bên kia chưa từng thấy.",
+          "c": "Bản clone không có state nên plan tạo lại mọi thứ là vấn đề mở đầu của bài, nên nó hiện ra đầu tiên. Nhưng ở đây file đã được commit, nên bản clone mới có state; rắc rối nằm ở những gì file làm lộ và việc không gì khóa nó.",
+          "d": "Pull trước đúng là đưa cho mỗi người state được commit gần nhất, nên có vẻ là đủ. Nhưng không gì ngăn hai người pull cùng một commit rồi apply cùng lúc, và credential vẫn nằm trong repository dù thế nào. Bạn sẽ thấy điều đó qua một conflict trong `terraform.tfstate` khi `git pull`."
+        }
+      }
+    },
+    {
+      "id": "devops.l3.remote-state-and-locking.q5",
+      "type": "single",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["devops.iac.state"],
+      "section_ref": 5,
+      "question": {
+        "en": "A teammate adds a cluster layer for a new environment, calling `kind-cluster`. Its `backend.tf` has `backend \"pg\"` with its own `schema_name` but no `encryption` block; `.env` still holds `TOFU_STATE_PASSPHRASE`. After the first apply, what does its row hold for anyone who can read the table?",
+        "vi": "Một đồng đội thêm cluster layer cho một môi trường mới, gọi `kind-cluster`. `backend.tf` của nó có `backend \"pg\"` với `schema_name` riêng nhưng không có khối `encryption`; `.env` vẫn chứa `TOFU_STATE_PASSPHRASE`. Sau lần apply đầu tiên, hàng của nó chứa gì với bất kỳ ai đọc được bảng?"
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "Every attribute of the cluster as readable text, its `client_key` among them.",
+          "vi": "Mọi thuộc tính của cluster ở dạng văn bản đọc được, trong đó có `client_key`."
+        },
+        {
+          "id": "b",
+          "en": "Only `encrypted_data`, because the `pg` backend encrypts every state it stores.",
+          "vi": "Chỉ `encrypted_data`, vì backend `pg` mã hóa mọi state nó lưu.",
+          "misconception": "Keeping the state in a database means it is encrypted."
+        },
+        {
+          "id": "c",
+          "en": "Only `encrypted_data`, because `TOFU_STATE_PASSPHRASE` is already set in `.env`.",
+          "vi": "Chỉ `encrypted_data`, vì `TOFU_STATE_PASSPHRASE` đã được đặt sẵn trong `.env`."
+        },
+        {
+          "id": "d",
+          "en": "No attributes at all; a database row keeps only `serial` and `lineage`.",
+          "vi": "Không có thuộc tính nào; một hàng trong database chỉ giữ `serial` và `lineage`."
+        }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "The `pg` backend stores whatever OpenTofu hands it. Encryption happens only when the configuration's `encryption` block tells OpenTofu to encrypt first, so without it the row holds the state's attributes in plain text.",
+          "b": "Moving the state into a database feels like moving it somewhere safe. But a database stores whatever text it is given; Đơn Hàng's rows are unreadable only because of the `encryption` block in each `backend.tf`.",
+          "c": "The passphrase is the secret behind Đơn Hàng's encryption, so its presence looks like enough. But it reaches OpenTofu only through `var.state_passphrase` in an `encryption` block, and this layer has none.",
+          "d": "The Try it lists `serial` and `lineage` among the top-level keys of a row's JSON, so they look like the whole row. But a row holds the full state; in Đơn Hàng's rows the attributes sit inside `encrypted_data`, and here they would sit there in plain text."
+        },
+        "vi": {
+          "correct": "Backend `pg` lưu bất cứ thứ gì OpenTofu đưa cho nó. Việc mã hóa chỉ xảy ra khi khối `encryption` của cấu hình bảo OpenTofu mã hóa trước, nên không có khối này thì hàng chứa thuộc tính của state ở dạng văn bản thường.",
+          "b": "Chuyển state vào database có cảm giác như chuyển nó tới nơi an toàn. Nhưng database lưu bất cứ văn bản nào nó được đưa; các hàng của Đơn Hàng không đọc được chỉ nhờ khối `encryption` trong mỗi `backend.tf`.",
+          "c": "Passphrase là bí mật đứng sau việc mã hóa của Đơn Hàng, nên việc có nó trông như là đủ. Nhưng nó chỉ tới được OpenTofu qua `var.state_passphrase` trong một khối `encryption`, và layer này không có khối đó.",
+          "d": "Phần Thử ngay liệt kê `serial` và `lineage` trong các key cấp cao nhất của JSON trong một hàng, nên chúng trông như toàn bộ hàng. Nhưng một hàng giữ toàn bộ state; ở các hàng của Đơn Hàng, thuộc tính nằm trong `encrypted_data`, còn ở đây chúng sẽ nằm ở dạng văn bản thường."
+        }
+      }
+    },
+    {
+      "id": "devops.l3.remote-state-and-locking.q6",
+      "type": "scenario",
+      "bloom": "evaluate",
+      "difficulty": 4,
+      "skills": ["devops.iac.state"],
+      "section_ref": 3,
+      "context": {
+        "en": "After each merge, a job applies staging's platform layer. About once a week it fails with `Error acquiring the state lock`, because a developer happens to be running `tofu plan` on the same layer, which takes under a minute. Nobody watches the job, so a failed run leaves a merged change unapplied until someone notices, sometimes for days. The team wants merged changes applied without anyone stepping in.",
+        "vi": "Sau mỗi lần merge, một job apply platform layer của staging. Khoảng mỗi tuần một lần nó thất bại với `Error acquiring the state lock`, vì một developer tình cờ đang chạy `tofu plan` trên cùng layer, mất chưa tới một phút. Không ai theo dõi job, nên một lần chạy hỏng để thay đổi đã merge nằm đó chưa được apply cho tới khi có người để ý, có khi vài ngày. Team muốn thay đổi đã merge được apply mà không cần ai can thiệp."
+      },
+      "question": {
+        "en": "What do you change?",
+        "vi": "Bạn thay đổi gì?"
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "Give the job's apply a `-lock-timeout` of a few minutes, so it retries until the developer's plan ends.",
+          "vi": "Cho lệnh apply của job một `-lock-timeout` vài phút, để nó thử lại tới khi plan của developer kết thúc."
+        },
+        {
+          "id": "b",
+          "en": "Point the job at a schema of its own, so it never shares a lock with developers.",
+          "vi": "Cho job trỏ tới một schema riêng, để nó không bao giờ chung khóa với developer."
+        },
+        {
+          "id": "c",
+          "en": "Keep the job's state in `terraform.tfstate` committed to Git, so it no longer needs the database lock.",
+          "vi": "Giữ state của job trong `terraform.tfstate` được commit vào Git, để nó không còn cần khóa của database.",
+          "misconception": "Committing `terraform.tfstate` to Git is a fine way to share it with the team."
+        },
+        {
+          "id": "d",
+          "en": "Leave the job as it is and rerun it by hand whenever it fails; the lock did its job.",
+          "vi": "Giữ job như cũ và chạy lại bằng tay mỗi khi nó hỏng; khóa đã làm đúng việc của nó."
+        }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "The failure is a lock held briefly by a plan, and by default a command does not retry at all. A few minutes of `-lock-timeout` lets the job wait out a plan of under a minute and then apply, with no one stepping in.",
+          "b": "A separate schema removes the collision, so it looks like a clean fix. But it gives the job a second state for the same objects, which records none of what the developers' state records, so its plan would create everything again. It is right only when the job manages different objects.",
+          "c": "Leaving the database seems to remove the lock, and with it the failure. But Git has no lock, so the job and a developer could apply at once, and the state's credentials would go into the repository. Even when only one person ever applies, so no lock is needed, the credentials still land in Git.",
+          "d": "The lock did prevent a clash, so rerunning by hand is safe. But nobody watches the job, so changes stay unapplied for days, which the team wants to avoid. It fits when someone reviews every run anyway."
+        },
+        "vi": {
+          "correct": "Lỗi đến từ một khóa mà plan giữ trong thời gian ngắn, và theo mặc định một lệnh không thử lại chút nào. Vài phút `-lock-timeout` cho phép job chờ qua một lệnh plan chưa tới một phút rồi apply, không cần ai can thiệp.",
+          "b": "Một schema riêng loại bỏ va chạm, nên trông như cách sửa gọn gàng. Nhưng nó cho job một state thứ hai cho cùng các đối tượng, state này không ghi gì trong số những thứ state của developer ghi, nên plan của nó sẽ tạo lại mọi thứ. Cách này chỉ đúng khi job quản lý những đối tượng khác.",
+          "c": "Rời bỏ database có vẻ loại bỏ được khóa, và cùng với nó là lỗi. Nhưng Git không có khóa, nên job và một developer có thể apply cùng lúc, và credential trong state sẽ nằm trong repository. Kể cả khi chỉ một người apply, nên không cần khóa, credential vẫn nằm trong Git.",
+          "d": "Khóa đúng là đã ngăn một va chạm, nên chạy lại bằng tay là an toàn. Nhưng không ai theo dõi job, nên thay đổi nằm chưa apply nhiều ngày, điều team muốn tránh. Cách này hợp khi đằng nào cũng có người xem từng lần chạy."
+        }
+      }
+    }
+  ]
+}

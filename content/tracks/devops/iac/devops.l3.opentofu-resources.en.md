@@ -15,9 +15,9 @@ vocab: [opentofu, tofu-resource, tofu-provider]
 example_tag: stage-3
 versions_used: [opentofu, opentofu_provider_kind, kind, github_actions]
 content_version: 1
-status: draft
+status: reviewed
 approved_by: null
-reviewed_at: null
+reviewed_at: "2026-10-08T00:37:11+07:00"
 ---
 
 ## Before you start
@@ -52,9 +52,9 @@ In the situation above, `first-cluster` is one configuration: OpenTofu reads all
 
 In `resource "kind_cluster" "this"`, the first quoted word is the type, the second the local name you choose. Arguments such as `name` and `node_image`, and what they mean, are defined by the provider for its type, not by OpenTofu.
 
-OpenTofu's own program knows no system's API. The `required_providers` block maps the provider's local name `kind` to the source `tehcyx/kind` (the part before the slash is the account that publishes it) and the versions it allows. OpenTofu takes the word before the first underscore of a type as a provider's local name, so `kind_cluster` belongs to `kind`. A registry stores providers by source and version, the way a container registry stores images; the default is `registry.opentofu.org`. `tofu init` looks the source up there and downloads a match into `.terraform`. When the configuration is applied (the next lesson), OpenTofu hands the `kind_cluster` block to that provider, which creates the cluster with kind, so Docker starts the node container.
+OpenTofu's own program has no resource type for kind or for the other systems you manage with it. The `required_providers` block maps the provider's local name `kind`, a name separate from a resource's local name such as `this`, to the source `tehcyx/kind` (the part before the slash is the account that publishes it) and the versions it allows. OpenTofu takes the word before the first underscore of a type as a provider's local name, so `kind_cluster` belongs to `kind`. A registry, by default `registry.opentofu.org`, stores providers by source and version, as a container registry stores images. `tofu init` downloads a match from there into `.terraform`. When the configuration is applied (next lesson), that provider creates the cluster with kind.
 
-The first `tofu init` also writes `.terraform.lock.hcl`: the exact provider version it picked and checksums of its packages (a hash of each package's content, like an image digest). The diagram shows a later run, with the file committed: every `init`, on any machine, installs that version and rejects a package that does not match, until someone runs `tofu init -upgrade`.
+The first `tofu init` also writes `.terraform.lock.hcl`: the exact provider version it picked and checksums of what it downloaded, like an image digest. The diagram shows a later run, with the file committed and `.terraform` kept out of Git: every `init`, on any machine, installs that version and rejects a download that does not match, until someone runs `tofu init -upgrade`, which picks again within the allowed versions and rewrites the file.
 
 `tofu validate` checks syntax, references (a name such as `kind_cluster.this` used in another block) and argument types against what the provider's types accept, so it needs `init` first, but it never contacts Docker.
 
@@ -90,7 +90,7 @@ resource "kind_cluster" "this" {
       role = "control-plane"
 ```
 
-`required_version` constrains OpenTofu itself with a version range: `~> 1.10.0` allows 1.10.0 and later 1.10 releases, not 1.11.0. `version = "0.11.0"`, with no operator, allows exactly one provider version. `kind_config` takes the settings a kind config file such as `kind-config.yaml` holds. The comment above the resource is a note for the next lesson; lines 29–31 only close the braces.
+`required_version` constrains OpenTofu itself with a version range: `~> 1.10.0` allows 1.10.0 and later 1.10 releases, not 1.11.0. `version = "0.11.0"`, with no operator, allows exactly one provider version. `kind_config` takes the settings a kind config file such as `kind-config.yaml` holds, including its `kind = "Cluster"` line. The comment above the resource is a note for the next lesson; lines 29–31 only close the braces.
 
 The script runs the checks first; `show` is a helper in the script that prints each command, prefixed with `$`, before running it:
 
@@ -128,7 +128,7 @@ CI's `iac` job in `.github/workflows/ci.yml` runs the same two checks: `tofu fmt
 
 ## Seniors often assume…
 
-- **"OpenTofu has built-in knowledge of kind, Kubernetes and every other system it can manage."** → Actually OpenTofu's own program knows only its language; `kind_cluster` exists in this folder because `required_providers` names `tehcyx/kind` and `init` downloaded it. You notice this when `tofu validate` in a fresh clone, before `tofu init`, fails because the provider that defines `kind_cluster` is not installed yet.
+- **"OpenTofu has built-in knowledge of kind, Kubernetes and every other system it can manage."** → Actually OpenTofu's own program has no resource type for kind; `kind_cluster` exists in this folder because `required_providers` names `tehcyx/kind` and `init` downloaded it. You notice this when `tofu validate` in a fresh clone, before `tofu init`, fails because the provider that defines `kind_cluster` is not installed yet.
 - **"A version range in `required_providers` is enough for every machine to get the same provider version."** → Actually a range allows several versions, and an `init` without `.terraform.lock.hcl` picks the newest one that matches on that day. Only the committed file fixes one version and its checksums. You notice this when two laptops running the same folder print different provider versions during `tofu init`.
 - **"If `tofu validate` passes, the cluster can certainly be created."** → Actually `validate` checks the files against the provider's description of its types and never asks Docker anything, so a stopped Docker engine shows up only later, when OpenTofu asks the provider to create the cluster. You notice this when CI's `iac` job is green and `tofu-first-cluster.sh` still fails on a laptop where Docker Desktop is not running.
 

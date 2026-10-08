@@ -13,11 +13,11 @@ prereqs: [k8s.l1.manifests-and-kubectl-apply, k8s.l1.cluster-nodes-and-control-p
 related: [k8s.l1.control-plane-components, devops.l2.deployment-environments]
 vocab: [infrastructure-as-code]
 example_tag: stage-2
-versions_used: [kind, kubernetes, opentofu]
+versions_used: [kind, kubernetes, opentofu, opentofu_provider_kind]
 content_version: 1
 status: reviewed
 approved_by: null
-reviewed_at: "2026-10-07T20:37:55+07:00"
+reviewed_at: "2026-10-07T23:27:54+07:00"
 ---
 
 ## Before you start
@@ -52,11 +52,11 @@ flowchart LR
   P --> A[makes them once you agree]
 ```
 
-In the situation above, follow the top path. `cluster-up.sh` asks kind one question: is there a cluster named `donhang`? On the first day the answer is no, so the script hands `kind-config.yaml` to `kind create cluster`, and the cluster gets exactly the nodes the file lists. From then on the answer is yes, and the script skips the file: it only switches `kubectl` to the cluster and waits for the nodes it already has. An edit to the file reaches nothing.
+In the situation above, follow the path that starts at `cluster-up.sh`. It asks kind one question: is there a cluster named `donhang`? On the first day the answer is no, so the script hands `kind-config.yaml` to `kind create cluster`, and the cluster gets exactly the nodes the file lists. From then on the answer is yes, and the script skips the file: it only switches `kubectl` to the cluster. An edit to the file reaches nothing.
 
 kind's documentation uses the node list only when `kind create cluster --config` makes a new cluster. So the only scripted way in Đơn Hàng at `stage-2` to make the cluster follow an edited node list is `scripts/k8s/cluster-down.sh`, then `cluster-up.sh`. Deleting the cluster deletes every node container and every object that ran inside, database data included. You then run `deploy.sh` again from the start.
 
-The bottom path is what infrastructure as code adds. A tool like the one this module uses next reads the file kept in Git, then reads what really exists, and compares the two. Before changing anything, it shows you the list of changes: here, one worker node more. kind sets a cluster's nodes only when it creates the cluster, so for this edit the list says the whole cluster must be replaced, and says it before deleting anything, unlike `cluster-down.sh`. You check the list, then let the tool act. Run it again with nothing edited, and the list is empty.
+The path through the IaC tool is what infrastructure as code adds. A tool like the one this module uses next reads the file kept in Git, then reads what really exists, and compares the two. Before changing anything, it shows you the list of changes. The part of that tool which handles kind cannot change an existing kind cluster, so for this edit the list shows one worker more by replacing the whole cluster. As with `cluster-down.sh`, every object inside is lost; the gain is that the list tells you so before anything is deleted, and you check it before letting the tool act. Run it again with nothing edited, and the list is empty.
 
 ## In the Đơn Hàng system
 
@@ -76,7 +76,7 @@ else
 fi
 ```
 
-The `if` line is the whole check: `kind get clusters` prints one cluster name per line (`2>/dev/null` throws away kind's error messages, so only names reach `grep`), and `grep -qx donhang` succeeds when a line is exactly `donhang`. Only the `else` branch passes `kind-config.yaml` to kind. The `if` branch switches `kubectl` to the existing cluster and moves on. It compares no node, no image and no role.
+The `if` line is the whole check: `kind get clusters` prints one cluster name per line (`2>/dev/null` keeps kind's error messages off the screen), and `grep -qx donhang` succeeds when a line is exactly `donhang`. Only the `else` branch passes `kind-config.yaml` to kind. The `if` branch switches `kubectl` to the existing cluster and moves on. It compares no node, no image and no role.
 
 The file that branch ignores, from its first non-comment line:
 
@@ -92,13 +92,13 @@ nodes:
     image: kindest/node:v1.34.11@sha256:44e222ee2132dab25ff87301682f89eb82c7880ea3a1bf543bfe9708fd08d67d
 ```
 
-Three entries under `nodes`, each with a role and the same node image pinned by its digest. The file holds no steps; it only says what the cluster should be. It has `kind` and `apiVersion` like a manifest, but only the kind tool reads it; `deploy.sh` never passes it to `kubectl`. What Đơn Hàng lacks at `stage-2` is a tool that reads it on every run and compares it with the cluster.
+Three entries under `nodes`, each with a role and the same node image pinned by its digest. The file holds no steps; it only says what the cluster should be. It has the fields `kind` and `apiVersion` like a manifest, but only the kind tool reads it; `deploy.sh` never passes it to `kubectl`. What Đơn Hàng lacks at `stage-2` is a tool that reads it on every run and compares it with the cluster.
 
 ## Seniors often assume…
 
 - **"A setup script that is idempotent, safe to run twice, is already infrastructure as code."** → Actually `cluster-up.sh` is idempotent only about whether the cluster exists; it checks a name, not the contents the file describes. Infrastructure as code compares what the file describes with what exists and changes the difference. You notice this when an edit to `kind-config.yaml` is merged and `cluster-up.sh` still prints `already exists` and exits without an error.
 - **"`kind-config.yaml` is in Git, so the running cluster always matches it."** → Actually Git keeps the file's history; nothing reads the file after the first day. You notice this when `kubectl get nodes` lists a different number of nodes than the file has entries under `nodes`, and no command ever reported it.
-- **"`kubectl apply` already makes everything declarative, so there is nothing left for another tool to describe."** → Actually `kubectl apply` works on objects inside a cluster that must already exist. The cluster itself, its nodes and their node image, is in none of the Kubernetes manifests `deploy.sh` applies; only `kind-config.yaml` describes it, and only kind reads that file. You notice this when `deploy.sh` succeeds against a cluster that still has the node count of the old file.
+- **"`kubectl apply` already makes the cluster match the files in Git, so there is nothing left for another tool to describe."** → Actually `kubectl apply` makes objects match their files only inside a cluster that must already exist. The cluster itself, its nodes and their node image, is in none of the Kubernetes manifests `deploy.sh` applies; only `kind-config.yaml` describes it, and only kind reads that file. You notice this when `deploy.sh` succeeds against a cluster that still has the node count of the old file.
 
 ## Try it (3 minutes)
 
@@ -108,7 +108,7 @@ With the `donhang` cluster running, in the `don-hang` repository folder, in the 
 2. Run `scripts/k8s/cluster-up.sh`, then `kubectl get nodes`.
 3. Run `git checkout deploy/k8s/kind-config.yaml` to undo the edit.
 
-Expected result: step 2 prints `The cluster donhang already exists.` and finishes without an error. `kubectl get nodes` still lists three nodes, two of them workers, while the file you edited declares two.
+Expected result: step 2 prints `The cluster donhang already exists.` and finishes without an error. `kubectl get nodes` still lists three nodes, two of them workers, while the file you edited declares two nodes, only one of them a worker.
 
 ## Connections
 
