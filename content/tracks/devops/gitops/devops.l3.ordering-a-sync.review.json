@@ -1,0 +1,200 @@
+{
+  "id": "devops.l3.ordering-a-sync",
+  "technical": {
+    "reviewed_at": "2026-10-08T06:37:13+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Argo CD 3.1 Sync Phases and Waves: \"When Argo CD starts a sync, it orders the resources in the following precedence: The phase; The wave they are in (lower values first); By kind ...; By name.\" No file criterion. Execution: gitops-order.txt line 2 lists envs/staging/api.yaml first, yet '5. wave 2: Deployment api created' is last.",
+        "source": "https://argo-cd.readthedocs.io/en/release-3.1/user-guide/sync-waves/ ; examples/don-hang@stage-3 outputs/stage-3/scripts/devops/gitops-order.txt"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "K8s annotations.md:10 \"Clients such as tools and libraries can retrieve this metadata.\" :18 annotations \"are not used to identify and select objects.\" Argo CD 3.1: \"Hooks and resources are assigned to wave 0 by default.\" migrate-hook.yaml:14 argocd.argoproj.io/sync-wave: \"1\" (quoted string).",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/overview/working-with-objects/annotations.md; https://argo-cd.readthedocs.io/en/release-3.1/user-guide/sync-waves/"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Argo CD 3.1: next wave = \"the first number where any resource is out-of-sync or unhealthy.\" \"It applies resources in that wave.\" \"It repeats this process until all phases and waves are in-sync and healthy.\" (waiting is per wave). Sync hook: \"If any of them fails the whole sync process will be marked as failed.\" Execution: migrate has no readinessProbe (would be Ready while running), yet api creation sorts after migrate finishedAt, so wave 1 ended on termination, not readiness.",
+        "source": "https://argo-cd.readthedocs.io/en/release-3.1/user-guide/sync-waves/ ; examples/don-hang@stage-3 migrate-hook.yaml, outputs/stage-3/scripts/devops/gitops-order.txt"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Argo CD 3.1 hook table: PreSync \"Executes prior to the application of the manifests.\" Sync \"Executes after all PreSync hooks completed and were successful, at the same time as the application of the manifests.\" PostSync \"Executes after all Sync hooks completed and were successful\". \"Hooks can be any type of Kubernetes resource kind, but tend to be Pod, Job or Argo Workflows.\"",
+        "source": "https://argo-cd.readthedocs.io/en/release-3.1/user-guide/sync-waves/"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Docs silent on re-running except \"Note that hooks do not run during a selective sync operation.\" (lesson scopes to 'every sync of the whole Application'). Execution: gitops-order.sh:58-61 compares uid; output 'a new Pod migrate ran: Succeeded' after a sync with nothing changed. Not compared: gitops-first-sync.txt:5-24 lists no Pod/migrate among OutOfSync resources; :48 Pod/migrate has no sync status.",
+        "source": "https://argo-cd.readthedocs.io/en/release-3.1/user-guide/sync-waves/ ; examples/don-hang@stage-3 outputs/stage-3/scripts/devops/gitops-order.txt, gitops-first-sync.txt"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Argo CD 3.1 Hook deletion policies, BeforeHookCreation: \"Any existing hook resource is deleted before the new one is created (since v1.3).\" Lesson and diagram say only 'before the new one', no wave timing.",
+        "source": "https://argo-cd.readthedocs.io/en/release-3.1/user-guide/sync-waves/"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "K8s glossary Name:17 \"Only one object of a given kind can have a given name at a time. However, if you delete the object, you can make a new object with the same name.\"",
+        "source": "refs/kubernetes-website/content/en/docs/reference/glossary/name.md"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "K8s pod-lifecycle.md:117 Failed: \"at least one container has terminated in failure ... and is not set for automatic restarting.\" Argo CD 3.1 Sync hooks: \"If any of them fails the whole sync process will be marked as failed.\" A later wave is applied only once earlier waves are in-sync and healthy, so wave 2 (api) is not applied. Not demonstrated by script; depth_notes allows words only.",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/workloads/pods/pod-lifecycle.md; https://argo-cd.readthedocs.io/en/release-3.1/user-guide/sync-waves/"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "envs/staging files: api-configmap, api, db-init, db, keycloak-realm, keycloak, mailpit, migrate-hook, redis (.yaml); by name api.yaml precedes db.yaml and migrate-hook.yaml. db.yaml:15 sync-wave \"0\"; api.yaml:15 sync-wave \"2\"; migrate-hook.yaml:13-15. gitops-order.txt:2-6 (grep over all files) shows these are the only wave/hook annotations.",
+        "source": "examples/don-hang@stage-3 deploy/gitops/config-repo/envs/staging/; outputs/stage-3/scripts/devops/gitops-order.txt"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Argo CD 3.1 Health, Deployment: \"Observed generation is equal to desired generation. Number of updated replicas equals the number of desired replicas.\" (page silent on readiness). Execution: gitops-first-sync.txt:30-38 Progressing at AVAILABLE 0, Healthy at AVAILABLE 2. db.yaml:45-49 readinessProbe exec pg_isready -h 127.0.0.1. gitops-order.txt: db available sorts before migrate started.",
+        "source": "https://argo-cd.readthedocs.io/en/release-3.1/operator-manual/health/ ; examples/don-hang@stage-3 envs/staging/db.yaml, outputs/stage-3/scripts/devops/gitops-first-sync.txt"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "EF Core applying.md:393 (bundles): \"This time, all three migrations were applied, since none of them had yet been applied to the production database.\" Execution: gitops-order.txt last lines 'a new Pod migrate ran: Succeeded', 'No migrations were applied. The database is already up to date.', 'Done.'",
+        "source": "refs/efcore-docs/entity-framework/core/managing-schemas/migrations/applying.md; examples/don-hang@stage-3 outputs/stage-3/scripts/devops/gitops-order.txt"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "deploy.sh@stage-3 :34-36 apply db/redis/keycloak/mailpit, kubectl wait --for=condition=Available deployment/db; :41-42 delete pod migrate --ignore-not-found, apply migrate-pod.yaml; :44-48 poll phase until Succeeded or Failed; :50-53 exit 1 if not Succeeded; :56 kubectl apply -f deploy/k8s/api.yaml.",
+        "source": "examples/don-hang@stage-3 scripts/k8s/deploy.sh"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "tools/extract-code outputs/stage-3/scripts/devops/gitops-order.txt --tag stage-3: all 25 lines match the lesson's output block line for line.",
+        "source": "examples/don-hang@stage-3 outputs/stage-3/scripts/devops/gitops-order.txt"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "migrate-hook.yaml@stage-3 :12 annotations, :13 hook Sync, :14 sync-wave \"1\", :15 BeforeHookCreation, :17 restartPolicy Never; block = lines 7-22 verbatim. gitops-order.sh :23-25 grep, :30-38 empty + sync, :43-50 when() + sort, :57-62 second sync, :59 sync_now (defined :9-19), :62 logs | grep -v \"^Acquiring\"; block = lines 41-62 verbatim.",
+        "source": "examples/don-hang@stage-3 deploy/gitops/config-repo/envs/staging/migrate-hook.yaml; scripts/devops/gitops-order.sh"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "EF Core applying.md:399 \"EF Core 9 and later protect migration execution with a database-wide lock, so this can be acceptable for applications that prefer simple deployment ... A separate migration deployment step is still preferred when review, least-privilege credentials, coordinated rollout, or high availability is important.\" :404 \"if an application is accessing the database while another application migrates it, this can cause severe issues.\" Lesson states it with conditions.",
+        "source": "refs/efcore-docs/entity-framework/core/managing-schemas/migrations/applying.md"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "gitops-order.txt numbered list and last four lines as stated. Script :45-46 print both wave 0 lines and :50 sorts by timestamp, so db/keycloak may swap. :31-38 delete everything, sync from nothing (sync_now polls up to 900 s), then app_wait. Opened: Argo CD 3.1 sync-waves and health pages; refs k8s annotations, glossary name, pod-lifecycle; refs EF Core applying.md.",
+        "source": "examples/don-hang@stage-3 scripts/devops/gitops-order.sh; outputs/stage-3/scripts/devops/gitops-order.txt"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-08T20:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation)",
+    "issues": [
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "diagram",
+        "text": "The diagram starts with a participant 'You, with kubectl' sending 'ask for a sync of main'. The prose never mentions this node or arrow: it opens with 'A sync of `main` sorts...' without saying who starts the sync, how kubectl is used to ask Argo CD for one, or that `main` is the config repository's branch. The prerequisite summary only says that with no sync policy Argo CD waits for someone to start a sync.",
+        "quote": "A sync of `main` sorts every object by phase, then by sync wave, lowest first, then by kind, then by name; the file an object came from plays no part.",
+        "fix": "Add one sentence before this one: 'You start the sync yourself, with kubectl, and Argo CD syncs the revision on the branch `main` of the config repository.' (or whatever wording matches how the previous lesson starts a sync)."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "text": "The first sentence sorts objects 'by phase' before I know what a phase is; the definition comes one sentence later. I had to stop, read on, then go back.",
+        "quote": "A sync of `main` sorts every object by phase, then by sync wave",
+        "fix": "Swap the order: put 'A phase says when a hook runs, for example before, with or after the objects.' before the sorting sentence."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "text": "'Every sync of the whole Application' suggests some syncs are not of the whole Application, but the lesson never says what such a sync is or whether the hook runs in it. The qualifier returns in summary line 5 and in quiz q2, so I kept wondering what the exception is.",
+        "quote": "Every sync of the whole Application runs the hook again, whatever changed.",
+        "fix": "Either drop 'of the whole Application' or add a half-sentence saying that syncing only some chosen objects is a different kind of sync, not covered here."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "code",
+        "text": "The prose points at 'Lines 12–15', 'Line 13', 'Line 17' of the YAML, but the block shows no line numbers and starts at file line 7. I had to count from the header to find line 13. The names given (hook, sync-wave, delete policy, restartPolicy) let me recover, so this is only slow.",
+        "quote": "Lines 12–15 hold the whole ordering. Line 13 makes the Pod a hook in the `Sync` phase, line 14 puts it in wave 1",
+        "fix": "Name the key next to each number, e.g. 'line 13 (`argocd.argoproj.io/hook: Sync`)', 'line 17 (`restartPolicy: Never`)'."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "gap",
+        "text": "Section 4 lists db, Redis, Keycloak, Mailpit, Services and ConfigMaps in wave 0, but the numbered output shows only db and keycloak. Nothing says why only these two are printed, so I wondered whether Redis and Mailpit were applied later.",
+        "quote": "1. wave 0: Deployment db available\n2. wave 0: Deployment keycloak available",
+        "fix": "Add one sentence saying the script prints two wave 0 Deployments as examples, and the rest of wave 0 is ready at the same stage."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "code",
+        "text": "'Line 59 calls `sync_now`, defined earlier in the script' does not say what sync_now does. From the output 'sync: Succeeded' I guess it asks Argo CD for a sync and waits for its result, but I had to guess.",
+        "quote": "Line 59 calls `sync_now`, defined earlier in the script",
+        "fix": "Add a few words: 'which asks Argo CD for a sync and waits until it reports a result'."
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "example",
+        "text": "The heading promises 3 minutes, but step 1 says the script can take several minutes more. The steps and expected result are concrete and the lesson warns me, so I can still do it and tell whether I succeeded; only the time promise does not hold.",
+        "quote": "so it can take several minutes beyond the 3 in the heading.",
+        "fix": "No text change needed beyond the existing warning; if the format allows, state the realistic duration in step 1 (e.g. 'about N minutes')."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "text": "q2 has two 'False' options. Option d's reason ('a change in wave 2 makes Argo CD run every lower wave again') is not refuted directly, and the lesson does say every sync applies all waves, so d felt half-right. I chose c because it repeats the lesson's 'whatever changed', and c is also clearly the longest option.",
+        "quote": "False, because a change in wave 2 makes Argo CD run every lower wave again before it.",
+        "fix": "Make d's reason clearly wrong from the text, e.g. 'False, because Argo CD runs the hook only when a later wave changed.'"
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "text": "q6 asks for the api's wave, but section 4, section 5's output and summary line 4 all state 'the Deployment api in wave 2'. I can answer by recall without reasoning about why 2 is the lowest that works.",
+        "quote": "the migration hook in wave 1 and the Deployment `api` in wave 2",
+        "fix": "Change the numbers in the question (e.g. the database in wave 5) so the reader must derive the api's wave from the rule rather than recall it."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [
+        "Section 4: diagram 'You, with kubectl' -> 'ask for a sync of main' is never explained in prose (who starts the sync, what `main` is).",
+        "Section 4: 'Every sync of the whole Application' implies another kind of sync that is never described."
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "fix-required"
+  }
+}

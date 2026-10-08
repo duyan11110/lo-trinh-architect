@@ -1,0 +1,185 @@
+{
+  "id": "devops.l3.rollback-by-revert",
+  "technical": {
+    "reviewed_at": "2026-10-08T23:59:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Execution, gitops-revert.txt@stage-3 lines 2-4: 'staging: Synced, Progressing' / '2 1.0.0 true' / '1 sha-000... false ErrImagePull'. Script line 25 perl edits only 'donhang-api:' in envs/staging/api.yaml; migrate-hook.yaml keeps its donhang-migrate image. ci.yml: '# sha- and the full id of the commit that was pushed, 40 characters' and 'docker tag \"$LOCAL\" \"$name:sha-$GITHUB_SHA\"'. Argo CD 3.1 health: Progressing = 'not healthy yet but still making progress'.",
+        "source": "examples/don-hang@stage-3 outputs/stage-3/scripts/devops/gitops-revert.txt:1-4; scripts/devops/gitops-revert.sh:25; .github/workflows/ci.yml:247-253; https://argo-cd.readthedocs.io/en/release-3.1/operator-manual/health/"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Execution: gitops-revert.sh:29 'app_wait Synced Progressing <bad commit>' returned (output line 2) while a Pod showed ErrImagePull (line 4): sync status did not flag the missing image; only health differed. Argo CD 3.1 health, Deployment: 'Number of updated replicas equals the number of desired replicas', not met while the new Pod cannot pull. No doc sentence says the comparison ignores the registry; execution settles it.",
+        "source": "outputs/stage-3/scripts/devops/gitops-revert.txt:2-4; scripts/lib/gitops.sh:112-127; https://argo-cd.readthedocs.io/en/release-3.1/operator-manual/health/"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "refs k8s deployment.md 'Rolling Back to a Previous Revision': 'kubectl rollout undo deployment/nginx-deployment' -> 'deployment.apps/nginx-deployment rolled back'. pod-security-admission.md:56 '**warn** | Policy violations will trigger a user-facing warning, but are otherwise allowed.' Output 7-9: Warning 'would violate PodSecurity...', 'deployment.apps/api rolled back', 'right after: the Deployment names 1.0.0'. The undo acts on the live object; the config repo is untouched until line 48.",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/workloads/controllers/deployment.md:549-559; refs/kubernetes-website/content/en/docs/concepts/security/pod-security-admission.md:56; gitops-revert.txt:6-9"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Argo CD 3.1 auto_sync: 'If the selfHeal flag is set to true, then the sync will be attempted again after self-heal timeout (5 seconds by default)'. apps/staging.yaml 'automated: selfHeal: true'. Script:40 loops 'seq 120' with 'sleep 1' until deployed_tag = bad. Output 9-10: 'right after: ... 1.0.0', 'shortly after: ... sha-000...'. Lesson says 'shortly after', no number.",
+        "source": "https://argo-cd.readthedocs.io/en/release-3.1/user-guide/auto_sync/; don-hang@stage-3 deploy/gitops/config-repo/apps/staging.yaml; gitops-revert.sh:40; gitops-revert.txt:9-10"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Argo CD 3.1 auto_sync, as fetched: 'Rollback cannot be performed against an application with automated sync enabled.'",
+        "source": "https://argo-cd.readthedocs.io/en/release-3.1/user-guide/auto_sync/"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "git-revert: 'revert the changes that the related patches introduce, and record some new commits that record them.' --no-edit: 'git revert will not start the commit message editor.' git(1): '-C <path> Run as if git was started in <path>'; '-c <name>=<value> Pass a configuration parameter to the command.' Output line 15: '... gitops-revert.sh: Revert \"Deploy api sha-000... to staging\"' (default subject; %an = the -c user.name value); line 16 keeps the bad commit.",
+        "source": "https://git-scm.com/docs/git-revert; https://git-scm.com/docs/git; gitops-revert.txt:15-16"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Argo CD 3.1 auto_sync: 'An automated sync will only be performed if the application is OutOfSync.' The pushed revert makes Git differ from live. Execution: script:54 'app_wait Synced Healthy <revert sha>' printed 'staging: Synced, Healthy'; api_images printed only '2 1.0.0 true'.",
+        "source": "https://argo-cd.readthedocs.io/en/release-3.1/user-guide/auto_sync/; gitops-revert.txt:12-14"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "migrate-hook.yaml@stage-3:2-4 'The migration as an Argo CD hook: not kept in place like the other objects, but created by every sync, in wave 1'; 'argocd.argoproj.io/hook: Sync'. Database contents are not files under envs/staging; git-revert only records commits that 'revert the changes that the related patches introduce'. Conclusion follows; no down-migration or expand/contract taught (depth_notes respected).",
+        "source": "examples/don-hang@stage-3 deploy/gitops/config-repo/envs/staging/migrate-hook.yaml:1-15; https://git-scm.com/docs/git-revert"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "git-push PUSH RULES: 'only fast-forward updates are allowed, which means the destination must be an ancestor of the source commit.' --force: 'It can cause the remote repository to lose commits'. Teammate main = good<-bad<-new; reset server main = good, an ancestor, so a plain push is accepted and brings bad back. apps/staging.yaml 'targetRevision: main': Argo CD follows whatever main names.",
+        "source": "https://git-scm.com/docs/git-push; examples/don-hang@stage-3 deploy/gitops/config-repo/apps/staging.yaml"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "git show stage-3 (commit 5e918aa): both blocks match gitops-revert.sh:21-41 and 44-57 exactly; output block matches outputs/stage-3/.../gitops-revert.txt. 9-10 good/bad; 25 perl; 26 config_commit = add, commit, push (gitops.sh:56-63); 27-29 refresh/wait; 30 ErrImagePull loop; 31 api_images (uniq -c of tag, ready, reason); 38 undo; 40 120x1s; 48 revert; 49 config_head --verify; 50-51 open+push; 52-55 wait; 56; 57 log -n 3. Clone is a full git clone (gitops-repo.sh:31).",
+        "source": "examples/don-hang@stage-3 scripts/devops/gitops-revert.sh:9-57; scripts/lib/gitops.sh:56-63,98-145; scripts/devops/gitops-repo.sh:31"
+      },
+      {
+        "n": 11,
+        "verdict": "not-needed",
+        "evidence": "Opinion with its condition (shared branch whose log is the deploy history); its factual basis is claim 9."
+      },
+      {
+        "n": 12,
+        "verdict": "not-needed",
+        "evidence": "Opinion with its condition ('If it does not' work with the newer schema); rests on claim 8. Zero issues reported; documents opened: Argo CD 3.1 auto_sync and health pages; git-scm git, git-revert, git-push; refs k8s deployment.md and pod-security-admission.md; don-hang@stage-3 gitops-revert.sh, lib/gitops.sh, gitops-repo.sh, migrate-hook.yaml, apps/staging.yaml, ci.yml, captured output."
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-08T23:59:30+07:00",
+    "reviewer": "claude-opus-5-5 (prompt 05, junior reader, fresh read, content_version 1)",
+    "issues": [
+      {
+        "severity": "major",
+        "section": 6,
+        "kind": "term",
+        "quote": "The cleanest rollback is resetting the branch to the last good commit and force-pushing.",
+        "text": "force-push is not in known_vocab, not in Core concepts, and the git prereq summary covers only revert, reset and reflog. The bold misconception uses it before the correction explains it, and q4 and q5 option d depend on it.",
+        "fix": "Turn the existing sentence 'force-pushing makes the server's branch point where yours does, even if commits on the server are dropped' into a one-sentence Core concepts entry (proposing force-push for this lesson's vocab in track.yaml), or move this lesson after the lesson that introduces force-push."
+      },
+      {
+        "severity": "major",
+        "section": 6,
+        "kind": "gap",
+        "quote": "The server's `main` now holds nothing theirs lacks, so Git accepts their ordinary push without a force, and the bad commit is back on the server.",
+        "text": "I cannot get from 'holds nothing theirs lacks' to 'Git accepts their ordinary push'. Neither known_vocab nor the git prereq summary says when Git accepts or refuses an ordinary push, so the 'so' has no rule behind it for me. q4 option c rests on this step.",
+        "fix": "Add one sentence before 'The server's `main` now holds nothing theirs lacks' stating the rule: Git accepts an ordinary push only when your branch already contains every commit the server's branch has; otherwise it refuses."
+      },
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "style",
+        "quote": "Teammates' local copies of `main` still hold the bad commit under their new one.",
+        "text": "Re-read twice: 'their new one' refers to a commit the teammates have not made yet in the story. I only understood it after reading the 'You notice this when…' sentence.",
+        "fix": "Rewrite as: 'A teammate who pulled before the reset still has the bad commit in their local `main`; their next commit goes on top of it.'"
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "quote": "at first the api is `Progressing`, not `Healthy`.",
+        "text": "'At first' implies the health changes later, but the lesson never says to what. I am left wondering whether it later becomes something else and whether that matters for the rollback.",
+        "fix": "Either drop 'at first' or add half a sentence saying what health the Application shows if the Pod keeps failing to pull."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "quote": "While automated sync is on, Argo CD refuses it. So the way back goes through the repository.",
+        "text": "The refusal is stated with no reason, so q2 is a rule I memorise rather than understand. I also cannot picture how a person would request this rollback.",
+        "fix": "After 'Argo CD refuses it', add one clause giving the reason in terms already taught (automated sync, what Git names)."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "style",
+        "quote": "Lines 9–10, above the excerpt, set `good` to the tag the clone names, `1.0.0` here, and `bad` to a tag of zeros.",
+        "text": "'the clone' is used here, but what the clone is (the working clone) is explained only in the next sentence. I paused on it.",
+        "fix": "Say 'the working clone' here and move the parenthetical '(the script's own local copy of the config repository, with its full history)' to this first mention."
+      },
+      {
+        "severity": "minor",
+        "section": 2,
+        "kind": "example",
+        "quote": "Whoever wrote it mistyped the commit hash that CI's `sha-…` tags carry.",
+        "text": "The situation is a mistyped hash, but the script and output use a hash of all zeros. I briefly wondered whether the zeros are the typo or a stand-in. Section 5 says 'a tag of zeros' without linking it back to the situation.",
+        "fix": "In section 5, after 'and `bad` to a tag of zeros', add 'standing in for the mistyped hash'."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "code",
+        "quote": "Line 30 waits for the new Pod to report an image pull error",
+        "text": "The k8s prereq taught ImagePullBackOff; the output and q3 show ErrImagePull. The code greps both, and the prose does not say how they relate, so I wonder whether ErrImagePull is a different failure.",
+        "fix": "Extend the sentence with one clause saying that ErrImagePull and ImagePullBackOff are both shown for the same failed image pull."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz q5",
+        "kind": "quiz",
+        "quote": "Commit the tag of the fixed image to `envs/staging` and let automated sync apply it.",
+        "text": "The correct option nearly repeats the lesson's sentence 'commit the tag of an image that fixes the bug and works with the new schema, and let automated sync deploy it', so it can be picked by matching wording.",
+        "fix": "Reword option b so it does not mirror the lesson sentence, e.g. 'Point staging at the image CI built for the fix, by a commit to the config repository.'"
+      },
+      {
+        "severity": "minor",
+        "section": "quiz q4",
+        "kind": "quiz",
+        "quote": "A teammate who pulled the bad commit could bring the bad tag back with their next push.",
+        "text": "Option c almost repeats 'You notice this when a teammate who pulled the bad commit pushes their next commit and the bad tag is back.' Because of the push-rule gap in section 6, I can pick it only by matching the sentence, not by reasoning.",
+        "fix": "Once the push rule is in section 6, reword option c to describe the mechanism (an ordinary push from an older clone is accepted) instead of mirroring the lesson sentence."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "force-push"
+      ],
+      "skipped_steps": [
+        "The server's `main` now holds nothing theirs lacks, so Git accepts their ordinary push without a force, and the bad commit is back on the server.",
+        "at first the api is `Progressing`, not `Healthy`.",
+        "While automated sync is on, Argo CD refuses it. So the way back goes through the repository."
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "fix-required"
+  }
+}

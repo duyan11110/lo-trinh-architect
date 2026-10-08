@@ -1,0 +1,208 @@
+{
+  "id": "devops.l3.self-heal",
+  "technical": {
+    "reviewed_at": "2026-10-08T23:59:50+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "auto_sync (release-3.1): \"By default, changes that are made to the live cluster will not trigger automated sync.\" Captured outputs/stage-3/scripts/devops/gitops-self-heal.txt line 3: \"30 s later: 4 replicas, OutOfSync\" (script lines 20-23: scale, app_refresh, sleep 30).",
+        "source": "https://argo-cd.readthedocs.io/en/release-3.1/user-guide/auto_sync/"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "auto_sync (release-3.1) YAML: \"spec: syncPolicy: automated: prune: true\" and \"spec: syncPolicy: automated: selfHeal: true\". Repo working tree: apps/staging.yaml:24-25 selfHeal: true / prune: true; deploy/gitops/lessons/staging-auto.yaml:23-24 selfHeal: false / prune: false.",
+        "source": "https://argo-cd.readthedocs.io/en/release-3.1/user-guide/auto_sync/"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "auto_sync (release-3.1): \"To enable automatic sync when the live cluster's state deviates from the state defined in Git\" (selfHeal); \"the sync will be attempted again after self-heal timeout (5 seconds by default)\". Script 53-57: scale to 4, loop up to 120 s for 2, no commit, no app_refresh. Output line 15: \"shortly after: 2 replicas, Synced\".",
+        "source": "https://argo-cd.readthedocs.io/en/release-3.1/user-guide/auto_sync/"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Architecture (release-3.1): the application controller \"continuously monitors running applications and compares the current, live state against the desired target state\" and \"detects OutOfSync application state\". auto_sync: timeout.reconciliation \"defaults to 120s with added jitter of 60s for a maximum period of 3 minutes\". Supports \"rereads Git every few minutes\" and continuous comparison.",
+        "source": "https://argo-cd.readthedocs.io/en/release-3.1/operator-manual/architecture/"
+      },
+      {
+        "n": 5,
+        "verdict": "rephrased",
+        "evidence": "Sync Options (release-3.1): \"Currently, when syncing using auto sync Argo CD applies every object in the application.\" \"Turning on the selective sync option will sync only out-of-sync resources.\" The scaled api Deployment is itself out of sync (output line 3: OutOfSync), so a selective sync would also reset it to 2. The default is true, but the lesson's 'can be set to apply only the differing objects ... So' implies the setting would have kept 4 replicas; it would not.",
+        "source": "https://argo-cd.readthedocs.io/en/release-3.1/user-guide/sync-options/",
+        "suggested_text": "A sync applies the objects of the Application that differ from Git, and the scaled api is one of them, whichever commit started the sync. So the unrelated commit set the api back to the 2 replicas Git declares."
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "auto_sync (release-3.1): \"automated sync will not delete resources when Argo CD detects the resource is no longer defined in Git.\" Sync Options: \"The app will be out of sync if Argo CD expects a resource to be pruned.\" Output lines 7-8: \"configmap/prune-demo\", \"ConfigMap/prune-demo: requiresPruning=true\" after app_wait OutOfSync at the removal commit (script line 40).",
+        "source": "https://argo-cd.readthedocs.io/en/release-3.1/user-guide/auto_sync/"
+      },
+      {
+        "n": 7,
+        "verdict": "rephrased",
+        "evidence": "auto_sync (release-3.1): \"automated sync will not delete resources when Argo CD detects the resource is no longer defined in Git\" supports the outcome. But 'Not even the automated sync for that commit' asserts such a sync runs; the repo's own script line 39 says \"(No sync starts for this commit: all that differs is an object to prune.)\" and the docs do not say either way. Execution (OutOfSync, requiresPruning=true) cannot tell the two apart. Drop the dependence.",
+        "source": "https://argo-cd.readthedocs.io/en/release-3.1/user-guide/auto_sync/",
+        "suggested_text": "Without `prune: true`, the object keeps running, marked as requiring pruning: while `prune` is off, no automated sync deletes it. With prune on, the automated sync of that commit deletes the object."
+      },
+      {
+        "n": 8,
+        "verdict": "rephrased",
+        "evidence": "auto_sync (release-3.1): \"Automated sync will only attempt one synchronization per unique combination of commit SHA1 and application parameters. If the most recent successful sync in the history was already performed against the same commit-SHA and parameters, a second sync will not be attempted, unless selfHeal flag is set to true.\" The last successful sync was the 'Add' commit; the 'Remove' commit was never synced, so once prune is on automated sync is due for it with or without selfHeal. Crediting self-heal misattributes the trigger.",
+        "source": "https://argo-cd.readthedocs.io/en/release-3.1/user-guide/auto_sync/",
+        "suggested_text": "No commit is pushed: the Application is still `OutOfSync` at the removal commit, which has not been synced yet. Now that `prune` is on, automated sync syncs that commit, and the sync deletes the ConfigMap."
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Resource Tracking (release-3.1): \"annotation (default)\"; Argo CD uses \"argocd.argoproj.io/tracking-id annotation to track application resources\"; a resource whose annotation does not point to it \"will neither affect the application's sync status nor be marked for pruning.\"",
+        "source": "https://argo-cd.readthedocs.io/en/release-3.1/user-guide/resource_tracking/"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "deploy/gitops/config-repo/apps/staging.yaml (working tree; git show/extract-code denied this session): lines 1-3 name gitops-self-heal.sh and dr-drill.sh; name staging, namespace argocd, repoURL http://gitea.git.svc:3000/donhang/donhang-config.git, targetRevision main, path envs/staging, destination namespace donhang. Lines 4-17 equal staging-auto.yaml 3-16; code block 1 = lines 1-25 verbatim."
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "deploy/gitops/config-repo/envs/staging/api.yaml line 20: \"  replicas: 2\" (working tree); consistent with captured output lines 6 and 15."
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "scripts/devops/gitops-self-heal.sh (working tree): 9-10 replicas()/sync_status(); 13 staging-auto; 20-23 scale, app_refresh, sleep 30; 30-35 prune-demo commit; 36-38 git rm, config_commit, app_refresh; 40 app_wait OutOfSync Healthy at head; 41-43 get + requiresPruning; 50 apply; 52 get; 53 scale; 54 seq 120; 56 rollout status. Helpers in scripts/lib/gitops.sh 56-127. Block 2 = lines 40-57 verbatim; output block = captured file verbatim."
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Annotations and Labels (release-3.1), argocd.argoproj.io/refresh: \"Indicates that app needs to be refreshed. Removed by application controller after app is refreshed.\" Core concepts: Refresh = \"Compare the latest code in Git with the live state. Figure out what is different.\" scripts/lib/gitops.sh:105-107 sets refresh=normal.",
+        "source": "https://argo-cd.readthedocs.io/en/release-3.1/user-guide/annotations-and-labels/"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "kubectl-commands.html:5360 scale: \"Set a new size for a deployment, replica set, replication controller, or stateful set.\" :5182 \"By default 'rollout status' will watch the status of the latest rollout until it's done.\" deployment.md:640 \"kubectl scale deployment/nginx-deployment --replicas=10\".",
+        "source": "refs/kubernetes-website/static/docs/reference/generated/kubectl/kubectl-commands.html"
+      },
+      {
+        "n": 15,
+        "verdict": "not-needed",
+        "evidence": "Recommendation carries its condition (\"With self-heal on ... To keep 4 replicas, write 4 into Git\"); follows from auto_sync: selfHeal re-syncs on live drift after the 5 s self-heal timeout."
+      },
+      {
+        "n": 16,
+        "verdict": "not-needed",
+        "evidence": "Framed as what 'some teams' choose, with its cost stated; docs: \"By default, changes that are made to the live cluster will not trigger automated sync.\" Documents opened this review: auto_sync, sync-options, architecture, resource_tracking, annotations-and-labels, core_concepts (release-3.1); refs kubectl-commands.html; working-tree staging.yaml, staging-auto.yaml, gitops-self-heal.sh, lib/gitops.sh, envs/staging/api.yaml, captured output."
+      }
+    ],
+    "issues": [
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "Misattributes the prune sync to self-heal (claim 8). Per auto_sync docs, automated sync attempts one sync per commit SHA; the removal commit was never synced, so once prune is on a sync is due regardless of selfHeal. The sentence teaches that self-heal is what made the deletion happen; the junior review already read it that way ('that commit's sync already ran').",
+        "quote": "the Application is still `OutOfSync` because of `prune-demo`, and with self-heal on that difference is enough to start a sync, which now deletes the ConfigMap",
+        "fix": "Replace with: \"No commit is pushed: the Application is still `OutOfSync` at the removal commit, which has not been synced yet. Now that `prune` is on, automated sync syncs that commit, and the sync deletes the ConfigMap.\" Update claim 8 text accordingly."
+      },
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Non-sequitur (claim 5). Selective sync 'will sync only out-of-sync resources', and the scaled api is out of sync, so with that setting the unrelated commit would still reset it to 2. Mentioning the setting and then 'So' implies the setting would have kept 4. Same framing in s5 ('applies the whole folder, which is why the api is back to 2'), s6 item 3 and summary line 3 ('which by default applies the whole folder').",
+        "quote": "Argo CD can be set to apply only the differing objects, but Đơn Hàng does not use that setting. So the unrelated commit set the api back to the 2 replicas Git declares.",
+        "fix": "Delete the clause about the setting. Write: \"A sync applies every object of the Application, not only the files the commit changed, and the scaled api differs from Git. So the unrelated commit set the api back to the 2 replicas Git declares.\" In s6 item 3 and summary 3 drop 'by default'."
+      },
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "scope",
+        "text": "Beyond depth_notes: the lesson introduces a selective-sync setting (ApplyOutOfSyncOnly) the outline does not list; depth_notes only asks that any commit's sync applies the whole folder and restores replicas.",
+        "quote": "Argo CD can be set to apply only the differing objects, but Đơn Hàng does not use that setting.",
+        "fix": "Remove this sentence (same edit as the s4 accuracy fix); remove 'neither staging Application sets syncOptions / ApplyOutOfSyncOnly' from claim 5."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Asserts that an automated sync runs for the removal commit (claim 7). The repo's script line 39 says no sync starts for it; docs do not settle it. Same wording in q2 option a explanation (en/vi).",
+        "quote": "Not even the automated sync for that commit deletes it while `prune` is off.",
+        "fix": "Replace with \"While `prune` is off, no automated sync deletes it.\" In q2 explanation a: en \"But while `prune` is off, no automated sync deletes anything.\"; vi \"Nhưng khi `prune` tắt, không lần sync tự động nào xóa gì cả.\""
+      },
+      {
+        "severity": "minor",
+        "section": 3,
+        "kind": "accuracy",
+        "text": "requiresPruning is set whenever a tracked live object has no manifest in Git, not only while prune is off; with prune on it is simply deleted at the next sync. 'while prune is off' ties the mark to the setting.",
+        "quote": "the mark Argo CD puts on such an object while prune is off",
+        "fix": "Write: \"Requires pruning — the mark Argo CD puts on an object of the Application whose manifest left Git; while prune is off, the object keeps running and the Application is `OutOfSync` because of it.\""
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": [
+        "Selective sync (apply only differing objects), s4: 'Argo CD can be set to apply only the differing objects'"
+      ]
+    },
+    "verdict": "fix-required"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-09T00:20:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior, prompt 05)",
+    "issues": [
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "gap",
+        "text": "Core concepts says self-heal starts a sync 'when the live objects are changed away from Git'. At line 50 nobody changed prune-demo in the cluster: Git changed, and s4 says the automated sync for that commit already ran. So I cannot reconstruct why self-heal, rather than turning prune on, is what starts this sync. I have to guess which of the two new lines (24 or 25) causes the deletion.",
+        "quote": "the Application is still `OutOfSync` because of `prune-demo`, and with self-heal on that difference is enough to start a sync, which now deletes the ConfigMap",
+        "fix": "Add one sentence between 'No commit is pushed' and 'which now deletes the ConfigMap' saying exactly what starts this sync and why, in terms of the two options defined in Core concepts (which option starts the sync, which option makes it delete)."
+      },
+      {
+        "severity": "minor",
+        "section": 3,
+        "kind": "gap",
+        "text": "My known definition of automated sync is 'start a sync by itself whenever the Application is OutOfSync'. The lesson (correctly matching the prereq summary) narrows it to OutOfSync caused by a commit. I followed it, but the clash with the definition I hold made me stop at the situation's 'shows OutOfSync' and nothing happening.",
+        "quote": "without it, automated sync starts only for an `OutOfSync` caused by a new commit, not by a change in the cluster",
+        "fix": "Prefix this clause with a few words that flag the narrowing, e.g. 'contrary to what \"whenever OutOfSync\" suggests,'."
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "example",
+        "text": "The expected result starts with automated sync but no self-heal. After my first run staging is left under apps/staging.yaml (self-heal on). The lesson does not say whether the script itself applies staging-auto.yaml at the start, so I do not know if a second run would still show '30 s later: 4 replicas, OutOfSync'.",
+        "quote": "Before the excerpt, the script scales the api to 4 under `staging-auto.yaml`",
+        "fix": "Say in one clause that the script first applies `staging-auto.yaml` itself (if it does), so it can be rerun and gives the same output."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "length",
+        "text": "I had to read the output-to-line mapping twice: it refers to 'those earlier lines' (outside the excerpt, incl. 'Lines 36–38' I cannot see) and to 'the first two lines of the second' block, and comes before the line 40 explanation, so the prose jumps back and forth.",
+        "quote": "In the output, the first block and the first two lines of the second come from those earlier lines. The last two lines of the second come from lines 41–43, and the third block from lines 49–57.",
+        "fix": "Name the output lines instead of counting them, e.g. 'everything up to `after the sync of that commit: 2 replicas` comes from lines before the excerpt; `configmap/prune-demo` and the `requiresPruning` line come from lines 41–43'."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz q2",
+        "kind": "quiz",
+        "text": "The correct option is almost a verbatim sentence from s4 ('the object keeps running, marked as requiring pruning'), so it can be picked by matching wording rather than understanding.",
+        "quote": "False, because `prune-demo` is still in `donhang`, marked as requiring pruning.",
+        "fix": "Reword option c so it states the consequence without the lesson's phrase, e.g. 'False: with `prune` off, the ConfigMap stays and the Application stays `OutOfSync`.'"
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [
+        "s5 line 50: why self-heal (not prune) starts the sync that deletes prune-demo, when the difference came from Git, not from a change in the cluster"
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "fix-required"
+  }
+}

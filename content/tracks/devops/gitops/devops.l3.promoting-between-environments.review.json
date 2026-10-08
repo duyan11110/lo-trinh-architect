@@ -1,0 +1,154 @@
+{
+  "id": "devops.l3.promoting-between-environments",
+  "technical": {
+    "reviewed_at": "2026-10-08T19:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Carried from round 1: `diff -r envs/staging envs/production` (stage-3 sources) shows only line-1 header comments (\"The api in staging\" / \"The api in production\") and `replicas: 2` vs `replicas: 3`; the tags differ only in the working clone after deploy/revert (captured gitops-promote.txt lines 1-7). Round 2: envs/*/api.yaml:16-20 re-read, lines 18-19 are the note, line 17 the lesson marker.",
+        "source": "examples/don-hang deploy/gitops/config-repo/envs/{staging,production}/api.yaml:1,16-20; outputs/stage-3/scripts/devops/gitops-promote.txt"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Carried from round 1: seal-secrets.sh seal(): `kubeseal --cert secrets/sealing.crt --format yaml > \"$config_repo/envs/staging/sealed-$name.yaml\"`; header: \"Seal staging's Secrets ... into the config repository (envs/staging, and platform/edge once it exists)\". No script writes sealed files under envs/production.",
+        "source": "examples/don-hang @ stage-3 scripts/devops/seal-secrets.sh"
+      },
+      {
+        "n": 3,
+        "verdict": "unverified",
+        "evidence": "First part verified (round 1): captured output shows two files, one line each, `:sha-bb18...` -> `:1.0.0`; lines 23-25 only perl + config_commit. Second-run part (new): with both tags 1.0.0 the perl substitution is a no-op; config_commit runs `git commit -q` under `set -euo pipefail`. git-commit docs only say an unchanged tree is a commit \"the command prevents you from making\"; no exit status is documented. Running the script or a git test was denied in this session; no captured second run exists in outputs/.",
+        "source": "https://git-scm.com/docs/git-commit (--allow-empty); examples/don-hang scripts/devops/gitops-promote.sh:4,20-25; scripts/lib/gitops.sh:56-63"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Round 1: release.yml:42-43 `docker tag \"$name:sha-$commit\" \"$name:$version\"` / `docker push \"$name:$version\"` (re-tag, no build); gitops-revert.txt \"staging: Synced, Healthy\" with 1.0.0. Round 2 (ghcr.io named): ci.yml:244 `docker login ghcr.io`, ci.yml:254 `name=\"ghcr.io/duyan11110/${LOCAL%%:*}\"`; release.yml:13 \"push the version tag to ghcr.io\".",
+        "source": "examples/don-hang .github/workflows/release.yml, ci.yml; outputs/stage-3/scripts/devops/gitops-revert.txt"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Carried from round 1 (wording now \"In CI, a protection rule such as required reviewers gates a job that references a deployment environment\"): GitHub docs (WebFetch summary): \"A job that references an environment must follow any protection rules for the environment before running\"; required reviewers \"must approve workflow jobs that use this environment.\" ci.yml: job `staging` has `environment: staging`.",
+        "source": "https://docs.github.com/actions/managing-workflow-runs-and-deployments/managing-deployments/managing-environments-for-deployment; examples/don-hang ci.yml:158-162"
+      },
+      {
+        "n": 6,
+        "verdict": "not-needed",
+        "evidence": "Opinion, now stated in section 4 with the ledger's condition: \"When the team wants production to change only after a second person has looked, you open that commit as a pull request instead of pushing it to `main`.\" No official source decides a team's review policy."
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Carried from round 1: both envs/*/api.yaml carry their own livenessProbe/readinessProbe blocks (api.yaml:57-64); gitops-promote.sh only rewrites tag lines; CI's config-repo step runs kubeconform schema checks only, nothing that compares the folders.",
+        "source": "examples/don-hang deploy/gitops/config-repo/envs/*/api.yaml; .github/workflows/ci.yml:359-363"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Carried from round 1: tofu-environments.sh \"only plan production's cluster\"; apps/ has no Application with path envs/production; captured output \"== Applications that read envs/production\" / \"none\" (script lines 32-34).",
+        "source": "examples/don-hang scripts/devops/tofu-environments.sh; scripts/devops/gitops-promote.sh:30-34; outputs/stage-3/scripts/devops/gitops-promote.txt"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Line numbers 9, 13, 20-21, 23-24, 25, 26-27 match the source. Section 5 now says line 13 leaves out \"the comment lines at the top of each file\": `grep -v -e '^. # '` drops diff lines whose comment starts at column 1; in these manifests only the header block (lines 1-5) is unindented, all other comments are indented.",
+        "source": "examples/don-hang scripts/devops/gitops-promote.sh:9-27; deploy/gitops/config-repo/envs/production/api.yaml"
+      },
+      {
+        "n": 10,
+        "verdict": "rephrased",
+        "evidence": "Directory part verified in round 1 (Argo CD 3.1 Directory: loads plain manifests from the configured path; apps/staging.yaml `path: envs/staging`). New sentence \"Once it is merged, production's Argo CD would sync `envs/production` from `main`\" holds only with an automated sync policy: Argo CD 3.1 docs (WebFetch): \"Argo CD has the ability to automatically sync an application when it detects differences\". Staging's Application has `syncPolicy.automated` (apps/staging.yaml:22-25); the lesson does not say production's would.",
+        "source": "https://argo-cd.readthedocs.io/en/release-3.1/user-guide/auto_sync/; deploy/gitops/config-repo/apps/staging.yaml",
+        "suggested_text": "Once it is merged, a production Argo CD set to sync automatically, as staging's is, would sync `envs/production` from `main`."
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Carried from round 1: git-merge: \"Incorporates changes from the named commits (since the time their histories diverged from the current branch) into the current branch.\"",
+        "source": "https://git-scm.com/docs/git-merge"
+      },
+      {
+        "n": 12,
+        "verdict": "not-needed",
+        "evidence": "Carried from round 1: opinion stated with its condition (\"can work when environments differ only in how far behind each other they are; once they must differ for good ...\"); no single official source decides it."
+      },
+      {
+        "n": 13,
+        "verdict": "rephrased",
+        "evidence": "Docker docs: \"Over time, that tag may resolve to a different underlying version of the `ubuntu` image\". True only when FROM names a tag without a digest. Đơn Hàng at stage-3 pins every base by digest (DonHang.Api/Dockerfile:6-7 \"From stage-3 every base image is named by tag and digest: the digest decides what is pulled\"; line 10 `FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:e70c...`) and restores with `--locked-mode`.",
+        "source": "refs/docker-docs/content/manuals/build/building/best-practices.md; examples/don-hang DonHang.Api/Dockerfile:5-19",
+        "suggested_text": "even from the same commit, what the build pulls in at that moment can differ, such as a newer image behind a tag in `FROM` that names no digest."
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "Kubernetes docs, Images: \"When using image tags, if the image registry were to change the code that the tag on that image represents, you might end up with a mix of Pods running the old and new code. An image digest uniquely identifies a specific version of the image\".",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/containers/images.md:127-131"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "accuracy",
+        "text": "The new example lacks its condition and does not hold for this repository: at stage-3 every Đơn Hàng base image is pinned by digest (DonHang.Api/Dockerfile:10 `FROM ...sdk:10.0@sha256:...`), so the tag in FROM cannot move to a newer image. A reader who opens the Dockerfile sees the opposite. Same wording in quiz q2 option b explanation (EN and VI). See claim 13.",
+        "quote": "such as a newer image behind the tag in `FROM`",
+        "fix": "Write \"such as a newer image behind a tag in `FROM` that names no digest\" in section 6 bullet 1, claim 13 and q2 explanation b (VI: \"chẳng hạn một image mới hơn đứng sau một tag trong `FROM` không ghi digest\")."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "New sentence assumes production's Application syncs automatically; Argo CD syncs on detected differences only with an automated sync policy, which staging's Application has (apps/staging.yaml:22-25) but the lesson never states for production. See claim 10.",
+        "quote": "Once it is merged, production's Argo CD would sync `envs/production` from `main`.",
+        "fix": "Replace with \"Once it is merged, a production Argo CD set to sync automatically, as staging's is, would sync `envs/production` from `main`.\" and align claim 10."
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "accuracy",
+        "text": "New second-run sentence relies on `git commit` exiting non-zero with nothing to commit, which stops the script under `set -e`. The git-commit docs only say the command \"prevents\" such a commit; no exit status is documented, and the run could not be executed in this review. See claim 3.",
+        "quote": "A second run finds production already on `1.0.0`, prints `== promote api 1.0.0 (production runs 1.0.0)` and stops, because there is nothing to commit.",
+        "fix": "Capture a second run with tools/capture-output (e.g. outputs/stage-3/scripts/devops/gitops-promote.second-run.txt) and cite it in claim 3's source_hint; if the capture differs, quote what it prints instead."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-08T20:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "text": "Round 2, changed sentence: I now know who encrypts staging's Secrets and that the how comes next module. But 'Production's folder has none' leaves me wondering where production's database password would come from at work; I can read on without it, since q1 option b only needs 'staging's folder has Secrets production's does not'.",
+        "quote": "Production's folder has none.",
+        "fix": "Extend that sentence with a short reason, e.g. 'Production's folder has none, because nothing in the lab runs production yet.'"
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "text": "Round 2, q2 (changed stem): the stem is now a scene, which helps. But the correct option a echoes section 6's 'A second build is a new image staging never ran' almost word for word, so I can pick it by matching the phrase 'staging never ran'.",
+        "quote": "They do not cover production, which runs a different image that staging never ran.",
+        "fix": "Reword option a without the lesson's phrase, e.g. 'They do not cover production: the image there was never deployed to staging.'"
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

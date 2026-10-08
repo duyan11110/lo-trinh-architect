@@ -1,0 +1,220 @@
+{
+  "id": "devops.l3.synced-versus-healthy",
+  "technical": {
+    "reviewed_at": "2026-10-08T03:49:33+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Core concepts: \"Sync status: Whether or not the live state matches the target state.\" \"Target state: The desired state of an application, as represented by files in a Git repository.\" Execution (gitops-first-sync.txt:3-24): every object OutOfSync while none exists; Synced after the sync (40-60). staging-manual.yaml:16 `targetRevision: main` matches \"for `staging`, the branch `main`\".",
+        "source": "https://argo-cd.readthedocs.io/en/release-3.1/core_concepts/ ; examples/don-hang deploy/gitops/lessons/staging-manual.yaml ; outputs/stage-3/scripts/devops/gitops-first-sync.txt"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Sync Options (Server-Side Apply / Replace): \"By default, Argo CD executes the `kubectl apply` operation to apply the configuration stored in Git.\" Core concepts: \"Sync: The process of making an application move to its target state. E.g. by applying changes to a Kubernetes cluster.\"",
+        "source": "https://argo-cd.readthedocs.io/en/release-3.1/user-guide/sync-options/ ; https://argo-cd.readthedocs.io/en/release-3.1/core_concepts/"
+      },
+      {
+        "n": 3,
+        "verdict": "rephrased",
+        "evidence": "Automated Sync Policy: \"Argo CD has the ability to automatically sync an application when it detects differences\"; the `automated` policy is set under `spec.syncPolicy`, and with `spec.syncPolicy.automated.enabled` false \"the controller skips automated sync\". FAQ: after Git changes are detected, only applications with auto-sync enabled are updated. It is the automated part of syncPolicy, not syncPolicy as such, that starts syncs. staging-manual.yaml has no syncPolicy; execution: nothing applied until the patch (txt:3, 26-28).",
+        "source": "https://argo-cd.readthedocs.io/en/release-3.1/user-guide/auto_sync/ ; https://argo-cd.readthedocs.io/en/release-3.1/faq/",
+        "suggested_text": "An automated sync policy (spec.syncPolicy.automated) is what lets Argo CD start syncs by itself; an Application without one, such as staging-manual.yaml with no syncPolicy at all, reports OutOfSync and waits until someone starts a sync."
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Health page: priority \"`Healthy`, `Suspended`, `Progressing`, `Missing`, `Degraded`, `Unknown`\"; \"`Progressing` - the resource is not healthy yet but still making progress\"; Deployment checks: \"Observed generation is equal to desired generation.\" \"Number of updated replicas equals the number of desired replicas.\" Docs omit availability; execution settles it: Progressing at READY 0/2, UP-TO-DATE 2 (= desired), AVAILABLE 0; Healthy at AVAILABLE 2 (txt:29-38).",
+        "source": "https://argo-cd.readthedocs.io/en/release-3.1/operator-manual/health/ ; outputs/stage-3/scripts/devops/gitops-first-sync.txt"
+      },
+      {
+        "n": 5,
+        "verdict": "rephrased",
+        "evidence": "Health page: \"The App health will be the worst health of its immediate child sources.\" Priority: Healthy, Suspended, Progressing, Missing, Degraded, Unknown. The rule is worst-health-wins among objects that have a health; ConfigMaps in envs/staging have no health check, yet staging ends Healthy (txt:34-36). The lesson's \"if any object is not `Healthy`, neither is the Application\" reads as if every object must itself be Healthy.",
+        "source": "https://argo-cd.readthedocs.io/en/release-3.1/operator-manual/health/ ; outputs/stage-3/scripts/devops/gitops-first-sync.txt:34-36",
+        "suggested_text": "An Application's health is the worst health among the objects it manages, so if any object reports a health worse than Healthy, such as Progressing, the Application reports it too."
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Health page lists `Missing` in the priority order (no further definition). Execution: before the first sync, with no object of envs/staging in donhang, app_wait prints \"staging: OutOfSync, Missing\" (txt:3); since the Application takes the worst object health and nothing else is present, the objects' health is Missing.",
+        "source": "https://argo-cd.readthedocs.io/en/release-3.1/operator-manual/health/ ; outputs/stage-3/scripts/devops/gitops-first-sync.txt:3"
+      },
+      {
+        "n": 7,
+        "verdict": "rephrased",
+        "evidence": "Resource tracking: annotation mode is \"(default)\"; Argo CD \"uses the `argocd.argoproj.io/tracking-id` annotation to track application resources\"; label mode works \"by setting the application instance label to the name of the managing Application on all resources\". Annotations page: tracking-id \"Used by Argo CD to track resources it manages.\" No page says the mark is written during a sync on each applied object. Namespace part verified: no Namespace in status.resources, script prints \"no\" (txt:62-63).",
+        "source": "https://argo-cd.readthedocs.io/en/release-3.1/user-guide/resource_tracking/ ; https://argo-cd.readthedocs.io/en/release-3.1/user-guide/annotations-and-labels/",
+        "suggested_text": "Argo CD looks only at manifests in the Application's path and live objects carrying its tracking annotation (argocd.argoproj.io/tracking-id), which every object it manages has; namespace donhang (made by OpenTofu, no manifest in envs/staging) is neither: not in status.resources, not reported missing, not changed."
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "FAQ: \"The default maximum polling interval is 3 minutes (120 seconds + 60 seconds jitter).\" Annotations: argocd.argoproj.io/refresh, values `normal`, `hard`: \"Indicates that app needs to be refreshed.\" \"Removed by application controller after app is refreshed.\" Core concepts: \"Refresh: Compare the latest code in Git with the live state.\" gitops.sh:106 sets refresh=normal. Lesson states no interval value.",
+        "source": "https://argo-cd.readthedocs.io/en/release-3.1/faq/ ; https://argo-cd.readthedocs.io/en/release-3.1/user-guide/annotations-and-labels/"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Sync with kubectl: a sync is triggered \"by applying or patching the Argo CD application with a document that defines an operation\" (`kubectl patch -n <namespace> app <app-name> --patch-file <patch-file> --type merge`); \"the state of the synchronization is reported in the operationState field\", example `phase: Succeeded`. `sync.revision` is not shown there; execution settles it: script :31-32 patch, :33-37 poll, output \"sync: Succeeded\" (txt:26-28).",
+        "source": "https://argo-cd.readthedocs.io/en/release-3.1/user-guide/sync-kubectl/ ; outputs/stage-3/scripts/devops/gitops-first-sync.txt:26-28"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "outputs/stage-3/scripts/devops/gitops-first-sync.txt: 3 \"staging: OutOfSync, Missing\"; 5-24 all OutOfSync; 28 \"sync: Succeeded\"; 29-32 Synced/Progressing, api 0/2; 34-38 Synced/Healthy, api 2/2; 62-63 \"no\". The lesson's output block reproduces these lines with `...` elisions.",
+        "source": "examples/don-hang outputs/stage-3/scripts/devops/gitops-first-sync.txt"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Argo CD Health page: Deployment checks are on generation and updated replicas, fields of the Deployment's status; no probe call is described. Kubernetes Deployment concept: minReadySeconds \"defaults to 0 (the Pod will be considered available as soon as it is ready)\". Execution: Progressing at AVAILABLE 0, Healthy at AVAILABLE 2 (txt:29-38); readiness probe at api.yaml:61-64.",
+        "source": "https://argo-cd.readthedocs.io/en/release-3.1/operator-manual/health/ ; refs/kubernetes-website/content/en/docs/concepts/workloads/controllers/deployment.md:1335-1336"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "DonHang.Api/Program.cs:123-124 `AddHealthChecks().AddDbContextCheck<DonHangDbContext>(tags: [\"ready\"])`; :225 `MapHealthChecks(\"/health/ready\", ... Predicate = check => check.Tags.Contains(\"ready\"))`; comment :223 \"/health/ready runs the ready checks: the database.\" No DB connection -> readiness fails -> Pod never available -> by claims 5 and 11 not Healthy, while sync status stays Synced.",
+        "source": "examples/don-hang DonHang.Api/Program.cs (working tree)"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "scripts/lib/gitops.sh:7 `kubectl() { command kubectl --context kind-donhang-staging \"$@\"; }`; :105-107 app_refresh annotates refresh=normal; :109-110 \"app_wait <sync status> <health status> [revision] [seconds]\"; :113 `revision=${3:-} seconds=${4:-600}`; :119 empty revision matches any commit. gitops-first-sync.sh:6 `source scripts/lib/gitops.sh`. Read from the submodule working tree; git show / extract-code were denied in this session.",
+        "source": "examples/don-hang scripts/lib/gitops.sh:7,104-127 ; scripts/devops/gitops-first-sync.sh:6,22"
+      },
+      {
+        "n": 14,
+        "verdict": "rephrased",
+        "evidence": "First-run case verified: txt:3, 29-30, 35-36; app_wait (gitops.sh:115-124) and the loop at script :33-38 print only once the wanted state is reached. Re-run case contradicted by the code: with staging already Synced/Healthy, script :22 `app_wait OutOfSync Missing \"\" 120` cannot match, prints \"staging is still Synced, Healthy after 120 s (wanted OutOfSync, Missing)\" (gitops.sh:125), returns 1, and `set -euo pipefail` (:4) stops the script before `sync: Succeeded`.",
+        "source": "examples/don-hang scripts/lib/gitops.sh:112-127 ; scripts/devops/gitops-first-sync.sh:4,22,33-46",
+        "suggested_text": "On a first run the script prints OutOfSync/Missing, sync: Succeeded, Synced/Progressing with api 0/2, Synced/Healthy with 2/2, then no. If staging is already Synced and Healthy, the script stops after about 120 s with 'staging is still Synced, Healthy after 120 s', because nothing is missing."
+      }
+    ],
+    "issues": [
+      {
+        "severity": "major",
+        "section": 7,
+        "kind": "accuracy",
+        "text": "The re-run note sends the reader into a failing run while step 2 still promises the full output. Nothing resets donhang: gitops-first-sync.sh:16 re-applies the Application, :22 `app_wait OutOfSync Missing \"\" 120` can never match a Synced/Healthy app, prints \"staging is still Synced, Healthy after 120 s (wanted OutOfSync, Missing)\" (gitops.sh:125), returns 1, and `set -euo pipefail` (:4) ends the script. `sync: Succeeded` ... `no` never appear.",
+        "quote": "if you have run the script before, it already shows `Synced` and `Healthy`.",
+        "fix": "Replace with: \"If step 1 already shows `Synced` and `Healthy`, you have run the script before: step 2 then stops after about 120 seconds with `staging is still Synced, Healthy after 120 s`, because nothing is missing any more; go on to step 3.\" Update claim 14 to its suggested_text."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Timing not supported by the docs: Argo CD 3.1 Resource tracking only says the tracking-id annotation is used \"to track application resources\" it manages; no sentence says the mark is written during a sync on each applied object, or that \"its own\" equals \"created or updated by one of its syncs\". Claim 7 rephrased.",
+        "quote": "during a sync it writes a mark on each object it applies, so \"its own\" means created or updated by one of its syncs.",
+        "fix": "Replace with: \"every object it manages carries a mark, an annotation Argo CD uses to track it, so \\\"its own\\\" means an object with that mark.\" Update claim 7 text to its suggested_text."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Overstated aggregation rule. The docs say the App health is the worst health of its child resources; objects with no health check (the ConfigMaps in envs/staging) are not Healthy either, yet staging ends Healthy (txt:34-36). Claim 5 rephrased.",
+        "quote": "if any object is not `Healthy`, neither is the Application.",
+        "fix": "Replace with: \"if any object reports a health worse than `Healthy`, such as `Progressing`, the Application reports it too.\" Update claim 5 to its suggested_text."
+      },
+      {
+        "severity": "minor",
+        "section": 3,
+        "kind": "accuracy",
+        "text": "It is the automated policy inside spec.syncPolicy that starts syncs; Argo CD 3.1 also allows a syncPolicy whose `automated.enabled` is false, and the controller then \"skips automated sync\". \"A sync policy\" as such does not start anything. Claim 3 rephrased.",
+        "quote": "A sync policy is the part of an Application that lets Argo CD start syncs by itself; with none, as in `staging-manual.yaml`, a sync runs only when someone asks.",
+        "fix": "Replace with: \"An automated sync policy is the part of an Application that lets Argo CD start syncs by itself; with none, as in `staging-manual.yaml`, a sync runs only when someone asks.\" Elsewhere (§1, §4, §6, summary line 3) \"no sync policy\" may stay, since staging-manual.yaml has no syncPolicy at all. Update claim 3 to its suggested_text."
+      },
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "accuracy",
+        "text": "§6 and summary line 5 drop the second half of §4's rule (live objects Argo CD has marked as its own). A tracked object whose manifest was removed from the folder is not left alone: it is still listed and reported OutOfSync. As written these lines contradict §4 and q5's explanation.",
+        "quote": "Actually Argo CD manages only objects whose manifests are in its folder;",
+        "fix": "In §6 write: \"Actually Argo CD manages only objects whose manifests are in its folder or that carry its mark;\". In summary line 5 replace \"leaves objects outside its folder, like the namespace `donhang`, alone\" with \"leaves objects that are neither in its folder nor marked as its own, like the namespace `donhang`, alone\"."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "fix-required"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-08T22:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (review-junior)",
+    "issues": [
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "term",
+        "text": "'refresh' is a term the lesson leans on (§4, diagram, code walkthrough, quiz q2/q3) but it is not in my known vocab and not bolded in Core concepts. It is explained only inside §4 prose, so in the diagram's first arrow 'ask for a refresh' I don't yet know what it is.",
+        "quote": "A refresh asks it to read the repository and compare now.",
+        "fix": "Move this sentence into Core concepts as a one-line definition (e.g. inside the sync status bullet: 'a refresh asks Argo CD to read the repository and compare now, instead of waiting for its interval'), or add 'refresh' to the lesson's vocab."
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "gap",
+        "text": "'at any commit (the empty \"\")' — I cannot reconstruct what a commit has to do with waiting for a status, nor why the argument is empty. I can guess 120 is seconds, but this parenthetical stopped me and I had to skip it.",
+        "quote": "Line 22 waits up to 120 seconds, at any commit (the empty `\"\"`), until it shows `OutOfSync` and `Missing`",
+        "fix": "Replace 'at any commit (the empty \"\")' with one plain clause, e.g. 'the empty third argument means it does not care which commit of `main` Argo CD compared'."
+      },
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "diagram",
+        "text": "The last arrows 'C->>D: read the status of Deployment api' and 'D-->>C: 2/2 Pods ready' are not narrated in §4. §4 only says 'Healthy only once the Pods are ready'; that Argo CD reads the Deployment's status (and does not call the probe) comes later, in §5. Retelling the diagram after §4 I can't say how Argo CD learns the Pods are ready.",
+        "quote": "Argo CD reports the Deployment, and with it the Application, as `Progressing`, and `Healthy` only once the Pods are ready.",
+        "fix": "Add after this sentence: 'It learns this by reading the Deployment's status, which counts ready Pods, as in the last two arrows of the diagram.'"
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "diagram",
+        "text": "In the diagram 'You' sends the refresh and the sync to 'Application staging', but the prose says the refresh 'asks it' (Argo CD). Only §5 explains that kubectl writes the request into the Application and Argo CD picks it up, so in §4 the arrow target looked wrong to me.",
+        "quote": "Y->>A: ask for a refresh",
+        "fix": "In §4, after 'A refresh asks it to read the repository and compare now', add: 'You ask by writing the request into the Application, which Argo CD watches.'"
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "text": "The lesson gives two categories (manifests in its folder, and live objects marked as its own) but never says why the second one matters; only the first is used in the namespace example. I wondered which live object would be marked yet have no manifest.",
+        "quote": "Argo CD looks only at the objects whose manifests are in its folder and the live objects it has marked as its own",
+        "fix": "Add one half-sentence naming the case the mark covers, e.g. 'so an object whose manifest was removed from the folder is still noticed'."
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "example",
+        "text": "Expected result covers a re-run only for step 1 ('it already shows Synced and Healthy'), then describes step 2's output as if from a first run. If I'm re-running, I don't know what step 2 should print, so I can't tell whether I succeeded.",
+        "quote": "if you have run the script before, it already shows `Synced` and `Healthy`.",
+        "fix": "Add one sentence saying what step 2 prints when step 1 already showed `Synced` and `Healthy`, and what to do next."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "style",
+        "text": "I had to read the last paragraph of §4 twice: one long sentence defines 'its own' through a colon, then the next sentence uses 'neither' to refer back to both categories at once.",
+        "quote": "during a sync it writes a mark on each object it applies, so \"its own\" means created or updated by one of its syncs. The namespace `donhang` is neither:",
+        "fix": "Split into short sentences and replace 'is neither' with 'has no manifest in the folder and no mark'."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "refresh (Argo CD)"
+      ],
+      "skipped_steps": [
+        "§5: what 'at any commit (the empty \"\")' means for app_wait",
+        "§4: how Argo CD learns the api Pods are ready (diagram's last two arrows), explained only in §5",
+        "§4: why 'live objects it has marked as its own' is a separate category"
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "fix-required"
+  }
+}
