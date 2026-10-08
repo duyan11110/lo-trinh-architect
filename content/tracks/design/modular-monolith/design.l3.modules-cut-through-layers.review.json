@@ -1,0 +1,134 @@
+{
+  "id": "design.l3.modules-cut-through-layers",
+  "technical": {
+    "reviewed_at": "2026-10-08T23:45:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "tools/extract-code --tag stage-2: Entities.cs declares `public sealed class Product` beside Customer, Order, OrderItem; DonHangDbContext.cs has `public DbSet<Product> Products` and `modelBuilder.Entity<Product>(… e.ToTable(\"products\")` beside the Order mapping; ServiceCollectionExtensions registers `IOrderRepository, EfOrderRepository` and `new ProductCache(…)` in one method; EfProductRepository.cs and ProductCache.cs exist in DonHang.Infrastructure and touch only products.",
+        "source": "examples/don-hang @ stage-2: DonHang.Domain/Entities.cs; DonHang.Infrastructure/{DonHangDbContext,ServiceCollectionExtensions,EfProductRepository,ProductCache}.cs"
+      },
+      {
+        "n": 2,
+        "verdict": "unverified",
+        "evidence": "Round 2: a Glob of the submodule working tree (its STAGE.md describes stage-3) lists exactly the 11 named files in DonHang.Catalog/, but git ls-tree, git show and tools/extract-code were all refused by the permission system again, so neither the tag nor tracked-vs-untracked status could be confirmed. That no 12th entry exists at the tag remains unchecked.",
+        "source": "examples/don-hang working tree: DonHang.Catalog/*"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "CatalogModule.AddCatalogModule: AddDbContext<CatalogDbContext>(…UseNpgsql(connectionString)); AddSingleton<IConnectionMultiplexer>(…); AddScoped<EfProductRepository>(); AddScoped<IProductRepository>(… new ProductCache(…EfProductRepository…)); AddScoped<ICatalog, CatalogService>(). CatalogService.FindAsync: `await products.FindAsync(id)` on IProductRepository. Program.cs 37-39: AddCatalogModule(connectionString, redisConfiguration); AddDonHangInfrastructure(connectionString); AddScoped<OrderService>().",
+        "source": "examples/don-hang (working tree, matches round-1 stage-3 extract): DonHang.Catalog/{CatalogModule,CatalogService}.cs; DonHang.Api/Program.cs:33-39"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Round 1 (stage-3 extract): Order, OrderService in DonHang.Domain; EfOrderRepository(DonHangDbContext db) in DonHang.Infrastructure; Infrastructure.csproj has a ProjectReference to DonHang.Domain; Domain.csproj has none. Round 2, STAGE.md: \"Order emails moved to `DonHang.Notifications` and refunds to `DonHang.Payments`\"; DonHang.Notifications holds MailKitEmailSender.cs, IEmailSender.cs, OrderEventsConsumer.cs.",
+        "source": "examples/don-hang @ stage-3 (round 1); working tree STAGE.md:13-15, DonHang.Notifications/*"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "DonHang.Catalog/Product.cs: `internal sealed class Product { public int Id …; public required string Name …; public int PriceVnd … }`, no methods. Entities.cs @ stage-3 declares only Customer, Order, OrderItem; Order has MarkPaid, Cancel, Ship, RequestRefund, CompleteRefund, FailRefund, each throwing OrderStatusException on a disallowed status. Header: \"From stage-3 `products` belongs to the Catalog module\".",
+        "source": "examples/don-hang @ stage-3: DonHang.Catalog/Product.cs; DonHang.Domain/Entities.cs"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "stage-3 DonHang.Catalog.csproj: `<PackageReference Include=\"Npgsql.EntityFrameworkCore.PostgreSQL\" />`, `<PackageReference Include=\"StackExchange.Redis\" />`, no ProjectReference. stage-2 DonHang.Infrastructure.csproj: same two lines (round 1). The s5 prose on ModuleBoundaryTests matches CatalogUsesNoOrderingProject: ICatalog's assembly references filtered by [\"DonHang.Domain\", \"DonHang.Infrastructure\", \"DonHang.Api\"], then Assert.Empty.",
+        "source": "examples/don-hang @ stage-3: DonHang.Catalog/DonHang.Catalog.csproj:16-19; DonHang.Tests/Architecture/ModuleBoundaryTests.cs:16-42; @ stage-2: DonHang.Infrastructure/DonHang.Infrastructure.csproj"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "stage-3: `public sealed class ProductsController(ICatalog catalog) : ControllerBase` in DonHang.Api/Controllers. stage-2 (round-1 extract; git refused in this session, not re-run): `public sealed class ProductsController(DonHangDbContext db, IProductRepository products) : ControllerBase`, comment \"The list reads DonHangDbContext directly\", i.e. the list queries db.Products.",
+        "source": "examples/don-hang @ stage-2, stage-3: DonHang.Api/Controllers/ProductsController.cs"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "DependencyRuleTests.DomainReferencesNoOuterAssembly: `typeof(OrderService).Assembly.GetReferencedAssemblies()` filtered by ForbiddenPrefixes [\"DonHang.Infrastructure\", \"DonHang.Api\", \"DonHang.Catalog\", \"DonHang.Messaging\", \"RabbitMQ\", \"Microsoft.EntityFrameworkCore\", \"Microsoft.AspNetCore\", \"Npgsql\", \"StackExchange.Redis\", \"MailKit\"], then `Assert.Empty(forbidden);`.",
+        "source": "examples/don-hang @ stage-3: DonHang.Tests/Architecture/DependencyRuleTests.cs"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Accessibility levels are defined by containing type and assembly only: \"`internal`: Access is limited to the current assembly.\" The one narrower scope is per file: \"a top-level (non-nested) type can use the `file` modifier. The declared type is only visible in the current source file.\" No accessibility level refers to folders.",
+        "source": "refs/dotnet-docs/docs/csharp/language-reference/keywords/access-modifiers.md:21,28"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "git-ls-tree(1): \"-r Recurse into sub-trees.\"; \"--name-only … List only filenames (instead of the \"long\" output), one per line.\"; <path> is \"a list of patterns to match\". Execution: `git ls-tree --name-only HEAD tools/` in this repo printed one line per entry, `tools/bin` and `tools/src` as single entries without their contents. Run with the host's git, not the lab box's 2.54; the behaviour is the documented one.",
+        "source": "https://git-scm.com/docs/git-ls-tree; run in F:/SourceCode/lo-trinh-architect"
+      },
+      {
+        "n": 11,
+        "verdict": "not-needed",
+        "evidence": "Design judgement ledgered as opinion, required by outline items 1 and 4, and consistent with the repo: Ordering spans DonHang.Domain + DonHang.Infrastructure, Catalog is one project (Program.cs comment l.34-36)."
+      },
+      {
+        "n": 12,
+        "verdict": "not-needed",
+        "evidence": "Design judgement ledgered as opinion, required by outline item 5; the lesson grounds it in the repo (Product has no methods) and does not state it as a universal rule."
+      }
+    ],
+    "issues": [
+      {
+        "severity": "major",
+        "section": 7,
+        "kind": "accuracy",
+        "text": "Carried from round 1 (sentence unchanged). Unlisted claim, and incomplete. Catalog's public surface at stage-3 is three types: ModuleBoundaryTests pins `CatalogPublicTypes = [\"CatalogModule\", \"CatalogProduct\", \"ICatalog\"]`, and Program.cs (outside Catalog) calls `AddCatalogModule`. Naming only two tells the learner CatalogModule is not usable from outside.",
+        "quote": "`ICatalog` and `CatalogProduct` are what code outside Catalog may use, the subject of the next lesson.",
+        "fix": "Replace with: \"`ICatalog` and `CatalogProduct`, with `CatalogModule` that registers them, are what code outside Catalog may use, the subject of the next lesson.\" Add a fact claim citing DonHang.Tests/Architecture/ModuleBoundaryTests.cs (CatalogPublicTypes) @ stage-3."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "diagram",
+        "text": "Carried from round 1, partly fixed: the node is now \"ICatalog, CatalogService\" and the arrows are labelled, but `CS -> PC -> CDB` is still the only path drawn. CatalogService.ListAsync reads CatalogDbContext directly (`IQueryable<Product> query = db.Products;`); only FindAsync/ChangePriceAsync go through ProductCache. The prose (\"reads one product through ProductCache\") is right; the diagram implies every call goes through the cache.",
+        "quote": "CS -->|\"calls\"| PC\n  PC -->|\"calls\"| CDB",
+        "fix": "Relabel the first edge `CS -->|\"one product\"| PC` and add `CS -->|\"lists\"| CDB`."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "fix-required"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-08T23:59:00+07:00",
+    "reviewer": "review-junior (prompt 05), claude-opus-5-5, round 2",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "text": "Carried from round 1, mostly fixed and downgraded from major: section 4 now says the controllers stay in the host by choice and that a module could hold them. Two small snags remain. The title still says a module holds \"every layer\" while the body and summary line 1 say \"below HTTP\". And \"each module starts below it\" and \"its model and storage would stay where they are\" made me re-read to see what would move and what would not.",
+        "quote": "here the host is the one project that answers HTTP, and each module starts below it. A module could hold its own controllers; its model and storage would stay where they are.",
+        "fix": "Make the title match the body (e.g. \"every layer below HTTP of one context\"), and replace the second sentence with \"A module could also hold its own controllers; here they stay in the host.\""
+      },
+      {
+        "severity": "minor",
+        "section": "design.l3.modules-cut-through-layers.q5",
+        "kind": "quiz",
+        "text": "Carried from round 1. Option b is unchanged: it is still the longest option and echoes the lesson's \"`Product` has no methods to protect\", so I can pick it by matching words rather than by reasoning.",
+        "quote": "Decline it: keep Catalog as one project, because `Product` has no methods to guard and a `Domain` project would add nothing.",
+        "fix": "Shorten option b to the length of the others, e.g. \"Decline it: Catalog has nothing a `Domain` project would protect.\""
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [
+        "Section 4: title says 'every layer' while the body says the module keeps its share 'below HTTP'."
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}
