@@ -1,7 +1,7 @@
 {
   "id": "design.l3.dispatching-domain-events",
   "generated_by": "claude-opus-5-5",
-  "generated_at": "2026-10-07T23:00:00+07:00",
+  "generated_at": "2026-10-08T10:00:00+07:00",
   "claims": [
     {
       "n": 1,
@@ -21,7 +21,7 @@
     },
     {
       "n": 3,
-      "text": "DomainEventDispatcher takes one IEnumerable<IDomainEventHandler<T>> per event kind; DispatchAsync loops over order.DomainEvents, switches on type, awaits each HandleAsync, then order.ClearDomainEvents(), so a second dispatch repeats nothing; a new kind needs one more parameter and case.",
+      "text": "DomainEventDispatcher takes one IEnumerable<IDomainEventHandler<T>> per event kind; DispatchAsync loops over order.DomainEvents, switches on type, awaits each HandleAsync in turn, then calls order.ClearDomainEvents(); a new kind needs one more parameter and case.",
       "kind": "fact",
       "source_hint": "examples/don-hang @ stage-3: DonHang.Domain/IDomainEventHandler.cs:13-55",
       "needs_verification": true,
@@ -37,9 +37,9 @@
     },
     {
       "n": 5,
-      "text": "At stage-3 two handlers are registered for OrderCancelled: NotifyCustomerOnOrderEvents (looks up the customer, adds an outbox_messages row through IOutbox/EfOutbox, as QueuedNotifier added a notifications row at stage-2) and RecordOrderStatusHistory (adds an order_status_history row); neither saves.",
+      "text": "Two handlers are registered for OrderCancelled: NotifyCustomerOnOrderEvents (implements the interface for all six kinds Order records, one HandleAsync each; adds an outbox_messages row via IOutbox) and RecordOrderStatusHistory (adds an order_status_history row); neither saves.",
       "kind": "fact",
-      "source_hint": "examples/don-hang @ stage-3: DonHang.Domain/NotifyCustomerOnOrderEvents.cs; DonHang.Infrastructure/RecordOrderStatusHistory.cs; EfOutbox.cs",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Domain/NotifyCustomerOnOrderEvents.cs:11-25; DonHang.Domain/Entities.cs (six domainEvents.Add); DonHang.Infrastructure/RecordOrderStatusHistory.cs; EfOutbox.cs",
       "needs_verification": true,
       "section": 4
     },
@@ -89,7 +89,7 @@
     },
     {
       "n": 11,
-      "text": "Resolving IEnumerable<T> from the .NET DI container returns an instance of every service registered for T.",
+      "text": "Resolving IEnumerable<T> from the .NET DI container returns an instance of every service registered for T, in registration order, so NotifyCustomerOnOrderEvents (ServiceCollectionExtensions.cs:31) runs before RecordOrderStatusHistory (:37).",
       "kind": "behavior",
       "version_key": "dotnet",
       "source_hint": ".NET docs: Dependency injection — Service registration methods (multiple registrations, IEnumerable<T>)",
@@ -98,7 +98,7 @@
     },
     {
       "n": 12,
-      "text": "ServiceCollectionExtensions.AddDonHangInfrastructure, called once by DonHang.Api's Program.cs, registers at stage-3 each of the six event interfaces once for NotifyCustomerOnOrderEvents and once for RecordOrderStatusHistory with AddScoped, then DomainEventDispatcher.",
+      "text": "AddDonHangInfrastructure, which DonHang.Api's Program.cs calls to register the infrastructure classes the order use cases need, registers each of the six event interfaces once for NotifyCustomerOnOrderEvents and once for RecordOrderStatusHistory (AddScoped), then DomainEventDispatcher.",
       "kind": "fact",
       "source_hint": "examples/don-hang @ stage-3: DonHang.Infrastructure/ServiceCollectionExtensions.cs:8-11, 26-42; DonHang.Api/Program.cs:38",
       "needs_verification": true,
@@ -114,9 +114,9 @@
     },
     {
       "n": 14,
-      "text": "At stage-3 the IOutbox row is saved with the order; after the save OutboxRelay, a hosted service run by DonHang.Api, passes it on, and the separate program DonHang.Notifications, which now runs the NotificationSender that ran inside the API at stage-2, emails Mailpit; the API does not wait.",
+      "text": "At stage-3 the IOutbox row is saved with the order and passed on only after the save (OutboxRelay, a hosted service in DonHang.Api); NotificationSender now runs in DonHang.Notifications, a separate program, and emails Mailpit; the API answers without waiting for the email.",
       "kind": "fact",
-      "source_hint": "examples/don-hang @ stage-3: DonHang.Messaging/OutboxRelay.cs:8-11; DonHang.Api/Program.cs:48; DonHang.Notifications/Program.cs:20-31; STAGE.md (NotificationSender now in Notifications)",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Api/Program.cs:41-48; DonHang.Notifications/Program.cs:20-31; DonHang.Domain/OutboxMessage.cs:4-5; docker-compose.yml (Smtp__Host mailpit)",
       "needs_verification": true,
       "section": 4
     },
@@ -130,7 +130,7 @@
     },
     {
       "n": 16,
-      "text": "A handler that calls another program over the network cannot undo that call if the later save fails; keeping handlers to rows in the same DbContext is this module's choice. Opposing view: some designs dispatch after commit when side effects outside the database are needed.",
+      "text": "A handler that calls another program over the network cannot undo that call if the later save fails; keeping handlers to rows in the same DbContext is this module's choice. Opposing view, stated in the lesson: designs that need such calls run them after the save.",
       "kind": "opinion",
       "source_hint": "outline item 4; depth_notes (outbox in backend/messaging)",
       "needs_verification": false,
@@ -146,10 +146,9 @@
     },
     {
       "n": 18,
-      "text": "`git grep -n -A1 \"events.DispatchAsync\" stage-3 -- DonHang.Domain/OrderService.cs` in examples/don-hang prints six matches, one per use case, each followed by a line holding `await repository.SaveChangesAsync();`; -n prints line numbers, -A1 one line after each match.",
-      "kind": "syntax",
-      "version_key": "git",
-      "source_hint": "git-grep documentation (-n, -A, <tree>, pathspec); verify by running in examples/don-hang",
+      "text": "At stage-3 DonHang.Domain/OrderService.cs contains `events.DispatchAsync` exactly six times, one per use case, each on the line immediately before `await repository.SaveChangesAsync();`.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Domain/OrderService.cs:49-50, 65-66, 77-78, 92-93, 105-106, 117-118 (tools/extract-code --tag stage-3)",
       "needs_verification": true,
       "section": 7
     }
@@ -160,7 +159,7 @@
     "beyond_scope": [
       "RecordOrderStatusHistory named as the second handler (plain words, no read-model term)",
       "One sentence: a new event kind needs one more case in the dispatcher (from the code comment)",
-      "One sentence: OutboxRelay passes the row on and DonHang.Notifications (running NotificationSender) sends the email, plain words; how the row travels is deferred to the outbox lesson"
+      "One sentence: the row is passed on to DonHang.Notifications, which sends the email, only after the save; how it travels is left outside the lesson"
     ]
   },
   "self_check": {
@@ -169,7 +168,7 @@
     "code_from_repo": true,
     "no_external_urls": true,
     "word_count": 1450,
-    "notes": "generate; fix-validation; apply-review x2. Round 2: s7 expected result drops line numbers (tag checked via tools/extract-code: 49..117). s4 split in 3 paras, outbox_messages in plain words, NotificationSender hosted not replaced, row travel deferred to outbox lesson, why events are cleared. s5 block 59-68, IEnumerable sentence, ctor param per kind, composition root clause. Core concepts bold not applied: vocab [], bold reserved. Quiz q5/q6 left to /quiz."
+    "notes": "apply-review (2026-10-08): junior majors: s3 handler = one HandleAsync per kind; s5 adds that NotifyCustomerOnOrderEvents implements all six kinds Order records; 'ordering side' -> 'classes the order use cases need'. Minors: s4 drops unexplained second-dispatch clause, splits outbox sentence, NotificationSender now in DonHang.Notifications (not 'replaces': it moved); s6 names run order (claim 11 extended). Cut 2 unasked sentences for budget. Quiz minors left to /quiz."
   },
   "open_questions": [],
   "repo_changes_needed": []

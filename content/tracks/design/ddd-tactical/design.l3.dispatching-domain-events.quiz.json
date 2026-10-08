@@ -145,13 +145,13 @@
           "correct": "`DispatchAsync` runs before `SaveChangesAsync`, so the exception leaves the use case before anything is written. The order keeps its old status in the database, and the cancel request returns an error.",
           "a": "Reactions such as an email feel like things that happen after the fact, so this ordering seems natural. But at stage-3 the dispatcher runs between `order.Cancel()` and the save, so a throwing handler stops the save.",
           "b": "The status did change in the `Order` object, so the first half sounds right. But that change lives only in the `DbContext` until the save, and the exception means the save never runs.",
-          "d": "\"False\" is the right verdict, so this option is tempting. But the reason is wrong: nothing from this request is stored, not the status either; the order's change and its reactions are kept or lost together."
+          "d": "\"False\" is the right verdict, so this option is tempting. But the reason is wrong: nothing from this request is stored, not the status either; the cancel and its reactions fail together."
         },
         "vi": {
           "correct": "`DispatchAsync` chạy trước `SaveChangesAsync`, nên exception thoát khỏi use case trước khi có gì được ghi. Trong database, đơn giữ trạng thái cũ, và request hủy trả về lỗi.",
           "a": "Những phản ứng như gửi email có vẻ là việc xảy ra sau, nên thứ tự này nghe tự nhiên. Nhưng ở stage-3, dispatcher chạy giữa `order.Cancel()` và lần lưu, nên một handler ném lỗi sẽ chặn lần lưu.",
           "b": "Trạng thái đúng là đã đổi trong object `Order`, nên vế đầu nghe đúng. Nhưng thay đổi đó chỉ nằm trong `DbContext` cho tới lần lưu, và exception khiến lần lưu không bao giờ chạy.",
-          "d": "Kết luận \"Sai\" là đúng, nên đáp án này hấp dẫn. Nhưng lý do sai: không có gì từ request này được lưu, kể cả trạng thái; thay đổi của đơn và các phản ứng với nó được giữ hoặc mất cùng nhau."
+          "d": "Kết luận \"Sai\" là đúng, nên đáp án này hấp dẫn. Nhưng lý do sai: không có gì từ request này được lưu, kể cả trạng thái; việc hủy và các phản ứng với nó cùng thất bại."
         }
       }
     },
@@ -174,8 +174,8 @@
         },
         {
           "id": "b",
-          "en": "One more `AddScoped` line in `AddDonHangInfrastructure` for that class.",
-          "vi": "Thêm một dòng `AddScoped` trong `AddDonHangInfrastructure` cho class đó."
+          "en": "A registration, so the container includes that class among the `OrderCancelled` handlers it passes to the dispatcher.",
+          "vi": "Một lần đăng ký, để container đưa class đó vào các handler của `OrderCancelled` mà nó truyền cho dispatcher."
         },
         {
           "id": "c",
@@ -200,13 +200,13 @@
           "correct": "A new reaction is one handler class and one registration line. The container passes the dispatcher every registered `IDomainEventHandler<OrderCancelled>`, so it finds the new one without any change to `Order` or `CancelOrderAsync`.",
           "c": "The dispatcher does have a `case` per kind of event, so adding one looks necessary. But `OrderCancelled` already has its `case`; only a new kind of event needs one, and a new reaction to an existing kind does not.",
           "d": "Calling the reaction where the cancel happens is how stage-2 worked, so it feels like the obvious place. But `CancelOrderAsync` names no handler: the dispatcher reaches every registered one, and calling it here too would run it twice.",
-          "e": "Saving in the handler sounds like a way to make sure the row is kept. But the use case's own save already writes everything the `DbContext` tracks; an extra save inside one handler would break the rule that the cancel and its reactions are kept or lost together."
+          "e": "Saving in the handler sounds like a way to make sure the row is kept. But the use case's own save already writes everything the `DbContext` tracks; an extra save inside one handler would write the cancel before the later handlers ran, so a later handler that threw could no longer undo it."
         },
         "vi": {
           "correct": "Một phản ứng mới là một class handler và một dòng đăng ký. Container truyền cho dispatcher mọi `IDomainEventHandler<OrderCancelled>` đã đăng ký, nên nó tìm thấy handler mới mà không cần sửa `Order` hay `CancelOrderAsync`.",
           "c": "Dispatcher đúng là có một `case` cho mỗi loại event, nên thêm một cái trông có vẻ cần. Nhưng `OrderCancelled` đã có `case` của nó; chỉ loại event mới mới cần thêm, còn một phản ứng mới cho loại đã có thì không.",
           "d": "Gọi phản ứng ngay chỗ hủy đơn là cách stage-2 đã làm, nên đây trông như chỗ hiển nhiên. Nhưng `CancelOrderAsync` không gọi tên handler nào: dispatcher tới được mọi handler đã đăng ký, và gọi thêm ở đây sẽ khiến nó chạy hai lần.",
-          "e": "Lưu ngay trong handler nghe như cách đảm bảo dòng được giữ lại. Nhưng lần lưu của chính use case đã ghi mọi thứ `DbContext` theo dõi; một lần lưu thêm trong một handler sẽ phá quy tắc rằng việc hủy và các phản ứng với nó được giữ hoặc mất cùng nhau."
+          "e": "Lưu ngay trong handler nghe như cách đảm bảo dòng được giữ lại. Nhưng lần lưu của chính use case đã ghi mọi thứ `DbContext` theo dõi; một lần lưu thêm trong một handler sẽ ghi việc hủy trước khi các handler sau chạy, nên một handler sau ném lỗi không còn hoàn tác được nữa."
         }
       }
     },
@@ -254,13 +254,13 @@
           "correct": "A row added to the `DbContext` joins the use case's one save, so it is stored exactly when the cancel is. The network call happens only after that, from a separate program, the same way the cancellation email is sent.",
           "a": "A failed call does stop the cancel, so the rule looks protected. But a call that succeeds cannot be taken back if the save then fails, and the service would know about a cancel that `orders` never stored. It is right only when telling the service about an unsaved cancel does no harm.",
           "c": "Putting the call and a save side by side feels like doing them as one step. But a network call cannot join the database transaction: the save can still fail after the call succeeded, and earlier handlers' rows would be written early. It fits only if the service's side could be undone when the save fails.",
-          "d": "Checking validity first sounds safer than reacting later. But `Order` calls no one, and the call would still happen before the save, so a failed save leaves the same mismatch. Checking validity first is right when it decides whether the event is recorded at all, and `Cancel()` already does that before any handler runs."
+          "d": "Checking validity first sounds safer than reacting later. But `Order` calls no one, and the call would still happen before the save, so a failed save leaves the same mismatch. Checking validity belongs in `Cancel()`, which already decides whether `OrderCancelled` is recorded; changing `Cancel()` is the right choice when the question is whether a cancel is allowed, not how outside services hear of it."
         },
         "vi": {
           "correct": "Một dòng thêm vào `DbContext` đi cùng lần lưu duy nhất của use case, nên nó được lưu đúng khi việc hủy được lưu. Lời gọi qua mạng chỉ diễn ra sau đó, từ một chương trình riêng, giống cách email báo hủy được gửi.",
           "a": "Lời gọi lỗi đúng là chặn việc hủy, nên quy tắc trông như được bảo vệ. Nhưng một lời gọi thành công thì không lấy lại được nếu lần lưu sau đó lỗi, và dịch vụ sẽ biết về một lần hủy mà `orders` chưa bao giờ lưu. Cách này chỉ đúng khi báo cho dịch vụ về một lần hủy chưa lưu không gây hại gì.",
           "c": "Đặt lời gọi và lần lưu cạnh nhau trông như làm chúng thành một bước. Nhưng lời gọi qua mạng không tham gia được giao dịch của database: lần lưu vẫn có thể lỗi sau khi lời gọi đã thành công, và dòng của các handler trước sẽ bị ghi sớm. Cách này chỉ hợp nếu phía dịch vụ có thể hoàn tác khi lần lưu lỗi.",
-          "d": "Kiểm tra hợp lệ trước nghe an toàn hơn phản ứng sau. Nhưng `Order` không gọi ai, và lời gọi vẫn diễn ra trước lần lưu, nên lần lưu lỗi vẫn để lại đúng sự lệch đó. Kiểm tra hợp lệ trước chỉ đúng khi nó quyết định event có được ghi lại hay không, và `Cancel()` đã làm việc đó trước khi handler nào chạy."
+          "d": "Kiểm tra hợp lệ trước nghe an toàn hơn phản ứng sau. Nhưng `Order` không gọi ai, và lời gọi vẫn diễn ra trước lần lưu, nên lần lưu lỗi vẫn để lại đúng sự lệch đó. Việc kiểm tra hợp lệ thuộc về `Cancel()`, nơi đã quyết định `OrderCancelled` có được ghi lại hay không; sửa `Cancel()` là lựa chọn đúng khi câu hỏi là việc hủy có được phép hay không, chứ không phải dịch vụ bên ngoài được báo thế nào."
         }
       }
     },

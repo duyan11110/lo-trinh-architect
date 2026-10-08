@@ -13,57 +13,57 @@ prereqs: [design.l3.entities-and-identity, design.l2.valid-from-construction, de
 related: [foundation.l1.oop-encapsulation, design.l2.where-a-rule-belongs]
 vocab: [ddd-aggregate, invariant]
 example_tag: stage-2
-versions_used: [dotnet, git, postgresql]
+versions_used: [dotnet, git]
 content_version: 1
-status: draft
+status: reviewed
 approved_by: null
-reviewed_at: null
+reviewed_at: "2026-10-08T02:46:38+07:00"
 ---
 
 ## Before you start
 
 - [[design.l3.entities-and-identity]] — you know `Order` is an entity, followed over time by its `Id`; this lesson asks which objects change together with it.
-- [[design.l2.valid-from-construction]] — you know `Order`'s public constructor refuses an order with no items, so every new order starts in an allowed state; at stage-2 it also refuses any item with a quantity below 1.
+- [[design.l2.valid-from-construction]] — you know `Order`'s public constructor refuses an order with no items, and at stage-2 also any item with a quantity below 1.
 - [[design.l2.testing-the-entity]] — you know `OrderTests` creates an `Order` with its constructor and then calls only its methods.
 
 ## The situation
 
-Support asks for a small feature: staff should be able to remove an out-of-stock product from a `new` order before it is paid. You open `OrderService` to add the method and notice you can write it without touching `Order`: load the order, remove that item from `order.Items`, save. The compiler accepts it, and `OrderTests` stays green. Then you think of an order whose only item is that product. The constructor refuses an order with no items, yet nothing stops your method from leaving one. Where must a rule about an order and all of its items be checked, so that it holds after every change and not only at creation?
+Support asks for a small feature: staff should be able to remove an out-of-stock product from a `new` order before it is paid. You open `OrderService` to add the method and see that you can write it without touching `Order`: load the order, remove that item from `order.Items`, save. It compiles, and every test in `OrderTests` still passes. Then you picture an order whose only item is that product. The constructor refuses to create an order with no items, yet your method would leave exactly that. Where must a rule about an order and all of its items be checked, so that it holds after every change and not only at creation?
 
 ## Core concepts
 
 - **invariant** — a business rule that must be true whenever the data is saved; in Đơn Hàng, an order has at least one item, and every item has a quantity of at least 1.
-- **aggregate (DDD)** — a group of objects, such as an order and its items, that changes as one unit, so that the invariants spanning the group hold after every change. Checking after every change is how it makes sure each invariant is true whenever the data is saved.
-- shared list — one `List<OrderItem>` object that two variables point to; a change made through either variable is seen through both.
+- **aggregate (DDD)** — a group of objects, such as an order and its items, that changes as one unit, so that the invariants spanning the group hold after every change.
+- shared list — one `List<OrderItem>` object that two references point to, such as the caller's variable and `order.Items`; a change made through either shows through both.
 - single way in — the one place, such as a method of `Order`, that every change to the group must pass through, so the check there cannot be skipped.
 
 ## How it works
 
 ```mermaid
 flowchart LR
-  L["Caller's items list"] -->|"new Order(...)"| K["Constructor checks both rules"]
+  C["Caller's items list"] -->|"new Order(...)"| K["Constructor checks both rules"]
   K -->|"Items = items"| I["order.Items"]
-  L -->|"Clear() later"| I
-  X["Any code holding the order"] -->|"Clear(), Remove, Add"| I
+  C -->|"Clear() later"| I
+  X["Any code holding the order"] -->|"Remove, Clear(), Add"| I
   I --> Q["each OrderItem"]
   X -->|"Quantity = 0"| Q
 ```
 
-The diagram shows the ways C# code holding a stage-2 order, or the list it was built from, can reach its items. Only one arrow passes through a check.
+The diagram shows how code reaches a stage-2 order's items, directly or through the list it was built from. Only one arrow passes through a check.
 
-The controller builds a `List<OrderItem>` and passes it to `OrderService.PlaceOrderAsync`, which passes it on to `new Order(...)`. The constructor checks both invariants: the list is not empty, and no item has a quantity below 1. If either fails, it throws `ArgumentException` and no order exists.
+The controller builds a `List<OrderItem>` from the request, and `OrderService.PlaceOrderAsync` passes it to `new Order(...)`. The constructor checks both invariants: the list is not empty, and no item has a quantity below 1. If either fails, it throws `ArgumentException` and no order exists.
 
-The constructor then stores that same list in `Items`, without copying it. The caller's variable and `order.Items` are now a shared list. Clearing the caller's list after `new Order(...)` empties the order too; the constructor never runs again to notice.
+The constructor then stores that same list in `Items`, without copying it. The caller's variable and `order.Items` now point to a shared list, so clearing the caller's list after `new Order(...)` empties the order too. The constructor never runs again to notice.
 
-The arrow from "Any code holding the order" to `order.Items` is code such as the method in the situation above. `Items` has a private setter, so outside code cannot assign a different list to it. But the getter returns the list itself, and `List<OrderItem>` has public `Clear()`, `Remove` and `Add` methods.
+The arrow from "Any code holding the order" is code such as the situation's method. `Items` has a private setter, so outside code cannot assign a different list to it. But the getter returns the list itself, and `List<OrderItem>` has public `Remove`, `Clear()` and `Add` methods.
 
-`order.Items` holds each `OrderItem`; that unlabeled arrow only shows what the list contains. The last arrow goes one level deeper. Each `OrderItem` has public setters, so code holding an item can set its `Quantity` to `0`, and `Order` is not told.
+The last arrow goes one level deeper: each `OrderItem` has public setters, so code holding an item can set its `Quantity` to `0`, and `Order` is not told.
 
-The first invariant is about the order and all of its items at once, and the second about every item the order holds. So both are kept only if every change to the order or to any of its items passes through a single way in that checks them, which is why the order and its items should form one aggregate. At stage-2 they do not yet change as one unit: the only C# check is the constructor, which guards the way in, not the changes that follow.
+The first invariant is about the order and all of its items at once, the second about every item the order holds. The second is the order's rule too: each `OrderItem` carries one `OrderId`, so an item with quantity `0` makes its order break the rule. Both stay true only if every change to the order or any of its items passes through a single way in that checks them. That is why the order and its items should form one aggregate. At stage-2 they do not yet change as one unit: `Order`'s only check is its constructor, which guards creation, not the changes that follow.
 
 ## In the Đơn Hàng system
 
-The only C# code that checks the item rules, in `DonHang.Domain/Entities.cs`. Outside C#, `db/schema.sql` declares `CHECK (quantity > 0)` on `order_items`, which makes the database refuse to save an item row whose quantity is not above 0, but nothing there refuses an order with no items:
+The code in `Order` that checks the item rules, in `DonHang.Domain/Entities.cs`:
 
 ```csharp file=DonHang.Domain/Entities.cs tag=stage-2 lines=60-70
     // lesson: design.l2.valid-from-construction
@@ -95,19 +95,19 @@ public sealed class OrderItem
 
 Every property has a public setter, so after the constructor's one check, any code holding an item can set `Quantity` to `0`.
 
-No stage-2 code does that yet. Both create endpoints, `OrdersController.Create` and its v2 counterpart in `OrdersV2Controller`, build the list, pass it to `PlaceOrderAsync` and do not touch it again, and after creating the order `OrderService` only calls `Cancel()` or `Ship()`, which change `Status`. The gap is in what the types allow, not in what today's code does.
+No stage-2 code does that yet. Both create endpoints, `OrdersController.Create` and its v2 counterpart in `OrdersV2Controller`, build the list, pass it to `PlaceOrderAsync` and do not touch it again. After creating an order, `OrderService` only calls `Cancel()` or `Ship()`, which change `Status`. The gap is in what the types allow, not in what today's code does.
 
-`OrderTests` does not show the gap either. `Constructor_NoItems_Throws` and `Constructor_QuantityBelowOne_Throws` check the item rules by passing a bad list to the constructor. Every other test builds an order with `NewOrder()`, a helper in `OrderTests` that calls the constructor with one valid item, and calls only `MarkPaid()`, `Ship()` or `Cancel()`. None of them changes the items after construction, so the suite stays green while any code holding an order can still change it into a state that breaks either rule.
+`OrderTests` does not show the gap either. `Constructor_NoItems_Throws` and `Constructor_QuantityBelowOne_Throws` check the item rules by passing a bad list to the constructor. Every other test builds an order with `NewOrder()`, a helper in `OrderTests` that calls the constructor with one valid item, and then calls only `MarkPaid()`, `Ship()` or `Cancel()`. None of them changes the items after construction, so the suite still passes while any code holding an order can still break either rule.
 
 ## Seniors often assume…
 
-- **"An aggregate is any set of tables joined by foreign keys."** → Actually an aggregate is drawn around the rules that must hold together, not around the foreign keys. `order_items` (the table behind `OrderItem`) points to `products` by a foreign key, yet neither item rule mentions anything about a product, so a product's price can change without checking any order. You notice this when grouping by foreign keys pulls `customers` and `products` into the order.
+- **"An aggregate is any set of tables joined by foreign keys."** → Actually an aggregate is drawn around the rules that must hold together, not around the foreign keys. `order_items`, the table behind `OrderItem`, points to `products` by a foreign key, yet neither item rule mentions a product, so a product's price can change without checking any order. You notice this when grouping by foreign keys pulls `customers` and `products` into the order.
 - **"Once the constructor has checked the items, the order stays valid for good."** → Actually the constructor runs once, so its checks guard only the moment of creation. The shared list and the public setters on `OrderItem` stay open afterwards. You notice this when a bug report shows a saved order with no items, while every test in `OrderTests` passes.
-- **"An invariant is just input validation, moved from the controller into `Order`."** → Actually input validation (the controller checking each request's fields before calling the service) checks one request when it arrives, while an invariant must hold for the saved data after every change, whichever code made it. A request is only one way in; a new service method is another. You notice this when a new code path that never goes through the controller saves data the controller would have refused.
+- **"An invariant is just input validation, moved from the controller into `Order`."** → Actually input validation, the controller checking each request's fields before calling the service, checks one request when it arrives. An invariant must hold for the saved data after every change, whichever code made it; a request is only one way in, and a new service method is another. You notice this when a code path that never goes through the controller saves data the controller would have refused.
 
 ## Try it (3 minutes)
 
-In the root folder of the example repository, in Git Bash:
+In the root folder of the example repository, in a shell:
 
 1. Run `git show stage-2:DonHang.Tests/Domain/OrderTests.cs`.
 2. For each test, note whether it reads or changes the order's items after the order exists.
@@ -117,7 +117,7 @@ Expected result: only `Constructor_NoItems_Throws` and `Constructor_QuantityBelo
 
 <details><summary>Suggested answer</summary>
 
-A test that exposes the gap creates a valid order with one item, then breaks a rule from outside: it clears `order.Items`, clears the list it passed to the constructor, or sets that item's `Quantity` to `0`. It then asserts that the order refused the change. At stage-2 that test cannot pass, because nothing in `Order` runs when its items change. Making it pass means routing every change to the items through `Order`, which the next lesson does.
+A test that exposes the gap creates a valid order with one item, then breaks a rule from outside: it clears `order.Items`, clears the list it passed to the constructor, or sets that item's `Quantity` to `0`. It then asserts that the change throws, or that the order still has its item with quantity 1. At stage-2 that test cannot pass, because nothing in `Order` runs when its items change. Making it pass means routing every change to the items through `Order`, which the next lesson does.
 
 </details>
 
@@ -134,6 +134,6 @@ A test that exposes the gap creates a valid order with one item, then breaks a r
 
 1. An aggregate is a group of objects that changes as one unit, so the invariants spanning the group hold after every change.
 2. An invariant is a rule true whenever data is saved: an order has at least one item, each with quantity at least 1.
-3. At stage-2 only `Order`'s constructor, in C#, checks both rules; it keeps the caller's list, and `Items` returns that list itself.
+3. At stage-2 only `Order`'s constructor checks both rules; it keeps the caller's list, and `Items` returns that list itself.
 4. `OrderItem` has public setters, and `OrderTests` never changes items after creation, so the gap stays hidden.
 5. A rule spanning several objects holds only if every change to them passes through one place that checks it.

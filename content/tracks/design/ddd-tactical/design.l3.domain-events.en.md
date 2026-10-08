@@ -15,9 +15,9 @@ vocab: [domain-event]
 example_tag: stage-3
 versions_used: [dotnet, git]
 content_version: 1
-status: draft
+status: reviewed
 approved_by: null
-reviewed_at: "2026-10-07T17:16:59+07:00"
+reviewed_at: "2026-10-08T05:44:15+07:00"
 ---
 
 ## Before you start
@@ -32,7 +32,7 @@ You are asked to add a second reaction when an order is cancelled in Đơn Hàng
 ## Core concepts
 
 - **domain event** — a record, named in the past tense, that something the business cares about has happened, such as `OrderCancelled`.
-- the order's event list — `Order.DomainEvents`, the events an order has recorded since it was created or loaded, until something clears the list; `Order` adds to it and calls no one.
+- the order's event list — `Order.DomainEvents`, the events an order has recorded since it was created or loaded, until `ClearDomainEvents()` empties it (the next lesson shows who calls it); `Order` adds to it and calls no one.
 - a reaction — work done because an event happened, such as adding the cancellation email job; it belongs to whoever reacts, not to the event.
 
 ## How it works
@@ -46,13 +46,13 @@ flowchart LR
   E --> F["returns: no one was called"]
 ```
 
-In the situation above, the thing the order could record is a domain event. At stage-3, `Order` keeps a private list of `IDomainEvent` objects and shows it to outside code as the read-only `DomainEvents`.
+In the situation above, the thing the order could record is a domain event. At stage-3, `Order` keeps a private list of `IDomainEvent` objects (the interface every domain event implements, shown in the next section) and shows it to outside code as the read-only `DomainEvents`.
 
-`Cancel()` first checks the status it starts from. If the order is already cancelled, shipped, paid or being refunded, it throws an `OrderStatusException`, and the line that records the event is never reached. A refused change therefore records nothing. Only after `Status` becomes `cancelled` does the method add an `OrderCancelled` to its list.
+`Cancel()` first checks the status it starts from. If the order is already cancelled, shipped, paid or being refunded, it throws an `OrderStatusException`, so a refused change records nothing. Only after `Status` becomes `cancelled` does the method add an `OrderCancelled` to its list.
 
 The event carries two things: the order it happened to, and when. It holds no email text, no recipient, no instruction. Sending an email is a reaction to the event, and so is telling the warehouse. Neither is part of the fact that the order was cancelled, so neither appears in it.
 
-Then `Cancel()` returns. Compare the C# event from the Observer pattern lesson: raising it calls every subscriber before the raising method continues. `Order` does the opposite. It holds no list of subscribers and calls nothing, so cancelling an order in a unit test runs no email code at all. The events wait in the list. At stage-3, `CancelOrderAsync` no longer calls `notifier.Send`: code outside `Order` reads the list and reacts, and the next lesson shows that code and when it runs.
+Then `Cancel()` returns. Compare the C# event from the Observer pattern lesson: raising it calls every subscriber before the raising method continues. `Order` does the opposite. It holds no list of subscribers and calls nothing, so cancelling an order in a unit test runs no email code. At stage-3, `CancelOrderAsync` no longer calls `notifier.Send`: code outside `Order` reads the list and reacts, and the next lesson shows that code and when it runs. The reactions are written once, in classes outside every use case, so `CancelOrderAsync` no longer lists them.
 
 ## In the Đơn Hàng system
 
@@ -80,7 +80,9 @@ public sealed record OrderShipped(Order Order, DateTimeOffset OccurredAt) : IDom
 
 Read the three names: each is a verb in the past tense. `IDomainEvent` asks for exactly two values, the order and the time, and each record supplies nothing more.
 
-This `OrderPlaced` is a record, a different type from the C# `OrderPlaced` event of the Observer pattern lesson, which lives in a separate sample class `OrderEvents`, not on `Order`. The comment explains why an event holds the `Order` itself rather than its id: the id is the order's primary key, which the repository's `AddAsync` assigns after the constructor has already recorded `OrderPlaced`. The "handlers" are the code that reacts to events, the subject of the next lesson. The same file also holds three refund events used by the refund lessons, built the same way.
+This `OrderPlaced` is a record, a different type from the C# `OrderPlaced` event of the Observer pattern lesson, which lives in a separate sample class `OrderEvents`, not on `Order`. The same file also holds three refund events, built the same way.
+
+The comment explains why an event holds the `Order` itself rather than its id: the id is the order's primary key, which the repository's `AddAsync` assigns after the constructor has already recorded `OrderPlaced`. The "handlers" are the code that reacts to events, the subject of the next lesson.
 
 Where `OrderCancelled` is recorded:
 
@@ -100,12 +102,12 @@ Where `OrderCancelled` is recorded:
     }
 ```
 
-The four checks come first, the change comes next, and the event comes last. Nothing in the method names an email, a notifier or any other object. `OrderTests` pins both sides of this. Before calling `Cancel()`, each of the two tests calls `ClearDomainEvents()` to drop the events recorded while setting the order up, such as the constructor's `OrderPlaced`. Then `Cancel_NewOrder_RecordsOrderCancelled` expects exactly one event, an `OrderCancelled`, and `Cancel_ShippedOrder_RecordsNothing` expects the list to stay empty after the refused cancel. Neither test needs a fake notifier, because `Order` has nothing to call.
+The four checks come first, the change comes next, and the event comes last. Nothing in the method names an email, a notifier or any other object. `OrderTests` checks both cases: a cancel that succeeds and one that is refused. Before calling `Cancel()`, each test calls `ClearDomainEvents()` to drop the events recorded during setup, such as the constructor's `OrderPlaced`. Then `Cancel_NewOrder_RecordsOrderCancelled` expects exactly one `OrderCancelled`, and `Cancel_ShippedOrder_RecordsNothing` expects an empty list. Neither test needs a fake notifier, because `Order` has nothing to call.
 
 ## Seniors often assume…
 
 - **"A domain event is just a C# `event` declared on the entity."** → Actually `Order` declares no `event` member; it keeps a list of records. A C# event would call its subscribers inside `Cancel()`, before the use case has saved anything, and `Order` would have to hold references to them. If a subscriber sent the email at once and the save then failed, the customer would hear of a cancellation that never happened. You notice this when a unit test of `Order` fails because an email subscriber threw, in a test that never meant to send anything.
-- **"A domain event can be sent as it is to another program, such as the warehouse's."** → Actually `OrderCancelled` lives in `DonHang.Domain` and holds an `Order` object, which means something only inside the same running program. Sending something to another program is a separate step with its own DTO, holding values such as the order id instead of the `Order` object, taught in the messaging lessons. You notice this when you picture another program receiving `OrderCancelled`: it would need the `Order` class itself, not just the facts.
+- **"A domain event can be sent as it is to another program, such as the warehouse's."** → Actually `OrderCancelled` lives in `DonHang.Domain` and holds an `Order` object, which means something only inside the same running program: the other program has no `Order` class or its rules, and needs only a few values such as the order id and the time. Sending to it is a separate step with its own DTO holding those values, taught in the messaging lessons. You notice this when you picture the warehouse's program receiving `OrderCancelled`: it would need the `Order` class itself, not just the facts.
 - **"An event should be named after what must happen next, such as `SendCancellationEmail`."** → Actually that name ties the fact to one reaction. A second reaction, such as telling the warehouse, would hang off an event that says "send an email". You notice this when the event called `SendCancellationEmail` also starts triggering stock updates, and its name now lies. A past-tense name such as `OrderCancelled` stays true however many reactions follow it.
 
 ## Try it (3 minutes)

@@ -13,11 +13,11 @@ prereqs: [design.l3.value-objects, design.l2.ef-core-and-private-setters]
 related: [backend.l1.efcore-mapping]
 vocab: []
 example_tag: stage-3
-versions_used: [efcore, npgsql_efcore, aspnetcore, git]
+versions_used: [efcore, npgsql_efcore, aspnetcore, git, shell]
 content_version: 1
-status: draft
+status: reviewed
 approved_by: null
-reviewed_at: "2026-10-07T20:37:09+07:00"
+reviewed_at: "2026-10-08T01:43:43+07:00"
 ---
 
 ## Before you start
@@ -27,15 +27,14 @@ reviewed_at: "2026-10-07T20:37:09+07:00"
 
 ## The situation
 
-You check out `stage-3` and see that `OrderItem.UnitPrice` is no longer an `int` but a `Vnd`, a record with an `Amount` and no `Id`. You expect the change to have cost something in the database: a new table for prices, or at least a migration that changes `order_items`. You look through the migrations added for stage-3, and none of them changes `order_items`. The API's order JSON still shows `unitPriceVnd` as a plain number. So where does a `Vnd` go when an order is saved, and how does it come back as a `Vnd` when the order is loaded?
+You check out `stage-3` and read `OrderItem`. Its unit price is no longer an `int` named `UnitPriceVnd` but a `Vnd` named `UnitPrice`, a record with an `Amount` and no `Id`. You expect the database to pay for the change: a table for prices, or at least a migration that changes `order_items`. None of the seven migrations added for stage-3 changes that table, and an order's JSON still shows `unitPriceVnd` as a plain number. So where does a `Vnd` go when an order is saved, and how does it come back as a `Vnd` when the order is loaded?
 
 ## Core concepts
 
 - value object — an object defined only by its values, with no id; in Đơn Hàng, `Vnd`.
-- owner — the object that holds a value object as one of its properties; here `OrderItem`, whose row in `order_items` is where the price lives.
+- owner — the object that holds a value object as one of its properties; here `OrderItem`, whose row in `order_items` holds the price.
 - value converter — a pair of functions EF Core runs on one property: the first turns the property's value into what the column stores, the second turns the column's value back into the property's type.
-- column type — what PostgreSQL stores in a column, here `integer` for `unit_price_vnd`. EF Core expects the column type that matches what the converter hands over. The real column in the database changes only when a migration changes it.
-- DTO — the shape the API answers in; `OrderItemDto` is separate from `OrderItem` and keeps its own types.
+- DTO — the shape the API answers in; `OrderItemDto` is a separate type from `OrderItem` and declares its own property types.
 
 ## How it works
 
@@ -51,22 +50,20 @@ sequenceDiagram
   T-->>E: unit_price_vnd = 450000
   E->>V: new Vnd(450000)
   V-->>E: a Vnd, or an exception if negative
-  E-->>C: OrderItem with UnitPrice = Vnd (or the exception)
+  E-->>C: OrderItem with UnitPrice = Vnd
 ```
 
-In the situation above, nothing new is stored. A value object has no id of its own. With nothing to use as a key it cannot have rows of its own, so Đơn Hàng maps `Vnd` with a value converter into its owner's row: its one value, the amount, sits in the `unit_price_vnd` column that `order_items` already had at stage-2.
+In the situation above, a `Vnd` has no id, and nothing in it can serve as its own key. A key picks out one particular row, but a `Vnd` of 450000 in one item is not a particular thing: it is equal to every other `Vnd` of 450000 and can replace it. So Đơn Hàng gives `Vnd` no rows of its own. A value converter maps it into its owner's row, where its one value, the amount, sits in the `unit_price_vnd` column that `order_items` already had at stage-2.
 
-What changed is the mapping. When EF Core saves an item, the value converter's first function takes the `Vnd` and returns its `Amount`, an `int`, and that `int` goes into the column. When EF Core reads a row, the second function takes the `int` from the column and calls `new Vnd(amount)`, so the item it hands back holds a real `Vnd`.
+Saving goes through the converter's first function. It takes the `Vnd` and returns its `Amount`, an `int`, and EF Core writes that `int` into the column. The column receives an `int`, as it did when the property itself was an `int`, so its type stays `integer`. Introducing `Vnd` changed the mapping in `DonHangDbContext`, not the database schema.
 
-Because the converter turns a `Vnd` into an `int`, the column type stays `integer`, as at stage-2. The database never learns that `Vnd` exists, which is why no stage-3 migration touches prices.
+Loading goes through the second function. It takes the `int` from the column and calls `new Vnd(amount)`, so the item EF Core hands back holds a real `Vnd`. The constructor refuses a negative amount. If a negative number ever reaches `unit_price_vnd` by a path outside the code, loading that row throws instead of handing your code an item with a negative price. That is the opposite of `Order`, which EF Core creates through a private constructor that checks nothing.
 
-The second function matters for safety. It does not set `Amount` behind the constructor's back; it calls the constructor, and the constructor refuses a negative amount. If a negative number ever reaches `unit_price_vnd` by some other path, loading that row throws instead of giving your code an item with a negative price. That is the opposite of what you saw with `Order`, whose private constructor checks nothing when EF Core loads a row.
-
-The API is the last layer. Its DTO still carries an `int`, so `Vnd` never reaches the API's JSON: it is declared in `DonHang.Domain`, the project that holds the business classes such as `Order` and `Vnd`, and the JSON does not change.
+The API stays outside all of this. `OrderItemDto` still declares an `int`, so `Vnd` never reaches the JSON and `unitPriceVnd` stays a plain number. `Vnd` stays in `DonHang.Domain`, the project that holds the business classes.
 
 ## In the Đơn Hàng system
 
-The whole storage decision is three lines at the end of the `OrderItem` mapping.
+The whole storage decision is three lines at the end of the `OrderItem` mapping:
 
 ```csharp file=DonHang.Infrastructure/DonHangDbContext.cs tag=stage-3 lines=80-96
         modelBuilder.Entity<OrderItem>(e =>
@@ -88,7 +85,7 @@ The whole storage decision is three lines at the end of the `OrderItem` mapping.
         });
 ```
 
-`HasColumnName("unit_price_vnd")` keeps the column name the `int` property `UnitPriceVnd` used at stage-2. `HasConversion` takes the two functions in order: `price => price.Amount` when writing, `amount => new Vnd(amount)` when reading. For `OrderItem`, `Entity<OrderItem>` declares a mapped class, `ToTable` names its table and `HasKey` sets its primary key. Notice what is absent: no `Entity<Vnd>`, no `HasKey` and no `ToTable` for `Vnd`. `UnitPrice` is one more column of `order_items`, next to `quantity`.
+`HasConversion` takes the two functions in order: `price => price.Amount` for writing, `amount => new Vnd(amount)` for reading. `HasColumnName("unit_price_vnd")` keeps the column name that the `int` property `UnitPriceVnd` was mapped to at stage-2. The block gives `OrderItem` a table with `ToTable` and a primary key with `HasKey`, but nothing in `DonHangDbContext` does either for `Vnd`. `UnitPrice` is one more column of `order_items`, next to `quantity`.
 
 ```csharp file=DonHang.Api/Dtos.cs tag=stage-3 lines=12-17
 // lesson: design.l3.storing-value-objects
@@ -99,20 +96,22 @@ public sealed record OrderItemDto(int ProductId, int Quantity, int UnitPriceVnd)
 public sealed record OrderDto(int Id, int CustomerId, string Status, DateTimeOffset PlacedAt, List<OrderItemDto> Items);
 ```
 
-`OrderItemDto` is the shape of one item in an order's JSON, and its `UnitPriceVnd` is still an `int`. `OrdersController` fills it with `i.UnitPrice.Amount`, so the conversion back to a number happens once more, at the edge of the API. A client such as `DonHang.App` keeps reading `unitPriceVnd` as an `int`, exactly as before stage-3.
+`OrderItemDto` is the shape of one item in an order's JSON, and its `UnitPriceVnd` is still an `int`. The comment above it says the controller passes on the `Vnd`'s `Amount`; that code is in `OrdersController.cs`, outside this excerpt. ASP.NET Core writes the property as `unitPriceVnd`, so a client such as `DonHang.App` keeps reading the same number it read at stage-2.
 
 ## Seniors often assume…
 
-- **"A value object needs its own table, like every class EF Core maps."** → Actually, with a value converter EF Core does not map `Vnd` as a class of its own at all; `UnitPrice` is a property of `OrderItem` stored in one column. Nothing in a `Vnd` could serve as a key, and the converter stores it as one more column of `order_items`. You notice this when you look for an `Entity<Vnd>` call in `DonHangDbContext`, or a prices table in the database, and find neither.
-- **"Turning the unit price into a `Vnd` needs a migration that changes the column."** → Actually the converter's database side is an `int`, so the column type stays `integer` and no stage-3 migration touches `unit_price_vnd`. The change lives in the mapping, not in the schema. EF Core keeps its own record of its mapping in `DonHangDbContextModelSnapshot.cs`, next to the migrations. You notice this when that file at stage-3 still records `UnitPrice` as an `int` in an `integer` column.
-- **"Once the domain uses `Vnd`, the API's JSON must turn the price into an object with an amount inside."** → Actually the DTO is a separate shape with its own types, and it still declares an `int`; the controller passes on `Amount`. Changing the JSON would break a client that reads `unitPriceVnd` as a number, such as `DonHang.App`, and would add no protection, since the domain already refuses negative amounts. A second field holding the same number as an object would only be a copy no client reads. You notice this when an order's JSON at stage-3 still has `unitPriceVnd` as a bare number.
+- **"A value object needs its own table, like every class EF Core maps."** → Actually, with a value converter EF Core treats `UnitPrice` as one property of `OrderItem` stored in one column, and `DonHangDbContext` maps no class of its own for `Vnd` (there is no `Entity<Vnd>`). A key would have nothing to name, because equal amounts can replace each other. You notice this when you search `DonHangDbContext` for `Entity<Vnd>`, or the database for a prices table, and find neither.
+- **"Turning the unit price into a `Vnd` needs a migration that changes the column."** → Actually the converter's database side is an `int`, so the column stays `integer`, and none of the migration files added for stage-3 mentions `unit_price_vnd`. Only the generated `.Designer.cs` file beside each one does, because EF Core writes into it a copy of the whole model, every table and column, changed or not. A migration follows a change to the table; here only the C# side changed. You notice this in "Try it" below: the same column name is mapped at both tags, and the new migrations never name it.
+- **"Once the domain uses `Vnd`, the API's JSON must turn the price into an object with an amount inside."** → Actually the DTO is a separate type and still declares an `int`, so the JSON did not change. Changing it would break a client that reads `unitPriceVnd` as a number, such as `DonHang.App`. While Đơn Hàng has a single currency, an object with a currency field beside the amount would also add no check the domain does not already make. You notice this when an order's JSON at stage-3 still shows `"unitPriceVnd":450000`.
 
 ## Try it (3 minutes)
 
-1. In the Đơn Hàng repository, run `git grep -n -e unit_price_vnd -e UnitPrice stage-3 -- DonHang.Infrastructure/Migrations ':!*.Designer.cs'`. `:!*.Designer.cs` leaves out the generated `.Designer.cs` file that sits next to each migration, so only the migrations' own changes and the snapshot are searched.
-2. For each match, note which file it comes from and, if the line names one, which C# type.
+In the root folder of the example repository, in Git Bash:
 
-Expected result: three lines. One comes from `20260923154631_InitialCreate.cs`, where the column was first created as `table.Column<int>(type: "integer", nullable: false)`. Two come from `DonHangDbContextModelSnapshot.cs`: `b.Property<int>("UnitPrice")` and `.HasColumnName("unit_price_vnd")`. No migration added for stage-3 appears. EF Core's own record of its mapping knows `UnitPrice` only as an `int` in the column that has existed since the first migration; `Vnd` never reached the database.
+1. Run `git grep -n unit_price_vnd stage-2 stage-3 -- DonHang.Infrastructure/DonHangDbContext.cs`. Naming `stage-2` and `stage-3` searches the file as it is at each tag, whatever you have checked out.
+2. Run `git diff --diff-filter=A stage-2 stage-3 -- DonHang.Infrastructure/Migrations ':!*.Designer.cs' | grep -c unit_price`. `--diff-filter=A` keeps only the files added between the two tags, here the seven new migrations; `':!*.Designer.cs'` leaves out the generated file that sits next to each one; `grep -c` counts the lines that mention `unit_price`.
+
+Expected result: step 1 prints two lines. `stage-2:DonHang.Infrastructure/DonHangDbContext.cs:75:` shows `e.Property(i => i.UnitPriceVnd).HasColumnName("unit_price_vnd");`, and `stage-3:DonHang.Infrastructure/DonHangDbContext.cs:94:` shows `.HasColumnName("unit_price_vnd")`. Step 2 prints `0`. The same column is mapped at both tags, first from an `int` property and then from a `Vnd` property, and no migration file added for stage-3 mentions it.
 
 ## Connections
 
@@ -124,8 +123,8 @@ Expected result: three lines. One comes from `20260923154631_InitialCreate.cs`, 
 
 ## Five-line summary
 
-1. A value object has no id of its own; in Đơn Hàng a `Vnd` gets no table and lives in its owner's row.
+1. A value object has no id or key of its own: in Đơn Hàng a `Vnd` gets no table and lives in its owner's row.
 2. At stage-3 a value converter in `DonHangDbContext` writes a `Vnd`'s `Amount` into `order_items.unit_price_vnd` and builds a new `Vnd` from it on load.
-3. The column stays `integer` as at stage-2: introducing `Vnd` changed the mapping, not the database, so no migration touches it.
+3. The column stays `integer` as at stage-2: introducing `Vnd` changed the mapping, not the database schema, so no migration touches it.
 4. The converter builds each `Vnd` through its constructor, so a negative amount in the table makes loading fail instead of reaching the code.
-5. `OrderItemDto` still carries an `int`: `Vnd` does not appear in the JSON, which keeps `unitPriceVnd` as a plain number.
+5. `OrderItemDto` still carries an `int`: `Vnd` stays in `DonHang.Domain`, and the JSON keeps `unitPriceVnd` as a plain number.

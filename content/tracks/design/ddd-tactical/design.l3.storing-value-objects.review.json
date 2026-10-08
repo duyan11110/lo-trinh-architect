@@ -1,202 +1,145 @@
 {
   "id": "design.l3.storing-value-objects",
   "technical": {
-    "reviewed_at": "2026-10-07T20:26:00+07:00",
+    "reviewed_at": "2026-10-08T13:00:00+07:00",
     "reviewer": "claude-opus-5-5",
     "claim_verdicts": [
       {
         "n": 1,
         "verdict": "verified",
-        "evidence": "extract-code --tag stage-3: Entities.cs `// Was \\`int UnitPriceVnd\\` until stage-2: any int, even a negative one.` / `public Vnd UnitPrice { get; private set; } = unitPrice;`. Vnd.cs: `public sealed record Vnd { public int Amount { get; } public Vnd(int amount) { if (amount < 0) throw new ArgumentOutOfRangeException(...`; no Id member. extract-code --tag stage-2 Entities.cs:104 `public int UnitPriceVnd { get; set; }`.",
+        "evidence": "git show stage-3: Entities.cs `// Was \\`int UnitPriceVnd\\` until stage-2` / `public Vnd UnitPrice { get; private set; } = unitPrice;`. Vnd.cs: `public sealed record Vnd { public int Amount { get; } public Vnd(int amount) { if (amount < 0) throw new ArgumentOutOfRangeException(...` - no Id member. stage-2 Entities.cs:104 `public int UnitPriceVnd { get; set; }`.",
         "source": "examples/don-hang @ stage-3: DonHang.Domain/Entities.cs (OrderItem), DonHang.Domain/Vnd.cs; @ stage-2: DonHang.Domain/Entities.cs:104"
       },
       {
         "n": 2,
         "verdict": "verified",
-        "evidence": "Grep `unit_price_vnd|UnitPrice` over Migrations/ excluding *.Designer.cs: only InitialCreate.cs:98 and the snapshot. extract-code --tag stage-3 InitialCreate.cs:97 `unit_price_vnd = table.Column<int>(type: \"integer\", nullable: false)`. Grep `order_items` in stage-3 migrations (20261005*, 20261006*): only a comment in ProductsBelongToCatalog.cs:11, whose Up() is empty ('This migration changes nothing in the database').",
-        "source": "examples/don-hang DonHang.Infrastructure/Migrations/ (working tree, InitialCreate and AddOutboxTraceParent confirmed present at stage-3 via extract-code)"
+        "evidence": "Round 1: git diff --name-status stage-2 stage-3 -- DonHang.Infrastructure/Migrations: 7 added .cs migrations, each with an added .Designer.cs. Added non-Designer diff contains no 'unit_price'; 'order_items' only in a ProductsBelongToCatalog comment 'This migration changes nothing in the database'. git grep -c unit_price_vnd stage-3 on the 7 new .Designer.cs files: 1 per file, so the added Designer sentence holds.",
+        "source": "examples/don-hang: git diff --diff-filter=A stage-2 stage-3 -- DonHang.Infrastructure/Migrations ':!*.Designer.cs'; git grep -c (run 2026-10-08, round 1)"
       },
       {
         "n": 3,
-        "verdict": "rephrased",
-        "evidence": "Đơn Hàng part holds: DonHangDbContext has no Entity<Vnd>/DbSet<Vnd>; executed scratch model with the same mapping: `model has entity Vnd: False`. But 'so it cannot have rows of its own' is contradicted in general for efcore: owned-entities.md:134 'owned types can be stored in a separate table from the owner', keyed by a shadow key equal to the owner's key (:50). No id means nothing in it is its own key, not that it cannot have rows.",
-        "source": "refs/efcore-docs/entity-framework/core/modeling/owned-entities.md:50,134; value-conversions.md:336-375; scratch execution (EF Core 10.0.4)",
-        "suggested_text": "A value object has no id of its own, so nothing in it can serve as its own key. In Đơn Hàng, Vnd holds a single value and is mapped with a value converter into its owner's row: no table or key of its own; its amount is a column of order_items."
+        "verdict": "verified",
+        "evidence": "Đơn Hàng part: stage-3 DonHangDbContext has no Entity<Vnd>, DbSet<Vnd>, HasKey/ToTable for Vnd; UnitPrice maps to unit_price_vnd with HasConversion. EF docs, Simple value objects: a wrapper type 'converted to the underlying decimal when stored in the database' via HasConversion(v => v.Amount, v => new Dollars(v)). 'No id, so nothing in it is its own key' is the DDD definition the lesson builds on (prereq design.l3.value-objects).",
+        "source": "examples/don-hang @ stage-3 DonHangDbContext.cs:80-96; refs/efcore-docs/entity-framework/core/modeling/value-conversions.md:336-373"
       },
       {
         "n": 4,
         "verdict": "verified",
-        "evidence": "\"Value converters allow property values to be converted when reading from or writing to the database.\" (:10); \"Conversions are defined using two Func expression trees: one from ModelClrType to ProviderClrType and the other from ProviderClrType to ModelClrType.\" (:19); \"provide one function which converts from the ModelClrType to the ProviderClrType, and another for the opposite conversion\" (:45). Simple value objects example: HasConversion(v => v.Amount, v => new Dollars(v)) (:369-373).",
-        "source": "refs/efcore-docs/entity-framework/core/modeling/value-conversions.md:10,19,45,369-373"
+        "evidence": "value-conversions.md:10 'Value converters allow property values to be converted when reading from or writing to the database.' :19 'Conversions are defined using two Func expression trees: one from ModelClrType to ProviderClrType and the other from ProviderClrType to ModelClrType.' :45 'provide one function which converts from the ModelClrType to the ProviderClrType, and another for the opposite conversion' followed by HasConversion(v => v.ToString(), v => (EquineBeast)Enum.Parse(...)).",
+        "source": "refs/efcore-docs/entity-framework/core/modeling/value-conversions.md:10,19,45-55"
       },
       {
         "n": 5,
         "verdict": "verified",
-        "evidence": "\"The provider type is the .NET type understood by the database provider.\" (:17); facets \"will apply to the converted database type\" (:271). Npgsql basic types write mapping row: \"integer | int | Integer | Int32\". Stage-3 snapshot (extract-code): `b.Property<int>(\"UnitPrice\") .HasColumnType(\"integer\") .HasColumnName(\"unit_price_vnd\");` (:123-125).",
-        "source": "refs/efcore-docs/entity-framework/core/modeling/value-conversions.md:17,271; https://www.npgsql.org/doc/types/basic.html; examples/don-hang @ stage-3 DonHangDbContextModelSnapshot.cs:123-125"
+        "evidence": "value-conversions.md:17 'The provider type is the .NET type understood by the database provider.' :271 facets 'will apply to the converted database type'. Stage-3 snapshot (generated by EF Core with Npgsql): `b.Property<int>(\"UnitPrice\") .HasColumnType(\"integer\") .HasColumnName(\"unit_price_vnd\");` (:123-125); stage-2->stage-3 snapshot diff changes only the property name, column type line unchanged.",
+        "source": "refs/efcore-docs/entity-framework/core/modeling/value-conversions.md:17,271; examples/don-hang @ stage-3 DonHangDbContextModelSnapshot.cs:123-125"
       },
       {
         "n": 6,
         "verdict": "verified",
-        "evidence": "Executed: scratch console app, Microsoft.EntityFrameworkCore.Sqlite 10.0.4, SDK 10.0.300; OrderItem-shaped class with `.HasColumnName(\"unit_price_vnd\").HasConversion(price => price.Amount, amount => new Vnd(amount))`, Vnd constructor copied from stage-3 Vnd.cs; rows inserted by raw SQL (450000 and -1). Output: `ok row: 450000` / `load threw: System.ArgumentOutOfRangeException | inner:  | an amount in VND cannot be negative (Parameter 'amount')`. Provider SQLite, not Npgsql; conversion runs in EF Core's materializer.",
-        "source": "execution in scratchpad/vndconv (EF Core 10.0.4); examples/don-hang @ stage-3 DonHangDbContext.cs:95, DonHang.Domain/Vnd.cs"
+        "evidence": "Executed scratch app, Microsoft.EntityFrameworkCore.Sqlite 10.0.4, SDK 10: entity with `.HasColumnName(\"unit_price_vnd\").HasConversion(price => price.Amount, amount => new Vnd(amount))`, Vnd constructor copied from stage-3; rows 450000 and -1 inserted by raw SQL. Output: `ok row: 450000` / `load threw: ArgumentOutOfRangeException | inner:  | an amount in VND cannot be negative (Parameter 'amount')`. Provider SQLite, not Npgsql; the conversion runs in EF Core's materializer.",
+        "source": "execution: session scratchpad vndconv/Program.cs (EF Core 10.0.4); examples/don-hang @ stage-3 DonHangDbContext.cs:95, DonHang.Domain/Vnd.cs"
       },
       {
         "n": 7,
         "verdict": "verified",
-        "evidence": "Stage-3 Entities.cs: 'For EF Core only. It cannot pass the Items navigation to the public constructor, so it creates the object with this one and then sets each mapped property from the row it loaded — the checks below do not run.' `private Order() { Status = \"\"; }`. constructors.md:42 'it will first call the default parameterless constructor and then set each property to the value from the database'; :85 'EF Core cannot set navigation properties ... using a constructor.'",
-        "source": "examples/don-hang @ stage-3 DonHang.Domain/Entities.cs (Order); refs/efcore-docs/entity-framework/core/modeling/constructors.md:42,85"
+        "evidence": "stage-3 Entities.cs: 'For EF Core only. It cannot pass the Items navigation to the public constructor, so it creates the object with this one ... the checks below do not run.' `private Order() { Status = \"\"; }`. constructors.md:42 'it will first call the default parameterless constructor and then set each property to the value from the database'; :85 'EF Core cannot set navigation properties ... using a constructor.'",
+        "source": "examples/don-hang @ stage-3 DonHang.Domain/Entities.cs:66-72; refs/efcore-docs/entity-framework/core/modeling/constructors.md:42,85"
       },
       {
         "n": 8,
         "verdict": "verified",
-        "evidence": "extract-code --tag stage-3 DonHangDbContext.cs:93-95 `e.Property(i => i.UnitPrice).HasColumnName(\"unit_price_vnd\").HasConversion(price => price.Amount, amount => new Vnd(amount));`; DbSets at :10-15 contain no Vnd; no Entity<Vnd>, HasKey or ToTable for Vnd anywhere in the file. --tag stage-2 DonHangDbContext.cs:75 `e.Property(i => i.UnitPriceVnd).HasColumnName(\"unit_price_vnd\");`.",
+        "evidence": "extract-code --tag stage-3 DonHangDbContext.cs:93-95 `e.Property(i => i.UnitPrice).HasColumnName(\"unit_price_vnd\").HasConversion(price => price.Amount, amount => new Vnd(amount));`; DbSets :10-15 have no Vnd; no Entity<Vnd>/HasKey/ToTable for Vnd in the file. git grep at stage-2: `stage-2:DonHang.Infrastructure/DonHangDbContext.cs:75: e.Property(i => i.UnitPriceVnd).HasColumnName(\"unit_price_vnd\");`.",
         "source": "examples/don-hang @ stage-3 DonHang.Infrastructure/DonHangDbContext.cs:10-15,80-96; @ stage-2 same file:75"
       },
       {
         "n": 9,
         "verdict": "verified",
-        "evidence": "extract-code --tag stage-3 Dtos.cs:15 `public sealed record OrderItemDto(int ProductId, int Quantity, int UnitPriceVnd);`; OrdersController.cs:182 `order.Items.Select(i => new OrderItemDto(i.ProductId, i.Quantity, i.UnitPrice.Amount)).ToList());`.",
-        "source": "examples/don-hang @ stage-3 DonHang.Api/Dtos.cs:15; DonHang.Api/Controllers/OrdersController.cs:182"
+        "evidence": "entity-types.md:52 'You can manually configure the table name:'; keys.md:21 'You can configure a single property to be the primary key of an entity as follows:'; keys.md:33 'You can also configure multiple properties to be the key of an entity - this is known as a composite key.'",
+        "source": "refs/efcore-docs/entity-framework/core/modeling/entity-types.md:52; keys.md:21,33"
       },
       {
         "n": 10,
         "verdict": "verified",
-        "evidence": "\"Features for the System.Text.Json based formatters can be configured using ... JsonSerializerOptions. The default formatting is camelCase.\" (:322). Grep DonHang.Api for PropertyNamingPolicy/AddJsonOptions/JsonNamingPolicy: no match. Capture outputs/stage-3/scripts/backend/auth-and-orders.txt:8 `\"items\":[{\"productId\":2,\"quantity\":1,\"unitPriceVnd\":450000}]`.",
-        "source": "refs/aspnetcore-docs/aspnetcore/web-api/advanced/formatting.md:122,322; examples/don-hang outputs/stage-3/scripts/backend/auth-and-orders.txt:8"
+        "evidence": "git show stage-3 Dtos.cs:15 `public sealed record OrderItemDto(int ProductId, int Quantity, int UnitPriceVnd);`; OrdersController.cs ToDto: `order.Items.Select(i => new OrderItemDto(i.ProductId, i.Quantity, i.UnitPrice.Amount)).ToList());`.",
+        "source": "examples/don-hang @ stage-3 DonHang.Api/Dtos.cs:15; DonHang.Api/Controllers/OrdersController.cs:182"
       },
       {
         "n": 11,
         "verdict": "verified",
-        "evidence": "extract-code --tag stage-3 models.dart: `final int unitPriceVnd;` and `unitPriceVnd: json['unitPriceVnd'] as int,` in OrderItemRequest.fromJson; OrderResult.fromJson builds the answer's items with `OrderItemRequest.fromJson(item as Map<String, dynamic>)`.",
-        "source": "examples/don-hang @ stage-3 DonHang.App/lib/models.dart:23,38,53-60"
+        "evidence": "formatting.md:322 'Features for the System.Text.Json based formatters can be configured using ... JsonSerializerOptions. The default formatting is camelCase.' git grep stage-3 DonHang.Api for JsonNamingPolicy/PropertyNamingPolicy: no match. Capture outputs/stage-3/scripts/backend/auth-and-orders.txt:8 contains `\"unitPriceVnd\":450000`.",
+        "source": "refs/aspnetcore-docs/aspnetcore/web-api/advanced/formatting.md:322; examples/don-hang @ stage-3 outputs/stage-3/scripts/backend/auth-and-orders.txt:8"
       },
       {
         "n": 12,
         "verdict": "verified",
-        "evidence": "Opinion, bounded in the lesson by its reasons; the facts under it hold: models.dart casts `json['unitPriceVnd'] as int`, so an object in that field fails the cast in DonHang.App; Vnd.cs refuses negatives in the constructor, so a JSON object adds no check the domain lacks. The ledger records the opposing view (several currencies).",
-        "source": "examples/don-hang @ stage-3 DonHang.App/lib/models.dart:38; DonHang.Domain/Vnd.cs"
+        "evidence": "git grep stage-3 DonHang.App/lib/models.dart:24 `final int unitPriceVnd;`, :38 `unitPriceVnd: json['unitPriceVnd'] as int,`.",
+        "source": "examples/don-hang @ stage-3 DonHang.App/lib/models.dart:24,38"
       },
       {
         "n": 13,
         "verdict": "verified",
-        "evidence": "git-grep: -e \"Multiple patterns are combined by or.\"; -n \"Prefix the line number to matching lines.\"; <tree> \"Instead of searching tracked files in the working tree, search blobs in the given trees.\" gitglossary: \"After a path matches any non-exclude pathspec, it will be run through all exclude pathspecs (magic signature: ! or its synonym ^). If it matches, the path is ignored.\"; without glob magic \"* and ? can match directory separators\".",
-        "source": "https://git-scm.com/docs/git-grep; https://git-scm.com/docs/gitglossary (pathspec)"
+        "evidence": "Executed scratch model (EF Core 10.0.4) with the stage-3 mapping of UnitPrice: `db.Model.FindEntityType(typeof(Vnd)) != null` printed `entity type for Vnd: False`. EF docs Simple value objects treat the wrapper as one converted property (HasConversion(v => v.Amount, v => new Dollars(v))). Round 2: s6 now says `DonHangDbContext` maps no class for Vnd (no Entity<Vnd>), consistent with claim 8.",
+        "source": "execution: session scratchpad vndconv/Program.cs; refs/efcore-docs/entity-framework/core/modeling/value-conversions.md:336-373"
       },
       {
         "n": 14,
         "verdict": "verified",
-        "evidence": "git grep itself needed approval in this session and was not run. Equivalent case-sensitive Grep of `unit_price_vnd|UnitPrice` over Migrations/ excluding *.Designer.cs gives exactly three lines: InitialCreate.cs:98, DonHangDbContextModelSnapshot.cs:123 `b.Property<int>(\"UnitPrice\")`, :125 `.HasColumnName(\"unit_price_vnd\");`; the snapshot lines confirmed at the tag via extract-code --tag stage-3. Real output lines carry a `stage-3:<path>:` prefix.",
-        "source": "examples/don-hang DonHang.Infrastructure/Migrations/ (working tree + extract-code --tag stage-3)"
+        "evidence": "Opinion, conditioned in the lesson ('While Đơn Hàng has a single currency'); round 2 names the currency field. Facts under it hold: models.dart:38 casts `json['unitPriceVnd'] as int`, so an object there fails the cast in DonHang.App; Vnd.cs refuses negatives in its constructor and has only Amount, so an object with amount plus one fixed currency adds no check the domain lacks. Ledger records the opposing view (several currencies).",
+        "source": "examples/don-hang @ stage-3 DonHang.App/lib/models.dart:38; DonHang.Domain/Vnd.cs"
       },
       {
         "n": 15,
         "verdict": "verified",
-        "evidence": "managing.md:36 'Three files are added to your project under the Migrations directory:'; :40 'MyContextModelSnapshot.cs--A snapshot of your current model. Used to determine what changed when adding the next migration.' Stage-3 DonHangDbContextModelSnapshot.cs:123-125 records `b.Property<int>(\"UnitPrice\").HasColumnType(\"integer\").HasColumnName(\"unit_price_vnd\")`.",
-        "source": "refs/efcore-docs/entity-framework/core/managing-schemas/migrations/managing.md:36,40; examples/don-hang @ stage-3 DonHangDbContextModelSnapshot.cs:123-125"
+        "evidence": "git-grep <tree>: 'Instead of searching tracked files in the working tree, search blobs in the given trees.'; -n: 'Prefix the line number to matching lines.' git-diff --diff-filter: 'Select only files that are Added (A), ...'. gitglossary pathspec: 'it will be run through all exclude pathspecs (magic signature: ! or its synonym ^). If it matches, the path is ignored.' Execution: output prefixed `stage-2:<path>:75:`.",
+        "source": "https://git-scm.com/docs/git-grep; https://git-scm.com/docs/git-diff; https://git-scm.com/docs/gitglossary (WebFetch 2026-10-08)"
       },
       {
         "n": 16,
         "verdict": "verified",
-        "evidence": "managing.md:36 'Three files are added to your project under the Migrations directory:'; :39 'XXXXXXXXXXXXXX_AddBlogCreatedTimestamp.Designer.cs--The migrations metadata file. Contains information used by EF.' Repo: every migration file in DonHang.Infrastructure/Migrations has a matching .Designer.cs.",
-        "source": "refs/efcore-docs/entity-framework/core/managing-schemas/migrations/managing.md:36-39"
+        "evidence": "Round 1 run: step 1 printed `stage-2:DonHang.Infrastructure/DonHangDbContext.cs:75:            e.Property(i => i.UnitPriceVnd).HasColumnName(\"unit_price_vnd\");` and `stage-3:DonHang.Infrastructure/DonHangDbContext.cs:94:                .HasColumnName(\"unit_price_vnd\")`. Step 2 diff output (saved to file) had zero lines matching `unit_price`, so `grep -c` prints 0 (see claim 18 for grep -c on no match). Commands unchanged in round 2.",
+        "source": "examples/don-hang, run 2026-10-08 from the repository root (round 1)"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "managing.md:39 'XXXXXXXXXXXXXX_AddBlogCreatedTimestamp.Designer.cs--The migrations metadata file. Contains information used by EF.' teams.md:16 'Each migration's designer metadata represents the model at that point in the sequence'. Round 3: AddOutboxTraceParent.cs changes only the outbox, yet its .Designer.cs BuildTargetModel (:19) calls ToTable for customers, orders, order_items (unit_price_vnd at :128), order_status_history, inbox_messages, outbox_messages.",
+        "source": "refs/efcore-docs/entity-framework/core/managing-schemas/migrations/managing.md:39; teams.md:16; examples/don-hang DonHang.Infrastructure/Migrations/20261006004259_AddOutboxTraceParent.Designer.cs:19-219"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "GNU grep --help (Git Bash): '-c, --count               print only a count of matching lines per FILE'. Execution: `grep -c zzz_no_match_zzz content/versions.yaml` printed `0`; `grep -c \"git:\" content/versions.yaml` printed `1`. GNU grep online manual returned HTTP 429; bash manual (docs root for 'shell') does not cover grep. Round 2 opened: lesson s6/s7, meta claims 2/14/18, quiz q3/q4 explanations.",
+        "source": "execution in Git Bash, 2026-10-08 (grep --help; grep -c on a repository file)"
       }
     ],
-    "issues": [
-      {
-        "severity": "major",
-        "section": 4,
-        "kind": "accuracy",
-        "text": "Claim 3 overstates EF Core: 'it cannot have rows of its own' is false in general for efcore 10 - owned-entities.md:134 'owned types can be stored in a separate table from the owner', with a shadow key copied from the owner (:50). True: nothing in a value object is its own key, and Đơn Hàng chose a converter. Owned types are out of scope (depth_notes), so narrow the wording; do not mention them. Same finding as the previous technical round; the sentence came back with the junior fix.",
-        "quote": "With nothing to use as a key it cannot have rows of its own, so Đơn Hàng maps `Vnd` with a value converter into its owner's row",
-        "fix": "Replace with: \"Nothing in it can serve as a key, so Đơn Hàng gives `Vnd` no rows of its own: a value converter maps it into its owner's row\". Set claim 3 text in .meta.json to this review's suggested_text for claim 3."
-      },
-      {
-        "severity": "major",
-        "section": 5,
-        "kind": "accuracy",
-        "text": "Unlisted claim: a gloss of three EF Core APIs, not in the claims ledger. It is supportable: entity-types.md:52 'You can manually configure the table name:'; keys.md:21 'You can configure a single property to be the primary key of an entity', :33 multiple properties form a composite key.",
-        "quote": "For `OrderItem`, `Entity<OrderItem>` declares a mapped class, `ToTable` names its table and `HasKey` sets its primary key.",
-        "fix": "Add a claim to .meta.json: kind \"behavior\", version_key \"efcore\", section 5, text \"In OnModelCreating, Entity<T>() configures entity type T, ToTable sets its table name and HasKey configures its primary key (several properties give a composite key)\", source_hint \"EF Core docs: Entity Types (Table name); Keys\". No lesson text change."
-      },
-      {
-        "severity": "major",
-        "section": 3,
-        "kind": "accuracy",
-        "text": "Unlisted claim, and too absolute: EF Core can also create the schema with EnsureCreated, and SQL run by hand changes a column; neither is a migration. True of Đơn Hàng, whose schema evolves through DonHang.Infrastructure/Migrations, not of databases in general.",
-        "quote": "The real column in the database changes only when a migration changes it.",
-        "fix": "Replace with: \"In Đơn Hàng, the real column changes only when a migration changes it.\" Add a claim to .meta.json: kind \"fact\", section 3, text \"Đơn Hàng's DonHangDbContext schema changes through the migrations in DonHang.Infrastructure/Migrations\", source_hint the Migrations folder at stage-3."
-      },
-      {
-        "severity": "major",
-        "section": 6,
-        "kind": "accuracy",
-        "text": "Unlisted claim about EF Core model building: that a property with a value converter makes EF Core not map its type as an entity type. Claim 8 covers only the absence of Entity<Vnd> in the code. Supportable by execution: scratch model with the stage-3 mapping, EF Core 10.0.4, `db.Model.FindEntityType(typeof(Vnd)) != null` printed `False`.",
-        "quote": "with a value converter EF Core does not map `Vnd` as a class of its own at all; `UnitPrice` is a property of `OrderItem` stored in one column.",
-        "fix": "Add a claim to .meta.json: kind \"behavior\", version_key \"efcore\", section 6, text \"When a property of type Vnd has a value converter, EF Core treats it as a scalar property stored in one column and adds no entity type for Vnd to the model\", source_hint \"EF Core docs: Value Conversions (Simple value objects); execution: Model.FindEntityType(typeof(Vnd)) is null\". No lesson text change."
-      }
-    ],
+    "issues": [],
     "scope": {
       "outline_covered": true,
       "beyond_scope": []
     },
-    "verdict": "fix-required"
+    "verdict": "pass"
   },
   "junior": {
-    "reviewed_at": "2026-10-07T21:30:00+07:00",
-    "reviewer": "claude-opus-5-5 (review-junior)",
+    "reviewed_at": "2026-10-08T14:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (review-junior, round 3 targeted)",
     "issues": [
       {
-        "severity": "major",
-        "section": 4,
-        "kind": "gap",
-        "quote": "A value object has no id of its own. With nothing to use as a key it cannot have rows of its own",
-        "text": "I know a primary key is a column that uniquely identifies a row. A Vnd has one value, Amount. Why can't Amount be that key, with a prices table keyed by amount? The lesson goes from 'no id' to 'no rows' and I cannot rebuild the step between. Section 6 repeats it ('Nothing in a `Vnd` could serve as a key') without saying why.",
-        "fix": "Add one sentence after 'no id of its own.' saying why Amount cannot serve as the key, e.g. what would happen to two items both priced 450000, before the sentence about rows."
-      },
-      {
-        "severity": "major",
-        "section": 7,
-        "kind": "gap",
-        "quote": "Two come from `DonHangDbContextModelSnapshot.cs`: `b.Property<int>(\"UnitPrice\")` and `.HasColumnName(\"unit_price_vnd\")`. No migration added for stage-3 appears.",
-        "text": "Section 5 says the property was called UnitPriceVnd at stage-2, yet the snapshot at stage-3 records 'UnitPrice'. So the snapshot changed at stage-3, but no stage-3 migration touches prices. I cannot tell who or what updated the snapshot, or whether it changes without a migration. I would doubt my own result here.",
-        "fix": "Add one sentence to section 6's second bullet or to the expected result saying how the snapshot came to record the new name `UnitPrice` at stage-3 while no migration changed the column."
-      },
-      {
         "severity": "minor",
-        "section": 4,
+        "section": 6,
         "kind": "style",
-        "quote": "Its DTO still carries an `int`, so `Vnd` never reaches the API's JSON: it is declared in `DonHang.Domain`, the project that holds the business classes such as `Order` and `Vnd`, and the JSON does not change.",
-        "text": "I re-read this twice. The clause about where Vnd is declared sits between the cause and 'the JSON does not change', and I cannot see how being in DonHang.Domain keeps Vnd out of the JSON; the DTO's int already explained it. 'The API is the last layer' before it: last in what order?",
-        "fix": "Split into two sentences: 'Its DTO still carries an `int`, so `Vnd` never reaches the API's JSON and the JSON does not change. `Vnd` stays in `DonHang.Domain`, the project that holds business classes such as `Order` and `Vnd`.'"
-      },
-      {
-        "severity": "minor",
-        "section": 7,
-        "kind": "example",
-        "quote": "run `git grep -n -e unit_price_vnd -e UnitPrice stage-3 -- DonHang.Infrastructure/Migrations ':!*.Designer.cs'`",
-        "text": "The situation has me check out stage-3, but the command also names stage-3 as an argument. The lesson explains ':!*.Designer.cs' but not what 'stage-3' does here, so I do not know whether I need to check out the tag first.",
-        "fix": "Add one clause after the command: 'naming `stage-3` searches the files as they are at that tag, whatever you have checked out'."
-      },
-      {
-        "severity": "minor",
-        "section": "design.l3.storing-value-objects.q4",
-        "kind": "quiz",
-        "quote": ".HasConversion(price => price.Amount, amount => new ___(amount));",
-        "text": "The blank is the exact token from line 87 of section 5's first code block; I can copy it without understanding why the constructor call matters.",
-        "fix": "Ask which part of the line makes the negative check run (options such as `price.Amount`, `new Vnd(amount)`, `HasColumnName`), or keep it if a recall question is intended."
+        "quote": "because EF Core writes into it a copy of the whole model, every table and column, changed or not",
+        "text": "New in round 3 (added text). The only 'model' I know is 'domain model' (rules living in the class whose data they are about), so 'the whole model' first reads as that. The appositive 'every table and column' rescues it, so I follow it on the second read. Not blocking.",
+        "fix": "Replace 'a copy of the whole model, every table and column' with 'a copy of every table and column EF Core maps'."
       }
     ],
     "readability": {
       "unknown_terms": [],
-      "skipped_steps": [
-        "A value object has no id of its own. With nothing to use as a key it cannot have rows of its own",
-        "Two come from `DonHangDbContextModelSnapshot.cs`: `b.Property<int>(\"UnitPrice\")` ... No migration added for stage-3 appears."
-      ],
+      "skipped_steps": [],
       "situation_connects": true,
       "try_it_feasible": true,
       "summary_matches": true
     },
-    "verdict": "fix-required"
+    "verdict": "pass"
   }
 }

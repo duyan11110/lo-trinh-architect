@@ -15,9 +15,9 @@ vocab: [ddd-entity]
 example_tag: stage-2
 versions_used: [dotnet, efcore, git]
 content_version: 1
-status: draft
+status: reviewed
 approved_by: null
-reviewed_at: "2026-10-07T14:10:32+07:00"
+reviewed_at: "2026-10-07T23:14:46+07:00"
 ---
 
 ## Before you start
@@ -27,11 +27,11 @@ reviewed_at: "2026-10-07T14:10:32+07:00"
 
 ## The situation
 
-A teammate is writing a report of the orders that changed during the day. They load order `6` in the morning and again in the evening, in two separate requests, and compare the two `Order` objects with `==`, and the answer is `false`. Comparing every field instead also says `false`, because a customer cancelled order `6` in between, so its `Status` went from `new` to `cancelled`. Yet anyone in support would call both objects "order 6 of customer 3". And two different orders by the same customer, with identical items, placed a minute apart, have almost the same data. What makes two `Order` objects the same order?
+A teammate is writing a report of the orders that changed during the day. The report keeps the order `6` it loaded in the morning, loads order `6` again in the evening in a separate request, and compares the two `Order` objects with `==`: the answer is `false`. Comparing every field instead also says `false`, because a customer cancelled order `6` in between, so its `Status` went from `new` to `cancelled`. Yet anyone in support would call both objects "order 6 of customer 3". And two different orders by the same customer, with identical items, placed a minute apart, have almost the same data. What makes two `Order` objects the same order?
 
 ## Core concepts
 
-- **entity (DDD)** — DDD is short for domain-driven design, the way of modelling this module follows; an entity is an object the business follows over time, on its own, as one particular thing; two of them are the same when their identities match, whatever the rest of their data says.
+- **entity (DDD)** — DDD is short for domain-driven design, the way of modelling this module follows. An entity is an object the business follows over time, on its own, as one particular thing. Two entities are the same when their identities match, whatever the rest of their data says.
 - identity — the value that names one particular entity for its whole life; in Đơn Hàng, the `Id` stored in the entity's row; for a new order at stage-2 (this lesson reads the code at the stage-2 tag), the database generates it on insert.
 - reference comparison — what `==` checks by default on two instances of a C# class that is not a record: whether both variables point to the same object in memory.
 - entity type — EF Core's name for a class EF Core knows how to map to a table (EF Core calls this set of classes its model), whatever that class means to the business.
@@ -48,11 +48,11 @@ flowchart LR
 
 Start at the leftmost box: it shows how code reaches order `6`. `CancelOrderAsync` receives only the number `6`. It asks the repository for that id, then lets `Cancel()` decide. It never searches for "the order with these items at this time", because the data is not what names an order.
 
-The arrows after the first one are not steps of `CancelOrderAsync`; they are status changes order `6` can go through. The other boxes show some lives of that order. It starts as `new`. `MarkPaid()` and then `Ship()` move it on, or `Cancel()` can end it, here while it is still `new`. Every box holds a different `Status`, yet the business calls each of them "order 6". That is what makes `Order` an entity: the business follows this one order over time, and its identity is its `Id`.
+After the first arrow, the diagram shows status changes order `6` can go through. `CancelOrderAsync` performs only the `Cancel()` one; `Ship()` comes from `ShipOrderAsync`, and at stage-2 no endpoint calls `MarkPaid()` yet: only the tests use it to get a paid order. Order `6` starts as `new`. `MarkPaid()` and then `Ship()` move it on, or `Cancel()` can end it. Every box holds a different `Status`, yet the business calls each of them "order 6". That is what makes `Order` an entity: the business follows this one order over time, and its identity is its `Id`.
 
 The same holds when the data matches. Suppose two different people named `Trần Minh Anh` both live in `Hà Nội`. The name and city match, yet Đơn Hàng still holds two `customers` rows with two `Id` values and two order histories. Equal data does not make two entities the same; equal identity does.
 
-Now the `==` from the situation. On two instances of a C# class, `==` is a reference comparison unless the class overloads the `==` operator, and stage-2 `Order` does not. Two requests load two separate `Order` objects for order `6`, so `==` answers `false` while the business means "same order". Code that asks whether two orders are the same compares their `Id` values instead, for orders already saved, which have their `Id`. That answer stays true after the cancel, and stays false for two look-alike orders.
+Now the `==` from the situation. On two instances of a C# class, `==` is a reference comparison unless the class overloads the `==` operator, and stage-2 `Order` does not. Two requests load two separate `Order` objects for order `6`, so `==` answers `false` while the business means "same order". Code that asks whether two orders are the same compares their `Id` values instead. An order not yet inserted has no `Id` from the database, so this works only for saved orders. The `Id` check stays true after the cancel, and false for two look-alike orders.
 
 ## In the Đơn Hàng system
 
@@ -68,7 +68,7 @@ public sealed class Order
     public List<OrderItem> Items { get; private set; } = [];
 ```
 
-`Id` keeps a public setter. At stage-2 the database generates it on insert, and the fake repository that tests use assigns one the same way. None of `Order`'s own methods assigns `Id`; they change `Status`.
+`Id` keeps a public setter. At stage-2 the database generates it when the order is inserted, and the fake repository that tests use assigns one itself, from a running number, when an order is added to it. None of `Order`'s own methods, further down the file and outside this excerpt, assigns `Id`; they change `Status`.
 
 Finding the order to cancel, in `DonHang.Domain/OrderService.cs`:
 
@@ -96,7 +96,7 @@ EF Core uses the same word for something else. Its documentation calls each clas
 ## Seniors often assume…
 
 - **"Every class EF Core maps, `OrderItem` included, is an entity in the business sense."** → Actually "entity type" in EF Core means a class in its model; an entity type EF Core inserts and updates needs a key, so it can tell which row to change. The business meaning asks a different question: does anyone follow this thing over time, on its own? You notice this when you look for an `OrderItem`'s own id and find only `OrderId` and `ProductId`, the order and the product it belongs to.
-- **"Two orders with the same customer, items and time are the same order."** → Actually a customer may place the same order twice on purpose, and each one gets its own `Id`, its own status and its own email. The data cannot tell a second order from a retried first one. You notice this when you read `PlaceOrderAsync`, the `OrderService` method that places a new order, which receives the request's `Idempotency-Key` header value: it recognises a retry by that key, not by comparing items.
+- **"Two orders with the same customer, items and time are the same order."** → Actually a customer may place the same order twice on purpose, and each one gets its own `Id`, its own status and its own notifications. The data cannot tell a second order from a retried first one. You notice this when you read `PlaceOrderAsync`, the `OrderService` method that places a new order, which receives the request's `Idempotency-Key` header value: it recognises a retry by that key, not by comparing items.
 - **"A class becomes an entity simply by having an `Id` property."** → Actually the `Id` is how code keeps track of an entity, not what makes it one. Adding an `Id` to a class changes the table, not whether the business follows each instance over time. You notice this when a table gets an `id` column only so that a reporting tool that only handles single-column keys can use it, and no one ever looks a row up by it.
 
 ## Try it (3 minutes)

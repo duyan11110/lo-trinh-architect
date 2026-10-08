@@ -15,25 +15,25 @@ vocab: []
 example_tag: stage-2
 versions_used: [dotnet, efcore, postgresql, git]
 content_version: 1
-status: draft
+status: reviewed
 approved_by: null
-reviewed_at: "2026-10-07T12:20:45+07:00"
+reviewed_at: "2026-10-08T04:48:56+07:00"
 ---
 
 ## Before you start
 
-- [[design.l3.aggregate-root]] — you know that every change inside the order's aggregate goes through `Order`, and that `IOrderRepository` loads an order together with its items.
+- [[design.l3.aggregate-root]] — you know that from stage-3 every change inside the order's aggregate goes through `Order`, and that `IOrderRepository` loads an order together with its items.
 - [[backend.l2.projection-queries]] — you know that reading `o.Customer!.FullName` inside `Select` fetches one value without loading a `Customer` object.
 
 ## The situation
 
-You are reviewing a pull request in Đơn Hàng at stage-2. Its author noticed that `Order` has a `Customer` property and changed `FindAsync` to load the customer too, "so the order is complete". The same pull request adds a use case that fixes a customer's email by loading one of their orders and assigning `order.Customer!.Email`. Both changes compile, yet cancelling an order now reads a `customers` row that no cancel rule looks at. A customer's details can now change through whichever of their orders someone happened to load. Where does an order end, and how should it point to what lies beyond it?
+You are reviewing a pull request in Đơn Hàng at stage-2. Its author noticed that `Order` has a `Customer` property and changed `FindAsync`, which cancelling uses, to load the customer too, "so the order is complete". The same pull request adds a use case that fixes a customer's email by loading one of their orders and assigning `order.Customer!.Email`. Both changes compile, yet cancelling an order now reads a `customers` row that no cancel rule looks at. A customer's details can now change through whichever of their orders someone happened to load. Where does an order end, and how should it point to what lies beyond it?
 
 ## Core concepts
 
 - the aggregate's boundary — the line around the objects one use case loads, checks and saves together; for an order, the order and its items, nothing more.
 - a reference by id — a property that holds another aggregate's id, such as `Order.CustomerId` or `Payment.OrderId`, instead of the object itself.
-- a read-only navigation — a navigation that code follows only to read the other side, never to change it; at stage-2, `Order.Customer`.
+- a read-only navigation — a navigation is a property that holds another object, such as `Order.Customer` or `Order.Items`, which EF Core can fill when it loads the order; a read-only one is followed only to read the other side, never to change it; at stage-2, `Order.Customer`.
 - one aggregate per save — the guideline that one save changes one aggregate, broken on purpose when splitting the save would cost more.
 
 ## How it works
@@ -41,7 +41,7 @@ You are reviewing a pull request in Đơn Hàng at stage-2. Its author noticed t
 ```mermaid
 flowchart LR
   subgraph B["Order's aggregate: loaded and saved together"]
-    O["Order"] --> I["OrderItem"]
+    O["Order"] -->|"Items"| I["OrderItem"]
   end
   O -->|"CustomerId"| C["Customer"]
   I -->|"ProductId"| P["Product"]
@@ -49,17 +49,17 @@ flowchart LR
   O -.->|"Customer: read only"| C
 ```
 
-In the situation above, the cancel use case needs one thing to decide: the order's status. `Order.Cancel()` reads `Status` and nothing else, and the rules from the earlier lessons span the order and its items. So the boundary of the order's aggregate is the order with its items. The customer sits outside it, and so do the product an item names and any payment for the order.
+In the situation above, the cancel use case needs one thing to decide: the order's status. `Order.Cancel()` reads only the order's own fields: `Status` to decide, and `Id` for its error message. The rules from the earlier lessons span the order and its items. So the boundary of the order's aggregate is the order with its items. The customer sits outside it, and so do the product an item names and any payment for the order.
 
-Follow the solid arrows. Each one crosses the boundary as an id: `Order` holds `CustomerId`, each `OrderItem` holds `ProductId`, and `Payment` holds `OrderId`. An id is enough to find the other aggregate when a use case needs it, and costs nothing when it does not. Loading an order therefore never requires loading a customer, and saving an order never writes one.
+Follow the solid arrows. `Order` to `OrderItem` is `Order.Items`, inside the boundary; every other one crosses it as an id: `Order` holds `CustomerId`, each `OrderItem` holds `ProductId`, and `Payment` holds `OrderId`. An id is enough to find the other aggregate when a use case needs it, and costs nothing when it does not. Loading an order therefore never requires loading a customer, and saving an order never writes one.
 
-The dotted arrow is the exception at stage-2. `Order` also has a `Customer` navigation. Code follows it only to read: the list of a customer's orders selects the customer's name through it, and the email job reads the customer's address. No use case changes a customer through an order. Kept that way, the navigation is a convenience for reading, not a second way into another aggregate.
+The dotted arrow is the exception at stage-2. `Order` also has a `Customer` navigation. Code follows it only to read: the list of a customer's orders selects the customer's name through it, and `NotificationSender`, the background job that sends the emails queued in `notifications`, reads the customer's address through the notification's order. No use case changes a customer through an order. Kept that way, the navigation is a convenience for reading, not a second way into another aggregate.
 
-Small aggregates keep each change small. A cancel loads one order with its items, lets `Order` decide, and saves. If the order held its customer, and the customer held its orders, every use case would load and track far more than its rules need, and a change to a customer could start from any of its orders.
+Small aggregates keep each change small. If loading an order also loaded its customer, and loading a customer loaded its orders, every use case would load and track far more than its rules need, and a change to a customer could start from any of its orders.
 
 ## In the Đơn Hàng system
 
-Both kinds of pointer, side by side in `Order`:
+This lesson reads stage-2, where `Items` is still a plain `List`; that changes how the items are guarded, not where the order's boundary lies. Both kinds of pointer sit side by side in `Order`; skip the `IdempotencyKey` and `Version` lines, which belong to other lessons:
 
 ```csharp file=DonHang.Domain/Entities.cs tag=stage-2 lines=30-49
 public sealed class Order
@@ -84,7 +84,7 @@ public sealed class Order
     public Customer? Customer { get; set; }
 ```
 
-Read `CustomerId` and `Customer` together. `CustomerId` is the reference by id, set once by the constructor. `Customer` is the navigation, added for loading in an earlier lesson. `Cancel()`, `Ship()` and `MarkPaid()`, further down, read neither. Further down the file, `OrderItem` holds `ProductId` and `Payment` holds `OrderId`, plain `int` properties with no navigation to the object.
+Read `CustomerId` and `Customer` together. `CustomerId` is the reference by id, set once by the constructor. `Customer` is the navigation, added for loading in an earlier lesson. Further down the file, `OrderItem` holds `ProductId` and `Payment` holds `OrderId`, plain `int` properties with no navigation to the object.
 
 How the repository loads an order, and how it reads a customer:
 
@@ -114,7 +114,7 @@ How the repository loads an order, and how it reads a customer:
 
 `FindAsync` is what `CancelOrderAsync` and `ShipOrderAsync` call. Its only `Include` is the items: the boundary, written as a query. `ListByCustomerAsync` follows `o.Customer` inside `Select`, gets one name, and returns `OrderSummary` records, not a tracked `Customer` anyone could change.
 
-`OrderService.PlaceOrderAsync` breaks one aggregate per save on purpose. It adds the new order, `notifier.Send` adds a pending row to `notifications`, and one `SaveChangesAsync` writes both in one transaction; cancelling and shipping do the same. That row is not part of the order: `NotificationSender` later claims, sends and updates it on its own. One transaction fits when losing the email job would cost more than tying the two saves together. When the second change could safely happen later, or fail without undoing the first, saving it separately keeps each aggregate independent.
+`OrderService.PlaceOrderAsync` breaks one aggregate per save on purpose. It adds the new order, then `notifier.Send` adds a pending row to `notifications`, and one `SaveChangesAsync` writes both in one transaction; cancelling and shipping also add a pending row through `notifier.Send` before their one `SaveChangesAsync`. That row is not part of the order: `NotificationSender` later claims, sends and updates it on its own, reading the customer through the `Order` navigation that `QueuedNotifier` sets on `Notification`. Saved separately, the order could be written and its `notifications` row lost, and that customer would never get the email. One transaction fits when losing the email job would cost more than tying the two saves together. When the second change could safely happen later, or fail without undoing the first, saving it separately keeps each aggregate independent.
 
 ## Seniors often assume…
 

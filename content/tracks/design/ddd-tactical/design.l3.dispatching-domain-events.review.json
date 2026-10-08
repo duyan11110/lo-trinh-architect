@@ -1,257 +1,136 @@
 {
   "id": "design.l3.dispatching-domain-events",
   "technical": {
-    "reviewed_at": "2026-10-07T18:49:00+07:00",
+    "reviewed_at": "2026-10-08T16:30:00+07:00",
     "reviewer": "claude-opus-5-5",
     "claim_verdicts": [
       {
         "n": 1,
         "verdict": "verified",
-        "evidence": "Carried from previous technical review (claim unchanged): stage-2 blocks other lessons quote at tag=stage-2 show `order.Cancel(); notifier.Send(order, \"order cancelled\"); await repository.SaveChangesAsync();`; QueuedNotifier.cs `public sealed class QueuedNotifier(DonHangDbContext db) : INotifier`, `Send` only stages a pending row.",
-        "source": "content/tracks/backend/indexes-and-plans/backend.l2.transactions-in-practice.en.md:75-85; content/tracks/backend/background-jobs/backend.l2.database-job-queue.en.md:92-111"
+        "evidence": "Carried from round 1 (section 2 unchanged). Stage-2 code block in another lesson, checked by validate L08 at tag=stage-2 (OrderService.cs lines 40-61): `order.Cancel();` then `notifier.Send(order, \"order cancelled\");` then SaveChangesAsync. backend.l2.api-versioning review @ stage-2: INotifier registered as QueuedNotifier, which adds a Notifications row Status=\"pending\".",
+        "source": "content/tracks/backend/indexes-and-plans/backend.l2.transactions-in-practice.en.md:75-85; content/tracks/backend/api-design/backend.l2.api-versioning.review.json:46"
       },
       {
         "n": 2,
         "verdict": "verified",
-        "evidence": "Re-checked (source_hint now 59-68). OrderService.cs:9 `public sealed class OrderService(IOrderRepository repository, IProductPrices prices, DomainEventDispatcher events)`; :59-68 FindAsync ?? throw, `order.Cancel();`, `await events.DispatchAsync(order);`, `await repository.SaveChangesAsync();`, `return order;`. No notifier in the file. Working tree (master 7ef8fff); post-tag commits per DECISIONS.md:374-375 are packages, CI, trace-refund.sh only. Tag tree not read: git refused.",
-        "source": "examples/don-hang DonHang.Domain/OrderService.cs:9,59-68; DECISIONS.md:373-375"
+        "evidence": "`git show stage-3:DonHang.Domain/OrderService.cs` lines 59-68 equal the lesson block verbatim: FindAsync ?? throw, `order.Cancel();`, `await events.DispatchAsync(order);`, `await repository.SaveChangesAsync();`, `return order;`. Constructor at :9 takes `DomainEventDispatcher events`; no `notifier` in the file. stage-3^{commit} = 5e918aa.",
+        "source": "examples/don-hang @ stage-3: DonHang.Domain/OrderService.cs:9,59-68"
       },
       {
         "n": 3,
         "verdict": "verified",
-        "evidence": "Re-checked (adds 'a second dispatch repeats nothing'). IDomainEventHandler.cs:18-24 one `IEnumerable<IDomainEventHandler<T>>` per kind; :28 `foreach (var domainEvent in order.DomainEvents)`, :30 `switch`, :36 awaits each HandleAsync; :53 `order.ClearDomainEvents();`. Entities.cs:48 `DomainEvents => domainEvents.AsReadOnly()`, :50 `ClearDomainEvents() => domainEvents.Clear()`, so a second DispatchAsync loops over an empty list.",
-        "source": "examples/don-hang DonHang.Domain/IDomainEventHandler.cs:13-55; DonHang.Domain/Entities.cs:47-50"
+        "evidence": "Carried from round 1. IDomainEventHandler.cs:18-24 six `IEnumerable<IDomainEventHandler<T>>` parameters, one per kind; :28 `foreach (var domainEvent in order.DomainEvents)`, :30 `switch`, :36 `foreach (var handler in onCancelled) await handler.HandleAsync(cancelled);`; :53 `order.ClearDomainEvents();`.",
+        "source": "examples/don-hang DonHang.Domain/IDomainEventHandler.cs:13-55; DonHang.Domain/Entities.cs:48-50"
       },
       {
         "n": 4,
         "verdict": "verified",
-        "evidence": "IDomainEventHandler.cs:8-11: `public interface IDomainEventHandler<in TEvent> where TEvent : IDomainEvent { Task HandleAsync(TEvent domainEvent); }`.",
-        "source": "examples/don-hang DonHang.Domain/IDomainEventHandler.cs:8-11"
+        "evidence": "IDomainEventHandler.cs:8-11 (stage-3): `public interface IDomainEventHandler<in TEvent> where TEvent : IDomainEvent { Task HandleAsync(TEvent domainEvent); }`.",
+        "source": "examples/don-hang @ stage-3: DonHang.Domain/IDomainEventHandler.cs:8-11"
       },
       {
         "n": 5,
         "verdict": "verified",
-        "evidence": "Carried (unchanged). ServiceCollectionExtensions.cs:31 and :37 register OrderCancelled for the two classes. NotifyCustomerOnOrderEvents.cs:32-34 customer lookup then `outbox.Add(...)`; EfOutbox.cs:16 `db.OutboxMessages.Add(...)`; RecordOrderStatusHistory.cs:32 `db.OrderStatusHistory.Add(...)`. Neither saves.",
-        "source": "examples/don-hang DonHang.Domain/NotifyCustomerOnOrderEvents.cs:29-35; DonHang.Infrastructure/EfOutbox.cs:7-21, RecordOrderStatusHistory.cs:13-40"
+        "evidence": "stage-3 NotifyCustomerOnOrderEvents.cs:11-25 `: IDomainEventHandler<OrderPlaced>, ...<OrderCancelled>, ...<OrderShipped>, ...<OrderRefundRequested>, ...<OrderRefunded>, ...<OrderRefundFailed>` with six `HandleAsync` overloads; Entities.cs adds exactly six kinds (:87,132,142,155,165,176). AddMessage: customers.FindAsync then `outbox.Add(...)`, no save. RecordOrderStatusHistory.cs:14-15 implements the same six. Registrations :31, :37.",
+        "source": "examples/don-hang @ stage-3: DonHang.Domain/NotifyCustomerOnOrderEvents.cs, Entities.cs; DonHang.Infrastructure/RecordOrderStatusHistory.cs, ServiceCollectionExtensions.cs"
       },
       {
         "n": 6,
         "verdict": "verified",
-        "evidence": "Carried (unchanged). EfOutbox(DonHangDbContext db) and RecordOrderStatusHistory(DonHangDbContext db) are AddScoped (ServiceCollectionExtensions.cs:24, 30-41); context registered by `services.AddDbContext<DonHangDbContext>(...)` (:17), scoped per claim 7.",
-        "source": "examples/don-hang DonHang.Infrastructure/ServiceCollectionExtensions.cs:17-42, EfOutbox.cs:12, RecordOrderStatusHistory.cs:13"
+        "evidence": "Carried from round 1. EfOutbox(DonHangDbContext db), RecordOrderStatusHistory(DonHangDbContext db), EfOrderRepository(DonHangDbContext db), all AddScoped (ServiceCollectionExtensions.cs:18-19, 24, 30-42 at stage-3); context from `services.AddDbContext<DonHangDbContext>(...)` (:17), scoped per claim 7.",
+        "source": "examples/don-hang DonHang.Infrastructure/ServiceCollectionExtensions.cs:17-42, EfOutbox.cs:12, RecordOrderStatusHistory.cs:13, EfOrderRepository.cs:7"
       },
       {
         "n": 7,
         "verdict": "verified",
-        "evidence": "Carried (unchanged). \"The AddDbContext extension method registers DbContext types with a scoped lifetime by default.\" ... \"each request gets a separate dependency injection scope (and therefore a separate DbContext instance).\"",
+        "evidence": "\"The AddDbContext extension method registers DbContext types with a scoped lifetime by default.\" ... \"each request gets a separate dependency injection scope (and therefore a separate DbContext instance).\"",
         "source": "refs/efcore-docs/entity-framework/core/dbcontext-configuration/index.md:419,421"
       },
       {
         "n": 8,
         "verdict": "verified",
-        "evidence": "Carried (unchanged). \"By default, if the database provider supports transactions, all changes in a single call to `SaveChanges` are applied in a transaction. If any of the changes fail, then the transaction is rolled back and none of the changes are applied to the database.\"",
+        "evidence": "\"By default, if the database provider supports transactions, all changes in a single call to `SaveChanges` are applied in a transaction. If any of the changes fail, then the transaction is rolled back and none of the changes are applied to the database.\"",
         "source": "refs/efcore-docs/entity-framework/core/saving/transactions.md:17"
       },
       {
         "n": 9,
         "verdict": "verified",
-        "evidence": "Carried (unchanged). \"Each DbContext instance tracks changes made to entities. These tracked entities in turn drive the changes to the database when SaveChanges is called.\"",
+        "evidence": "\"Each DbContext instance tracks changes made to entities. These tracked entities in turn drive the changes to the database when SaveChanges is called.\" Combined with claim 6 (one shared instance), a SaveChanges in any handler would write the order's tracked status change too.",
         "source": "refs/efcore-docs/entity-framework/core/change-tracking/index.md:11"
       },
       {
         "n": 10,
         "verdict": "verified",
-        "evidence": "Carried (unchanged). \"In both cases, if `t` throws an exception, `await t` rethrows the exception.\" DispatchAsync (IDomainEventHandler.cs:26-54) and CancelOrderAsync (OrderService.cs:59-68) contain no try/catch.",
+        "evidence": "\"In both cases, if `t` throws an exception, `await t` rethrows the exception.\" DispatchAsync (IDomainEventHandler.cs:26-54) and CancelOrderAsync (OrderService.cs:59-68) contain no try/catch, so the exception leaves both before line 66.",
         "source": "refs/dotnet-docs/docs/csharp/language-reference/operators/await.md:32"
       },
       {
         "n": 11,
         "verdict": "verified",
-        "evidence": "Re-checked against the new s5 sentence \"When a constructor asks for IEnumerable<X>, the container passes an instance of every class registered for X, not only the last one.\" Docs (grep this session): \"The single `IMessageWriter` is the last implementation to be registered, whereas the `IEnumerable<IMessageWriter>` represents all registered implementations.\"",
-        "source": "refs/dotnet-docs/docs/core/extensions/dependency-injection/service-registration.md:78"
+        "evidence": "\"Services appear in the order they were registered when resolved via `IEnumerable<{SERVICE}>`.\" and \"the `IEnumerable<IMessageWriter>` represents all registered implementations.\" At stage-3 ServiceCollectionExtensions.cs:31 registers IDomainEventHandler<OrderCancelled> for NotifyCustomerOnOrderEvents before :37 for RecordOrderStatusHistory; the dispatcher's foreach awaits them in that order. Extended claim matches the new section 6 sentence.",
+        "source": "refs/dotnet-docs/docs/core/extensions/dependency-injection/service-registration.md:70,78; examples/don-hang @ stage-3 ServiceCollectionExtensions.cs:31,37"
       },
       {
         "n": 12,
         "verdict": "verified",
-        "evidence": "Re-checked (adds 'called once by DonHang.Api's Program.cs'). Only caller in *.cs: DonHang.Api/Program.cs:38 `builder.Services.AddDonHangInfrastructure(connectionString);`. ServiceCollectionExtensions.cs:30-35 six AddScoped for NotifyCustomerOnOrderEvents, :36-41 the same for RecordOrderStatusHistory, :42 `services.AddScoped<DomainEventDispatcher>();`. Lesson prose around it overstates; see issue s5.",
-        "source": "examples/don-hang DonHang.Api/Program.cs:37-38; DonHang.Infrastructure/ServiceCollectionExtensions.cs:7-11, 26-42"
+        "evidence": "stage-3 ServiceCollectionExtensions.cs:7-11 \"The one call Program.cs makes to get Ordering's repositories, outbox, event handlers and DbContext registered — OrderService only ever sees the interfaces.\" :30-35 six AddScoped for NotifyCustomerOnOrderEvents, :36-41 six for RecordOrderStatusHistory, :42 DomainEventDispatcher. Lesson's new wording \"the infrastructure classes the order use cases need\" fits that comment. DonHang.Api/Program.cs:38 is the caller.",
+        "source": "examples/don-hang @ stage-3: DonHang.Infrastructure/ServiceCollectionExtensions.cs:7-42; DonHang.Api/Program.cs:38"
       },
       {
         "n": 13,
         "verdict": "verified",
-        "evidence": "Carried (unchanged). OrderService.cs: `await events.DispatchAsync(order);` at 49, 65, 77, 92, 105, 117, each immediately followed by `await repository.SaveChangesAsync();` in PlaceOrderAsync, CancelOrderAsync, ShipOrderAsync, RequestRefundAsync, CompleteRefundAsync, FailRefundAsync (working tree, re-read).",
-        "source": "examples/don-hang DonHang.Domain/OrderService.cs"
+        "evidence": "`git show stage-3:DonHang.Domain/OrderService.cs | grep -n DispatchAsync\\|SaveChangesAsync`: DispatchAsync at 49, 65, 77, 92, 105, 117, each followed by `await repository.SaveChangesAsync();` at 50, 66, 78, 93, 106, 118.",
+        "source": "examples/don-hang @ stage-3: DonHang.Domain/OrderService.cs"
       },
       {
         "n": 14,
         "verdict": "verified",
-        "evidence": "Re-checked (rewritten). DonHang.Api/Program.cs:43-44 \"OutboxRelay, a hosted service in this process\", :48 `AddOutboxRelay<DonHangDbContext>(exchange: \"donhang.orders\")`. DonHang.Notifications/Program.cs:21-23 \"NotificationSender sends those rows as emails, exactly as it did inside the api until stage-2\", :31 `AddHostedService<NotificationSender>()`. docker-compose.yml:319-320 \"Where NotificationSender's emails go\", `Smtp__Host: \"mailpit\"`.",
-        "source": "examples/don-hang DonHang.Api/Program.cs:41-48; DonHang.Notifications/Program.cs:20-31; docker-compose.yml:319-320"
+        "evidence": "At stage-3: DonHang.Notifications/NotificationSender.cs:8 declares the class; DonHang.Notifications/Program.cs:22 \"...NotificationSender sends those rows\", :31 `AddHostedService<NotificationSender>()`. DonHang.Api/Program.cs:43-48 OutboxRelay hosted service publishes saved rows; OutboxRelay.cs:78 `WHERE published_at IS NULL`. docker-compose.yml `Smtp__Host: \"mailpit\"`. New section 4 wording \"now runs NotificationSender\" holds.",
+        "source": "examples/don-hang @ stage-3: DonHang.Notifications/NotificationSender.cs, Program.cs:20-31; DonHang.Api/Program.cs:41-48; DonHang.Messaging/OutboxRelay.cs:78"
       },
       {
         "n": 15,
         "verdict": "verified",
-        "evidence": "Carried (unchanged). NotifyCustomerOnOrderEvents.cs:32-33: `var customer = await customers.FindAsync(order.CustomerId) ?? throw new InvalidOperationException(...)`.",
-        "source": "examples/don-hang DonHang.Domain/NotifyCustomerOnOrderEvents.cs:29-35"
+        "evidence": "stage-3 NotifyCustomerOnOrderEvents.cs AddMessage: `var customer = await customers.FindAsync(order.CustomerId) ?? throw new InvalidOperationException($\"customer {order.CustomerId} of order {order.Id} does not exist\");`.",
+        "source": "examples/don-hang @ stage-3: DonHang.Domain/NotifyCustomerOnOrderEvents.cs:29-35"
       },
       {
         "n": 16,
         "verdict": "not-needed",
-        "evidence": "Carried (unchanged). Opinion stated as this module's choice (\"This module therefore keeps every handler to rows...\"); the technical half follows from claim 8.",
+        "evidence": "Stated as this module's choice with its condition (\"This module therefore keeps every handler to rows added to the same DbContext; designs that need such calls run them after the save\"); the technical half follows from claim 8.",
         "source": "lesson section 4; outline item 4"
       },
       {
         "n": 17,
         "verdict": "not-needed",
-        "evidence": "Carried (unchanged). Opinion naming the principle, with its limit stated (new reactions, not new kinds). Factual parts covered by claims 3, 11, 12.",
+        "evidence": "Opinion naming the principle, with its limit stated in the lesson (new reactions, not new kinds: \"one more constructor parameter and one more `case`\"). Factual parts covered by claims 3, 11, 12.",
         "source": "lesson section 5; IDomainEventHandler.cs:13-17 comment"
       },
       {
         "n": 18,
-        "verdict": "unverified",
-        "evidence": "Rewrite (no line numbers) re-checked. Tried this session: `git -C examples/don-hang grep ... stage-3 --`, `git show stage-3:...`, tools/extract-code, a read-only python reader of the loose objects, python blob hash: all refused by the permission system. Working tree has six DispatchAsync lines each followed by SaveChangesAsync, but HEAD 7ef8fff is past tag 2fb067a (-> 5e918aa); the tag's tree was not read. Author's note is not evidence.",
-        "source": "examples/don-hang DonHang.Domain/OrderService.cs (working tree); .git/refs/tags/stage-3; .git/refs/heads/master; DECISIONS.md:373-375"
+        "verdict": "verified",
+        "evidence": "Now read at the tag (round 1 could not): stage-3 OrderService.cs has exactly six `events.DispatchAsync` lines (49, 65, 77, 92, 105, 117), each directly above `await repository.SaveChangesAsync();`. Round 2 opened: git show stage-3 of OrderService.cs, NotifyCustomerOnOrderEvents.cs, ServiceCollectionExtensions.cs, Entities.cs, RecordOrderStatusHistory.cs, Notifications grep; refs service-registration.md (round 1). Both code blocks match the tag verbatim.",
+        "source": "examples/don-hang @ stage-3 (5e918aa): DonHang.Domain/OrderService.cs"
       }
     ],
-    "issues": [
-      {
-        "severity": "blocker",
-        "section": 7,
-        "kind": "accuracy",
-        "text": "Syntax claim 18 is still unverified: the command could not be run at tag stage-3 (git, tools/ and any script reading .git objects were refused). Only the working tree, past the tag, was read. The same limit applies to both code blocks: they equal the working tree verbatim (OrderService.cs:59-68, ServiceCollectionExtensions.cs:26-42), not checked against the tag tree.",
-        "quote": "Expected result: step 1 prints six matches, one per use case, each followed by a line holding `await repository.SaveChangesAsync();`.",
-        "fix": "No text change needed if it holds: re-run review 04 in a session where `git -C examples/don-hang grep -n -A1 \"events.DispatchAsync\" stage-3 -- DonHang.Domain/OrderService.cs` is permitted, and mark claim 18 verified if it prints six match/next-line pairs with SaveChangesAsync."
-      },
-      {
-        "severity": "major",
-        "section": 4,
-        "kind": "accuracy",
-        "text": "Unlisted claim, and wrong: outbox rows do not wait for another program. They wait for OutboxRelay, a hosted service inside DonHang.Api itself (Program.cs:43-44 \"OutboxRelay, a hosted service in this process\"; OutboxMessage.cs:4-5 \"a message waiting in the sender's own database until OutboxRelay has handed it to RabbitMQ\"). The lesson's own next paragraph says OutboxRelay is in DonHang.Api. Not in any claim.",
-        "quote": "The row goes to `outbox_messages`: rows waiting for another program to pick them up.",
-        "fix": "Replace with: \"The row goes to `outbox_messages`: rows waiting to be passed on after the save.\" If a ledger entry is wanted, add it to claim 5 or 14: \"outbox_messages rows wait in DonHang.Api's database until OutboxRelay, in the same process, passes them on (OutboxMessage.cs:4-5).\""
-      },
-      {
-        "severity": "minor",
-        "section": 5,
-        "kind": "accuracy",
-        "text": "Overstated: Program.cs registers infrastructure through more than one method. Line 37 `AddCatalogModule(...)` registers Catalog's products, Redis and cache (ServiceCollectionExtensions.cs:10-11 \"Products, Redis and their cache are the Catalog module's own registrations\"), and :47-48 AddRabbitMq/AddOutboxRelay. The repo comment scopes it to Ordering: \"The one call Program.cs makes to get Ordering's repositories, outbox, event handlers and DbContext registered\".",
-        "quote": "the one method `Program.cs`, the composition root, calls to register the infrastructure classes",
-        "fix": "Replace with: \"the method `Program.cs`, the composition root, calls to register the order side's infrastructure classes\" (or \"Ordering's\" if that module name is in known vocab)."
-      }
-    ],
+    "issues": [],
     "scope": {
       "outline_covered": true,
       "beyond_scope": []
     },
-    "verdict": "fix-required"
+    "verdict": "pass"
   },
   "junior": {
-    "reviewed_at": "2026-10-07T19:00:00Z",
-    "reviewer": "claude-opus-5-5 (review-junior)",
-    "issues": [
-      {
-        "severity": "major",
-        "section": 4,
-        "kind": "term",
-        "text": "\"outbox\" is not in what I know and is not in Core concepts, yet three names are built on it: `IOutbox`, `outbox_messages`, `OutboxRelay`. The sentence tells me what `IOutbox` does, so I can follow, but I stop on why stage-3 moved the email row from `notifications` to a new table with this name.",
-        "quote": "calls `IOutbox`, the stage-3 interface that, like `QueuedNotifier` at stage-2, only adds a row to the `DbContext`; the row goes to `outbox_messages`, not `notifications`.",
-        "fix": "Add half a sentence after \"not `notifications`\" saying in known words what `outbox_messages` holds (rows waiting for another program to pass them on after the save), and that the outbox lesson in Connections explains the name."
-      },
-      {
-        "severity": "major",
-        "section": 4,
-        "kind": "gap",
-        "text": "\"passes the row on\": on to what? At stage-2 the sender read the `notifications` table itself. Here `OutboxRelay` passes the row somewhere and then `DonHang.Notifications` sends the email, but I cannot reconstruct how the row gets from one to the other. Quiz q6 option b leans on this step.",
-        "quote": "After the save, `OutboxRelay`, a hosted service in `DonHang.Api`, passes the row on, and `DonHang.Notifications`, a separate program that replaces stage-2's `NotificationSender`, sends the email.",
-        "fix": "Either name where `OutboxRelay` passes the row in one clause, or say openly: \"how the row travels from `OutboxRelay` to `DonHang.Notifications` is the next lesson's topic; here it matters only that it starts after the save.\""
-      },
-      {
-        "severity": "major",
-        "section": 5,
-        "kind": "gap",
-        "text": "I know a DI container maps an interface to an implementation. From that I would guess the second `AddScoped` for the same interface replaces the first. The text says the container passes both, but never says that asking for `IEnumerable<X>` gets every registration. The \"one new class, one new line\" point (summary line 5, quiz q4) rests on this.",
-        "quote": "The dispatcher's constructor takes `IEnumerable<IDomainEventHandler<OrderCancelled>>`, and the container passes both.",
-        "fix": "Add one sentence before this one: \"When a constructor asks for `IEnumerable<X>`, the container passes an instance of every class registered for `X`, not only the last one registered.\""
-      },
-      {
-        "severity": "minor",
-        "section": 4,
-        "kind": "gap",
-        "text": "The dispatcher clears the order's events, and summary line 2 and quiz q2 repeat this step, but the lesson never says why it is needed.",
-        "quote": "When the loop ends, the dispatcher clears the order's events.",
-        "fix": "Add half a sentence giving the reason, e.g. \"so the same events are not handed over again if the order is dispatched a second time\" (if that is the code's reason)."
-      },
-      {
-        "severity": "minor",
-        "section": 5,
-        "kind": "gap",
-        "text": "\"one more constructor parameter\": I was shown only one parameter, for `OrderCancelled`. I have to guess that the constructor has one `IEnumerable` parameter per kind of event.",
-        "quote": "Only a new kind of event needs more: one more constructor parameter and one more `case` in the dispatcher.",
-        "fix": "In the previous paragraph, change \"The dispatcher's constructor takes `IEnumerable<IDomainEventHandler<OrderCancelled>>`\" to say it takes one such parameter per kind of event, this one among them."
-      },
-      {
-        "severity": "minor",
-        "section": 5,
-        "kind": "code",
-        "text": "The block starts inside `AddDonHangInfrastructure`, a name I have not seen before. I can tell it registers classes, but not who calls it or when it runs.",
-        "quote": "Where the handlers are registered, inside `AddDonHangInfrastructure`:",
-        "fix": "Add a clause saying what calls `AddDonHangInfrastructure`, e.g. \"the method the composition root (`Program.cs`) calls to register the infrastructure classes\"."
-      },
-      {
-        "severity": "minor",
-        "section": 3,
-        "kind": "style",
-        "text": "The four Core concepts entries are not bolded, so they do not stand out as the defined terms I can lean on later.",
-        "quote": "- a handler — a class implementing `IDomainEventHandler<TEvent>`",
-        "fix": "Bold the name at the start of each entry: **handler**, **dispatcher**, **registering a handler**, **the save**."
-      },
-      {
-        "severity": "minor",
-        "section": 4,
-        "kind": "length",
-        "text": "This paragraph covers the switch, both handlers, a stage-2 comparison and a table change. I had to read it twice.",
-        "quote": "`DispatchAsync` walks the order's `DomainEvents`. For each event, a `switch` with one `case` per kind of event picks that kind's handlers and awaits each `HandleAsync` in turn.",
-        "fix": "Split the paragraph after \"For `OrderCancelled` there are two.\" and give each handler its own short paragraph."
-      },
-      {
-        "severity": "minor",
-        "section": 7,
-        "kind": "example",
-        "text": "Step 1 is runnable, but `-n` and `-A1` are not explained. git grep on a tag prints lines with a `stage-3:` path prefix and `--` separators, so it took me a moment to match its output to the expected result.",
-        "quote": "Run `git grep -n -A1 \"events.DispatchAsync\" stage-3 -- DonHang.Domain/OrderService.cs`.",
-        "fix": "Add after the command: \"(-n prints line numbers; -A1 also prints the line after each match)\"."
-      },
-      {
-        "severity": "minor",
-        "section": "quiz",
-        "kind": "quiz",
-        "text": "q5, explanation of d: the last sentence suggests a case where `Order` itself should call an outside service. The prereq taught me that `Order` records events and calls no one, so this confuses me more than it helps.",
-        "quote": "It is right only when the outside call is itself one of the order's rules, which a marketing notice is not.",
-        "fix": "Delete the last sentence of q5 explanation d (en and vi), or replace it with one that stays inside the lesson: the outside call would still come before the save."
-      },
-      {
-        "severity": "minor",
-        "section": "quiz",
-        "kind": "quiz",
-        "text": "q6, option b claims the row is \"not yet passed on\" when the API answers. The lesson only says it is passed on \"after the save\", not whether that happens before or after the response. I picked b by eliminating the others, not because the lesson told me this.",
-        "quote": "As a row saved in the same transaction as the cancelled order, not yet passed on to `DonHang.Notifications`.",
-        "fix": "Reword option b (en and vi) to \"As a row saved in the same transaction as the cancelled order, to be passed on to `DonHang.Notifications` after the save.\""
-      }
-    ],
+    "reviewed_at": "2026-10-08T17:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (review-junior, round 2 targeted)",
+    "issues": [],
     "readability": {
-      "unknown_terms": [
-        "outbox (IOutbox, outbox_messages, OutboxRelay)"
-      ],
-      "skipped_steps": [
-        "Section 4: where OutboxRelay passes the row, and how it reaches DonHang.Notifications.",
-        "Section 5: that a constructor asking for IEnumerable<X> receives every class registered for X.",
-        "Section 4: why the dispatcher clears the order's events.",
-        "Section 5: that the dispatcher has one constructor parameter per kind of event."
-      ],
+      "unknown_terms": [],
+      "skipped_steps": [],
       "situation_connects": true,
       "try_it_feasible": true,
       "summary_matches": true
     },
-    "verdict": "fix-required"
+    "verdict": "pass"
   }
 }

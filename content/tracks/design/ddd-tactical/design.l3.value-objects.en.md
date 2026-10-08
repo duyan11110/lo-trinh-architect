@@ -15,51 +15,56 @@ vocab: [value-object]
 example_tag: stage-3
 versions_used: [dotnet, xunit, git]
 content_version: 1
-status: draft
+status: reviewed
 approved_by: null
-reviewed_at: "2026-10-07T15:40:35+07:00"
+reviewed_at: "2026-10-08T00:22:50+07:00"
 ---
 
 ## Before you start
 
-- [[design.l3.entities-and-identity]] — you know an entity is followed over time by its identity, and two orders are the same order when their `Id` values match.
-- [[design.l2.valid-from-construction]] — you know `Order`'s constructor refuses an empty list of items, so no order can start in a state its rules forbid.
+- [[design.l3.entities-and-identity]] — you know an entity is followed by its identity while its data changes; this lesson is about the objects that have no identity at all.
+- [[design.l2.valid-from-construction]] — you saw `Order`'s constructor refuse a bad order so none can exist; `Vnd` uses the same move for a single amount.
 
 ## The situation
 
-At stage-2 you review a change that works out what an order costs. One line adds an item's `UnitPriceVnd` to its `Quantity` with `+`, where it should multiply. The compiler accepts it, because both are `int`. You look for a guard against a negative price and find none: `UnitPriceVnd` is a public `int` property, so it takes `-450000` as readily as `450000`. Two items that cost `450000` each do not differ in any way that matters, yet no single type says what a price is, so each place that touches a price has to remember the rules on its own. What should a price be, so that it carries its own rules?
+You are writing code that totals an order at stage-2. You type `item.UnitPriceVnd + item.Quantity` where you meant to multiply, and the compiler accepts it: both are `int`. In a test you also set `UnitPriceVnd` to `-450000`, and `OrderItem` accepts that too. The only thing saying this number is money is the `Vnd` at the end of its name, and the compiler does not read names. A price is an amount of đồng that is never negative; a quantity is a count of things. How can the type itself carry that difference, so the wrong line does not compile and the wrong amount cannot exist?
 
 ## Core concepts
 
-- **value object** — an object with no identity, defined entirely by its values, so two with the same values can replace each other anywhere.
-- primitive — a type the language gives you, such as `int` or `string`, that knows nothing about what its number or text means in the business.
-- record — a C# type for which the compiler generates equality that compares the values of its data members instead of the reference.
-- immutable — unable to change after it is created; an operation that seems to change it returns a new object instead.
+- **value object** — an object defined entirely by its values: it has no id, and two of them with the same values can replace each other anywhere, like two 450,000 đồng prices.
+- record — a C# type for which the compiler writes `Equals`, `==` and `!=` that compare the values of its fields instead of the reference.
+- unchanging object — an object whose values are fixed when it is created; a different value means a new object, never an edit to the old one.
+- entity — the contrast from the previous lesson: followed by its identity, so equal data does not make two entities the same.
 
 ## How it works
 
 ```mermaid
 flowchart LR
-  A["new Vnd(450_000)"] --> P["price: Amount 450000"]
-  B["new Vnd(450_000)"] --> Q["another: Amount 450000"]
-  P -->|"== is true"| Q
-  P -->|"Plus(new Vnd(30_000))"| T["new Vnd: Amount 480000"]
-  N["new Vnd(-1)"] -->|"constructor refuses"| X["ArgumentOutOfRangeException"]
+  A["new Vnd(amount)"] --> B{"amount below 0?"}
+  B -- yes --> C["ArgumentOutOfRangeException"]
+  B -- no --> D["Vnd with a fixed Amount"]
+  D -- "Plus(other) or Times(quantity)" --> A
+  D -- "== another Vnd" --> E["equal when the Amounts match"]
 ```
 
-Start from the meaning. An order is followed over time; a price is not. Nobody asks for "that particular 450,000 đồng". If two items cost 450,000 đồng each, you could swap their prices and nothing in the business would change. That is a value object: it has no id, and its values are all there is to it.
+In the situation above, what was missing is a type that means "an amount of đồng". At stage-3 that type is `Vnd`, a value object, and the diagram shows the only three things that happen to one.
 
-At stage-2, every amount of money in `Entities.cs` is a primitive: `Product.PriceVnd`, `OrderItem.UnitPriceVnd` and `Payment.AmountVnd` are plain `int` properties. The `Vnd` in each name is only a reminder to the reader. The type accepts a negative number, and lets code add a price to a quantity.
+Every `Vnd` starts at the constructor. A negative amount ends in `ArgumentOutOfRangeException`, so no negative `Vnd` exists anywhere in the program.
 
-At stage-3, `Vnd` is a type of its own, and the diagram shows its whole life. The two top rows each run `new Vnd(450_000)` and create two separate objects, `price` and `another`, with the same amount. The arrow labelled `== is true` shows that `==` calls them equal, because `Vnd` is a record. The arrow labelled `Plus` does not change `price`; it creates a third `Vnd` holding the sum. The last row runs the same constructor with `-1`, and the constructor refuses it with an exception. A `Vnd` is immutable, so a check that passed when it was created stays true for as long as it exists.
+Once created, the amount is fixed. `Amount` has a getter and no setter, so only the constructor assigns it. Arithmetic does not change it either: `Plus` and `Times` compute a new amount and pass it back through the constructor, which is the arrow looping back to the start. The result is checked like any other `Vnd`, and the two inputs keep their amounts. Because nothing can change a `Vnd`, code can share one freely, such as the one `Vnd.Zero` every total starts from.
 
-In the situation above, the price stops being a bare number. The rule "never negative" lives in one constructor instead of at every place that uses a price.
+Comparison looks only at the amount. `Vnd` is declared as a record, so `==` and `Equals` compare its field values, not the reference. Two `Vnd` objects made separately from `450_000` are two objects in memory and still equal. There is no `Id` to ask, so any `Vnd` of 450,000 can stand in for any other.
+
+Last, `Vnd` offers `Plus(Vnd)` and `Times(int)` but no `+` operator. At stage-3 the property is `UnitPrice`, a `Vnd`, so the mistaken `item.UnitPrice + item.Quantity` no longer compiles; the type now does the job the name `UnitPriceVnd` could not.
 
 ## In the Đơn Hàng system
 
-The whole type, in `DonHang.Domain/Vnd.cs`:
-
-```csharp file=DonHang.Domain/Vnd.cs tag=stage-3 lines=8-26
+```csharp file=DonHang.Domain/Vnd.cs tag=stage-3 lines=3-26
+// lesson: design.l3.value-objects
+// An amount of money in whole đồng. A record, so two Vnd with the same Amount
+// are equal; no setter and no `with`, so a Vnd never changes once created.
+// Adding or multiplying gives a new Vnd. Used for OrderItem.UnitPrice and
+// Order.Total only; elsewhere an amount is still an int named ...Vnd.
 public sealed record Vnd
 {
     public int Amount { get; }
@@ -81,11 +86,7 @@ public sealed record Vnd
 }
 ```
 
-Look at the constructor first: it is the only constructor `Vnd` declares, so every amount a `Vnd` holds has passed it, and it throws `ArgumentOutOfRangeException` for a negative amount.
-
-`OrderItem` now declares `public Vnd UnitPrice { get; private set; } = unitPrice;`, where `unitPrice` is the `Vnd` passed to `OrderItem`'s constructor; stage-2 had `public int UnitPriceVnd { get; set; }`. That private setter lets an item swap in a different `Vnd` object; it can never change the amount inside a `Vnd`, which has no setter at all. A unit price cannot be negative, and adding a quantity to it with `+` no longer compiles. Code combines amounts with `Plus` and multiplies by a quantity with `Times`. `Order.Total` starts from `Vnd.Zero`, a single `Vnd` of 0 shared by every call, and adds `item.UnitPrice.Times(item.Quantity)` for every item with `Plus`.
-
-How equality works, in `DonHang.Tests/Domain/VndTests.cs`:
+The declaration line makes `Vnd` a `sealed record`, which is what gives it value equality. `Amount` is get-only, and the constructor is the only place it is set. `Plus` and `Times` both end in `new(...)`, so every result goes through the same check, and `checked` keeps an overflow from wrapping around into a negative number. `ToString` prints the amount with its unit, which you will see again in "Try it". In `Entities.cs`, outside this excerpt, `OrderItem.UnitPrice` is now a `Vnd`, and `Order.Total` adds up the items starting from `Vnd.Zero`; the comment above `UnitPrice` notes it was `int UnitPriceVnd` until stage-2.
 
 ```csharp file=DonHang.Tests/Domain/VndTests.cs tag=stage-3 lines=10-19
     [Fact]
@@ -100,46 +101,34 @@ How equality works, in `DonHang.Tests/Domain/VndTests.cs`:
     }
 ```
 
-`a` and `b` are two objects, and the last line proves it: `ReferenceEquals` is `false`. Yet both `Assert.Equal` and `==` say they are equal. A record compares the values of its data members, and `Amount` is the only one `Vnd` has. That is the opposite of `Order` in the previous lesson, where `==` compared references and only the `Id` could say "same order".
+`a` and `b` are built separately. `ReferenceEquals` confirms they are two objects, yet `Assert.Equal` and `==` both report them equal. The test `Plus_ReturnsANewVnd_AndChangesNeither`, further down the same file, checks the other half: after `price.Plus(fee)`, `price` and `fee` still hold their old amounts.
 
-`Amount` has a getter and no setter, so only the constructor can give it a value. `Plus` and `Times` build a new `Vnd` through that same constructor, so every result is checked too. A further test, `Plus_ReturnsANewVnd_AndChangesNeither`, adds `30_000` to `450_000` and then confirms that both inputs still hold their old amounts. Code that holds a `Vnd`, such as an item's unit price, never sees it change under it.
-
-Wrapping a primitive pays off when a rule or a unit belongs to the value, as "never negative" and "money, not a count" belong to a price. Wrapping every `int` and `string` without such a rule adds types and conversions without adding any check. Some teams take the opposite view and wrap values with no rule at all, such as ids, because mixing up two `int` values of different kinds has cost them before; that pays off when those mix-ups actually happen. Đơn Hàng takes the narrow path: when an order is placed, each product's current price is read and turned into a `Vnd`, which becomes the item's unit price and feeds the order total; the stored `Product.PriceVnd` and payment amounts stay `int`. `Quantity` stays an `int` too: `Order`'s constructor refuses any item with a quantity below 1, and `OrderItem.Quantity` has only a private setter.
+Not every number became a type. `CustomerId` and `ProductId` stay `int`, and `Customer.City` stays a `string`. `Vnd` earned its type because a rule (never negative) and a unit (đồng) belong to every amount of money. Wrapping an `int` that carries no rule of its own adds a type and no check. Some teams still wrap ids when two kinds of id keep getting swapped in method calls; that choice is about catching a mix-up, not about the id carrying a rule.
 
 ## Seniors often assume…
 
-- **"A value object is just another name for a C# `struct`."** → Actually a value object is a design idea: no identity, compared by its values, never changed. `Vnd` is a `record`, which declares a class, and it has all three without being a struct. Being a struct does not make a type unchangeable, because a struct can have public setters, and a plain `struct` gets no `==` unless it declares one. You notice this when you read `public sealed record Vnd` and find no `struct` keyword, yet `VndTests` shows two separate objects compared as equal.
-- **"Two `Vnd` objects are equal only when they are the same instance in memory."** → Actually that is reference comparison, what a plain class like `Order` gets. A record compares data member values, so two `Vnd` built from the same amount are equal. You notice this when `TwoVndWithTheSameAmount_AreEqual` passes while its last line confirms `a` and `b` are different objects.
-- **"A value object may change its own amount through a method, as long as its setter is private."** → Actually a private setter only limits who may change the value; the type's own methods still can, and every holder of that object would see the change. `Vnd` has no setter at all, and `Plus` returns a new object. You notice this when you picture `Vnd.Zero`, one object shared by every call to `Order.Total`: if `Plus` changed it in place, the second order's total would start from the first order's sum.
+- **"A value object is just another name for a C# `struct`."** → Actually a value object is a design choice — no identity, equal by values, never changing — and `Vnd` is one while being a `record`, which is a class. A `struct` with a public setter on its amount would copy like a value yet still let code change that amount, so it would not be a value object. You notice this when someone proposes turning `Vnd` into a `struct` "to make it a value object", though `VndTests` already pass as it is.
+- **"Two `Vnd` objects are equal only when they are the same instance in memory."** → Actually that is what `==` does for a class with no equality of its own; a record compares field values, so `a == b` holds while `ReferenceEquals(a, b)` is false. You notice this when an assertion fails with the same amount printed on both sides, the sign that a class lost its value equality.
+- **"A value object may change its own amount through a method, as long as its setter is private."** → Actually a private setter still lets any method of `Vnd` change `Amount`, and every holder of that object sees the change. `Vnd.Zero` is one object created once and returned to every caller, so a `Plus` that edited its own amount would leave `Zero` holding the last total. You notice this when `Order.Total` starts its sum from a number that is not zero.
 
 ## Try it (3 minutes)
 
-In the root folder of the example repository, in Git Bash:
+1. In the Đơn Hàng repository at `stage-3`, run `dotnet test DonHang.Tests --filter VndTests`. Four tests pass.
+2. In `DonHang.Domain/Vnd.cs`, change `public sealed record Vnd` to `public sealed class Vnd` and run the same command again. Afterwards, restore the file with `git checkout DonHang.Domain/Vnd.cs`.
 
-1. Run `git grep -n "UnitPrice" stage-2 stage-3 -- DonHang.Domain/Entities.cs`.
-2. Compare the type of the unit price at each tag, and note where stage-3 uses it.
-
-Expected result: the stage-2 line declares `public int UnitPriceVnd { get; set; }`. The stage-3 lines declare `public Vnd UnitPrice { get; private set; } = unitPrice;` and one line calling `item.UnitPrice.Times(item.Quantity)`, which is inside `Order.Total`; one more line is a comment recording the old `int UnitPriceVnd`.
-
-Then decide: should `Quantity` become a type of its own too?
-
-<details><summary>Suggested answer</summary>
-
-It depends on whether a rule belongs to it. A quantity does have one, "at least 1", but at stage-3 `Order`'s constructor already checks it, and `OrderItem.Quantity` has only a private setter. A `Quantity` type would pay off if quantities were created and combined in many places, each needing that check. Until then it adds a type without adding a rule that is not already enforced.
-
-</details>
+Expected result: the second run still compiles, but reports `Failed: 3, Passed: 1`. Only `Constructor_NegativeAmount_Throws` passes. `TwoVndWithTheSameAmount_AreEqual` fails with `Expected: 450000 VND` and `Actual: 450000 VND`: the same amount on both sides, because a class with no equality of its own compares references. The `Plus` and `Times` tests fail for the same reason: they also compare `Vnd` objects with `Assert.Equal`.
 
 ## Connections
 
-- [[design.l3.entities-and-identity]] — the opposite case: an entity is known by its identity, a value object by its values.
-- [[design.l2.valid-from-construction]] — the same idea at a smaller scale: a constructor that refuses bad input, here for a single amount instead of a whole order.
-- [[foundation.l1.oop-encapsulation]] — the language tool behind `Vnd`: data kept behind a constructor and methods, with no setter left open.
-- [[design.l3.storing-value-objects]] — what comes next: how EF Core stores a `Vnd` when it has no id of its own.
+- [[design.l3.entities-and-identity]] — the opposite case: an object known by its identity while its values change, where this one has values and no identity.
+- [[design.l2.valid-from-construction]] — the same constructor check one size up: a whole order there, a single amount here.
+- [[design.l3.storing-value-objects]] — the next step: how EF Core saves a `Vnd`, which this lesson leaves out.
+- [[foundation.l1.oop-encapsulation]] — the idea underneath: a type keeps its data behind rules it enforces itself.
 
 ## Five-line summary
 
-1. A value object has no identity: it is defined entirely by its values, and two with the same values can replace each other anywhere.
-2. At stage-2 every amount in `Entities.cs` is a bare `int`, so a price could be negative or added to a quantity.
+1. A value object is defined only by its values: it has no id, and two with equal values can replace each other.
+2. At stage-2 money was a bare `int` named `...Vnd`, so a negative price and `price + quantity` both compiled.
 3. At stage-3 `Vnd` is a record whose constructor refuses a negative amount, and `OrderItem.UnitPrice` is a `Vnd`.
-4. Two `Vnd` with the same amount are equal, because a record compares data member values, not references.
-5. A `Vnd` never changes; `Plus` and `Times` return new ones, and wrapping pays off when a rule or a unit belongs to the value.
+4. Two `Vnd` with the same amount are equal; `Plus` and `Times` return a new `Vnd` and change neither input.
+5. Wrap an `int` or `string` when a rule or unit belongs to the value; with no rule, wrapping adds a type but no check.
