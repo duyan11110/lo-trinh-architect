@@ -15,9 +15,9 @@ vocab: [state-backend, state-locking]
 example_tag: stage-3
 versions_used: [opentofu, postgresql]
 content_version: 1
-status: reviewed
-approved_by: null
-reviewed_at: "2026-10-08T07:23:19+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-10-08T11:41:16+07:00"
 ---
 
 ## Before you start

@@ -15,9 +15,9 @@ vocab: []
 example_tag: stage-2
 versions_used: [dotnet, efcore, postgresql, git]
 content_version: 1
-status: reviewed
-approved_by: null
-reviewed_at: "2026-10-08T04:48:56+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-10-08T11:41:16+07:00"
 ---
 
 ## Before you start
