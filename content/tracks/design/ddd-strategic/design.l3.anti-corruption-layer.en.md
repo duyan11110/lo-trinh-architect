@@ -1,0 +1,148 @@
+---
+id: design.l3.anti-corruption-layer
+lang: en
+track: design
+level: 3
+stage: 3
+module: ddd-strategic
+main_path: true
+title: "An anti-corruption layer translates another model at the edge"
+duration_min: 14
+skills: [design.ddd.context-mapping]
+prereqs: [design.l3.conformist, design.l2.adapter-pattern, backend.l2.resource-based-authorization]
+related: [design.l2.ports-and-adapters, backend.l2.database-job-queue]
+vocab: [anti-corruption-layer]
+example_tag: stage-2
+versions_used: [aspnetcore, keycloak, mailkit]
+content_version: 1
+status: reviewed
+approved_by: null
+reviewed_at: "2026-10-08T10:39:26+07:00"
+---
+
+## Before you start
+
+- [[design.l3.conformist]] — you know the API takes Keycloak's names `sub`, `roles` and `staff` as they are, and that conforming is a choice.
+- [[design.l2.adapter-pattern]] — you know `MailKitEmailSender` implements `IEmailSender` and turns each call into MailKit's calls.
+- [[backend.l2.resource-based-authorization]] — you know `OrderOwnerHandler` lets a caller reach an order only if they own it or have the `staff` role.
+
+## The situation
+
+`refund-design.md` is Đơn Hàng's design for refunds, not built yet: a background job will call the payment gateway, the outside system that moves the money back, and record the outcome in new columns of the `payments` table. A teammate suggests a shortcut: copy whatever status text the gateway returns straight into the new `status` column. First, look at how Đơn Hàng already treats outsiders. Every order request arrives with a Keycloak token, yet `OrderService.PlaceOrderAsync` takes a plain `customerId`. Every email leaves through MailKit, yet `NotificationSender` never touches a MailKit type. Something turns other systems' words into Đơn Hàng's own at the door.
+
+Where should another system's model be turned into yours, and when is that worth the code?
+
+## Core concepts
+
+- **anti-corruption layer** — code at the edge of a downstream context that translates the upstream model into the downstream one, so the upstream words never spread inside.
+- translation — turning another model's words, values and rules into your own, such as turning a token's `sub` into a `Customer`; renaming a field is the smallest part of it.
+- edge — the few places where a context touches another one: here, where the caller of a request is read, where an email leaves, and where a gateway would answer.
+
+## How it works
+
+```mermaid
+flowchart LR
+  T["Keycloak token: sub"] -->|"FindByIdentitySubjectAsync"| C["Customer"]
+  C -->|"customer.Id"| O["OrderService"]
+  N["NotificationSender"] -->|"IEmailSender"| M["MailKitEmailSender"]
+  M -->|"MimeMessage"| S["MailKit sends it"]
+  G["Gateway answer"] -->|"refund job, planned"| P["payments row: refunded or failed"]
+```
+
+In the top row, a token carries `sub`, Keycloak's id for the user. Each place in `DonHang.Api` that needs the caller passes that string to `FindByIdentitySubjectAsync` and gets back a `Customer`, Đơn Hàng's own record. From there on, code speaks of customers: `OrderService.PlaceOrderAsync` receives the customer's `Id`, never a Keycloak user. These lookups are the anti-corruption layer toward Keycloak.
+
+In the middle row the translation runs outward, inside one class. `NotificationSender` asks `IEmailSender` for an email in Đơn Hàng's words: an address, a subject, a body. `MailKitEmailSender` turns that into a `MimeMessage`, a type from MimeKit, the library MailKit is built on, and no other class holds one. It then hands the message to MailKit, which sends it out.
+
+That class is also an adapter: it implements `IEmailSender` by turning each call into MailKit's. The Adapter pattern is one tool for building such a layer. The layer's job is wider: it translates words, values and rules, and it may hold several Adapter-pattern classes, or none: toward Keycloak, the translation is one lookup inside the controllers and the handler, with no class that wraps Keycloak. The class behind `ICustomerRepository` adapts the database, not Keycloak.
+
+The bottom row is a plan. `refund-design.md` keeps every call to the payment gateway in one background job, so that job is where the gateway's answers would become Đơn Hàng's own `refunded` and `failed`.
+
+Translation is code that must keep up with the upstream model. It pays off when that model differs from yours or changes outside your control. A Keycloak user is not a customer, so Đơn Hàng translates the user; the role `staff` already means what Đơn Hàng means, so the API conforms on it.
+
+## In the Đơn Hàng system
+
+The Keycloak side, in `OrderOwnerHandler`, the check for "owner of the order, or staff":
+
+```csharp file=DonHang.Api/Authorization/OrderOwnerHandler.cs tag=stage-2 lines=16-35
+public sealed class OrderOwnerHandler(ICustomerRepository customers)
+    : AuthorizationHandler<OrderOwnerRequirement, Order>
+{
+    protected override async Task HandleRequirementAsync(
+        AuthorizationHandlerContext context, OrderOwnerRequirement requirement, Order order)
+    {
+        if (context.User.IsInRole("staff"))
+        {
+            context.Succeed(requirement);
+            return;
+        }
+
+        var subject = context.User.FindFirstValue("sub");
+        var caller = subject is null ? null : await customers.FindByIdentitySubjectAsync(subject);
+        if (caller is not null && caller.Id == order.CustomerId)
+        {
+            context.Succeed(requirement);
+        }
+    }
+}
+```
+
+The `IsInRole("staff")` check at the top is the conforming half: the role is used as Keycloak spells it. Then `FindFirstValue("sub")` reads Keycloak's word, and the next line hands the string to `ICustomerRepository`, an interface of `DonHang.Domain`, which answers with a `Customer`. The ownership rule compares `caller.Id` with `order.CustomerId`, two Đơn Hàng ids, so Keycloak's id is gone before the rule runs. A caller without the `staff` role and with no customer row ends as `null` and never meets the requirement: the translation carries a rule, not only a name. Outside the excerpt, `OrdersController` and `OrdersV2Controller` repeat the same lookup and pass `customer.Id` to `PlaceOrderAsync`.
+
+The email side, where the translation runs toward a library:
+
+```csharp file=DonHang.Infrastructure/MailKitEmailSender.cs tag=stage-2 lines=15-34
+// lesson: design.l2.adapter-pattern
+// Implements Đơn Hàng's IEmailSender with MailKit: builds a MimeMessage and
+// hands it to MailKit's SmtpClient. Only this class knows MailKit exists.
+public sealed class MailKitEmailSender(SmtpSettings smtp) : IEmailSender
+{
+    public async Task SendAsync(string toAddress, string subject, string body, CancellationToken cancellationToken)
+    {
+        var message = new MimeMessage();
+        message.From.Add(new MailboxAddress("Đơn Hàng", "orders@donhang.local"));
+        message.To.Add(MailboxAddress.Parse(toAddress));
+        message.Subject = subject;
+        message.Body = new TextPart("plain") { Text = body };
+
+        using var client = new SmtpClient { Timeout = 10_000 };
+        // Mailpit in the lab speaks plain SMTP, without TLS.
+        await client.ConnectAsync(smtp.Host, smtp.Port, SecureSocketOptions.None, cancellationToken);
+        await client.SendAsync(message, cancellationToken);
+        await client.DisconnectAsync(quit: true, cancellationToken);
+    }
+}
+```
+
+`SendAsync` takes the three things `IEmailSender` names, in Đơn Hàng's words. The five lines from `new MimeMessage()` to the `TextPart` body rebuild them as MimeKit's model. The sender address is fixed here too. The adapter lesson said an adapter decides nothing about what to send; this small decision of Đơn Hàng's own is translation, not only adaptation. The comment above the class states the edge: only this class knows MailKit exists. Mailpit is the test mail server the lab runs; the three `client` calls after the message is built are MailKit's own sending.
+
+The third edge is only on paper. In `docs/design/refund-design.md`, step 3 puts the gateway calls in one job, step 6 marks a refund row `refunded` when the gateway confirms, and step 5 marks it `failed` after a hard refusal or after 24 hours of retries. That 24-hour limit is Đơn Hàng's rule, not the gateway's, so the job decides what the gateway's silence means.
+
+## Seniors often assume…
+
+- **"An anti-corruption layer is just another name for the Adapter pattern."** → Actually Adapter is one tool; the layer is a job, translating another model's words, values and rules at the edge of a context. `MailKitEmailSender` is both, while toward Keycloak no class wraps Keycloak in the Adapter pattern: the translation is one lookup repeated in three places. You notice this when a class implements your interface correctly, yet returns the gateway's own status text, and checks on that text start to appear in business code.
+- **"An anti-corruption layer has to be a separate service standing between the two systems."** → Actually at stage-2 every part of it is ordinary code in the same process: the lookups in `DonHang.Api`, the email class in `DonHang.Infrastructure`. The job is translation, and where the code runs is a separate decision. You notice this when a proposal to "add a translation layer" comes with a new deployment and a new network call, while the translation itself is one lookup.
+- **"A translation layer only renames fields; the values and rules pass through unchanged."** → Actually `sub` does not become a customer id by renaming: it takes a lookup, and a caller with no customer row becomes "no owner". The planned refund job adds a rule of its own, the 24-hour limit. You notice this when a gateway answers with a value nobody expected and it lands in `payments` as a status no part of Đơn Hàng knows how to handle.
+
+## Try it (3 minutes)
+
+1. In the `don-hang` repository, run `git grep -n FindByIdentitySubjectAsync stage-2 -- 'DonHang.Api/*'` to list every place in the API that turns `sub` into a `Customer`.
+2. Run `git grep -n MimeMessage stage-2 -- '*.cs'` to list every C# line that names MimeKit's message type.
+
+Expected result: the first command prints three lines, in `Authorization/OrderOwnerHandler.cs`, `Controllers/OrdersController.cs` and `Controllers/V2/OrdersV2Controller.cs`. The second prints two lines, both in `DonHang.Infrastructure/MailKitEmailSender.cs`: the comment above the class and the line that creates the message. The first edge is spread over three files; the second is one class.
+
+## Connections
+
+- [[design.l3.conformist]] — the opposite choice: taking the upstream model as it is; Đơn Hàng makes both choices toward Keycloak, for different parts of its model.
+- [[design.l2.adapter-pattern]] — the tool one level down: `MailKitEmailSender` was built there as an adapter; here it is read as part of a translation layer.
+- [[backend.l2.resource-based-authorization]] — where `OrderOwnerHandler` was written; here its `sub` lookup is read as the edge toward Keycloak.
+- [[design.l2.ports-and-adapters]] — the same edge seen from the core: Đơn Hàng declares the interfaces in its own words, and the outside code fits them.
+- [[backend.l2.database-job-queue]] — the background job model the planned refund job would follow, and so the place its translation would live.
+- [[design.l3.context-map]] — the map that drew the upstream arrows this lesson's layer sits on.
+
+## Five-line summary
+
+1. An anti-corruption layer is code at the edge of a downstream context that translates the upstream model, so the upstream words never spread inside.
+2. At stage-2, each place in `DonHang.Api` that reads `sub` turns it into a `Customer` through `FindByIdentitySubjectAsync`, so `OrderService` sees customer ids only.
+3. `MailKitEmailSender` does the same for email: `MimeMessage` exists only inside it, and the rest of Đơn Hàng sends mail through `IEmailSender`.
+4. Adapter is one tool for such a layer, which translates words, values and rules; the planned refund job would produce `refunded` and `failed`.
+5. Translation is code that must keep up, so it pays when the upstream model differs or changes outside your control; otherwise conforming is cheaper.

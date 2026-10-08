@@ -1,0 +1,242 @@
+{
+  "id": "design.l3.contexts-inside-don-hang",
+  "technical": {
+    "reviewed_at": "2026-10-08T04:01:27+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "git show/extract-code needed approval this run; used stage-2 excerpts of Entities.cs that tools/validate checks against the tag. :30-49 `public string Status { get; private set; }` (line 35); :51-70 public ctor `Status = \"new\";`; :72-96 MarkPaid/Cancel/Ship each test Status, throw OrderStatusException, then set paid/cancelled/shipped; no method touches Items or a Product. stage-1 schema.sql orders: `CHECK (status IN ('new', 'paid', 'shipped', 'cancelled'))`.",
+        "source": "stage-2 excerpts in design.l3.reference-other-aggregates-by-id (30-49), design.l2.ef-core-and-private-setters (51-70), design.l2.status-changes-through-methods (72-96); backend.l1.validating-input (schema.sql stage-1 18-32)"
+      },
+      {
+        "n": 2,
+        "verdict": "unverified",
+        "evidence": "Could not read Entities.cs@stage-2:116-131 (git show and tools/extract-code both need approval; working tree is stage-3, where Notification moved to DonHang.Notifications). Indirect support only: every member in the block (OrderId, Order, Channel, Subject, Status, Attempts, CreatedAt, NextAttemptAt, SentAt) is used by stage-2 excerpts of QueuedNotifier.cs:9-24 and NotificationSender.cs:61-101; the range fits after OrderItem (99-105). Not number/syntax, no blocker.",
+        "source": "stage-2 excerpts in backend.l2.database-job-queue, backend.l2.at-least-once-jobs, backend.l2.retry-with-backoff"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "QueuedNotifier.cs@stage-2:9-24 `Status = \"pending\",` inside `db.Notifications.Add(new Notification {...})`; NotificationSender.cs@stage-2:65-81 `notification.Status = \"sent\";`; :83-101 RecordFailure `notification.Status = \"failed\";` once Attempts >= MaxAttempts. The check-constraint clause (not used in the lesson text) rests on a recorded `\\d notifications` run: \"CHECK notifications_status_check status IN (pending, sent, failed)\".",
+        "source": "stage-2 excerpts in backend.l2.database-job-queue, backend.l2.at-least-once-jobs, backend.l2.retry-with-backoff; backend.l2.database-job-queue.review.json"
+      },
+      {
+        "n": 4,
+        "verdict": "unverified",
+        "evidence": "Shared DonHangDbContext is supported: QueuedNotifier(DonHangDbContext db) uses db.Notifications; ProductsController(DonHangDbContext db, ...) uses db.Products. The Payment half (\"used by no code outside Entities.cs and DonHangDbContext\") needs `git grep -n Payment stage-2 -- '*.cs'`, which needed approval. Only hint seen: stage-2 comment above MarkPaid, \"No endpoint takes payments at stage-2\". Not number/syntax, no blocker.",
+        "source": "stage-2 excerpts: QueuedNotifier.cs:9-24, ProductsController.cs:10-29, Entities.cs:72-74"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "The lesson's block equals lines 65-81 of the validated stage-2 excerpt NotificationSender.cs:61-81 character for character: `var customer = notification.Order!.Customer!;`, `email.SendAsync(customer.Email, ...` with `customer.FullName`, `notification.Status = \"sent\";`, `notification.SentAt = DateTimeOffset.UtcNow;`, `catch (Exception ex) when (!stoppingToken.IsCancellationRequested)` -> `RecordFailure(notification, ex);`.",
+        "source": "stage-2 excerpt DonHang.Api/Jobs/NotificationSender.cs:61-81 in backend.l2.at-least-once-jobs"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "DependencyRuleTests.cs@stage-2:11-33: one [Fact], DomainReferencesNoOuterAssembly, checks `typeof(OrderService).Assembly.GetReferencedAssemblies()` against ForbiddenPrefixes (DonHang.Infrastructure, DonHang.Api, EF Core, ASP.NET Core, Npgsql, StackExchange.Redis, MailKit). Order and Notification share DonHang.Domain, so it cannot see the walk. The working tree's other test, ModuleBoundaryTests, imports DonHang.Catalog (a stage-3 project). No NetArchTest/ArchUnit in examples/don-hang.",
+        "source": "stage-2 excerpt in design.l2.testing-the-dependency-rule; examples/don-hang/DonHang.Tests/Architecture/ModuleBoundaryTests.cs:1-13 (working tree)"
+      },
+      {
+        "n": 7,
+        "verdict": "rephrased",
+        "evidence": "Price rule holds: schema.sql `price_vnd integer NOT NULL CHECK (price_vnd > 0)`; Dtos.cs:10 `UpdateProductPriceRequest([Range(1, int.MaxValue)] int PriceVnd)`. But \"its one check\" is too strong: the same table has `name text NOT NULL` (and price_vnd NOT NULL), which are checks too.",
+        "source": "schema.sql products excerpt (stage-0 4-24) in foundation.l1.tables-keys-relations; examples/don-hang/DonHang.Api/Dtos.cs:10",
+        "suggested_text": "A `Product`, the third model, has a name and a price, no status and no methods; the one rule on its values, a price above zero, sits in `db/schema.sql` and the price-update request."
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "ProductsController.cs@stage-2:10-12 comment: \"The list reads DonHangDbContext directly: it has no rule to apply, only a query to shape.\" :23-45 List: `IQueryable<Product> query = db.Products;`, optional `.Where(p => p.PriceVnd <= maxPriceVnd)`, `.OrderBy(p => p.Id).Skip(offset).Take(limit).Select(...)`. The comment sits above the class, not on List (see issue).",
+        "source": "stage-2 excerpts in design.l2.composition-root (10-29), backend.l2.filtering-with-query-parameters (23-45)"
+      },
+      {
+        "n": 9,
+        "verdict": "unverified",
+        "evidence": "Could not read Entities.cs@stage-2:1-5 (git show needs approval). The stage-2 excerpt 6-16 starts at `public sealed class Customer`, so lines 3-5 are the header comment. Working tree (stage-3) line 4: `// One class per table in db/schema.sql that Ordering still uses.`, so the quoted words exist in the later version; the stage-2 wording was not seen. Not number/syntax, no blocker.",
+        "source": "examples/don-hang/DonHang.Domain/Entities.cs:3-8 (working tree, stage-3); stage-2 excerpt 6-16 in design.l3.bounded-context"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Entities.cs@stage-2:33 `public int CustomerId { get; private set; }` (excerpt 30-49); :14-15 `// Keycloak's id for this customer (the `sub` of their tokens); null until they have an account there.` and `public string? IdentitySubject { get; set; }` (excerpt 6-16).",
+        "source": "stage-2 excerpts in design.l3.reference-other-aggregates-by-id (30-49), design.l3.bounded-context (6-16)"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "EF docs: \"it will first call the default parameterless constructor and then set each property to the value from the database.\" \"EF Core cannot set navigation properties (such as Blog or Posts above) using a constructor.\" \"The constructor can be public, private, or have any other accessibility.\" Entities.cs@stage-2:51-58: `// For EF Core only. It cannot pass the Items navigation to the public constructor ...` `private Order() { Status = \"\"; }`.",
+        "source": "refs/efcore-docs/entity-framework/core/modeling/constructors.md:42,85,86; stage-2 excerpt in design.l2.ef-core-and-private-setters"
+      },
+      {
+        "n": 12,
+        "verdict": "unverified",
+        "evidence": "Could not run the git grep (needs approval). From validated stage-2 excerpts, whole-word Status is on 35, 57, 69, 77, 78, 79, 85, 86, 87, 92, 93, 94, 95 (13 lines, all in Order, 30-97), and 126 follows from the lesson's 116-131 block. Lines 1-5, 17-29, 97-115 not seen; stage-2 payments has no status column, so Payment likely adds none, but 14 is not confirmed by execution.",
+        "source": "stage-2 excerpts Entities.cs 30-49, 51-70, 72-96, 99-105; db/schema.sql payments"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "git-grep(1): -n \"Prefix the line number to matching lines.\" -w \"Match the pattern only at word boundary (either begin at the beginning of a line, or preceded by a non-word character; ...)\" <tree> \"Instead of searching tracked files in the working tree, search blobs in the given trees.\" -- \"Signals the end of options; the rest of the parameters are <pathspec> limiters.\" In OrderStatusException, Status has word characters on both sides, so -w skips it.",
+        "source": "https://git-scm.com/docs/git-grep"
+      },
+      {
+        "n": 14,
+        "verdict": "rephrased",
+        "evidence": "\"A BC delimits the applicability of a domain model\" supports drawing by words and rules. Same docs: \"Each bounded context should ideally be free to choose its own names for concepts within it, and should have exclusive access to its own persistence store.\" \"Communication between bounded contexts occurs through programmatic interfaces, rather than through a shared database\". \"one database can hold several\" is true of stage-2 but drops the condition the guidance attaches.",
+        "source": "refs/dotnet-docs/docs/architecture/modern-web-apps-azure/architectural-principles.md:96,98; refs/dotnet-docs/docs/architecture/microservices/architect-microservice-container-applications/identify-microservice-domain-model-boundaries.md:15",
+        "suggested_text": "A bounded context is drawn where a model's words and rules stop, not by projects, folders or databases; one database can hold several, even if each context is later given a store of its own."
+      },
+      {
+        "n": 15,
+        "verdict": "not-needed",
+        "evidence": "Design judgement framed as one reading among others, with stated reasons (no rules in Product's class; every notification has one order). Factual parts are covered by claims 1, 2, 7.",
+        "source": "lesson section 4"
+      },
+      {
+        "n": 16,
+        "verdict": "not-needed",
+        "evidence": "Conditioned judgement (\"When the lines are still moving\") with a symptom. Consistent with docs: \"while you gain more knowledge about the domain, you should adapt the size of your microservice, iteratively. Finding the right size isn't a one-shot process.\"",
+        "source": "refs/dotnet-docs/docs/architecture/microservices/architect-microservice-container-applications/identify-microservice-domain-model-boundaries.md:11"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "\"An aggregate is a group of objects that must be consistent together\"; \"A domain model contains clusters of different data entities and processes ... A more fine-grained DDD unit is the aggregate\"; \"A domain model with specific domain entities applies within a concrete BC\". So one context's model holds several aggregates. Order -> Customer by CustomerId: Entities.cs@stage-2:33.",
+        "source": "refs/dotnet-docs/docs/architecture/microservices/microservice-ddd-cqrs-patterns/microservice-domain-model.md:93,97; .../identify-microservice-domain-model-boundaries.md:15"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "\"its one check\" is too strong: the products table also has `name text NOT NULL` and `price_vnd ... NOT NULL`; price above zero is the one rule on a value, not the only check.",
+        "quote": "its one check, a price above zero, sits in `db/schema.sql` and the price-update request",
+        "fix": "Replace with: \"the one rule on its values, a price above zero, sits in `db/schema.sql` and the price-update request\". Update claim 7 the same way."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Stated without the condition the official guidance attaches: Microsoft's architecture docs say each bounded context \"should have exclusive access to its own persistence store\" and contexts talk \"rather than through a shared database\". Several contexts in one database is the stage-2 fact, not the documented target.",
+        "quote": "one database can hold several",
+        "fix": "Write \"one database can hold several, even if each context is later given a store of its own\" (section 6 bullet 1 already says separation comes \"later\"). Update claim 14 to match."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "Try it greps for `Status` only, so it prints the Status lines inside MarkPaid(), Cancel() and Ship(), not the lines naming those methods; the reader cannot see which method each line belongs to. Carried over from the previous round, not yet applied.",
+        "quote": "after that it changes only through `MarkPaid()`, `Cancel()` and `Ship()`; you will see these lines in Try it.",
+        "fix": "Write \"you will see their `Status` lines in Try it\" instead of \"you will see these lines in Try it\"."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "code",
+        "text": "The quoted comment is not on `List`: it is the comment above the `ProductsController` class (stage-2 lines 10-12, \"The list reads DonHangDbContext directly: it has no rule to apply, only a query to shape.\").",
+        "quote": "`ProductsController.List` starts from `db.Products` and shapes a page with `OrderBy`, `Skip`, `Take` and `Select`; its comment reads",
+        "fix": "Replace \"its comment reads\" with \"the comment above the controller reads\"."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-08T21:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (review-junior)",
+    "issues": [
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "gap",
+        "text": "I cannot reconstruct why the product catalogue is a context of its own. The test the lesson gives is where words and rules change, but for products it only says there are no rules and that Order's status methods never touch a Product, then calls the reading weaker. The prereq told me each OrderItem holds a ProductId, so Product looks like part of ordering to me. The diagram, summary line 5 and q5/q6 all rely on three contexts.",
+        "quote": "This reading is weaker than the one for notifications: products have no rules in their class rather than different ones, and none of `Order`'s status methods reads or changes a `Product`.",
+        "fix": "Add one sentence after this one saying why 'no rules, and no ordering rule reads a Product' is enough to draw a separate context, and how `OrderItem`'s `ProductId` fits (a reference by id across the line, as `Order` refers to `Customer`)."
+      },
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "gap",
+        "text": "Two paragraphs earlier the lesson shows that ordering and notifications differ in words and rules, which is its own test. Then it calls folding notifications into ordering reasonable because every notification belongs to one order: a link, which q4's explanation says 'is not a shared language'. I cannot see how both readings pass the same test, so I am unsure on q6.",
+        "quote": "Another team could read notifications as part of ordering, because every notification belongs to one order.",
+        "fix": "Add one sentence saying which words or rules that other team would point to (not only the link by OrderId), or say plainly that by this lesson's test the three-context reading is the stronger one."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "style",
+        "text": "'follow a change in words and rules' reads to me as 'come after a change'; I had to re-read it to see it means 'be decided by'.",
+        "quote": "Either reading should follow a change in words and rules, not the file layout.",
+        "fix": "Replace with 'Either reading should be decided by where the words and rules change, not by the file layout.'"
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "text": "I do not see why being unused outside Entities.cs and DonHangDbContext means Payment 'changes nothing', or which context it would sit in; the prereq told me Payment holds OrderId.",
+        "quote": "`Payment`, also in `Entities.cs`, is not used yet outside that file and `DonHangDbContext`, so it changes nothing.",
+        "fix": "Add half a sentence: no code uses Payment's words or rules yet, so it gives no evidence for or against any line."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "text": "'the price-update request' is not shown or named anywhere in the lesson or the prereq summaries; I cannot find what it is.",
+        "quote": "its one check, a price above zero, sits in `db/schema.sql` and the price-update request",
+        "fix": "Name the request type in a few words, or drop 'and the price-update request'."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "code",
+        "text": "The prose says `failed` is set in NotificationSender, but the excerpt only sets `sent`; the failure branch calls `RecordFailure`, which is not shown or explained, so I cannot find where `failed` is set.",
+        "quote": "`pending` when the email is queued, `sent` or `failed` in `NotificationSender`.",
+        "fix": "After the excerpt, add one sentence: '`RecordFailure`, further down in the same file, sets `failed` once the attempts run out.'"
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "example",
+        "text": "Step 3 asks where each class's values are checked, but Expected result only covers steps 1-2. For Notification the grep shows only the declaration, so I would not know whether I missed something.",
+        "quote": "Write down which values each class's `Status` takes, and where those values are checked.",
+        "fix": "Add to Expected result: 'For Notification, no line in this file sets or checks a value; that happens outside the class.'"
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "text": "q4: option a is the longest and the only one phrased in the notifications model's words, so I could pick it without understanding the lesson.",
+        "quote": "In the notifications model, beside `Attempts` and the sending code that sets `Status` to `sent` or `failed`.",
+        "fix": "Shorten a to 'In the notifications model, beside `Attempts` and the sending code', or make one wrong option equally long and specific."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "text": "q5 context says a teammate proposed moving Product 'back' next to Order, but the lesson shows Product already in Entities.cs beside Order; 'back' confuses me about what moved where.",
+        "quote": "last week a teammate proposed moving `Product` back next to `Order`",
+        "fix": "Write 'last week a teammate proposed folding the product catalogue into ordering' (and the same in the vi text)."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [
+        "This reading is weaker than the one for notifications: products have no rules in their class rather than different ones, and none of `Order`'s status methods reads or changes a `Product`.",
+        "Another team could read notifications as part of ordering, because every notification belongs to one order.",
+        "`Payment`, also in `Entities.cs`, is not used yet outside that file and `DonHangDbContext`, so it changes nothing."
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "fix-required"
+  }
+}
