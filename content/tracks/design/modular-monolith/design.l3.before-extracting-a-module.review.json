@@ -1,0 +1,157 @@
+{
+  "id": "design.l3.before-extracting-a-module",
+  "technical": {
+    "reviewed_at": "2026-10-14T18:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "not-needed",
+        "evidence": "Definition of the vocab term, from outline item 1 and misconception 3; no pinned-version document governs it. Round 2: the added sentence on 'service' (s3) matches the claim text.",
+        "source": "content/tracks/design/track.yaml (outline item 1, misconception 3)"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "RFC 9110 9.2.2: \"if a client sends a PUT request and the underlying connection is closed before any response is received, then the client can establish a new connection and retry the idempotent request. It knows that repeating the request will have the same intended effect, even if the original request succeeded\"; \"A client SHOULD NOT automatically retry a request with a non-idempotent method unless it has ... some means to detect that the original request was never applied.\" A caller without a response cannot know whether the work was done.",
+        "source": "refs/rfc/rfc9110.txt lines 3874-3886 (section 9.2.2 Idempotent Methods)"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "git show stage-2:DonHang.Infrastructure/QueuedNotifier.cs: line 9 `public sealed class QueuedNotifier(DonHangDbContext db) : INotifier`, line 11 `public void Send(Order order, string subject)`, lines 14-22 only `db.Notifications.Add(new Notification { Order = order, ... Status = \"pending\", ... })`, no save; comment line 7 \"leaves the saving to OrderService\". INotifier.cs: `void Send(Order order, string subject);`.",
+        "source": "examples/don-hang @ stage-2: DonHang.Infrastructure/QueuedNotifier.cs:5-24; DonHang.Domain/INotifier.cs"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "OrderService.cs @ stage-2: PlaceOrderAsync `notifier.Send(order, \"order placed\"); await repository.SaveChangesAsync();`; CancelOrderAsync `notifier.Send(order, \"order cancelled\"); await repository.SaveChangesAsync();`; ShipOrderAsync `notifier.Send(order, \"order shipped\"); await repository.SaveChangesAsync();`. EfOrderRepository.cs:37 `public Task SaveChangesAsync() => db.SaveChangesAsync();`.",
+        "source": "examples/don-hang @ stage-2: DonHang.Domain/OrderService.cs; DonHang.Infrastructure/EfOrderRepository.cs:37"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "\"By default, if the database provider supports transactions, all changes in a single call to `SaveChanges` are applied in a transaction. If any of the changes fail, then the transaction is rolled back and none of the changes are applied to the database. This means that `SaveChanges` is guaranteed to either completely succeed, or leave the database unmodified if an error occurs.\"",
+        "source": "refs/efcore-docs/entity-framework/core/saving/transactions.md:17"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Claim text now equals the round-1 suggested_text. BEGIN: \"all statements after a BEGIN command will be executed in a single transaction until an explicit COMMIT or ROLLBACK\". PREPARE TRANSACTION exists \"to allow an external transaction manager to perform atomic global transactions across multiple databases\"; the claim and s4/s6/q2 now carry that condition (\"Unless something outside both processes coordinates them\").",
+        "source": "https://www.postgresql.org/docs/17/sql-begin.html; https://www.postgresql.org/docs/17/sql-prepare-transaction.html"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "\"If you change the navigation property of an entity, the corresponding changes will be made to the foreign key column in the database.\" Example note: \"`blog` will also be inserted into the database because it is a new entity that is referenced by the navigation property of an entity that is already tracked by the context\". Code: QueuedNotifier.cs:16 `Order = order, // EF Core fills in order_id when it saves both`; DonHangDbContext maps `HasOne(n => n.Order).WithMany().HasForeignKey(n => n.OrderId)`.",
+        "source": "refs/efcore-docs/entity-framework/core/saving/related-data.md:36-38; examples/don-hang @ stage-2"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "git show stage-2:DonHang.Infrastructure/NotificationQueue.cs: line 8 `public sealed class NotificationQueue(DonHangDbContext db)`, line 28 `.Include(n => n.Order!).ThenInclude(o => o.Customer)` inside ClaimDueAsync (lines 16-30). Line numbers in section 5 (16, 28) match the file.",
+        "source": "examples/don-hang @ stage-2: DonHang.Infrastructure/NotificationQueue.cs:16-30"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "eager.md: \"You can use the `Include` method to specify related data to be included in query results\"; \"You can drill down through relationships to include multiple levels of related data using the `ThenInclude` method.\" single-split-queries.md: \"EF loads related entities by introducing JOINs into a single query\"; \"EF Core uses single query mode by default in the absence of any configuration.\" stage-2 has no AsSplitQuery/QuerySplittingBehavior (git grep), so section 5's \"in the same query\" holds.",
+        "source": "refs/efcore-docs/entity-framework/core/querying/related-data/eager.md:23,39; querying/single-split-queries.md:12,125"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "NotificationSender.cs @ stage-2 lines 69-71: `var customer = notification.Order!.Customer!;` `email.SendAsync(customer.Email, $\"Order {notification.OrderId}: {notification.Subject}\", $\"Hello {customer.FullName}, ...` DonHangDbContext: Customer ToTable(\"customers\"), Email->\"email\", FullName->\"full_name\"; Notification ToTable(\"notifications\"), OrderId->\"order_id\", Subject->\"subject\". Four values, as section 7 expects.",
+        "source": "examples/don-hang @ stage-2: DonHang.Api/Jobs/NotificationSender.cs:65-81; DonHang.Infrastructure/DonHangDbContext.cs"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "NotificationSender.cs:7-11 \"Runs inside the api process for as long as the app runs, beside the requests.\" `: BackgroundService`; Program.cs:32 `builder.Services.AddHostedService<NotificationSender>();`; docker-compose.yml @ stage-2 defines service `api`. Tick = 2 s (line 13) supports \"a few seconds after each order\".",
+        "source": "examples/don-hang @ stage-2: DonHang.Api/Jobs/NotificationSender.cs; DonHang.Api/Program.cs:32; docker-compose.yml"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Ran `git -C examples/don-hang show stage-2:DonHang.Api/Jobs/NotificationSender.cs`: printed the file content (102 lines, SendOneAsync at line 65). git-show(1): \"For plain blobs, it shows the plain contents.\"; object names per \"SPECIFYING REVISIONS\" in gitrevisions(7).",
+        "source": "execution in examples/don-hang; https://git-scm.com/docs/git-show"
+      },
+      {
+        "n": 13,
+        "verdict": "not-needed",
+        "evidence": "Design judgement restating outline items 2, 5, 6; the code facts it rests on are verified in claims 3, 4, 8, 10, 16. The compiler sentence it relied on in round 1 is now narrowed and listed as claim 15.",
+        "source": "content/tracks/design/track.yaml (outline items 2, 5, 6)"
+      },
+      {
+        "n": 14,
+        "verdict": "not-needed",
+        "evidence": "Opinion stated with its condition (\"when one team must understand and own the whole service\"), as the opposing view to misconception 3; no pinned-version document governs it.",
+        "source": "content/tracks/design/track.yaml (misconception 3)"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "C# compiler messages are reported per call site: CS1501 \"No overload for method 'method' takes 'number' arguments\"; CS7036 \"There is no argument given that corresponds to the required parameter\". These fire only on calls that no longer bind; a call that still binds produces no error, so the second half (a change in meaning that compiles is not reported) follows.",
+        "source": "refs/dotnet-docs/docs/csharp/language-reference/compiler-messages/overload-resolution.md:101; parameter-argument-mismatch.md:105"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "git show stage-2:DonHang.Infrastructure/Migrations/20260927112811_AddNotificationQueueColumns.cs lines 69-75: `migrationBuilder.AddForeignKey(name: \"FK_notifications_orders_order_id\", table: \"notifications\", column: \"order_id\", principalTable: \"orders\", principalColumn: \"id\", onDelete: ReferentialAction.Cascade);`. DonHangDbContext.cs:96 `e.HasOne(n => n.Order).WithMany().HasForeignKey(n => n.OrderId);`.",
+        "source": "examples/don-hang @ stage-2: DonHang.Infrastructure/Migrations/20260927112811_AddNotificationQueueColumns.cs:69-75; DonHang.Infrastructure/DonHangDbContext.cs:96"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "EF Core: \"EF Core will treat the supplied SQL as a subquery\" when composing (Include). PostgreSQL SELECT: \"If a locking clause is applied to a view or sub-query, it affects all tables used in the view or sub-query\"; \"When a locking clause appears in a sub-SELECT, the rows locked are those returned to the outer query by the sub-query.\" The sub-query reads notifications only, so joined orders/customers are not locked. Docs opened round 2: sql-select.html, sql-queries.md, C# compiler-messages.",
+        "source": "refs/efcore-docs/entity-framework/core/querying/sql-queries.md:157; https://www.postgresql.org/docs/17/sql-select.html (The Locking Clause)"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-14T19:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation, round 2 targeted re-review)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "text": "New in round 2. \"Unless something outside both processes coordinates them\" names an exception I cannot picture: nothing I know coordinates two processes' saves. I wondered whether that something would make the second tie unnecessary. Not blocking: the main idea and q2 still work without it, and Connections points to the fix.",
+        "quote": "Unless something outside both processes coordinates them, placing an order becomes two separate saves, and one can fail alone.",
+        "fix": "Add a few words after \"coordinates them\" saying this lesson does not use such coordination and the second tie is still cut, e.g. \"(this lesson does not rely on that)\"; or drop the clause from section 4 and section 6 if the claim allows."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "style",
+        "text": "New in round 2. I had to re-read this sentence twice: \"adds when to cut\" reads oddly, and \"where they show up as calls and queries crossing it\" stacks three ideas (before the split, boundary inside one process, ties visible as crossings) in one clause.",
+        "quote": "This lesson adds when to cut the ties: before the split, with the module boundary drawn inside one process, where they show up as calls and queries crossing it.",
+        "fix": "Split into two sentences: \"Cut the ties before the split, while the module boundary is still inside one process. There each tie shows up as a call or a query that crosses the boundary.\""
+      },
+      {
+        "severity": "minor",
+        "section": "design.l3.before-extracting-a-module.q4",
+        "kind": "quiz",
+        "text": "New in round 2 (q4 rewritten). The correct option repeats the Try it expected result almost word for word, so I can pick it by matching the phrase instead of reasoning from line 28.",
+        "quote": "`customers`, reached through each row's `Order`.",
+        "fix": "Shorten option a to \"`customers`\" so it matches the other options' form, or reword it, e.g. \"`customers`, two steps away from the notification row\"."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [
+        "Section 4 and 6: what 'something outside both processes' that could coordinate the two saves would be, and whether it changes the need to cut the second tie (minor)."
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

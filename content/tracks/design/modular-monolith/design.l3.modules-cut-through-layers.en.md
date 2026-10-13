@@ -13,75 +13,69 @@ prereqs: [design.l3.modular-monolith, design.l3.subdomains, design.l2.decorator-
 related: [design.l1.why-layers, backend.l2.cache-aside]
 vocab: []
 example_tag: stage-3
-versions_used: [dotnet, aspnetcore, efcore, npgsql_efcore, stackexchange_redis, git]
+versions_used: [dotnet, aspnetcore, efcore, stackexchange_redis, git]
 content_version: 1
-status: draft
-approved_by: null
-reviewed_at: null
+status: approved
+approved_by: auto
+reviewed_at: "2026-10-13T20:12:55+07:00"
 ---
 
 ## Before you start
 
-- [[design.l3.modular-monolith]] — you know that a modular monolith keeps one process but splits the code into modules, each owning one bounded context, and that stage-2's three projects are layers, not modules.
-- [[design.l3.subdomains]] — you know that ordering is where Đơn Hàng's design effort goes, while the product list is a supporting part that gets something simple.
+- [[design.l3.modular-monolith]] — you know that a modular monolith runs as one process but splits its code into modules, each holding one bounded context, and that stage-2's three projects are layers, not modules.
+- [[design.l3.subdomains]] — you know that ordering is Đơn Hàng's core domain and the product list a supporting subdomain, which gets something simpler than a domain model.
 - [[design.l2.decorator-pattern]] — you know that `ProductCache` wraps `EfProductRepository` behind `IProductRepository`, and that one registration puts it there.
 
 ## The situation
 
-At stage-2 you are asked to change how products are stored and cached. You start at `ProductCache` in `DonHang.Infrastructure`, follow its registration to `ServiceCollectionExtensions`, open `EfProductRepository`, then the `Product` class in `DonHang.Domain/Entities.cs` and its mapping in `DonHangDbContext`. Five files in two projects, and three of those files also hold ordering's code.
+At stage-2 you are asked to change how products are stored and cached. Products have nothing to do with the order rules, so you expect a small change in one place.
 
-A teammate who has read about modular monoliths suggests a fourth project, `DonHang.Modules`, to sit above the other three.
+Then you list the files. The `Product` class is in `Entities.cs`, in `DonHang.Domain`, next to `Order`. Its table mapping is in `DonHangDbContext`, next to the orders mapping. `EfProductRepository` and `ProductCache` sit in `DonHang.Infrastructure`, and `ServiceCollectionExtensions` registers the cache in the same method as the order repository. In `DonHang.Domain` and `DonHang.Infrastructure` alone that is five files, and both projects also hold ordering.
 
-Where should the product code go so that a change to the catalogue, the product list, stays in one place?
+Where should product code live, so that a change to products stays among products?
 
 ## Core concepts
 
-- layer — code grouped by the kind of work it does; at stage-2, `DonHang.Api` holds HTTP, `DonHang.Domain` the rules and `DonHang.Infrastructure` the storage, each for every context.
-- module — as in the previous lesson, the code that holds one bounded context: its model, its tables and the few public types other code may call.
-- a module's share of a layer — the part of the model, the storage or the cache that serves only that module's context, such as `Product`, its mapping and `ProductCache` for the catalogue.
-- a module's inside design — how one module arranges its share: in one project or several, with a domain model or with plain queries.
+- layer — a part of the code grouped by kind of work, such as HTTP, rules or storage; at stage-2 `DonHang.Api`, `DonHang.Domain` and `DonHang.Infrastructure` are Đơn Hàng's layers.
+- module — the part of a modular monolith that holds one bounded context, with the layers that context needs below HTTP kept inside it.
+- the inside of a module — how one module arranges its own code: one project or several, a domain model or plain queries.
+- cutting through the layers — splitting code by context first and by kind of work second, so one module holds a little of each layer but only one context.
 
 ## How it works
 
 ```mermaid
 flowchart LR
-  API["DonHang.Api: controllers, Program.cs"]
-  subgraph CAT["Catalog module: DonHang.Catalog"]
-    CS["ICatalog, CatalogService"]
-    PC["ProductCache, Redis"]
-    CDB["EfProductRepository, CatalogDbContext"]
+  P["Program.cs in DonHang.Api"]
+  subgraph CAT["Catalog: one project, DonHang.Catalog"]
+    CM["CatalogModule"]
+    CR["ProductCache around EfProductRepository"]
+    CD["CatalogDbContext: products"]
   end
-  subgraph ORD["Ordering module: DonHang.Domain + DonHang.Infrastructure"]
-    OS["Order, OrderService"]
-    ODB["EfOrderRepository, DonHangDbContext"]
+  subgraph ORD["Ordering: two projects"]
+    INF["DonHang.Infrastructure: DonHangDbContext"]
+    DOM["DonHang.Domain: Order and its rules"]
   end
-  API -->|"calls"| CS
-  API -->|"calls"| OS
-  CS -->|"one product"| PC
-  CS -->|"lists"| CDB
-  PC -->|"calls"| CDB
-  ODB -->|"depends on"| OS
+  P -->|"AddCatalogModule"| CM
+  P -->|"AddDonHangInfrastructure"| INF
+  CM -->|"registers"| CR
+  CM -->|"registers"| CD
+  INF -->|"references"| DOM
+  INF -.->|"references, later lesson"| CAT
 ```
 
-In the situation, the five files belonged to two layers, each shared with ordering. Layers split code by kind of work: HTTP, rules, storage. Modules split it by bounded context, and the two cuts cross: a module keeps its own share of each layer below HTTP.
+In the situation above, the trouble is the direction of the cut. Layers split code by kind of work: HTTP in `DonHang.Api`, rules in `DonHang.Domain`, storage in `DonHang.Infrastructure`. That split puts a slice of every context into every project, so a product change lands next to order code in each one.
 
-In the diagram, a "calls" arrow is a call at run time; the "depends on" arrow is a project reference, the line in a `.csproj` that lets one project use another project's public classes. Both module boxes run inside the one process that `DonHang.Api`, the host, starts.
+A module cuts the other way first, by bounded context, and the layers come back inside it. At stage-3 Catalog, the products context, still has a product class, a table mapping, a repository and a Redis cache. What changed is where they live: all are now in the project `DonHang.Catalog`, as `Product`, `CatalogDbContext` with the `products` mapping, `EfProductRepository` and `ProductCache`. `CatalogModule` registers them, and `Program.cs` calls `AddCatalogModule` once.
 
-The Catalog module is the project `DonHang.Catalog`: `Product`, its mapping in `CatalogDbContext`, `EfProductRepository`, `ProductCache` with its Redis connection, and `CatalogModule`, which registers them all. `DonHang.Api` calls `CatalogService` through `ICatalog`; it lists products from `CatalogDbContext` and reads one through `ProductCache`. A change to how products are stored and cached now opens files in `DonHang.Catalog` alone.
+Ordering's code stayed in its two projects: model and rules in `DonHang.Domain`, storage in `DonHang.Infrastructure`. With product code gone, both projects hold Ordering's code. Both modules' endpoints, `ProductsController` and `OrdersController`, stay in `DonHang.Api`, the project that runs the app; module code starts below HTTP. So a module is not a project: Catalog is one project, Ordering spans two. Each is a module because its code holds one context.
 
-Ordering did not move: `Order` and `OrderService` are in `DonHang.Domain`, `EfOrderRepository` and `DonHangDbContext` in `DonHang.Infrastructure`, which references `DonHang.Domain`. Product code left both projects, and order emails went to `DonHang.Notifications`, a separate program, not a module of this process. What is left in both is ordering's code alone, so together they are the Ordering module. `DonHang.Api` calls `OrderService` directly: `OrdersController` takes the class itself, with no interface. One module can span several projects.
-
-Catalog's `Product` has three properties and no methods; `Order` has methods that guard its status changes. The supporting product list gets something simple; the core ordering keeps its domain model.
-
-The controllers, `ProductsController` among them, are in `DonHang.Api`: here the host is the one project that answers HTTP, and each module starts below it. A module could also hold its own controllers; here they stay in the host.
+The two modules differ inside, too. Catalog is a supporting subdomain: its `Product` has an id, a name and a price, and no methods that guard rules. Ordering is the core domain: `Order` keeps the methods that guard its status. `DonHang.Infrastructure` references `DonHang.Domain`, never the other way round, so the dependency rule holds inside that module. `DonHang.Infrastructure` also references `DonHang.Catalog`, the dotted arrow; what Ordering may use from Catalog is the next lesson. Each module picks the inside its subdomain needs.
 
 ## In the Đơn Hàng system
 
-The Catalog module's project file:
+The Catalog project file:
 
-```xml file=DonHang.Catalog/DonHang.Catalog.csproj tag=stage-3 lines=10-19
-  <!-- lesson: design.l3.modules-cut-through-layers -->
-  <!-- lesson: design.l3.one-way-module-dependencies -->
+```xml file=DonHang.Catalog/DonHang.Catalog.csproj tag=stage-3 lines=12-19
   <!-- The Catalog module: products, their table and their Redis cache, all in
        one project. No ProjectReference: Catalog needs nothing from Ordering,
        and ModuleBoundaryTests fails if it ever refers to DonHang.Domain,
@@ -92,9 +86,9 @@ The Catalog module's project file:
   </ItemGroup>
 ```
 
-The first two comment lines only tag the lessons that cite this file. The two `PackageReference` lines show the cut the comment states; each adds one library to the project. The PostgreSQL provider for EF Core, the package that lets EF Core talk to PostgreSQL, is storage work and `StackExchange.Redis` is cache work, yet both sit in one project because both serve one context. At stage-2 the same two packages were in `DonHang.Infrastructure`, which served every context. There is no `ProjectReference`: Catalog's code builds without any of Ordering's, and the architecture test the comment names, `ModuleBoundaryTests`, keeps it that way.
+The comment names what the project holds: products, their table and their Redis cache. The two `PackageReference` lines are storage libraries: the package that lets EF Core talk to PostgreSQL, Đơn Hàng's database, and the Redis client. At stage-2 both lines were in `DonHang.Infrastructure.csproj`, which keeps the EF Core package for Ordering; now Catalog lists both itself, and the Redis client is Catalog's alone. The comment also says Catalog refers to no other Đơn Hàng project; the test it names belongs to a later lesson.
 
-Where the two modules are registered:
+How `Program.cs` wires the two modules:
 
 ```csharp file=DonHang.Api/Program.cs tag=stage-3 lines=33-39
 // lesson: design.l3.modules-cut-through-layers
@@ -106,41 +100,41 @@ builder.Services.AddDonHangInfrastructure(connectionString);
 builder.Services.AddScoped<OrderService>();
 ```
 
-`AddCatalogModule` is Catalog's own method, in `CatalogModule.cs` outside this excerpt: it registers `CatalogDbContext`, the Redis connection, `ProductCache` around `EfProductRepository`, and `ICatalog`, the interface other code uses to reach the catalogue (the next lesson's subject). Ordering has no such method: `AddDonHangInfrastructure` registers what `DonHang.Infrastructure` holds, and `OrderService` gets its own line. Both receive the same connection string, the text saying which database to connect to and how; which tables belong to whom is a later lesson.
+One call wires Catalog: its DbContext, repository, cache and Redis connection are registered inside `AddCatalogModule`, in `CatalogModule.cs`, outside this excerpt. Ordering takes two lines, one per project: `AddDonHangInfrastructure` for its storage and `OrderService` from `DonHang.Domain`. Both receive `connectionString`, the text that tells the app which database to connect to; only Catalog receives `redisConfiguration`, because the Redis cache is Catalog's alone. Which tables each module may touch is a later lesson.
 
 ## Seniors often assume…
 
-- **"A modular monolith adds one more layer, called modules, on top of controllers, services and repositories."** → Actually modules run across the layers, not above them: Catalog holds its own model, storage and cache, and Ordering holds its own. A `DonHang.Modules` project above the other three would leave `Product` in `Entities.cs` and its mapping in `DonHangDbContext`. You notice this when a change meant for one module still edits the shared files beside ordering's classes, as the five-file tour in the situation did.
-- **"Every module must have the same inside structure, with the same projects and the same patterns."** → Actually each module can pick the design its subdomain needs, because what modules must share is how they meet, not how they are built inside. Catalog is one project with no domain model; Ordering keeps two projects and the dependency rule that `DependencyRuleTests` checks. Forcing Catalog into Ordering's shape would give it a rules project with no rules: `Product` has no methods to protect. You notice this when a module template asks for a `Domain` project and its only content is a class with three properties.
-- **"Moving files into a folder named after a context is enough to make that context a module."** → Actually a folder inside a project changes nothing the compiler checks: every class that could use the moved classes before still can. What made Catalog a module at stage-3 is that its model, mapping, cache and registration left the shared files: `Entities.cs` no longer declares `Product`, and Catalog builds without Ordering's code. You notice this when a `Catalog` folder appears in `DonHang.Infrastructure` and any class can still query `db.Products` on `DonHangDbContext`, as `ProductsController` does.
+- **"A modular monolith adds one more layer, called modules, on top of controllers, services and repositories."** → Actually modules are a different cut, not another level of the stack. Each module holds its own layers, as `DonHang.Catalog` holds a model, a table mapping, a repository and a cache. A "modules" level on top would still leave every context spread across the same shared projects below it. You notice this when a change to one context still edits files that also hold the other contexts' code.
+- **"Every module must have the same inside structure, with the same projects and the same patterns."** → Actually at stage-3 Catalog is one project with no domain model, while Ordering is two projects with `Order` guarding its status rules. A domain project for Catalog would hold a class with no rules to guard, because products have none. Squeezing Ordering into one plain project would drop the dependency rule that keeps its rules apart from storage. You notice this when a module has a rules project whose classes have no rules to guard.
+- **"Moving files into a folder named after a context is enough to make that context a module."** → Actually C# limits access by type and by project, not by folder, so ordering code in the same project can still use every product class. At stage-2 a `Products` folder inside `DonHang.Infrastructure` would still sit in a project ordering uses and register its cache in the same method. Catalog became a module when it got its own project, its own DbContext and its own registrations. You notice this when classes from a "module" folder keep appearing in another context's constructors.
 
 ## Try it (3 minutes)
 
 In the root folder of the example repository, in a terminal:
 
-1. Run `git ls-tree --name-only stage-2 DonHang.Infrastructure/` and mark the files that serve only products.
-2. Run `git ls-tree --name-only stage-3 DonHang.Catalog/` and sort its files into model, storage, cache and registration, leaving aside what fits none of them.
+1. Run `git show stage-2:DonHang.Infrastructure/ServiceCollectionExtensions.cs` and find the lines that register the order repository, the Redis connection and the product cache.
+2. Run `git show stage-3:DonHang.Infrastructure/ServiceCollectionExtensions.cs` and look for the same lines.
 
-Expected result: in step 1, `EfProductRepository.cs` and `ProductCache.cs` sit among ordering's and notifications' files, while `DonHangDbContext.cs` and `ServiceCollectionExtensions.cs` serve every context. In step 2, eleven entries: the model `Product.cs`; storage `CatalogDbContext.cs`, `EfProductRepository.cs` and `IProductRepository.cs`; the cache `ProductCache.cs`; registration `CatalogModule.cs`; and, in none of the four groups, `CatalogService.cs`, `ICatalog.cs`, `CatalogProduct.cs`, the project file and `packages.lock.json`.
+Expected result: at stage-2, `AddDonHangInfrastructure` takes a `redisConfiguration` parameter and registers `IOrderRepository`, `IConnectionMultiplexer` (the Redis connection), `EfProductRepository` and `IProductRepository` with a `ProductCache` in one method. At stage-3 the method takes only `connectionString`, still registers `IOrderRepository`, and registers no Redis connection and no product repository. Its comment says products, Redis and their cache are the Catalog module's own registrations.
 
 <details><summary>Suggested answer</summary>
 
-Step 1 shows the catalogue's share of the storage layer scattered among other contexts' files, with its model in a second project. Step 2 shows the same share, plus the model and the registration, in one list. The HTTP part is missing from both lists: `ProductsController` is in `DonHang.Api` at both tags. `CatalogService.cs` is Catalog's service layer behind `ICatalog`; with no rules to apply, it fits none of the four groups. `ICatalog` and `CatalogProduct`, with `CatalogModule` that registers them, are what code outside Catalog may use, the subject of the next lesson.
+At stage-2 one method in the storage layer wired the storage of two contexts, so a cache change edited the file that also wires ordering. At stage-3 that method wires ordering alone, and Catalog's registrations moved into `CatalogModule`, inside `DonHang.Catalog`. Nothing about how products are stored or cached changed; only which project holds that code.
 
 </details>
 
 ## Connections
 
-- [[design.l1.why-layers]] — the other cut: layers split code by kind of work, and in a modular monolith they live inside each module.
-- [[backend.l2.cache-aside]] — the cache that moved: `ProductCache` now lives in the Catalog module, beside the data it caches.
-- [[design.l3.modular-monolith]] — prerequisite: there a module was named; here its code finds a home.
-- [[design.l2.clean-architecture]] — the dependency rule that Ordering keeps inside its own module.
-- [[design.l3.module-contracts]] — what comes next: what code outside Catalog may use.
+- [[design.l1.why-layers]] — the cut this lesson turns sideways: layers split by kind of work, and each module keeps its own layers inside.
+- [[backend.l2.cache-aside]] — the cache that moved: the same Redis logic, now registered by `CatalogModule` instead of the shared storage layer.
+- [[design.l3.modular-monolith]] — prerequisite: there the modules were named; here they get a place in the code.
+- [[design.l3.subdomains]] — why the two modules differ inside: a supporting subdomain gets something simpler than the core domain.
+- [[design.l3.module-contracts]] — what comes next: how code outside `DonHang.Catalog` is allowed to reach it.
 
 ## Five-line summary
 
-1. A module holds its own model, storage and cache, a share of each layer below HTTP; layers split code by kind of work.
-2. At stage-2, changing how products are stored and cached touched five files in two projects shared with ordering.
-3. At stage-3 `DonHang.Catalog` holds `Product`, its table mapping, `ProductCache` and `CatalogModule`, which registers them all.
-4. Ordering stayed in `DonHang.Domain` and `DonHang.Infrastructure`: one module can span several projects.
-5. Each module picks its inside design: Catalog has no domain model, Ordering keeps `Order` and the dependency rule.
+1. Layers split code by kind of work; modules split it by bounded context, and each module keeps its own layers inside.
+2. At stage-2 a product storage change touched at least five files in `DonHang.Domain` and `DonHang.Infrastructure`, both shared with ordering.
+3. At stage-3 `DonHang.Catalog` holds the product class, its table mapping, the Redis cache and `CatalogModule`, which registers them.
+4. Below HTTP, Catalog takes one project and Ordering two: a module is one context, whether it takes one project or several.
+5. Each module picks its own inside: Catalog has no rules or domain model, while Ordering keeps `Order` and its dependency rule.
