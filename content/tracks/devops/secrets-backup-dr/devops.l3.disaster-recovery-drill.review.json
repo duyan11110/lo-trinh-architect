@@ -1,0 +1,195 @@
+{
+  "id": "devops.l3.disaster-recovery-drill",
+  "technical": {
+    "reviewed_at": "2026-10-14T20:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "not-needed",
+        "evidence": "Definition of the lesson's own vocab term dr-drill; matches outline item 1 and the header comment of dr-drill.sh ('delete donhang-staging, rebuild it by the written steps ... and time each step').",
+        "source": "track.yaml outline item 1; examples/don-hang@stage-3 scripts/devops/dr-drill.sh:2"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "git-server.yaml:1-6: 'One Gitea Pod in the namespace git; its repositories live in an emptyDir, so they are gone with the Pod.' dr-drill.sh:25-28: 'The Git server keeps its repositories inside the cluster, so they die with it; this mirror clone is all that will come back, and commits pushed after it is taken are lost.'",
+        "source": "examples/don-hang@stage-3 deploy/gitops/git-server.yaml:1-6, 54-56; scripts/devops/dr-drill.sh:25-28"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "dr-drill.sh:30-40 if/elif/else exactly as stated (rm -rf + git_auth clone --mirror; 'the mirror clone taken earlier is the backup'; exit 1). scripts/lib/gitops.sh:13 'config_mirror=.gitops/donhang-config.git'.",
+        "source": "examples/don-hang@stage-3 scripts/devops/dr-drill.sh:30-40; scripts/lib/gitops.sh:13"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "git-clone --mirror: 'not only maps local branches of the source to local branches of the target, it maps all refs (including remote-tracking branches, notes etc.)'; implies --bare. git-push --mirror: 'specifies that all refs under refs/ (which includes but is not limited to refs/heads/, refs/remotes/, and refs/tags/) be mirrored to the remote repository.'",
+        "source": "https://git-scm.com/docs/git-clone ; https://git-scm.com/docs/git-push"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "dr-drill.sh:49 'tofu-env.sh staging platform destroy -auto-approve -no-color', :50 same for cluster, :51 'drill_started=$SECONDS'.",
+        "source": "examples/don-hang@stage-3 scripts/devops/dr-drill.sh:48-51"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Round 2: lesson now reads 'makes destroy skip its interactive approval', matching the OpenTofu apply page: -auto-approve 'Skips interactive approval of plan before applying.' destroy page: the command 'accepts most of the options that tofu apply accepts'.",
+        "source": "https://opentofu.org/docs/cli/commands/apply/ ; https://opentofu.org/docs/cli/commands/destroy/"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "envs/staging/cluster/main.tf:9-11 module \"cluster\" (kind-cluster) name = \"donhang-staging\"; captured 'Plan: 1 to add' for it. tofu-env.sh:43-45 'up' applies cluster then platform. dr-drill.sh:53-77 matches the rebuild order (tofu up; sealed-secrets-install, argocd-install; git-server.yaml + push --mirror; apps/staging.yaml).",
+        "source": "examples/don-hang@stage-3 deploy/tofu/envs/staging/cluster/main.tf:9-12; scripts/devops/tofu-env.sh:43-45; scripts/devops/dr-drill.sh:53-77"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "dr-drill.sh:100 'app_wait Synced Healthy \"\" 1200'; gitops.sh app_wait prints '$app: $sync, $health' once both match and no sync is Running. dr-drill.txt: 'staging: Synced, Healthy'.",
+        "source": "examples/don-hang@stage-3 scripts/devops/dr-drill.sh:100; scripts/lib/gitops.sh:112-127; outputs/stage-3/scripts/devops/dr-drill.txt"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "main.tf: resource kubernetes_namespace_v1 \"donhang\" and kubernetes_secret_v1 \"sealing_key\" (name sealing-key, namespace kube-system, label sealedsecrets.bitnami.com/sealed-secrets-key = active, type kubernetes.io/tls, tls.crt/tls.key from var.sealing_certificate/var.sealing_private_key). envs/staging/platform/main.tf reads them with file(.../secrets/sealing.crt|key).",
+        "source": "examples/don-hang@stage-3 deploy/tofu/modules/donhang-platform/main.tf; deploy/tofu/envs/staging/platform/main.tf:31-32"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Sealed Secrets README: keys 'are labeled with sealedsecrets.bitnami.com/sealed-secrets-key'; at startup the controller will 'Search for these keys and add them to its local store if they are labeled as active'; 'A value of 0 will deactivate automatic key renewal.' Execution: controller.yaml args --key-renew-period=0 (namespace kube-system, :13); sealed-secrets-install.txt lists only 'sealing-key active' in kube-system after install.",
+        "source": "https://github.com/bitnami-labs/sealed-secrets (README); examples/don-hang@stage-3 deploy/sealed-secrets/controller.yaml:13, 45; outputs/stage-3/scripts/devops/sealed-secrets-install.txt"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "dr-drill.sh:57-61: 'if [ \"$without_key\" = yes ]; then # As if secrets/sealing.key had been lost ... kubectl delete secret sealing-key -n kube-system; fi' before 'sealed-secrets-install.sh --install-only'.",
+        "source": "examples/don-hang@stage-3 scripts/devops/dr-drill.sh:57-61"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "dr-drill-without-sealing-key.txt: 'no key could decrypt secret (POSTGRES_PASSWORD)'; '== Secrets in donhang' -> 'none'; db Pod 'CreateContainerConfigError'; 'the api (wave 2): never applied, the sync stops at wave 0' -> 'Error from server (NotFound): deployments.apps \"api\" not found'.",
+        "source": "examples/don-hang@stage-3 outputs/stage-3/scripts/devops/dr-drill-without-sealing-key.txt"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "K8s Secrets: 'By default, Secrets are required. None of a Pod's containers will start until all non-optional Secrets are available.' 'If the Secret cannot be fetched (perhaps because it does not exist ...) the kubelet periodically retries running that Pod.' The reason string CreateContainerConfigError is not in that page; it is shown by the recorded run (dr-drill-without-sealing-key.txt).",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/configuration/secret.md:501-515; outputs/stage-3/scripts/devops/dr-drill-without-sealing-key.txt"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "Argo CD Sync Phases and Waves: 'Order all resources according to their wave (lowest to highest)'; the wave to apply is 'the first number where any resource is out-of-sync or unhealthy'; 'It repeats this process until all phases and waves are in-sync and healthy.' Execution: api (sync-wave 2) NotFound while db (wave 0) is unhealthy.",
+        "source": "https://argo-cd.readthedocs.io/en/release-3.1/user-guide/sync-waves/ ; envs/staging/api.yaml:15, db.yaml:15"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "dev-secrets.sh:45-46: 'Lose it and no state written with it can be read again; it is in no backup.' (TOFU_STATE_PASSPHRASE to .env, :47-50) and :62-63 'the private key exists nowhere else, so this folder is in no backup either.' (secrets/sealing.key/.crt, :64-69). STAGE.md: 'Nothing under secrets/ or backups/ is committed.'",
+        "source": "examples/don-hang@stage-3 scripts/dev-secrets.sh:43-69; STAGE.md:97"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "OpenTofu: 'OpenTofu state can contain sensitive data'; encryption: 'your state and plan files become unrecoverable without the appropriate encryption key'; PBKDF2 derives a key from a passphrase. Repo: both staging layers' backend.tf use backend \"pg\" (schema staging_cluster / platform) in donhang_tofu with pbkdf2 passphrase = var.state_passphrase, enforced = true; tofu-env.sh:20 PG_CONN_STR to localhost:5432/donhang_tofu.",
+        "source": "https://opentofu.org/docs/language/state/encryption/ ; deploy/tofu/envs/staging/cluster/backend.tf:1-27; platform/backend.tf; scripts/devops/tofu-env.sh:20"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "backup-logical.sh:18-19: 'for db in donhang donhang_notifications donhang_payments donhang_tofu keycloak; do pg_dump ... --dbname \"$db\" --format custom'.",
+        "source": "examples/don-hang@stage-3 scripts/devops/backup-logical.sh:18-19"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "K8s Volumes: 'For a Pod that defines an emptyDir volume, the volume is created when the Pod is assigned to a node.' 'When a Pod is removed from a node for any reason, the data in the emptyDir is deleted permanently.' Repo: envs/staging/db.yaml:1-2 'its data in an emptyDir, so a new db Pod starts from db-init.yaml's schema and seed', :63 'emptyDir: {}'. dr-drill.sh has no restore step.",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/storage/volumes.md:161-167; examples/don-hang@stage-3 deploy/gitops/config-repo/envs/staging/db.yaml:1-2, 63"
+      },
+      {
+        "n": 19,
+        "verdict": "verified",
+        "evidence": "STAGE.md:137-138: '`dr-drill.sh` rebuilds staging with only the Application `apps/staging.yaml`; Traefik, the edge and the policies come back with their own scripts.' Role: cluster/main.tf:15-17 'Traefik listens on node ports 30080 (HTTP) and 30443 (HTTPS) of this node'; Traefik docs: 'Traefik is an open-source Application Proxy'.",
+        "source": "examples/don-hang@stage-3 STAGE.md:137-138; deploy/tofu/envs/staging/cluster/main.tf:14-21; https://doc.traefik.io/traefik/"
+      },
+      {
+        "n": 20,
+        "verdict": "verified",
+        "evidence": "dr-drill.sh:14-23 step()/finish_step() append '$(( SECONDS - step_started )) s  $step_name'; :107 printf '%s\\n' \"${timings[@]:1}\" (skips the disaster step); :108 'total: $(( SECONDS - drill_started )) s from losing the cluster to Healthy'.",
+        "source": "examples/don-hang@stage-3 scripts/devops/dr-drill.sh:12-23, 104-108"
+      },
+      {
+        "n": 21,
+        "verdict": "verified",
+        "evidence": "Round 2: lesson now says 'measured recovery time for the steps the drill runs; until the missing steps are in the list, it is a lower bound', matching the code: total runs from drill_started (:51, after both destroys) to Healthy (:108), and STAGE.md:137-138 lists pieces the drill does not rebuild.",
+        "source": "examples/don-hang@stage-3 scripts/devops/dr-drill.sh:51, 108; STAGE.md:137-138"
+      },
+      {
+        "n": 22,
+        "verdict": "not-needed",
+        "evidence": "Round 2: now a conditioned judgement ('often exposes a missing step a review overlooked') instead of the round-1 absolute 'Only running them shows a missing step'; no documentation decides it, and the example (Git server before Argo CD sync) is true of dr-drill.sh step 3/4 order."
+      },
+      {
+        "n": 23,
+        "verdict": "verified",
+        "evidence": "Sealed Secrets README: 'without that private key used to encrypt a given SealedSecrets, you can't decrypt it' (so with it, you can). OpenTofu encryption: 'If an attacker were to gain access to your state file, they should not be able to read it and use the sensitive values'. dev-secrets.sh comments state both are kept in no backup.",
+        "source": "https://github.com/bitnami-labs/sealed-secrets ; https://opentofu.org/docs/language/state/encryption/ ; scripts/dev-secrets.sh"
+      },
+      {
+        "n": 24,
+        "verdict": "verified",
+        "evidence": "tofu-env.sh:13 'scripts/dev-secrets.sh >/dev/null' before any tofu call. dev-secrets.sh:47-49 'if ! grep -q ^TOFU_STATE_PASSPHRASE= .env ...; then echo TOFU_STATE_PASSPHRASE=$(openssl rand -hex 32) >> .env'; :64-67 'if [ ! -f secrets/sealing.key ]; then ... openssl req -x509 -newkey rsa:4096 ...'. dr-drill.sh (whole file): no tofu state show/pull or output of the key; the platform layer reads file(secrets/sealing.key). (source_hint line :12 is :13.)",
+        "source": "examples/don-hang@stage-3 scripts/devops/tofu-env.sh:13; scripts/dev-secrets.sh:47-69; scripts/devops/dr-drill.sh"
+      },
+      {
+        "n": 25,
+        "verdict": "verified",
+        "evidence": "Round 3: s5 split into two paragraphs, wording unchanged. dr-drill.sh:14-19 step(): 'echo \"== $1\"', 'step_started=$SECONDS'. gitops.sh:27-41 git_server_open: 'port-forward -n git service/gitea 13000:3000'; :42-45 git_server_close kills it; :47-51 git_auth: 'git -c http.extraHeader=\"Authorization: Basic $basic\"'. dr-drill.sh:68-72 'gitea admin user create --admin' and POST /api/v1/user/repos.",
+        "source": "examples/don-hang@stage-3 scripts/devops/dr-drill.sh:14-19, 65-74; scripts/lib/gitops.sh:24-52"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "code",
+        "text": "Carried from round 2. The captured output shows the platform destroy as 'Resources: 1 destroyed.' while the prose says the platform layer has two resources (and the --without-sealing-key capture shows 2). Likely the normal run was captured right after a --without-sealing-key run, whose deleted sealing-key Secret OpenTofu no longer found. Round 3 left it to a repo change; dr-drill.txt is unchanged.",
+        "quote": "Destroy complete! Resources: 1 destroyed.",
+        "fix": "Re-capture outputs/stage-3/scripts/devops/dr-drill.txt after a normal run (prompt 08 / capture-output) so the platform destroy shows 2, or add one sentence: \"The first count depends on what the previous run left; after a run with --without-sealing-key the Secret is already gone.\""
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-14T21:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (prompt 05, junior reader, round 3 targeted re-review)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 3,
+        "kind": "style",
+        "text": "Carried from round 2 (round 1 originally). Mirror clone, Keys outside the backups and Measured recovery time are still separate bullets without bold, so they look less important than DR drill although the rest of the lesson leans on them. Round 3 skipped it on purpose (bold reserved for vocab); a minor, not blocking.",
+        "quote": "- Mirror clone — a copy of every branch and tag of a Git repository, kept outside its server",
+        "fix": "Fold the three into plain sentences under the DR drill bullet, so the list does not suggest four equal concepts with one of them highlighted."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

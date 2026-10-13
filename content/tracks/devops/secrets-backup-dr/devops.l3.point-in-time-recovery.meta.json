@@ -1,0 +1,204 @@
+{
+  "id": "devops.l3.point-in-time-recovery",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-10-14T12:00:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "PostgreSQL writes every change to the write-ahead log before the data files are changed; replaying the WAL from a known starting point (a checkpoint or base backup) redoes every change made since.",
+      "kind": "behavior",
+      "source_hint": "PostgreSQL 17 docs: 28.3 Write-Ahead Logging (WAL); 25.3 Continuous Archiving and Point-in-Time Recovery (intro)",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 2,
+      "text": "pg_basebackup takes a base backup of a running PostgreSQL server; it always copies the whole server (every database), never a single database.",
+      "kind": "behavior",
+      "source_hint": "PostgreSQL 17 docs: pg_basebackup Description ('backups are always taken of the entire database cluster')",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 3,
+      "text": "With archive_mode on, the server runs archive_command for each completed WAL segment (file); in the command %p is replaced by the segment's path and %f by its file name.",
+      "kind": "syntax",
+      "source_hint": "PostgreSQL 17 docs: 25.3.1 Setting Up WAL Archiving; 19.5.3 Archiving (archive_mode, archive_command)",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 4,
+      "text": "PITR starts a server from a base backup and replays archived WAL (fetched by restore_command, with recovery.signal present) up to recovery_target_time; transactions committed after the target are not applied.",
+      "kind": "behavior",
+      "source_hint": "PostgreSQL 17 docs: 25.3.5 Recovering Using a Continuous Archive Backup; 19.5.5 Recovery Target (recovery_target_time, recovery_target_inclusive)",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 5,
+      "text": "Recovery from a base backup and archived WAL restores the whole server, so every database on it returns to the same moment; one database cannot be recovered to a different time on its own.",
+      "kind": "behavior",
+      "source_hint": "PostgreSQL 17 docs: 25.3 Continuous Archiving (works on the entire cluster); pg_basebackup Description",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 6,
+      "text": "Changes in a WAL segment not yet completed and archived exist only on the live server; with archiving, the data lost with the server is the WAL not yet archived.",
+      "kind": "behavior",
+      "source_hint": "PostgreSQL 17 docs: 25.3.1 Setting Up WAL Archiving (archive_command only invoked on completed segments; archive_timeout paragraph)",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 7,
+      "text": "If archive_command exits non-zero, PostgreSQL treats archiving as failed, retries the same segment periodically, and does not remove or recycle the segment until it is archived. test ! -f refuses to overwrite an existing archive file.",
+      "kind": "behavior",
+      "source_hint": "PostgreSQL 17 docs: 25.3.1 Setting Up WAL Archiving ('zero exit status if and only if it succeeds'; 'will not be removed or recycled'; test ! -f example)",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 8,
+      "text": "archive_timeout: when greater than zero, the server switches to a new WAL segment once that many seconds have elapsed since the last switch and there has been database activity, so a partly filled segment gets archived; db sets it to 60.",
+      "kind": "behavior",
+      "source_hint": "PostgreSQL 17 docs: 19.5.3 Archiving (archive_timeout); examples/don-hang @ stage-3 docker-compose.yml:87",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 9,
+      "text": "With archive_timeout=60 on a quiet server, if db's own files are lost while the archive survives, the WAL not yet archived covers at most about a minute of changes; losing the machine that also holds wal-archive is not covered.",
+      "kind": "opinion",
+      "source_hint": "Follows from claim 8; course definition of RPO (devops.l3.rpo-and-rto)",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 10,
+      "text": "docker-compose.yml lines 74-87 (stage-3) run db with archive_mode=on, an archive_command that compresses each segment with gzip into /wal-archive/%f.gz (the wal-archive volume, a local Docker volume on the same machine), and archive_timeout=60.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3 docker-compose.yml:74-87, 100, 653",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 11,
+      "text": "base-backup.sh (outside the excerpts) runs pg_basebackup against db into /backups/base.new, then replaces /backups/base with it, keeping only the newest base backup.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3 scripts/devops/base-backup.sh:12-17",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 12,
+      "text": "pg_switch_wal() forces a switch to a new WAL file, so the current segment is completed and can be archived; pg_walfile_name gives that segment's file name; pg_stat_archiver.last_archived_wal reports the name of the last segment archived successfully.",
+      "kind": "syntax",
+      "source_hint": "PostgreSQL 17 docs: 9.28.3 Backup Control Functions (pg_switch_wal, pg_walfile_name); 27.2 pg_stat_archiver view",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 13,
+      "text": "pitr.sh lines 34-58 delete order 3's items, switch and wait for the segment to be archived, recreate db-pitr (profile pitr) with RECOVERY_TARGET_TIME=$target, and wait until pg_get_wal_replay_pause_state() returns paused, else print 'db-pitr did not reach recovery_target_time' and exit 1.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3 scripts/devops/pitr.sh:34-58",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 14,
+      "text": "Outside the excerpt, pitr.sh: on_db/on_pitr run psql on db/db-pitr, value prints a query's result from db (8-10); runs base-backup.sh if none exists (13-16); $target = clock_timestamp() a second before the DELETE (29-31); COPY rows back (65-68).",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3 scripts/devops/pitr.sh:8-16, 29-31, 61-68; outputs/stage-3/scripts/devops/pitr.txt (0 rows on db, 2 on db-pitr, COPY 2)",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 15,
+      "text": "db-pitr: separate container, profile pitr, backups and wal-archive mounted read-only; db keeps running. start.sh unpacks the base backup only into an empty data dir, then sets recovery_target_time and recovery_target_action=pause, so it pauses read-only at the target.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3 docker-compose.yml:612-630; db/pitr/start.sh; PostgreSQL 17 docs 19.5.5 recovery_target_action (pause), 26.4 Hot Standby",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 16,
+      "text": "A read replica applies every change streamed from the primary, a mistaken DELETE included, so it holds the newest data, not an earlier moment.",
+      "kind": "behavior",
+      "source_hint": "PostgreSQL 17 docs: 26.2 Log-Shipping Standby Servers / 26.2.5 Streaming Replication",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 17,
+      "text": "A base backup on its own restores the server only as of (the end of) the backup; reaching any later moment requires the archived WAL from the backup's start onward, and replay cannot go past the first missing segment.",
+      "kind": "behavior",
+      "source_hint": "PostgreSQL 17 docs: 25.3 Continuous Archiving (need a continuous sequence of archived WAL files extending back to the base backup); 25.3.5",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 18,
+      "text": "Recovery to a target stops between committed transactions: a transaction is applied only if it committed before the target, so one not yet committed at that moment is left out entirely, never half applied.",
+      "kind": "behavior",
+      "source_hint": "PostgreSQL 17 docs: 19.5.5 Recovery Target (stop point defined by transaction commit; recovery_target_inclusive)",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 19,
+      "text": "When a mistake touches only some rows, recovering into a separate server and copying those rows back is preferable to replacing the live server, if other databases and tables have been written since the target moment.",
+      "kind": "opinion",
+      "source_hint": "Design choice of pitr.sh (docker-compose.yml:612-615 comment); follows from claim 5",
+      "needs_verification": false,
+      "section": 6
+    },
+    {
+      "n": 20,
+      "text": "The db server hosts donhang, donhang_payments and keycloak (among others), so db-pitr recovers all of them to the same moment.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3 docker-compose.yml:351,367; db/databases.sql",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 21,
+      "text": "If a recovery target is configured but archive recovery ends before the target is reached, the server shuts down with a fatal error instead of pausing.",
+      "kind": "behavior",
+      "source_hint": "PostgreSQL 17 docs: 19.5.6 Recovery Target (end of recovery before target)",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 5
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [1, 2, 3, 4, 5, 6],
+    "outline_items_missing": [],
+    "beyond_scope": []
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1450,
+    "notes": "generate: blocks docker-compose.yml 74-87, pitr.sh 34-58; base-backup.sh, start.sh in prose. apply-review: claims 20 (databases), 21 (fatal error, s5 wording); s3 commit rule (claim 18); s5 one-minute vs lost machine, gzip, test ! -f retry, pitr.sh helpers, pg_walfile_name, db-pitr volume removal; s2 psql, WHERE; s7 base backup auto-taken. Cut equal prose elsewhere. Quiz minors left to /quiz."
+  },
+  "open_questions": [],
+  "repo_changes_needed": []
+}

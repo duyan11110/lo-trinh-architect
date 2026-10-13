@@ -1,0 +1,171 @@
+{
+  "id": "devops.l3.restore-testing",
+  "technical": {
+    "reviewed_at": "2026-10-14T18:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "stage-2 scripts/terminal/backup-db.sh:11-12 runs `pg_dump ... --schema-only --no-owner --no-privileges > \"$file\"` under `set -euo pipefail`; captured outputs/stage-2/scripts/terminal/backup-db.txt reaches the last line, so pg_dump returned 0. PG17 pg_dump: \"-s --schema-only: Dump only the object definitions (schema), not data.\"",
+        "source": "examples/don-hang @ stage-2 scripts/terminal/backup-db.sh; https://www.postgresql.org/docs/17/app-pgdump.html"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Round 2: text now matches round-1 suggested_text. PG17 25.3.1: \"a nonzero status tells PostgreSQL that the file was not archived; it will try again periodically until it succeeds.\" \"The pg_wal/ directory will continue to fill with WAL segment files until the situation is resolved. (If the file system containing pg_wal/ fills up, PostgreSQL will do a PANIC shutdown...)\"",
+        "source": "https://www.postgresql.org/docs/17/continuous-archiving.html"
+      },
+      {
+        "n": 3,
+        "verdict": "not-needed",
+        "evidence": "Conclusion drawn from claims 1-2 and the fixed list at backup-logical.sh:18 (stage-3); the added sentence 'the WAL archive is tested by recovering from it' points to devops.l3.point-in-time-recovery, no new external fact."
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "restore-test.sh (stage-3) lines 20-23: `docker run --detach --rm --name donhang-restore-test --network none --env POSTGRES_HOST_AUTH_METHOD=trust --volume donhang_backups:/backups:ro postgres:17.6-alpine` and `trap 'docker rm --force donhang-restore-test >/dev/null' EXIT`. Compose project `name: donhang` makes the volume donhang_backups.",
+        "source": "examples/don-hang @ stage-3 scripts/devops/restore-test.sh:20-23; docker-compose.yml:3,652"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Docker none driver: use --network none to \"completely isolate the networking stack of a container\"; inside it \"only the loopback device is created.\" docker run reference, --rm: \"Automatically remove the container and its associated anonymous volumes when it exits\".",
+        "source": "https://docs.docker.com/engine/network/drivers/none/; https://docs.docker.com/reference/cli/docker/container/run/"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "PG17 psql: \"psql is a terminal-based front-end to PostgreSQL.\" PG17 25.1.1: \"Before restoring an SQL dump, all the users who own objects or were granted permissions on objects in the dumped database must already exist. If they do not, the restore will fail to recreate the objects with the original ownership and/or permissions.\" restore-test.sh:30 runs globals.sql before the pg_restore loop (31-34).",
+        "source": "https://www.postgresql.org/docs/17/app-psql.html; https://www.postgresql.org/docs/17/backup-dump.html; examples/don-hang @ stage-3 scripts/devops/restore-test.sh:29-34"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "PG17 pg_restore -C: \"Create the database before restoring into it.\" \"the database named with -d is used only to issue the initial DROP DATABASE and CREATE DATABASE commands.\" PG17 18.2: \"After initialization, a database cluster will contain a database named postgres, which is meant as a default database for use by utilities, users and third party applications.\"",
+        "source": "https://www.postgresql.org/docs/17/app-pgrestore.html; https://www.postgresql.org/docs/17/creating-cluster.html"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Round 2: 'exit non-zero' removed. PG17 pg_restore -e: \"Exit if an error is encountered while sending SQL commands to the database. The default is to continue and to display a count of errors at the end of the restoration.\" Lesson §5 and q3 now say only 'stop at the first error'.",
+        "source": "https://www.postgresql.org/docs/17/app-pgrestore.html"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Bash manual, set -e: \"Exit immediately if a pipeline (..., which may consist of a single simple command), a list, or a compound command returns a non-zero status.\" Exceptions are while/until conditions, if tests, &&/|| lists, non-final pipeline members, `!`; the pg_restore call in the for body (restore-test.sh:32) is none of these.",
+        "source": "https://www.gnu.org/software/bash/manual/html_node/The-Set-Builtin.html; examples/don-hang @ stage-3 scripts/devops/restore-test.sh:4,31-34"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "restore-test.sh 39-53 (stage-3): reads counts.txt, `SELECT count(*) FROM $table` on --dbname donhang, prints `same`/`DIFFERENT`, `failed=1` on difference, prints `restore and check took ... s`, `exit \"$failed\"`.",
+        "source": "examples/don-hang @ stage-3 scripts/devops/restore-test.sh:39-53"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "backup-logical.sh:28-37 (stage-3): count_rows runs `pg_restore --data-only --table \"$1\" --file - \"$dir/donhang.dump\" | awk ...` for `orders order_items customers`, written to \"$dir/counts.txt\". Matches §5's new sentence 'reads that table's rows back out of donhang.dump and counts them'.",
+        "source": "examples/don-hang @ stage-3 scripts/devops/backup-logical.sh:28-37"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "outputs/stage-3/scripts/devops/restore-test.txt is identical to the lesson's output block (five restored lines in that order, `customers: 5 in counts.txt, 5 restored, same`). outputs/unstable.regex masks the logical dir, orders/order_items counts and the seconds.",
+        "source": "examples/don-hang @ stage-3 outputs/stage-3/scripts/devops/restore-test.txt; outputs/unstable.regex"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "restore-test.sh:8 finds the newest dir, :13 echoes it, :14 `started=$(date +%s)`, :20-27 start the container and wait for pg_isready, :52 prints `$(( $(date +%s) - started ))`. 'started the time it was found' and 'container start included' both hold.",
+        "source": "examples/don-hang @ stage-3 scripts/devops/restore-test.sh:8,13-14,20-27,52"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "Code reading: restore-test.sh:31 loops over `ls $newest/*.dump` only, :39-50 compare counts.txt lines only; backup-logical.sh:18 fixed list, :31-37 counts COPY rows inside the dump, awk `END{print rows+0}` gives 0 for a dump without data, and SELECT count(*) of an empty restored table is 0, so 0 = 0 prints `same`.",
+        "source": "examples/don-hang @ stage-3 scripts/devops/restore-test.sh:31,39-50; backup-logical.sh:18,31-37"
+      },
+      {
+        "n": 15,
+        "verdict": "not-needed",
+        "evidence": "Conditional reasoning on the course's own RTO definition (devops.l3.rpo-and-rto) and outline item 4; no external fact asserted."
+      },
+      {
+        "n": 16,
+        "verdict": "not-needed",
+        "evidence": "Recommendation stated with its condition ('When backups run on a schedule'), matches outline item 5; lab running it by hand matches depth_notes. No external fact."
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "docker-compose.yml:70 (stage-3) `POSTGRES_USER: donhang` on db, so the donhang role exists there; PG17 25.1.1 requires owning roles to exist before restore (claim 6), so a test on db cannot detect a missing globals.sql. Remaining parts are conditional judgement from the outline misconception.",
+        "source": "examples/don-hang @ stage-3 docker-compose.yml:70; https://www.postgresql.org/docs/17/backup-dump.html"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "Execution: the stage-2 schema-only pg_dump completed under set -e (outputs/stage-2/scripts/terminal/backup-db.txt reaches its last line), i.e. exit 0 with options that drop all data. The PG17 pg_dump page has no exit-status section; the lesson's sentence asserts nothing beyond this.",
+        "source": "examples/don-hang @ stage-2 outputs/stage-2/scripts/terminal/backup-db.txt; https://www.postgresql.org/docs/17/app-pgdump.html"
+      },
+      {
+        "n": 19,
+        "verdict": "unverified",
+        "evidence": "PG17 20.4 supports the meaning of trust: \"PostgreSQL assumes that anyone who can connect to the server is authorized to access the database with whatever database user name they specify (even superuser names).\" That the image's POSTGRES_HOST_AUTH_METHOD=trust writes trust into pg_hba is documented only on the Docker Hub postgres page, not under docs.docker.com or postgresql.org; refs/docker-docs shows it only in a compose sample. Docker not run.",
+        "source": "https://www.postgresql.org/docs/17/auth-trust.html; refs/docker-docs/content/guides/postgresql.md:1062"
+      },
+      {
+        "n": 20,
+        "verdict": "unverified",
+        "evidence": "pg_isready part verified, PG17: \"pg_isready is a utility for checking the connection status of a PostgreSQL database server\"; returns \"1 if the server is rejecting connections (for example during startup)\". The image's temporary init server with no TCP listener is not in docs.docker.com, postgresql.org or refs/ (guides/postgresql.md:414 says only that initdb and init scripts run before starting PostgreSQL). Docker not run.",
+        "source": "https://www.postgresql.org/docs/17/app-pg-isready.html; refs/docker-docs/content/guides/postgresql.md:414"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "diagram",
+        "text": "The new edge labels every error under 'Restore roles, then each database' as a non-zero exit. The roles step (restore-test.sh:30) runs psql -f without ON_ERROR_STOP and discards stderr; PG17 psql Exit Status returns 3 for a script error only if ON_ERROR_STOP was set, otherwise 0. A failing globals.sql statement does not end the test; only the later pg_restore error does.",
+        "quote": "R -->|\"any restore error\"| E[\"non-zero exit\"]",
+        "fix": "Relabel the edge `\"a pg_restore error\"` (or `\"a database restore fails\"`), matching the prose 'A failed restore stops the test with a non-zero exit code'."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "Claims 19-20 (new) rest on postgres-image behaviour (POSTGRES_HOST_AUTH_METHOD writes trust to pg_hba; the init server listens on no TCP address) that no allowed docs root documents, and the reviewer could not run Docker. The sentences match the code's own comment (restore-test.sh:25-26) but stay unverified.",
+        "quote": "The image first runs a short setup server that takes no TCP connections",
+        "fix": "Add to claims 19 and 20 a source_hint with lab evidence, e.g. `docker exec donhang-restore-test grep trust /var/lib/postgresql/data/pg_hba.conf` and the first container log lines showing the temporary server start; or soften to 'the image starts PostgreSQL in two steps, so the script waits until pg_isready says the server accepts connections'."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-14T19:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (review-junior, prompt 05, round 2 targeted)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "style",
+        "text": "New in round 2. The sentence wraps the definition of set -euo pipefail inside 'With ..., that ends ...', so on first read 'that' seems to refer to 'a line'. I had to read it twice to see that the failed pg_restore is what ends the test.",
+        "quote": "With `set -euo pipefail`, a line at the top of the script that makes it stop when a command like this fails, that ends the test as a failure.",
+        "fix": "Split into two sentences: '`set -euo pipefail`, a line at the top of the script, makes it stop when a command like this fails. So a failed restore ends the test as a failure.'"
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}
