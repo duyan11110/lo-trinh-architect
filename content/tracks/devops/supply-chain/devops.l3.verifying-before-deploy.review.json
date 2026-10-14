@@ -1,0 +1,137 @@
+{
+  "id": "devops.l3.verifying-before-deploy",
+  "technical": {
+    "reviewed_at": "2026-10-14T23:59:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "gitops-deploy.sh: to=${2:-1.0.0}; line 22 rewrites envs/staging/api.yaml and migrate-hook.yaml; line 24 config_commit \"Deploy api $to to staging\". outputs/stage-3/scripts/devops/gitops-deploy.txt: 'staging: Synced, Healthy' / '2 ghcr.io/duyan11110/donhang-api:1.0.0'. outputs/stage-3/scripts/devops/verify-image.txt: 'donhang-api:1.0.0 -> ...@sha256:1d08...' then 'Error: no signatures found' / 'not verified: refused'.",
+        "source": "examples/don-hang scripts/devops/gitops-deploy.sh; outputs/stage-3/scripts/devops/gitops-deploy.txt; outputs/stage-3/scripts/devops/verify-image.txt"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Kubernetes docs, Images: \"Digests are hashes of the image's content, and are immutable. Tags can be moved to point to different images, but digests are fixed.\" GHCR docs: write:packages scope is what lets a token \"upload container images\" (push), i.e. move a tag.",
+        "source": "https://kubernetes.io/docs/concepts/containers/images/ ; https://docs.github.com/packages/working-with-a-github-packages-registry/working-with-the-container-registry"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "deploy-verified.sh lines 17-30 read in examples/don-hang: digest_of for api and migrate (19-20), empty check with return 1 (21), verify-image.sh on \"$registry/donhang-api@$api\" and migrate@digest each '|| return 1' (22-23), perl rewrite to ':$tag\\@$api' (24-27), config_commit (29). Round 2: images.sh line 6 registry=ghcr.io/duyan11110; gitops.sh line 12 config_repo=.gitops/donhang-config confirm the new $registry/$config_repo sentence. Compared against the working tree (stage-3 is the newest tag).",
+        "source": "examples/don-hang scripts/devops/deploy-verified.sh; scripts/lib/images.sh line 6; scripts/lib/gitops.sh line 12 (working tree; stage-3 is the newest tag)"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "images.sh line 12: digest_of() { docker buildx imagetools inspect \"$1\" 2>/dev/null | sed -n 's/^Digest: *//p' | head -n 1; } — stderr discarded and no Digest line on failure, so output is empty for a missing image or an unreachable registry; deploy-verified.sh line 21 then echoes and returns 1 before any perl/commit.",
+        "source": "examples/don-hang scripts/lib/images.sh lines 8-13; scripts/devops/deploy-verified.sh line 21"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Kubernetes docs, Images, image name examples: \"registry.k8s.io/pause:3.5@sha256:1ff6c18f... — Image name with tag and digest. Only the digest will be used for pulling.\"",
+        "source": "https://kubernetes.io/docs/concepts/containers/images/"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Argo CD 3.1 docs, GnuPG verification: \"configure ArgoCD to only sync against commits that are signed in Git\"; \"only supported with Git repositories\" — nothing on images. Signed release assets page: cosign is for Argo CD's own images and points to admission/policy controllers for checking images before deploy. Execution: lab pins argocd v3.1.16 (deploy/argocd/install.yaml) and gitops-deploy.txt shows unsigned 1.0.0 synced 'Synced, Healthy'.",
+        "source": "https://argo-cd.readthedocs.io/en/release-3.1/user-guide/gpg-verification/ ; .../release-3.1/operator-manual/signed-release-assets/ ; outputs/stage-3/scripts/devops/gitops-deploy.txt"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Round 2: ledger text now equals the round-1 suggested_text. Lesson section 4: 'Refusing an unverified image for every Pod needs a check inside the cluster when a Pod is created; this module installs none.' No admission object in devops/supply-chain. k8s track.yaml outline of k8s.l3.admission-policies: require-image-digest only rejects images lacking '@sha256:'; 'CEL ... cannot tell whether a digest was signed'. The section 8 connection now states exactly that.",
+        "source": "content/tracks/k8s/track.yaml k8s.l3.admission-policies outline items 2, 4, 5; lesson sections 4 and 8"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "deploy/gitops/config-repo/envs/staging/api.yaml line 42: 'image: ghcr.io/duyan11110/donhang-api:sha-bb184243e4cafed6ae833ca61710608366214aa5' (tag only, no @sha256). migrate-hook.yaml line 21 likewise. Round 2 lesson names this file by path and drops the line number.",
+        "source": "examples/don-hang deploy/gitops/config-repo/envs/staging/api.yaml"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "deploy-verified.sh 32-36: no argument -> tags=(1.0.0 newest_published_tag); images.sh 15-16: newest commit whose api image ci.yml pushed. 37 before=; 40-43 failure path, exit 1 only if $# -gt 0. 47 app_refresh = kubectl annotate ... argocd.argoproj.io/refresh=normal; 50-51 app_wait_sync/app_wait wait for that revision, Synced Healthy (gitops.sh 105-140). 61-62 echo '== git log -- envs/staging'; git log -n 3. Matches round-2 prose ('lines 47-51', 'outside the excerpt').",
+        "source": "examples/don-hang scripts/devops/deploy-verified.sh 32-62; scripts/lib/images.sh 15-20; scripts/lib/gitops.sh 105-140 (working tree; stage-3 newest tag)"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Output block equals outputs/stage-3/scripts/devops/deploy-verified.txt. verify-image.sh line 28 prints '== $ref -> <name>@$digest' (reference given, then the digest checked); line 31 pipes cosign verify stderr, giving the 'Verification for' and three check lines. unstable.regex line 119 masks 'sha-<40 hex>@sha256:<64 hex>' as 'sha-...', so the round-2 sentence on the masked Pod line holds.",
+        "source": "examples/don-hang outputs/stage-3/scripts/devops/deploy-verified.txt; outputs/unstable.regex; scripts/devops/verify-image.sh 23-31"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "gitops.sh config_commit: 'git -C \"$config_repo\" add -A'; commit with -c user.name=\"$who\"; git_server_open; 'git_auth -C \"$config_repo\" push -q \"$git_server/$repo_path\" main'.",
+        "source": "examples/don-hang scripts/lib/gitops.sh lines 54-63"
+      },
+      {
+        "n": 12,
+        "verdict": "not-needed",
+        "evidence": "Opinion with condition and the opposing choice named (fail open leaves the gap open while verification is down). Paragraph moved in round 2 to section 4 (end of 'How it works'); ledger still says section 5, cosmetic. Required by outline item 6. Not behaviour/number/syntax.",
+        "source": "lesson section 4, third paragraph"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Kubernetes docs, Images: \"if the image registry were to change the code that the tag on that image represents, you might end up with a mix of Pods running the old and new code.\" and default pull policy IfNotPresent: \"the image is pulled only if it is not already present locally\" — hence nodes pulling at different times diverge.",
+        "source": "https://kubernetes.io/docs/concepts/containers/images/"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "gitops.sh line 12 config_repo=.gitops/donhang-config. With an argument, tags=(\"$1\"); failure path prints the two lines and line 43 exits 1 before the git log block. verify-image.sh line 31 pipes cosign verify output, giving 'Error: no signatures found' (verify-image.txt). Not executed here (no cluster/ghcr access in this session).",
+        "source": "examples/don-hang scripts/devops/deploy-verified.sh; scripts/lib/gitops.sh; outputs/stage-3/scripts/devops/verify-image.txt"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "Argo CD 3.1 Automated Sync: \"To enable automatic sync when the live cluster's state deviates from the state defined in Git ... selfHeal: true\". apps/staging.yaml lines 23-25: automated: selfHeal: true, prune: true. Round 2, zero issues: opened changed lesson sections 4, 5, 7, 8, quiz q1/q4, deploy-verified.sh, verify-image.sh, lib/images.sh, lib/gitops.sh, k8s track.yaml.",
+        "source": "https://argo-cd.readthedocs.io/en/release-3.1/user-guide/auto_sync/ ; examples/don-hang deploy/gitops/config-repo/apps/staging.yaml"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-14T23:59:30+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation, prompt 05, round 2 targeted)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "code",
+        "text": "Round 2, changed text. The old sentence 'The two Pods run the reference the commit wrote' was replaced; the new one explains the masking but no longer says what the leading '2' in the Pod line is. The loop pipes into 'sort | uniq -c', which I have not seen, so I cannot tell the 2 is a count of Pods.",
+        "quote": "The masked Pod line was `donhang-api:sha-<commit>@sha256:<digest>`",
+        "fix": "Add a few words: \"…`@sha256:<digest>`, and the leading `2` is the number of api Pods running it (`uniq -c` counts identical lines).\""
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "style",
+        "text": "Round 2, changed text. 'which the config repository starts from' is vague: the code edits `$config_repo/envs/staging/api.yaml`, and now a second path `deploy/gitops/config-repo/...` appears. I had to guess it is the starting copy in the don-hang repository that the clone was made from.",
+        "quote": "In `deploy/gitops/config-repo/envs/staging/api.yaml`, which the config repository starts from, that line names the api by its `sha-` tag only.",
+        "fix": "Replace 'which the config repository starts from' with 'the copy in the don-hang repository that the config repository was first created from'."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [
+        "What the leading '2' in the masked Pod output line means (count from 'uniq -c')."
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}
