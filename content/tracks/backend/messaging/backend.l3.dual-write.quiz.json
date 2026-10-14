@@ -1,0 +1,305 @@
+{
+  "lesson": "backend.l3.dual-write",
+  "stage": 3,
+  "questions": [
+    {
+      "id": "backend.l3.dual-write.q1",
+      "type": "single",
+      "bloom": "understand",
+      "difficulty": 2,
+      "skills": ["backend.messaging.outbox"],
+      "section_ref": 5,
+      "question": {
+        "en": "A teammate reads stage-2 `CancelOrderAsync` and says: \"`notifier.Send` already runs before `SaveChangesAsync`, so stage-2 has the same gap as a publish before the save.\" Why is that wrong?",
+        "vi": "Một đồng nghiệp đọc `CancelOrderAsync` ở stage-2 và nói: \"`notifier.Send` vốn đã chạy trước `SaveChangesAsync`, nên stage-2 cũng có khoảng hở giống như publish trước khi lưu.\" Vì sao nói vậy là sai?"
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "`notifier.Send` only adds a row to the same `DonHangDbContext`, so one save stores both or neither.",
+          "vi": "`notifier.Send` chỉ thêm một dòng vào cùng `DonHangDbContext`, nên một lần lưu sẽ lưu cả hai hoặc không gì cả."
+        },
+        {
+          "id": "b",
+          "en": "`notifier.Send` runs inside the database transaction, and a rollback takes back what it sent.",
+          "vi": "`notifier.Send` chạy bên trong transaction của database, và rollback sẽ lấy lại những gì nó đã gửi.",
+          "misconception": "If the publish runs inside the database transaction, a rollback cancels the message too."
+        },
+        {
+          "id": "c",
+          "en": "`NotificationSender` waits a few seconds, so a failed save is noticed before any email goes out.",
+          "vi": "`NotificationSender` chờ vài giây, nên một lần lưu thất bại sẽ được phát hiện trước khi email nào được gửi."
+        },
+        {
+          "id": "d",
+          "en": "`CancelOrderAsync` catches `DbUpdateConcurrencyException` and saves again until it succeeds.",
+          "vi": "`CancelOrderAsync` bắt `DbUpdateConcurrencyException` và lưu lại cho tới khi thành công."
+        }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "`QueuedNotifier.Send` sends nothing; it adds a `pending` `notifications` row to the context that holds the order. The single `SaveChangesAsync` on line 47 then stores the new status and the email job together, or neither, so there is only one system and no dual write.",
+          "b": "The outcome is close, since nothing leaves the database at stage-2. But `Send` publishes nothing that a rollback would have to take back; it only adds a row. And a rollback never takes back a message another system already accepted.",
+          "c": "`NotificationSender` does pick rows up a few seconds later, so timing looks like the protection. But the reason is that a failed save never stores the row at all; there is nothing for it to pick up, however long it waits.",
+          "d": "Retrying sounds like a natural reaction to a conflict. But `CancelOrderAsync` does not catch it: the exception reaches the middleware, which answers `409`, and neither row is stored."
+        },
+        "vi": {
+          "correct": "`QueuedNotifier.Send` không gửi gì; nó thêm một dòng `notifications` ở trạng thái `pending` vào context đang giữ đơn hàng. Sau đó lời gọi `SaveChangesAsync` duy nhất ở dòng 47 lưu trạng thái mới và việc gửi email cùng nhau, hoặc không lưu gì, nên chỉ có một hệ thống và không có dual write.",
+          "b": "Kết quả thì gần đúng, vì ở stage-2 không có gì rời khỏi database. Nhưng `Send` không publish gì để rollback phải lấy lại; nó chỉ thêm một dòng. Và rollback không bao giờ lấy lại được message mà một hệ thống khác đã nhận.",
+          "c": "`NotificationSender` đúng là lấy dòng vài giây sau, nên trông như thời gian chờ là thứ bảo vệ. Nhưng lý do thật là một lần lưu thất bại không hề lưu dòng đó; không có gì để nó lấy, dù chờ bao lâu.",
+          "d": "Thử lại nghe như cách phản ứng tự nhiên khi có xung đột. Nhưng `CancelOrderAsync` không bắt exception đó: nó đi tới middleware, middleware trả `409`, và không dòng nào được lưu."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.dual-write.q2",
+      "type": "single",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["backend.messaging.outbox"],
+      "section_ref": 4,
+      "question": {
+        "en": "At stage-3, cancelling publishes \"order cancelled\" right after `SaveChangesAsync`. For order 12 the save succeeds, then the API process is killed before the publish runs. What is the state afterwards?",
+        "vi": "Ở stage-3, việc hủy đơn publish \"order cancelled\" ngay sau `SaveChangesAsync`. Với đơn 12, lần lưu thành công, rồi process của API bị kill trước khi publish kịp chạy. Sau đó trạng thái thế nào?"
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "Order 12 is cancelled in the database, and its message is published once the API is back.",
+          "vi": "Đơn 12 đã hủy trong database, và message của nó được publish khi API chạy lại.",
+          "misconception": "Publishing right after `SaveChangesAsync` is safe, since the order is already saved by then."
+        },
+        {
+          "id": "b",
+          "en": "Order 12 is cancelled in the database, and its customer never gets the email.",
+          "vi": "Đơn 12 đã hủy trong database, và khách hàng của đơn không bao giờ nhận được email."
+        },
+        {
+          "id": "c",
+          "en": "Order 12 is back to its old status, because the publish that belonged to its save never ran.",
+          "vi": "Đơn 12 trở về trạng thái cũ, vì lần publish đi kèm lần lưu của nó chưa bao giờ chạy."
+        },
+        {
+          "id": "d",
+          "en": "The message waits in `notifications.order-events` until Notifications reads it.",
+          "vi": "Message nằm chờ trong `notifications.order-events` cho tới khi Notifications đọc nó."
+        }
+      ],
+      "answer": ["b"],
+      "explanation": {
+        "en": {
+          "correct": "The save finished, so PostgreSQL has the cancellation. The message existed only in the process's memory, and the kill erased it; nothing in either system records that it is still due, so no email goes out.",
+          "a": "The order is saved, so it feels as if the hard part is done. But once the API runs again, nothing tells it that a message for order 12 is still due, so it never publishes one.",
+          "c": "If you picture the save and the publish as one unit, a missing publish would undo the save. But the save already finished in its own transaction; the publish was never part of it.",
+          "d": "Messages do wait in a queue while their receiver is down, so this sounds familiar. But that only applies to messages RabbitMQ accepted, and this one never left the API."
+        },
+        "vi": {
+          "correct": "Lần lưu đã xong, nên PostgreSQL có việc hủy đơn. Message chỉ tồn tại trong bộ nhớ của process, và lần kill đã xóa nó; không hệ thống nào ghi lại rằng vẫn còn nợ message đó, nên không có email nào được gửi.",
+          "a": "Đơn đã được lưu, nên có cảm giác phần khó đã xong. Nhưng khi API chạy lại, không có gì báo cho nó rằng còn nợ một message cho đơn 12, nên nó không bao giờ publish.",
+          "c": "Nếu hình dung lần lưu và lần publish là một khối, thì thiếu publish sẽ hoàn tác lần lưu. Nhưng lần lưu đã xong trong transaction riêng của nó; publish chưa bao giờ là một phần của transaction đó.",
+          "d": "Message đúng là nằm chờ trong queue khi bên nhận đang dừng, nên ý này nghe quen. Nhưng điều đó chỉ đúng với message RabbitMQ đã nhận, còn message này chưa hề rời khỏi API."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.dual-write.q3",
+      "type": "multi",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["backend.messaging.outbox"],
+      "section_ref": 6,
+      "question": {
+        "en": "A teammate keeps the publish right after `SaveChangesAsync` in `CancelOrderAsync` and wraps it in a `try`/`catch` that keeps retrying until RabbitMQ accepts the message. Which statements about this change are true? Select all that apply.",
+        "vi": "Một đồng nghiệp giữ lần publish ngay sau `SaveChangesAsync` trong `CancelOrderAsync` và bọc nó trong `try`/`catch` thử lại liên tục cho tới khi RabbitMQ nhận message. Những nhận định nào về thay đổi này là đúng? Chọn tất cả các đáp án đúng."
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "A crash of the API between the save and the publish still loses the message.",
+          "vi": "Nếu API bị crash giữa lần lưu và lần publish thì message vẫn bị mất."
+        },
+        {
+          "id": "b",
+          "en": "If RabbitMQ refuses one attempt while the API keeps running, a later attempt can still send it.",
+          "vi": "Nếu RabbitMQ từ chối một lần thử trong khi API vẫn chạy, một lần thử sau vẫn có thể gửi được."
+        },
+        {
+          "id": "c",
+          "en": "With the retry in place, every saved cancellation is sure to produce its message.",
+          "vi": "Có cơ chế thử lại rồi thì mọi lần hủy đơn đã lưu chắc chắn đều sinh ra message của nó.",
+          "misconception": "A `try`/`catch` around the publish is enough: if publishing fails, try it again."
+        },
+        {
+          "id": "d",
+          "en": "The order's new status is now stored only after RabbitMQ accepts the message.",
+          "vi": "Giờ trạng thái mới của đơn chỉ được lưu sau khi RabbitMQ nhận message."
+        }
+      ],
+      "answer": ["a", "b"],
+      "explanation": {
+        "en": {
+          "correct": "A `catch` block and a retry loop run only while the process is alive. They help when RabbitMQ refuses an attempt and the API keeps running, but a stop between the save and the publish skips them, and a loop held in memory ends with the process.",
+          "c": "The retry does cover RabbitMQ errors, so the gap can look closed. But the stop that loses messages is the process itself ending; nothing stored remembers the pending publish, so the retry never resumes.",
+          "d": "Adding a wait around the publish can make it feel as if the save waits too. But the publish still comes after `SaveChangesAsync`; the status is already stored before the first attempt."
+        },
+        "vi": {
+          "correct": "Khối `catch` và vòng lặp thử lại chỉ chạy khi process còn sống. Chúng giúp được khi RabbitMQ từ chối một lần thử mà API vẫn chạy, nhưng một lần dừng giữa lần lưu và lần publish sẽ bỏ qua chúng, và vòng lặp nằm trong bộ nhớ kết thúc cùng process.",
+          "c": "Cơ chế thử lại đúng là xử lý được lỗi từ RabbitMQ, nên khoảng hở trông như đã được bịt. Nhưng thứ làm mất message là chính process dừng lại; không có gì được lưu để nhớ lần publish còn dở, nên việc thử lại không bao giờ tiếp tục.",
+          "d": "Thêm việc chờ quanh lần publish có thể khiến ta nghĩ lần lưu cũng phải chờ. Nhưng publish vẫn đứng sau `SaveChangesAsync`; trạng thái đã được lưu trước cả lần thử đầu tiên."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.dual-write.q4",
+      "type": "truefalse",
+      "bloom": "analyze",
+      "difficulty": 4,
+      "skills": ["backend.messaging.outbox"],
+      "section_ref": 4,
+      "question": {
+        "en": "`CancelOrderAsync` is changed to start a transaction, save, publish \"order cancelled\", then finish the transaction. For order 7, the transaction fails at the end. Statement: the customer of order 7 gets no \"order cancelled\" email.",
+        "vi": "`CancelOrderAsync` được sửa thành: mở transaction, lưu, publish \"order cancelled\", rồi kết thúc transaction. Với đơn 7, transaction thất bại ở bước cuối. Nhận định: khách hàng của đơn 7 không nhận email \"order cancelled\" nào."
+      },
+      "options": [
+        {
+          "id": "a",
+          "polarity": "true",
+          "en": "True, because rolling the transaction back cancels the message along with the order's change.",
+          "vi": "Đúng, vì rollback transaction sẽ hủy message cùng với thay đổi của đơn.",
+          "misconception": "If the publish runs inside the database transaction, a rollback cancels the message too."
+        },
+        {
+          "id": "b",
+          "polarity": "true",
+          "en": "True, because RabbitMQ holds the message until PostgreSQL reports that the transaction finished.",
+          "vi": "Đúng, vì RabbitMQ giữ message cho tới khi PostgreSQL báo transaction đã kết thúc."
+        },
+        {
+          "id": "c",
+          "polarity": "false",
+          "en": "False, because the message reached RabbitMQ before the transaction failed, and the rollback undoes only PostgreSQL's change.",
+          "vi": "Sai, vì message đã tới RabbitMQ trước khi transaction thất bại, và rollback chỉ hoàn tác thay đổi của PostgreSQL."
+        },
+        {
+          "id": "d",
+          "polarity": "false",
+          "en": "False, because the publish runs after the transaction ends, when the cancellation is already stored.",
+          "vi": "Sai, vì publish chạy sau khi transaction kết thúc, lúc việc hủy đơn đã được lưu."
+        }
+      ],
+      "answer": ["c"],
+      "explanation": {
+        "en": {
+          "correct": "PostgreSQL rolls back the order's change, so order 7 is not cancelled. RabbitMQ is a separate server that already accepted the message, and the rollback cannot reach it, so Notifications can still email \"order cancelled\" about an order that was never cancelled.",
+          "a": "The publish sits between the start and the end of the transaction, so it looks covered by it. But a PostgreSQL transaction covers only PostgreSQL's own rows; RabbitMQ never joined it.",
+          "b": "It would be convenient if RabbitMQ waited for the database, and the code reads as if it does. But RabbitMQ knows nothing about PostgreSQL's transaction; it takes the message when the publish runs.",
+          "d": "The verdict is right, so this option is tempting. The reason is wrong: here the publish runs before the transaction ends, and that is why the failed transaction leaves a message about a change that was rolled back."
+        },
+        "vi": {
+          "correct": "PostgreSQL rollback thay đổi của đơn, nên đơn 7 không bị hủy. RabbitMQ là một server riêng đã nhận message, và rollback không chạm tới được nó, nên Notifications vẫn có thể gửi email \"order cancelled\" về một đơn chưa hề bị hủy.",
+          "a": "Lần publish nằm giữa lúc mở và lúc kết thúc transaction, nên trông như được transaction bao lại. Nhưng transaction của PostgreSQL chỉ bao các dòng của chính PostgreSQL; RabbitMQ chưa bao giờ tham gia.",
+          "b": "Sẽ tiện nếu RabbitMQ chờ database, và code đọc lên như thể nó chờ. Nhưng RabbitMQ không biết gì về transaction của PostgreSQL; nó nhận message ngay khi publish chạy.",
+          "d": "Kết luận thì đúng, nên phương án này dễ bị chọn. Nhưng lý do sai: ở đây publish chạy trước khi transaction kết thúc, và chính vì vậy transaction thất bại để lại một message về một thay đổi đã bị rollback."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.dual-write.q5",
+      "type": "order",
+      "bloom": "understand",
+      "difficulty": 2,
+      "skills": ["backend.messaging.outbox"],
+      "section_ref": 4,
+      "question": {
+        "en": "At stage-3, cancelling publishes \"order cancelled\" before `SaveChangesAsync`. Two staff members work on order 9 at the same time; one ships it, the other cancels it. Put the cancel's story in order.",
+        "vi": "Ở stage-3, việc hủy đơn publish \"order cancelled\" trước `SaveChangesAsync`. Hai nhân viên cùng lúc xử lý đơn 9; một người giao đơn, người kia hủy đơn. Sắp xếp diễn biến của lần hủy theo đúng thứ tự."
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "The ship has already saved, so the cancel's save throws `DbUpdateConcurrencyException` and writes nothing.",
+          "vi": "Lần giao đơn đã lưu trước, nên lần lưu của việc hủy ném `DbUpdateConcurrencyException` và không ghi gì."
+        },
+        {
+          "id": "b",
+          "en": "Both requests read order 9 while it is still waiting to be shipped.",
+          "vi": "Cả hai request đọc đơn 9 khi nó vẫn đang chờ giao."
+        },
+        {
+          "id": "c",
+          "en": "The customer reads \"order cancelled\" about an order that is on its way.",
+          "vi": "Khách hàng đọc \"order cancelled\" về một đơn đang trên đường giao."
+        },
+        {
+          "id": "d",
+          "en": "The cancel publishes \"order cancelled\", and RabbitMQ accepts the message.",
+          "vi": "Việc hủy publish \"order cancelled\", và RabbitMQ nhận message."
+        }
+      ],
+      "answer": ["b", "d", "a", "c"],
+      "explanation": {
+        "en": {
+          "correct": "Both read order 9, then the cancel publishes before it saves. Its save fails on the concurrency conflict and writes nothing, but the message is already in RabbitMQ, so the customer is told about a cancellation that never happened."
+        },
+        "vi": {
+          "correct": "Cả hai cùng đọc đơn 9, rồi việc hủy publish trước khi lưu. Lần lưu của nó thất bại vì xung đột đồng thời và không ghi gì, nhưng message đã nằm trong RabbitMQ, nên khách hàng được báo về một lần hủy chưa hề xảy ra."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.dual-write.q6",
+      "type": "scenario",
+      "bloom": "evaluate",
+      "difficulty": 4,
+      "skills": ["backend.messaging.outbox"],
+      "section_ref": 4,
+      "context": {
+        "en": "The team ships stage-3 this sprint: order emails move to `DonHang.Notifications`, the API no longer sends emails itself, and `CancelOrderAsync` must publish \"order cancelled\" to RabbitMQ. A proper fix for the gap is planned for the next sprint. During working hours, staff often edit the same order at once, and concurrency conflicts are common. The API process rarely crashes or is killed. A wrong \"order cancelled\" email makes customers refuse their parcel; a missing one costs at most a support ticket.",
+        "vi": "Team phát hành stage-3 trong sprint này: email về đơn hàng chuyển sang `DonHang.Notifications`, API không còn tự gửi email, và `CancelOrderAsync` phải publish \"order cancelled\" tới RabbitMQ. Cách sửa đúng cho khoảng hở được lên kế hoạch ở sprint sau. Trong giờ làm việc, nhân viên thường cùng lúc sửa một đơn, và xung đột đồng thời xảy ra thường xuyên. Process của API hiếm khi bị crash hay bị kill. Một email \"order cancelled\" sai khiến khách từ chối nhận hàng; một email bị thiếu thì tốn nhiều nhất một ticket hỗ trợ."
+      },
+      "question": {
+        "en": "Until the proper fix, where should the publish go?",
+        "vi": "Trong lúc chờ cách sửa đúng, lần publish nên đặt ở đâu?"
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "Before `SaveChangesAsync`, so the message already exists if anything fails later.",
+          "vi": "Trước `SaveChangesAsync`, để message đã tồn tại nếu sau đó có gì thất bại."
+        },
+        {
+          "id": "b",
+          "en": "Inside a transaction opened around the save and the publish, so a failed save also takes back the message.",
+          "vi": "Bên trong một transaction mở quanh lần lưu và lần publish, để lần lưu thất bại cũng lấy lại message.",
+          "misconception": "If the publish runs inside the database transaction, a rollback cancels the message too."
+        },
+        {
+          "id": "c",
+          "en": "After `SaveChangesAsync`, accepting that a crash in between can lose an email.",
+          "vi": "Sau `SaveChangesAsync`, chấp nhận rằng một lần crash ở giữa có thể làm mất email."
+        },
+        {
+          "id": "d",
+          "en": "Nowhere yet: leave line 46 as it is and publish nothing until the fix is ready.",
+          "vi": "Chưa đặt ở đâu cả: giữ nguyên dòng 46 và chưa publish gì cho tới khi có cách sửa."
+        }
+      ],
+      "answer": ["c"],
+      "explanation": {
+        "en": {
+          "correct": "Every place leaves a gap, so the choice is which failure you can live with. After the save, a message is lost only when the process stops in between, which here is rare; a wrong \"cancelled\" email, the costly failure, cannot happen because a failed save publishes nothing.",
+          "a": "A message that exists before anything can fail feels safe. But a save that fails on a concurrency conflict, common here, leaves a message about a cancellation that never happened. It fits only when false announcements cost little and lost ones cost a lot.",
+          "b": "Wrapping both in a transaction looks like it ties them together. But a rollback covers only PostgreSQL; a message RabbitMQ accepted stays, so a failed transaction still sends a wrong email. It helps only when the failure happens inside PostgreSQL before the publish runs.",
+          "d": "Publishing nothing avoids every wrong email. But at stage-3 the email job lives in Notifications, so no cancellation email would go out at all. It fits only when the move of emails can wait for the fix."
+        },
+        "vi": {
+          "correct": "Chỗ nào cũng để lại khoảng hở, nên câu hỏi là chấp nhận được kiểu thất bại nào. Đặt sau lần lưu, message chỉ mất khi process dừng ở giữa, mà ở đây hiếm khi xảy ra; còn email \"cancelled\" sai, kiểu thất bại đắt nhất, không thể xảy ra vì lần lưu thất bại thì không publish gì.",
+          "a": "Có message trước khi bất cứ thứ gì thất bại nghe an toàn. Nhưng lần lưu thất bại vì xung đột đồng thời, vốn thường gặp ở đây, để lại một message về một lần hủy chưa hề xảy ra. Chỉ hợp khi báo sai rẻ còn báo thiếu thì đắt.",
+          "b": "Bọc cả hai trong một transaction trông như gắn chúng với nhau. Nhưng rollback chỉ bao PostgreSQL; message RabbitMQ đã nhận vẫn còn, nên transaction thất bại vẫn gửi email sai. Nó chỉ giúp khi lỗi xảy ra trong PostgreSQL trước khi publish chạy.",
+          "d": "Không publish gì thì tránh được mọi email sai. Nhưng ở stage-3 việc gửi email nằm ở Notifications, nên sẽ không có email hủy đơn nào được gửi. Chỉ hợp khi việc chuyển email có thể chờ tới khi có cách sửa."
+        }
+      }
+    }
+  ]
+}

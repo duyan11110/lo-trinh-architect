@@ -1,0 +1,125 @@
+{
+  "id": "backend.l3.dual-write",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-10-14T17:00:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "At stage-2 QueuedNotifier.Send only adds a pending notifications row to the same DonHangDbContext as the order and saves nothing; OrderService then saves both with one SaveChangesAsync.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: DonHang.Infrastructure/QueuedNotifier.cs:5-24; DonHang.Domain/OrderService.cs:28-32,39,45-47",
+      "needs_verification": true,
+      "section": 2
+    },
+    {
+      "n": 2,
+      "text": "By default, when the provider supports transactions, EF Core applies all changes of a single SaveChanges/SaveChangesAsync call in one database transaction: if any change fails, none is applied.",
+      "kind": "behavior",
+      "version_key": "efcore",
+      "source_hint": "EF Core docs: Saving Data > Transactions (default transaction behavior)",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 3,
+      "text": "At stage-3 order emails live in DonHang.Notifications with its own database donhang_notifications, which DonHang.Api does not connect to; the API reaches it via RabbitMQ. Stage-3 CancelOrderAsync runs DispatchAsync (handlers) before SaveChangesAsync.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: STAGE.md; docker-compose.yml:158,289-300,316; DonHang.Domain/OrderService.cs:64-66",
+      "needs_verification": true,
+      "section": 2
+    },
+    {
+      "n": 4,
+      "text": "A PostgreSQL transaction covers only PostgreSQL's own rows; RabbitMQ is a separate server that keeps its own messages, and nothing in Đơn Hàng joins the two into one transaction.",
+      "kind": "behavior",
+      "version_key": "rabbitmq",
+      "source_hint": "PostgreSQL docs: Tutorial 3.4 Transactions; RabbitMQ docs: Reliability Guide / Publishers (publishing is independent of any database)",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 5,
+      "text": "If the publish comes after SaveChangesAsync and the process stops abruptly between the two (crash or kill), the order change is stored and the message, held only in memory, is never published; nothing stored records it is owed.",
+      "kind": "behavior",
+      "source_hint": "logical consequence of claims 2 and 4; ASP.NET Core generic host graceful shutdown (why crash/kill, not a normal restart); prereq backend.l2.at-least-once-jobs",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 6,
+      "text": "When two requests read the same order before either saves and both change it, the second save's UPDATE matches no row (xmin changed); SaveChangesAsync throws DbUpdateConcurrencyException and writes nothing; the middleware answers 409 (concurrent-update).",
+      "kind": "behavior",
+      "version_key": "efcore",
+      "source_hint": "examples/don-hang @ stage-2: DonHang.Infrastructure/DonHangDbContext.cs:59-65; DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs:42-51; EF Core docs: Handling Concurrency Conflicts",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 7,
+      "text": "A message published before a save that then fails is already in RabbitMQ and is delivered as if the change had happened.",
+      "kind": "behavior",
+      "version_key": "rabbitmq",
+      "source_hint": "RabbitMQ docs: Publishers (once accepted, message is routed to queues); follows from claim 4",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 8,
+      "text": "If finishing a PostgreSQL transaction fails (e.g. the connection drops first), PostgreSQL rolls its changes back; that cannot take back a message RabbitMQ already accepted. Publishing after the transaction ends reproduces the lost-message gap.",
+      "kind": "behavior",
+      "version_key": "rabbitmq",
+      "source_hint": "PostgreSQL docs: ROLLBACK; Tutorial 3.4 Transactions (uncommitted work is discarded when the session ends); RabbitMQ docs: Publishers",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 9,
+      "text": "OrderService.cs @ stage-2 lines 36-49: CancelOrderAsync finds the order, calls order.Cancel() (line 45), notifier.Send (line 46), SaveChangesAsync (line 47); order.Cancel() throws OrderStatusException for an order already cancelled or shipped.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: DonHang.Domain/OrderService.cs:36-49",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 10,
+      "text": "A catch block runs only while the process is running; if the process stops between the save and the publish, neither the catch nor an in-memory retry loop runs again.",
+      "kind": "behavior",
+      "version_key": "dotnet",
+      "source_hint": ".NET docs: Exception handling (try-catch); process termination ends all managed code of the process",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 11,
+      "text": "git grep -n SaveChangesAsync stage-2 -- DonHang.Domain/OrderService.cs prints five lines numbered 30, 32, 39, 47, 59; 32, 47, 59 are calls, 30 and 39 comments. git show stage-2:<path> prints the file at that tag.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: DonHang.Domain/OrderService.cs; git docs: git grep, git show <rev>:<path>",
+      "needs_verification": true,
+      "section": 7
+    },
+    {
+      "n": 12,
+      "text": "Line 19 looks up an earlier order by Idempotency-Key; two concurrent POSTs with the same key both find none. The unique index on idempotency_key makes PostgreSQL refuse the second INSERT, and the middleware answers 409.",
+      "kind": "behavior",
+      "version_key": "postgresql",
+      "source_hint": "examples/don-hang @ stage-2: DonHang.Domain/OrderService.cs:15-34; DonHang.Infrastructure/DonHangDbContext.cs:54-58; DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs:52-60",
+      "needs_verification": true,
+      "section": 7
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [1, 2, 3, 4, 5],
+    "outline_items_missing": [],
+    "beyond_scope": []
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1550,
+    "notes": "generate 2026-10-14; stage-2 has no RabbitMQ, so placements are prose only. apply-review: crash/kill not deploy restart (s4,s6,c5); ship/cancel both read first (c6); 'no transaction' scoped to Đơn Hàng (c4); stage-3 handler placement in s2+Connections (c3); connection-drop example (c8); unique index, git show, step-2 expected result, prefix dropped (c11,c12); dotnet in versions_used; quiz q2-q6 updated."
+  },
+  "open_questions": [],
+  "repo_changes_needed": []
+}

@@ -1,0 +1,150 @@
+{
+  "id": "backend.l3.consumer-acknowledgements",
+  "technical": {
+    "reviewed_at": "2026-10-14T23:40:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "stage-3 DonHang.Notifications/Program.cs: 'builder.Services.AddHostedService<OrderEventsConsumer>();' (line 26) and 'builder.Services.AddHostedService<NotificationSender>();' (line 31). OrderEventsConsumer.cs:16-18 'public sealed class OrderEventsConsumer(...) : BackgroundService'; line 55 consumes RabbitMqTopology.Queue; RabbitMqTopology.cs: 'public const string Queue = \"notifications.order-events\";'.",
+        "source": "examples/don-hang @ stage-3: DonHang.Notifications/Program.cs, OrderEventsConsumer.cs, RabbitMqTopology.cs"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "OrderEventsConsumer.cs:102-106 'db.InboxMessages.Add(new InboxMessage { MessageId = id }); db.Notifications.Add(NewEmail(message, subject)); ... await db.SaveChangesAsync();' and NewEmail sets 'Status = \"pending\"' (line 150). Program.cs comment: 'NotificationSender sends those rows as emails'; NotificationSender.cs:67-70 SendAsync then Status = \"sent\".",
+        "source": "examples/don-hang @ stage-3: DonHang.Notifications/OrderEventsConsumer.cs, Program.cs, NotificationSender.cs"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "OrderEventsConsumer.cs:12-14 comment: 'Like a controller, it is a driving adapter: it turns something arriving from outside, a message instead of an HTTP request, into this service's own work.' Matches the lesson's wording; the classification itself is the prereq lesson's definition.",
+        "source": "examples/don-hang @ stage-3: DonHang.Notifications/OrderEventsConsumer.cs:12-14"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Round 2: s4 now reads 'until the consumer answers it or the channel it came on closes'; claim lists ack, reject or nack. confirms: 'any delivery (message) that was not acked is automatically requeued' when the channel or connection closes; basic.reject/basic.nack are 'negative acknowledgements'. queues: messages are 'Ready for delivery' or 'Delivered but not yet acknowledged by consumer'.",
+        "source": "https://www.rabbitmq.com/docs/confirms ; https://www.rabbitmq.com/docs/queues"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "confirms: 'In automatic acknowledgement mode, a message is considered to be successfully delivered immediately after it is sent.' consumers: 'Automatic (deliveries require no acknowledgement, a.k.a. \"fire and forget\")'.",
+        "source": "https://www.rabbitmq.com/docs/confirms ; https://www.rabbitmq.com/docs/consumers"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "RabbitMQ.Client 7.2.2 XML docs: BasicConsumeAsync '<param name=\"autoAck\">If set to true, automatically ack messages.'; BasicAckAsync '<param name=\"multiple\">Ack all messages up to the delivery tag if set to true.' confirms: 'deliveries must be acknowledged on the same channel they were received on.' 'dotnet build DonHang.Notifications' (same source as stage-3, RabbitMQ.Client 7.2.2 at both): 'Build succeeded. 0 Warning(s) 0 Error(s)' with the named args autoAck:/multiple:.",
+        "source": "~/.nuget/packages/rabbitmq.client/7.2.2/lib/net8.0/RabbitMQ.Client.xml ; https://www.rabbitmq.com/docs/confirms"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "OrderEventsConsumer.cs:74-75 'await HandleAsync(...); await channel.BasicAckAsync(delivery.DeliveryTag, multiple: false);' inside one try; line 80 'BasicRejectAsync(delivery.DeliveryTag, requeue: false)' in catch (PoisonMessageException); line 85 'BasicNackAsync(delivery.DeliveryTag, multiple: false, requeue: true)' in catch (Exception). No other BasicAckAsync in the method.",
+        "source": "examples/don-hang @ stage-3: DonHang.Notifications/OrderEventsConsumer.cs:67-87"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "stage-3 OrderEventsConsumer.cs (tools/extract-code): 49 'await using var channel = await open.CreateChannelAsync(...)', 50 DeclareAsync, 51 BasicQosAsync(..., prefetchCount: 10, ...), 54 ReceivedAsync += OnReceivedAsync, 56 'await Task.Delay(Timeout.Infinite, stoppingToken);'. .NET API guide: 'While disposing channel and connection objects is sufficient, the best practice is that they be explicitly closed first.' Client XML docs have no DisposeAsync entry.",
+        "source": "examples/don-hang @ stage-3: DonHang.Notifications/OrderEventsConsumer.cs:42-57; https://www.rabbitmq.com/client-libraries/dotnet-api-guide"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "reliability: 'A consuming application should not acknowledge messages until it has done whatever it needs to do with them.' 'Use of acknowledgements guarantees at least once delivery.' Without acks only at-most-once is guaranteed. 'messages can be redelivered, and consumers must be prepared to handle deliveries they have seen in the past.'",
+        "source": "https://www.rabbitmq.com/docs/reliability"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Round 2: s4 now uses the round-1 suggested_text ('hands each delivery to one of them, in turn ... may then go to a different copy'); summary line 5 says 'each delivery'. consumers: 'Normally, active consumers connected to a queue receive messages from it in a round-robin fashion.' confirms: 'a consumer can receive a message that was previously delivered to another consumer'.",
+        "source": "https://www.rabbitmq.com/docs/consumers ; https://www.rabbitmq.com/docs/confirms ; https://www.rabbitmq.com/docs/exchanges"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Round 2: s6 and q5 no longer name the management UI or its labels; they say RabbitMQ's counts show messages as unacknowledged rather than ready. monitoring, per-queue metrics: 'Number of messages ready for delivery' (messages_ready), 'Number of unacknowledged messages' (messages_unacknowledged). confirms: unacked deliveries are requeued when their channel closes.",
+        "source": "https://www.rabbitmq.com/docs/monitoring ; https://www.rabbitmq.com/docs/confirms"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "OrderEventsConsumer.cs:106-107 'await db.SaveChangesAsync(); logger.LogInformation(\"Saved the {Subject} email for order {OrderId}\", subject, message.OrderId);'.",
+        "source": "examples/don-hang @ stage-3: DonHang.Notifications/OrderEventsConsumer.cs:107"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "OrderEventsConsumerTests.cs:82-98: StartAsync, waits for the queue, 'PublishAsync(channel, \"order.shipped\", PlacedBody)', waits for 'n.Subject == \"order shipped\"', 'consumer.StopAsync', 'Assert.Equal(0u, await channel.MessageCountAsync(RabbitMqTopology.Queue))'. Fixtures: RabbitMqBuilder(\"rabbitmq:4.1.8-management-alpine\"), PostgreSqlBuilder(\"postgres:17.6-alpine\"). Not run: Docker daemon unavailable.",
+        "source": "examples/don-hang @ stage-3: DonHang.Tests/Notifications/OrderEventsConsumerTests.cs; DonHang.Tests/Messaging/RabbitMqFixture.cs; DonHang.Tests/Notifications/NotificationsDatabase.cs"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "refs selective-unit-tests.md:27 'An expression without any operator is interpreted as a contains on the FullyQualifiedName property. For example, dotnet test --filter xyz is the same as dotnet test --filter FullyQualifiedName~xyz.' DonHang.Tests uses Microsoft.NET.Test.Sdk + xunit.runner.visualstudio (VSTest). Grep: the name appears in one test method only.",
+        "source": "refs/dotnet-docs/docs/core/testing/selective-unit-tests.md"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "New in round 2 (changed text). 'RabbitMQ's other answers' attributes reject/nack to RabbitMQ; they are the consumer's answers to RabbitMQ. 'not acknowledgements' also conflicts with the confirms page, which calls basic.reject/basic.nack 'negative acknowledgements'.",
+        "quote": "they are RabbitMQ's other answers, not acknowledgements, and belong to the dead-letter lesson of this module",
+        "fix": "Replace with: 'they are the consumer's other answers to RabbitMQ (reject and nack), not the acknowledgement this lesson follows, and belong to the dead-letter lesson of this module'."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-14T23:55:00+07:00",
+    "reviewer": "review-junior (claude-opus-5-5)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "gap",
+        "text": "New in round 2 (changed text). Core concepts defines an acknowledgement as 'the consumer's answer telling RabbitMQ'. Here the other two calls are called 'RabbitMQ's other answers', which reads as answers coming from RabbitMQ. I stop and wonder who answers whom, and whether these calls are sent by the consumer at all.",
+        "quote": "they are RabbitMQ's other answers, not acknowledgements, and belong to the dead-letter lesson of this module",
+        "fix": "Replace 'RabbitMQ's other answers' with 'the consumer's other answers to RabbitMQ', so it matches the Core concepts wording and s4's 'until the consumer answers it'."
+      },
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "term",
+        "text": "New in round 2 (changed text). The management UI is gone (round-1 major closed), but 'ready' as a count category is not defined in the lesson body. I can guess it means 'back in the queue, waiting to be delivered' from s4, and the only explicit meaning is in q5's option-c explanation. q5's stem also uses 'none as ready'.",
+        "quote": "You notice this when RabbitMQ's counts for `notifications.order-events` show messages as unacknowledged rather than ready, and they count as ready again once the service stops.",
+        "fix": "After 'rather than ready', add: '(ready: waiting in the queue for RabbitMQ to deliver it)'."
+      },
+      {
+        "severity": "minor",
+        "section": "backend.l3.consumer-acknowledgements.q5",
+        "kind": "quiz",
+        "text": "Replaces the round-1 q5 issue: the option is now an outcome, as asked, but it now echoes s6's changed sentence ('they count as ready again once the service stops'). I can pick it by matching the words, without understanding.",
+        "quote": "If the service stopped now, these three would count as ready again and be delivered again.",
+        "fix": "Reword without s6's phrase, e.g. 'If the service stopped now, a consumer would receive these three again.'"
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "ready (RabbitMQ message count category, s6 and q5)"
+      ],
+      "skipped_steps": [
+        "they are RabbitMQ's other answers (the consumer sends them, per Core concepts)"
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

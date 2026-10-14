@@ -1,0 +1,139 @@
+{
+  "id": "backend.l3.outbox-pattern",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-10-14T18:00:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "At stage-3 NotifyCustomerOnOrderEvents handles OrderPlaced, OrderCancelled, OrderShipped (lines 15-19) and three refund events, each by calling outbox.Add with a routing key and an OrderMessage(order id, customer email, name, OccurredAt) (line 34); it never references RabbitMQ or saves.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Domain/NotifyCustomerOnOrderEvents.cs:11-35",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 2,
+      "text": "At stage-3 OrderService calls events.DispatchAsync(order) before repository.SaveChangesAsync() in each use case, so handlers add their rows before the single save.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Domain/OrderService.cs:43-50,64-66,76-78",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 3,
+      "text": "EfOutbox.Add only adds an OutboxMessage (routing key, JSON body via JsonSerializer.Serialize) to the injected DonHangDbContext; the class has no SaveChangesAsync call. JsonSerializerOptions.Web uses camelCase property names.",
+      "kind": "fact",
+      "version_key": "dotnet",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Infrastructure/EfOutbox.cs:7-22; .NET docs: JsonSerializerOptions.Web (web defaults: JsonNamingPolicy.CamelCase)",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 4,
+      "text": "By default, when the provider supports transactions, EF Core applies all changes of a single SaveChanges/SaveChangesAsync call in one database transaction: if any change fails, none is applied.",
+      "kind": "behavior",
+      "version_key": "efcore",
+      "source_hint": "EF Core docs: Saving Data > Transactions (default transaction behavior)",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 5,
+      "text": "OutboxMessage.Id defaults to Guid.NewGuid(); PublishedAt is nullable and empty until set. DonHangDbContext maps OutboxMessage to table outbox_messages with columns id, routing_key, body (jsonb), created_at, published_at, trace_parent.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Messaging/OutboxMessage.cs; DonHang.Infrastructure/DonHangDbContext.cs:118-133",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 6,
+      "text": "Ordering's tables, outbox_messages included, live in the PostgreSQL database donhang; Notifications has its own database and receives order events only through RabbitMQ, via the queue notifications.order-events.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: STAGE.md; DonHang.Infrastructure/DonHangDbContext.cs:98-101; DonHang.Notifications/RabbitMqTopology.cs",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 7,
+      "text": "If AddMessage throws (customer not found, line 33), DispatchAsync throws and the use case stops before SaveChangesAsync, so neither the order's change nor any outbox row is saved.",
+      "kind": "behavior",
+      "source_hint": "examples/don-hang @ stage-3: NotifyCustomerOnOrderEvents.cs:32-33; OrderService.cs:43-50 (comment 'A handler that throws stops it here')",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 8,
+      "text": "Two SaveChangesAsync calls with no transaction opened around them (as in Đơn Hàng) are two transactions; if the process stops after the first commits, the order is stored and the outbox row is not.",
+      "kind": "behavior",
+      "version_key": "efcore",
+      "source_hint": "EF Core docs: Saving Data > Transactions (default behavior; controlling transactions via DbContext.Database)",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 9,
+      "text": "Saving the outbox row does not publish it: published_at stays empty and the API answers the request without waiting for RabbitMQ; a separate, later step (OutboxRelay) publishes rows.",
+      "kind": "behavior",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Infrastructure/EfOutbox.cs:7-11; DonHang.Domain/IOutbox.cs:3-7; DonHang.Messaging/OutboxMessage.cs",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 10,
+      "text": "At stage-2, QueuedNotifier adds a pending notifications row to the order's DbContext, saved by the same SaveChangesAsync, and NotificationSender sends it later.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: DonHang.Infrastructure/QueuedNotifier.cs:5-24; prereq backend.l2.database-job-queue",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 11,
+      "text": "At stage-3 RabbitMQ holds queues such as notifications.order-events; no outbox is among RabbitMQ's queues, since outbox_messages lives in PostgreSQL.",
+      "kind": "fact",
+      "version_key": "rabbitmq",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Notifications/RabbitMqTopology.cs; DonHang.Infrastructure/DonHangDbContext.cs:118-133",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 12,
+      "text": "git grep -n SaveChangesAsync stage-3 -- NotifyCustomerOnOrderEvents.cs IOutbox.cs EfOutbox.cs prints two lines: IOutbox.cs:6 and EfOutbox.cs:9, both comments.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Domain/IOutbox.cs:6; DonHang.Infrastructure/EfOutbox.cs:9; git docs: git grep <tree>",
+      "needs_verification": true,
+      "section": 7
+    },
+    {
+      "n": 13,
+      "text": "Keeping the message in a table is what lets the publishing step be retried: the message is stored rather than held in one request's memory.",
+      "kind": "opinion",
+      "source_hint": "design rationale of the transactional outbox; prereq backend.l3.dual-write",
+      "needs_verification": false,
+      "section": 4
+    },
+    {
+      "n": 14,
+      "text": "DonHangDbContext is registered with AddDbContext (scoped) and EfOutbox with AddScoped, so within one request EfOutbox and the order repository share one DonHangDbContext.",
+      "kind": "behavior",
+      "version_key": "efcore",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Infrastructure/ServiceCollectionExtensions.cs:17,24; EF Core docs: DbContext lifetime (AddDbContext registers a scoped context by default)",
+      "needs_verification": true,
+      "section": 5
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [1, 2, 3, 4, 5],
+    "outline_items_missing": [],
+    "beyond_scope": []
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1500,
+    "notes": "generate 2026-10-14; fix-validation: block 11-35, situation split. apply-review: claim 8 rephrased (+condition); 'No row is written'; mgmt UI -> 'list RabbitMQ's queues'; OutboxRelay sentence; OrderMessage contents; JsonSerializerOptions.Web camelCase (claim 3); id comment pointer; claim 14 DI scope. Cut column list, 'Domain stays free', 'whichever service'. Quiz q1 stem, q2 expl updated."
+  },
+  "open_questions": [],
+  "repo_changes_needed": []
+}

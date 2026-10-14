@@ -1,0 +1,121 @@
+{
+  "id": "backend.l3.outbox-pattern",
+  "technical": {
+    "reviewed_at": "2026-10-14T23:59:50+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "git show stage-3:DonHang.Domain/NotifyCustomerOnOrderEvents.cs: 15 OrderPlaced -> \"order.placed\", 17 \"order.cancelled\", 19 \"order.shipped\", 21/23/25 refund events; 34 `outbox.Add(routingKey, new OrderMessage(order.Id, customer.Email, customer.FullName, domainEvent.OccurredAt))`. OrderMessage.cs: `record OrderMessage(int OrderId, string CustomerEmail, string CustomerName, DateTimeOffset OccurredAt)`. No RabbitMQ or SaveChanges in the handler.",
+        "source": "examples/don-hang @ stage-3: DonHang.Domain/NotifyCustomerOnOrderEvents.cs:11-35; DonHang.Domain/OrderMessage.cs"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Carried from round 1 (section unchanged): OrderService.cs 49 `await events.DispatchAsync(order);` 50 `await repository.SaveChangesAsync();`, same pair in every use case; EfOrderRepository.SaveChangesAsync is one `db.SaveChangesAsync()`.",
+        "source": "examples/don-hang: DonHang.Domain/OrderService.cs:40-119; DonHang.Infrastructure/EfOrderRepository.cs:48"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "git show stage-3:DonHang.Infrastructure/EfOutbox.cs matches the block; 12 ctor takes DonHangDbContext, 16 `db.OutboxMessages.Add`, 18 RoutingKey, 19 `JsonSerializer.Serialize(message, message.GetType(), JsonSerializerOptions.Web)`; no SaveChanges call. Docs, web defaults: \"PropertyNamingPolicy = JsonNamingPolicy.CamelCase\"; \"In .NET 9 and later versions, you can use the JsonSerializerOptions.Web singleton\".",
+        "source": "examples/don-hang @ stage-3: DonHang.Infrastructure/EfOutbox.cs:7-22; refs/dotnet-docs/docs/standard/serialization/system-text-json/configure-options.md:38-46"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "\"By default, if the database provider supports transactions, all changes in a single call to `SaveChanges` are applied in a transaction. If any of the changes fail, then the transaction is rolled back and none of the changes are applied to the database.\"",
+        "source": "refs/efcore-docs/entity-framework/core/saving/transactions.md:17"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Carried from round 1: OutboxMessage.cs:11 `public Guid Id { get; init; } = Guid.NewGuid();` 22 `public DateTimeOffset? PublishedAt { get; set; }`; DonHangDbContext.cs:125 `ToTable(\"outbox_messages\")`, 126-131 id, routing_key, body jsonb, created_at, published_at, trace_parent. Lesson now says only 'maps these to columns of outbox_messages'.",
+        "source": "examples/don-hang: DonHang.Messaging/OutboxMessage.cs:9-30; DonHang.Infrastructure/DonHangDbContext.cs:118-133"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Carried from round 1: docker-compose.yml:158 api `Database=donhang`; :316 notifications `Database=donhang_notifications`; DonHangDbContext.cs:99-101 Payments/Notifications rows live \"in their own databases\"; RabbitMqTopology.cs:12 `Queue = \"notifications.order-events\"`.",
+        "source": "examples/don-hang: docker-compose.yml:158,316; DonHang.Infrastructure/DonHangDbContext.cs:98-101; DonHang.Notifications/RabbitMqTopology.cs:12"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "NotifyCustomerOnOrderEvents.cs @ stage-3 line 33 `?? throw new InvalidOperationException(...)` (prose line number matches); DispatchAsync awaits handlers without catch; OrderService.cs:49-50 dispatch precedes SaveChangesAsync, so the save is skipped.",
+        "source": "examples/don-hang @ stage-3: DonHang.Domain/NotifyCustomerOnOrderEvents.cs:32-33; DonHang.Domain/IDomainEventHandler.cs:26-43; DonHang.Domain/OrderService.cs:41-50"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Claim, lesson section 6 and quiz q2 now carry the condition ('with no transaction opened around them as in Đơn Hàng'). Docs: one SaveChanges call is one transaction by default; \"You can use the `DbContext.Database` API to begin, commit, and rollback transactions\" to span several. Đơn Hàng opens none.",
+        "source": "refs/efcore-docs/entity-framework/core/saving/transactions.md:17,40-44"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "EfOutbox.Add only adds to the context; IOutbox.cs @ stage-3 :6-7 \"the caller's SaveChangesAsync saves it with the order, and OutboxRelay publishes it afterwards. Nothing is sent here.\" OutboxRelay is a BackgroundService on a PeriodicTimer and alone sets PublishedAt (round 1 inspection).",
+        "source": "examples/don-hang @ stage-3: DonHang.Infrastructure/EfOutbox.cs; DonHang.Domain/IOutbox.cs:3-7; DonHang.Messaging/OutboxRelay.cs:12-59"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Carried from round 1 (section unchanged): prereq backend.l2.database-job-queue quotes QueuedNotifier @ stage-2, `db.Notifications.Add` of a pending row in the order's DbContext; NotificationSender sends later.",
+        "source": "content/tracks/backend/background-jobs/backend.l2.database-job-queue.en.md:92-113 (code @ stage-2)"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Section 6 now says 'list RabbitMQ's queues'. RabbitMQ management docs: the UI can \"Declare, list and delete exchanges, queues, bindings...\". RabbitMqTopology.cs:12 `Queue = \"notifications.order-events\"`; no outbox queue is declared; outbox_messages is a PostgreSQL table (claim 5).",
+        "source": "https://www.rabbitmq.com/docs/management; examples/don-hang @ stage-3: DonHang.Notifications/RabbitMqTopology.cs:12"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Ran `git -C examples/don-hang grep -n SaveChangesAsync stage-3 -- <3 files>` -> exactly two lines: `stage-3:DonHang.Domain/IOutbox.cs:6:// DonHang.Infrastructure); the caller's SaveChangesAsync saves it with the` and `stage-3:DonHang.Infrastructure/EfOutbox.cs:9:// as the order, and saves nothing: OrderService's SaveChangesAsync writes the`. Both comments.",
+        "source": "examples/don-hang @ stage-3 (command output)"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Rationale supported by code: OutboxRelay re-reads rows with `published_at IS NULL` each tick and catches failures to retry (OutboxRelay.cs:21-30); partial index `HasFilter(\"published_at IS NULL\")` (DonHangDbContext.cs:132).",
+        "source": "examples/don-hang: DonHang.Messaging/OutboxRelay.cs:16-30; DonHang.Infrastructure/DonHangDbContext.cs:132"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "git show stage-3 ServiceCollectionExtensions.cs: 17 `services.AddDbContext<DonHangDbContext>(...)`, 18 `AddScoped<IOrderRepository, EfOrderRepository>()`, 24 `AddScoped<IOutbox, EfOutbox>()`. EF docs: \"The `AddDbContext` extension method registers `DbContext` types with a scoped lifetime by default.\"",
+        "source": "examples/don-hang @ stage-3: DonHang.Infrastructure/ServiceCollectionExtensions.cs:17-24; refs/efcore-docs/entity-framework/core/dbcontext-configuration/index.md:419"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-14T23:59:59+07:00",
+    "reviewer": "claude-opus-5-5 (junior)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "style",
+        "text": "New in round 2 (changed sentence). 'as in Đơn Hàng' sits right after 'with no transaction opened around them', so on first read I took it to mean Đơn Hàng does open one. I also did not know a transaction can be opened around two saves; the lesson only shows one SaveChangesAsync as one transaction. I re-read it twice, but the point (two saves, two transactions) still came through.",
+        "quote": "Actually two calls, with no transaction opened around them as in Đơn Hàng, are two transactions,",
+        "fix": "Reorder: 'Actually, in Đơn Hàng, where nothing opens a transaction around them, two calls are two transactions, ...'. Apply the same order in quiz q2's explanation."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

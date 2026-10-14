@@ -1,0 +1,139 @@
+{
+  "id": "backend.l3.idempotent-consumer",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-10-14T22:00:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "OutboxRelay sets each published message's MessageId to the outbox row's id, so every copy of one outbox row carries the same message id; different outbox rows (different events, even for one order) carry different ids.",
+      "kind": "fact",
+      "source_hint": "DonHang.Messaging/RabbitMqPublisher.cs:26 (MessageId = message.Id), called only by OutboxRelay.RelayDueAsync; DonHang.Tests/Messaging/OutboxRelayTests.cs:38",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 2,
+      "text": "Messages repeat two ways at stage-3: the relay republishes a row if it stops after RabbitMQ's confirm and before its commit; RabbitMQ redelivers if the channel closes after the save and before the ack. Recording published_at first, or acking first, would lose the message on a stop in between.",
+      "kind": "behavior",
+      "version_key": "rabbitmq",
+      "source_hint": "prereqs backend.l3.outbox-relay, backend.l3.consumer-acknowledgements; RabbitMQ docs: Consumer Acknowledgements and Publisher Confirms > Automatic Requeueing",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 3,
+      "text": "HandleAsync takes a NotificationsDbContext from a new scope (lines 100-101), adds an InboxMessage (102) and a notifications row (103), calls SaveChangesAsync once (106); catches only DbUpdateException where Inbox.IsDuplicate is true (109), logs, returns normally.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Notifications/OrderEventsConsumer.cs:89-113",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 4,
+      "text": "EF Core: by default, when the provider supports transactions, all changes in a single SaveChanges/SaveChangesAsync call are applied in one transaction; if any command fails, the transaction is rolled back and none of the changes are applied.",
+      "kind": "behavior",
+      "version_key": "efcore",
+      "source_hint": "EF Core docs: Saving Data > Transactions > Default transaction behavior",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 5,
+      "text": "PostgreSQL refuses a row whose primary key or unique index value already exists (unique violation, SQLSTATE 23505), and the error aborts the enclosing transaction.",
+      "kind": "behavior",
+      "version_key": "postgresql",
+      "source_hint": "PostgreSQL docs: 5.5 Constraints > Primary Keys / Unique Constraints; Appendix A PostgreSQL Error Codes (23505 unique_violation)",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 6,
+      "text": "Inbox.IsDuplicate (DonHang.Messaging/Inbox.cs, outside the excerpt) returns true when the inner exception is a PostgresException with SqlState unique violation on constraint PK_inbox_messages.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Messaging/Inbox.cs:12-14",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 7,
+      "text": "Any exception from HandleAsync other than the caught duplicate reaches OnReceivedAsync and the message is not acknowledged; when HandleAsync returns normally, OnReceivedAsync acknowledges the delivery.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Notifications/OrderEventsConsumer.cs:67-87",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 8,
+      "text": "NotificationsDbContext maps InboxMessage to table inbox_messages with MessageId as primary key (column message_id) and HandledAt as handled_at, in donhang_notifications, the same database as notifications.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Notifications/NotificationsDbContext.cs:6-11,34-45",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 9,
+      "text": "RabbitMQ does not deduplicate messages by message id when routing or queueing them to classic or quorum queues: two publishes yield two messages, and a requeued message is delivered again.",
+      "kind": "behavior",
+      "version_key": "rabbitmq",
+      "source_hint": "RabbitMQ docs: Reliability Guide > Consumers (duplicates); Consumer Acknowledgements > redelivered flag; Publishers > message_id property",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 10,
+      "text": "SubjectFor in OrderEventsConsumer.cs maps six routing keys to email subjects: order.placed, order.cancelled, order.shipped, order.refund-requested, order.refunded, order.refund-failed.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Notifications/OrderEventsConsumer.cs:115-127",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 11,
+      "text": "OrderEventsConsumer does not send emails; it saves pending rows that NotificationSender sends, and NotificationSender sends first and records sent afterwards (at-least-once).",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Notifications/OrderEventsConsumer.cs:143-153; NotificationSender.cs; prereq backend.l2.at-least-once-jobs",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 12,
+      "text": "duplicate-message.sh publishes one order.shipped message for order 2 twice with one message id via the management API (printing routed: true/false), waits 2 s, lists notifications rows created since the start (order_id | subject) and counts inbox_messages rows with that id.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: scripts/backend/duplicate-message.sh",
+      "needs_verification": true,
+      "section": 7
+    },
+    {
+      "n": 13,
+      "text": "Expected output of duplicate-message.sh on a running stage-3 lab: two 'routed: true' lines, one row '2 | order shipped', and the count 1.",
+      "kind": "behavior",
+      "version_key": "rabbitmq",
+      "source_hint": "examples/don-hang @ stage-3: run scripts/backend/duplicate-message.sh; DonHang.Tests/Notifications/OrderEventsConsumerTests.cs HandleAsync_SameMessageTwice_SavesOneEmail",
+      "needs_verification": true,
+      "section": 7
+    },
+    {
+      "n": 14,
+      "text": "Keeping the inbox inside the same database as the effect is preferable when exactly-once effects are needed, because a record in another system (e.g. Redis) cannot commit atomically with the effect.",
+      "kind": "opinion",
+      "source_hint": "outline item 5; Reliability Guide (RabbitMQ) > idempotent consumers",
+      "needs_verification": false,
+      "section": 4
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [1, 2, 3, 4, 5],
+    "outline_items_missing": [],
+    "beyond_scope": []
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1450,
+    "notes": "generate 2026-10-14: 'one email' (outline 4) = one email row; sender is at-least-once. fix-validation: L06, M01. apply-review: 2 tech minors, junior 3 major/4 minor. Relay recalled in plain words in the prereq bullet (outbox-relay is a prereq of consumer-acknowledgements; prereqs unchanged, see open_questions). Quiz q2/q5 minors -> /quiz apply-review. Capture duplicate-message.txt exists; no output block since the script is not quoted."
+  },
+  "open_questions": ["Owner: consider adding backend.l3.outbox-relay to prereqs (junior major, 2026-10-14). It is already a transitive prereq via backend.l3.consumer-acknowledgements, so 'Before you start' recalls it in plain words instead."],
+  "repo_changes_needed": []
+}

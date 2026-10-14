@@ -1,0 +1,130 @@
+{
+  "id": "backend.l3.message-broker",
+  "technical": {
+    "reviewed_at": "2026-10-14T20:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "docker-compose.yml:158 api `ConnectionStrings__Default: \"Host=db;Database=donhang;...\"`; :316 notifications `\"Host=db;Database=donhang_notifications;...\"`. Stage-2 QueuedNotifier: prereq backend.l2.database-job-queue quotes DonHang.Infrastructure/QueuedNotifier.cs@stage-2 (`db.Notifications.Add` stages the row); repo docs/adr/0002: \"`QueuedNotifier` ghi dòng đó cùng transaction với đơn\".",
+        "source": "examples/don-hang docker-compose.yml:158,316; docs/adr/0002-tach-notifications-thanh-service.md:13"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "RabbitMQ .NET tutorial 1: \"RabbitMQ is a message broker: it accepts and forwards messages.\" ... \"A queue is only bound by the host's memory & disk limits, it's essentially a large message buffer.\" Queues page: \"A queue in RabbitMQ is an ordered collection of messages.\" Execution: outputs/stage-3/scripts/backend/notifications-down.txt shows `-> 201` with notifications stopped and 1 message waiting.",
+        "source": "https://www.rabbitmq.com/tutorials/tutorial-one-dotnet; https://www.rabbitmq.com/docs/queues"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Round 3: lesson now reads \"Line 269 runs RabbitMQ 4.1 from the `rabbitmq` image, in its `-management` variant\" ('on Docker Hub' dropped). Download page: \"Open Source RabbitMQ Server\", \"the community Docker image\"; docker-compose.yml:269 `image: rabbitmq:4.1.8-management-alpine`.",
+        "source": "https://www.rabbitmq.com/docs/download; examples/don-hang docker-compose.yml:269"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "DonHang.Notifications/OrderMessage.cs:6 `public sealed record OrderMessage(int OrderId, string CustomerEmail, string CustomerName, DateTimeOffset OccurredAt);` OrderEventsConsumer.cs:132 `JsonSerializer.Deserialize<OrderMessage>(body, JsonSerializerOptions.Web)`; NotifyCustomerOnOrderEvents.cs:34 builds `new OrderMessage(order.Id, customer.Email, customer.FullName, domainEvent.OccurredAt)`.",
+        "source": "examples/don-hang DonHang.Notifications/OrderMessage.cs; OrderEventsConsumer.cs; DonHang.Domain/NotifyCustomerOnOrderEvents.cs"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "RabbitMqTopology.cs:12 `public const string Queue = \"notifications.order-events\";` :25 `QueueDeclareAsync(Queue, durable: true, ...)`; OrderEventsConsumer : BackgroundService, :55 `BasicConsumeAsync(RabbitMqTopology.Queue, autoAck: false, ...)`.",
+        "source": "examples/don-hang DonHang.Notifications/RabbitMqTopology.cs; OrderEventsConsumer.cs"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Captured run: \"notifications is stopped / == POST /api/v1/orders as customer 1 /   -> 201 / messages waiting in notifications.order-events: 1 / email jobs for the new order in donhang_notifications: 0 / notifications is back / messages waiting in notifications.order-events: 0 / the new order's email job: sent\". Queue is quorum + durable (RabbitMqTopology.cs:25,47); publisher sets `Persistent = true` (RabbitMqPublisher.cs:28).",
+        "source": "examples/don-hang outputs/stage-3/scripts/backend/notifications-down.txt"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "DonHang.Messaging/OutboxRelay.cs:16 `private static readonly TimeSpan Tick = TimeSpan.FromSeconds(1);` notifications-down.sh:41 `sleep 3 # OutboxRelay publishes within a second`; NotifyCustomerOnOrderEvents.cs adds an outbox row in the order's transaction, not a publish during the request. Lesson defers the mechanism to backend.l3.outbox-pattern, as depth_notes requires.",
+        "source": "examples/don-hang DonHang.Messaging/OutboxRelay.cs; scripts/backend/notifications-down.sh"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Program.cs:21-23 comment \"OrderEventsConsumer turns each message into a pending notifications row, and NotificationSender sends those rows as emails, exactly as it did inside the api until stage-2\"; :31 `AddHostedService<NotificationSender>()`; OrderEventsConsumer.cs:150 `Status = \"pending\"`; docker-compose.yml:320 `Smtp__Host: \"mailpit\"`.",
+        "source": "examples/don-hang DonHang.Notifications/Program.cs; OrderEventsConsumer.cs; docker-compose.yml:319-321"
+      },
+      {
+        "n": 9,
+        "verdict": "not-needed",
+        "evidence": "Design reasoning about a synchronous call, labelled opinion, conditioned on Notifications being slow or down; consistent with RabbitMQ tutorial 6 caveats (\"Open issues include server unavailability, timeouts\"; \"If you can, you should use an asynchronous pipeline.\"). No version-dependent fact.",
+        "source": "https://www.rabbitmq.com/tutorials/tutorial-six-dotnet"
+      },
+      {
+        "n": 10,
+        "verdict": "not-needed",
+        "evidence": "Follows from claim 2 and the repo: api and notifications each only set RabbitMq__Host (docker-compose.yml:163,317) and neither calls the other; execution in claim 6 shows the API side. Opinion-level wording, no number or syntax.",
+        "source": "examples/don-hang docker-compose.yml:163,317"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Round 3: lesson adopted the round-2 suggested_text (\"the queue and its messages are written there to be kept, so ...\"); ledger updated to match. Queues doc: \"Durable queues will be recovered on node boot, including messages in them published as persistent.\" Repo: RabbitMqTopology.cs:25 durable quorum queue; RabbitMqPublisher.cs:28 `Persistent = true`; compose:277 volume, :279 port; :341-343 Payments. Docs opened: rabbitmq.com/docs/queues, /docs/management, /docs/download.",
+        "source": "https://www.rabbitmq.com/docs/queues; examples/don-hang docker-compose.yml:258-279,341-343"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Round 2: prose now only says line 279 makes the page reachable on 15672 where you watch queues and waiting messages. Management docs: \"The management UI can be accessed using a Web browser at http://node-hostname:15672/.\" and lists \"Monitor queue length\". compose:279 `- \"15672:15672\"`.",
+        "source": "https://www.rabbitmq.com/docs/management; examples/don-hang docker-compose.yml:279"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Program.cs:18 only AddDbContext (NotificationsDbContext); compose:316 Database=donhang_notifications; :24 GetSection(\"RabbitMq\").Get<RabbitMqSettings>(); :25 AddRabbitMq -> MessagingServiceCollectionExtensions.cs:15 `services.AddSingleton(new RabbitMqConnection(settings, clientName))`; :26 AddHostedService<OrderEventsConsumer>; :31 AddHostedService<NotificationSender>, outside lines 11-26 as the prose says.",
+        "source": "examples/don-hang DonHang.Notifications/Program.cs:11-31; DonHang.Messaging/MessagingServiceCollectionExtensions.cs:12-17"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "NotifyCustomerOnOrderEvents.cs:32-34 `var customer = await customers.FindAsync(order.CustomerId) ... outbox.Add(routingKey, new OrderMessage(order.Id, customer.Email, customer.FullName, domainEvent.OccurredAt));` for every handled event; ICustomerRepository runs against DonHangDbContext whose connection string is Database=donhang (docker-compose.yml:158).",
+        "source": "examples/don-hang DonHang.Domain/NotifyCustomerOnOrderEvents.cs"
+      },
+      {
+        "n": 15,
+        "verdict": "not-needed",
+        "evidence": "Round 2: lesson adopted the conditioned wording \"because a one-way message like the order message brings no answer back\". Labelled design judgement with its condition; consistent with tutorial 6, which builds replies only by sending a callback queue with the request.",
+        "source": "https://www.rabbitmq.com/tutorials/tutorial-six-dotnet"
+      },
+      {
+        "n": 16,
+        "verdict": "not-needed",
+        "evidence": "Design judgement, conditioned (\"if the services are to stay apart\"), consistent with prereq design.l3.before-extracting-a-module and repo ADR 0002; no version-dependent behaviour.",
+        "source": "examples/don-hang docs/adr/0002-tach-notifications-thanh-service.md"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "notifications-down.sh:25 `docker compose stop notifications`, :26 `trap 'docker compose start notifications 2>/dev/null' EXIT`, :28 token for anh.tran@example.com (db/seed.sql:17 customer id 1), :35 POST /api/v1/orders, :42 `waiting_in_queue 1`, :47 `docker compose start notifications`, :49-53 waits for status sent.",
+        "source": "examples/don-hang scripts/backend/notifications-down.sh:25-55"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-14T21:00:00+07:00",
+    "reviewer": "review-junior (claude-opus-5-5)",
+    "issues": [],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

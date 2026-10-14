@@ -1,0 +1,120 @@
+{
+  "id": "backend.l3.dual-write",
+  "technical": {
+    "reviewed_at": "2026-10-14T23:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "tools/extract-code @ stage-2: QueuedNotifier.cs:14 `db.Notifications.Add(new Notification { ... Status = \"pending\" ... })`, no SaveChanges in the class (lines 9-24); OrderService.cs:46 `notifier.Send(order, \"order cancelled\");` then :47 `await repository.SaveChangesAsync();`.",
+        "source": "examples/don-hang @ stage-2: DonHang.Infrastructure/QueuedNotifier.cs:5-24; DonHang.Domain/OrderService.cs:36-49"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "\"By default, if the database provider supports transactions, all changes in a single call to `SaveChanges` are applied in a transaction. If any of the changes fail, then the transaction is rolled back and none of the changes are applied to the database.\"",
+        "source": "refs/efcore-docs/entity-framework/core/saving/transactions.md:17"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Round 2. docker-compose.yml @ stage-3:158 api connection string uses `Database=donhang` only; STAGE.md @ stage-3 gives Notifications its own `donhang_notifications`. \"does not connect to\" now matches. OrderService.cs (examples/don-hang working tree, matches source_hint lines): 64 `order.Cancel();` 65 `await events.DispatchAsync(order);` 66 `await repository.SaveChangesAsync();`; same lines appear in the stage-3 code block of design.l3.dispatching-domain-events. git commands were refused by the permission system, so the tag was not re-resolved.",
+        "source": "examples/don-hang: docker-compose.yml:158,316; STAGE.md; DonHang.Domain/OrderService.cs:59-67"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Round 2: text now scoped to Đơn Hàng (\"nothing in Đơn Hàng joins the two into one transaction\"). PostgreSQL ROLLBACK: \"rolls back the current transaction and causes all the updates made by the transaction to be discarded.\" RabbitMQ confirms: transactions are channel-level, no PostgreSQL participation.",
+        "source": "https://www.postgresql.org/docs/17/sql-rollback.html; https://www.rabbitmq.com/docs/confirms"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Round 2: example is now \"it crashes or is killed\". Follows from claims 2 and 4; graceful shutdown \"waits for requests on existing connections to complete, for as long as the shutdown timeout allows\" is why only an abrupt stop opens the gap, and the claim now names exactly that case.",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/host/generic-host.md:170-176,325-335"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "EF Core: \"if a concurrent update occurred, the UPDATE fails to find any matching rows ... EF Core's SaveChanges throws a DbUpdateConcurrencyException\". Code @ stage-2: DonHangDbContext.cs `e.Property(o => o.Version).IsRowVersion();` (xmin); ExceptionHandlingMiddleware.cs:45-50 catches DbUpdateConcurrencyException -> Status409Conflict, \"concurrent-update\". Round 2: lesson now has both requests read before either saves, which is the case the doc describes.",
+        "source": "refs/efcore-docs/entity-framework/core/saving/concurrency.md:54; examples/don-hang @ stage-2: DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs:42-51"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "RabbitMQ confirms: for routable messages the basic.ack comes \"when a message has been accepted by all the queues\"; for persistent messages in durable queues, \"after persisting the message to disk\". Nothing in that page ties acceptance to any external database outcome.",
+        "source": "https://www.rabbitmq.com/docs/confirms"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "PostgreSQL tutorial 3.4: \"if some failure occurs that prevents the transaction from completing, then none of the steps affect the database at all.\" ROLLBACK: \"causes all the updates made by the transaction to be discarded\" (that PostgreSQL transaction only). RabbitMQ confirms: a confirmed message has been \"accepted by all the queues\". See minor issue on a drop during COMMIT.",
+        "source": "https://www.postgresql.org/docs/17/tutorial-transactions.html; https://www.postgresql.org/docs/17/sql-rollback.html; https://www.rabbitmq.com/docs/confirms"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "tools/extract-code DonHang.Domain/OrderService.cs --tag stage-2 --lines 36-49: line 45 `order.Cancel();`, 46 `notifier.Send(order, \"order cancelled\");`, 47 `await repository.SaveChangesAsync();`; comment line 38 \"cancelled or shipped makes order.Cancel() throw OrderStatusException\".",
+        "source": "examples/don-hang @ stage-2: DonHang.Domain/OrderService.cs:36-49"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "C# reference: \"The only cases where `finally` blocks don't execute involve immediate termination of a program. For example, such a termination might happen because of the Environment.FailFast call ...\" A catch/retry held in a terminated process does not run.",
+        "source": "refs/dotnet-docs/docs/csharp/language-reference/statements/exception-handling-statements.md:162"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Round 2: unverified prefix sentence removed. Line numbers from round 1: extract-code stage-2 OrderService.cs | grep -n SaveChangesAsync -> 30, 32, 39, 47, 59 (30, 39 comments). git-show docs: \"git show next~10:Documentation/README — Shows the contents of the file Documentation/README as they were current in the 10th last commit of the branch next.\"",
+        "source": "examples/don-hang @ stage-2: DonHang.Domain/OrderService.cs; https://git-scm.com/docs/git-show"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Code @ stage-2: OrderService.cs:19 FindByIdempotencyKeyAsync, :31 notifier.Send, :32 SaveChangesAsync; DonHangDbContext.cs `HasIndex(o => o.IdempotencyKey).IsUnique()`; middleware:55-59 catches DbUpdateException with UniqueViolation -> 409. PostgreSQL CREATE INDEX UNIQUE: \"Attempts to insert or update data which would result in duplicate entries will generate an error.\"",
+        "source": "examples/don-hang @ stage-2: OrderService.cs:15-34; DonHangDbContext.cs; ExceptionHandlingMiddleware.cs:52-60; https://www.postgresql.org/docs/17/sql-createindex.html"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "New in round 2. If the connection drops while COMMIT is in flight, the client cannot tell whether the server committed; PostgreSQL rolls back only a transaction whose commit never reached it. The sentence states a rollback as certain for any drop during \"finishing\". Claim 8 itself says \"the connection drops first\".",
+        "quote": "If finishing fails, for example because the connection to PostgreSQL drops, PostgreSQL rolls the order's change back.",
+        "fix": "Write \"for example because the connection to PostgreSQL drops before the commit reaches it\"."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-14T23:45:00+07:00",
+    "reviewer": "review-junior (claude-opus-5-5), round 2",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 2,
+        "kind": "gap",
+        "text": "New in round 2, in the changed sentence. The situation now says the stage-3 publish would sit in a handler, which runs before SaveChangesAsync. The next paragraph then lists 'after SaveChangesAsync' as one of the places to choose. From the prereq, handlers always run before the save, so I cannot see how a publish in a handler could go after it without leaving the handler.",
+        "quote": "With the stage-3 dispatcher, that publish would sit in a handler, which also runs before `SaveChangesAsync`.",
+        "fix": "Add one clause to that sentence, e.g. '…before SaveChangesAsync; putting it after the save would mean moving it out of the handler, into CancelOrderAsync itself.'"
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [
+        "With the stage-3 dispatcher, that publish would sit in a handler, which also runs before `SaveChangesAsync`. (how a handler-based publish could be placed after the save, as section 2 then offers)"
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

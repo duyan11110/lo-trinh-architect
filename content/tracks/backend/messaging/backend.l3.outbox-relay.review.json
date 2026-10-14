@@ -1,0 +1,144 @@
+{
+  "id": "backend.l3.outbox-relay",
+  "technical": {
+    "reviewed_at": "2026-10-14T23:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Carried from round 1 (claim unchanged). DonHang.Api/Program.cs:48 `builder.Services.AddOutboxRelay<DonHangDbContext>(exchange: \"donhang.orders\");`; MessagingServiceCollectionExtensions.cs:24 `services.AddHostedService<OutboxRelay<TDbContext>>();`; OutboxRelay.cs:12-14 `: BackgroundService`.",
+        "source": "examples/don-hang: DonHang.Api/Program.cs, DonHang.Messaging/MessagingServiceCollectionExtensions.cs, DonHang.Messaging/OutboxRelay.cs"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Carried from round 1 (claim unchanged). OutboxRelay.cs:16 `TimeSpan.FromSeconds(1)`, :17 `BatchSize = 20`, :21-22 PeriodicTimer loop, :47 BeginTransactionAsync, :76-82 `SELECT * FROM outbox_messages WHERE published_at IS NULL ORDER BY created_at LIMIT {BatchSize} FOR UPDATE SKIP LOCKED`.",
+        "source": "examples/don-hang: DonHang.Messaging/OutboxRelay.cs"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Carried from round 1. SELECT, Locking Clause: \"With SKIP LOCKED, any selected rows that cannot be immediately locked are skipped. ... can be used to avoid lock contention with multiple consumers accessing a queue-like table.\" Explicit Locking 13.3.2: \"Row-level locks are released at transaction end or during savepoint rollback, just like table-level locks.\"",
+        "source": "https://www.postgresql.org/docs/17/sql-select.html ; https://www.postgresql.org/docs/17/explicit-locking.html"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Carried from round 1. OutboxRelay.cs:58 `await publisher.PublishAsync(...)`, :59 `message.PublishedAt = DateTimeOffset.UtcNow;`, :63-67 `finally { await db.SaveChangesAsync(...); await transaction.CommitAsync(...); }` — no catch in RelayDueAsync, so the exception propagates to ExecuteAsync after the finally.",
+        "source": "examples/don-hang: DonHang.Messaging/OutboxRelay.cs"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Round 2, text now per round-1 suggested_text. Tutorial 7 (.NET): \"Publisher confirms are enabled at the channel level via the CreateChannelOptions class\"; \"The await returns as soon as the message has been confirmed\"; if \"nack-ed or returned\" it will \"throw an exception.\" API guide: during recovery publishes \"will be rejected with an exception.\" RabbitMqPublisher.cs:36 PublishAsync awaits BasicPublishAsync. Lesson §4 sentence matches.",
+        "source": "https://www.rabbitmq.com/tutorials/tutorial-seven-dotnet ; https://www.rabbitmq.com/client-libraries/dotnet-api-guide ; examples/don-hang @ stage-3: DonHang.Messaging/RabbitMqPublisher.cs"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Round 2, text now per round-1 suggested_text. Confirms page: \"For routable messages, the basic.ack is sent when a message has been accepted by all the queues.\" The claim no longer implies storage for unroutable messages.",
+        "source": "https://www.rabbitmq.com/docs/confirms"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Round 2, text now per round-1 suggested_text. Publishers page: without confirms a client \"cannot assume that the message has reached the server and was successfully processed\"; it \"could have been lost along the way\". Lesson §6 bullet 1 and quiz q2 now say \"never acknowledges\" / \"no acknowledgement\", not \"no answer at all\".",
+        "source": "https://www.rabbitmq.com/docs/publishers"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Carried from round 1. RabbitMqPublisher.cs:51 `ExchangeDeclareAsync(exchange, ExchangeType.Topic, durable: true, ...)`, :28 `Persistent = true` (re-read at stage-3 via git show); DonHang.Notifications/RabbitMqTopology.cs:25 `QueueDeclareAsync(Queue, durable: true, ...)` with Queue = \"notifications.order-events\".",
+        "source": "examples/don-hang: DonHang.Messaging/RabbitMqPublisher.cs, DonHang.Notifications/RabbitMqTopology.cs"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Round 2, text now per round-1 suggested_text (conditioned on routing to a durable queue). Queues: \"Durable queues will be recovered on node boot, including messages in them published as persistent.\" Quorum queues: messages \"are persisted on disk regardless of the message delivery mode\". Exchanges: exchanges \"can be durable or transient\". Lesson §4: \"A confirmed message that RabbitMQ routed to a durable queue survives a restart of the broker.\"",
+        "source": "https://www.rabbitmq.com/docs/queues ; https://www.rabbitmq.com/docs/quorum-queues ; https://www.rabbitmq.com/docs/exchanges"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Carried from round 1. outputs/stage-3/scripts/backend/broker-down.txt: \"-> 201\", \"order.placed | not published\", \"Relaying outbox messages failed (...); trying again in 1 s\", \"rabbitmq is back\", \"order.placed | published\", \"...made from the message: sent\". Script not re-run.",
+        "source": "examples/don-hang: outputs/stage-3/scripts/backend/broker-down.txt, scripts/backend/broker-down.sh"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Carried from round 1. OutboxRelay.cs:24-33 `catch (Exception ex) when (!stoppingToken.IsCancellationRequested) { logger.LogWarning(\"Relaying outbox messages failed ({Error}); trying again in {TickSeconds} s\", ex.Message, Tick.TotalSeconds); }` inside the PeriodicTimer loop; no attempt counter or delay change in the file.",
+        "source": "examples/don-hang: DonHang.Messaging/OutboxRelay.cs"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Round 2, text now per round-1 suggested_text. RabbitMqPublisher.cs @ stage-3: line 47 `var open = await connection.GetAsync(...)`, line 48 `channel = await open.CreateChannelAsync(...)`; RabbitMqConnection.cs:27 returns the cached connection once opened, so with a dropped shared connection the throw comes from line 48, otherwise from line 47. Lesson §5 now names both.",
+        "source": "examples/don-hang @ stage-3: DonHang.Messaging/RabbitMqPublisher.cs, DonHang.Messaging/RabbitMqConnection.cs"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Carried from round 1. Protocol 53.2.9 Termination: \"For either normal or abnormal termination, any open transaction is rolled back, not committed.\" Explicit Locking 13.3.2: \"Row-level locks are released at transaction end\".",
+        "source": "https://www.postgresql.org/docs/17/protocol-flow.html ; https://www.postgresql.org/docs/17/explicit-locking.html"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "RabbitMqPublisher.cs @ stage-3 line 26 `MessageId = message.Id.ToString(),` (re-read via git show) — the id comes from the OutboxMessage row, so republishing the same row reuses it.",
+        "source": "examples/don-hang @ stage-3: DonHang.Messaging/RabbitMqPublisher.cs"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "Round 2, text now per round-1 suggested_text, kind behavior. Publishers page: unconfirmed messages \"can be republished if it's safe to do so\" (repeats possible). Confirms page: for routable messages basic.ack is sent \"when a message has been accepted by all the queues\", so a confirmed message is in its bound queues. §6 bullet 3, summary 5 and q6 explanation now carry the condition.",
+        "source": "https://www.rabbitmq.com/docs/publishers ; https://www.rabbitmq.com/docs/confirms"
+      },
+      {
+        "n": 16,
+        "verdict": "unverified",
+        "evidence": "Carried from round 1. Code part verified (RabbitMqPublisher.cs:45 `if (channel is { IsOpen: true }) return channel;`). Exchange re-declare idempotence: exchanges page does not address it; queues page states it only for queues (\"The declaration will have no effect if the queue does already exist and its attributes are the same\"). Appears only in a code comment, not in lesson prose.",
+        "source": "https://www.rabbitmq.com/docs/exchanges ; https://www.rabbitmq.com/docs/queues"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "New wording (round 2) attributes the waiting to the tracking flag alone. The RabbitMQ.Client 7.2.2 XML doc for PublisherConfirmationTrackingEnabled says only \"Should this library track publisher confirmations for you?\" and describes the sequence-number header; the .NET tutorial says the await returns once confirmed, without tying it to that flag. Claim 5 covers \"confirmations and tracking on\" together, not the flag by itself.",
+        "quote": "Line 49 turns publisher confirms on, and the tracking flag makes each publish wait for its confirm;",
+        "fix": "Replace with: \"Line 49 turns publisher confirms on and lets the client track each confirm for you; with both on, `BasicPublishAsync`, which `PublishAsync` calls earlier in the file, completes only once RabbitMQ has confirmed the message.\""
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-14T23:45:00+07:00",
+    "reviewer": "review-junior (prompt 05), round 2",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "text": "New in round 2. The paragraph before now says RabbitMQ answers 'once the queues the message is routed to have accepted it' and no longer mentions responsibility, so 'That responsibility' points back only to the Core concepts definition. I had to stop and look back to see what 'that' refers to.",
+        "quote": "That responsibility lasts because nothing in the path is temporary.",
+        "fix": "Replace 'That responsibility lasts' with 'What the queues accepted lasts'."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [
+        "§4: 'That responsibility' no longer has an antecedent in the preceding paragraph"
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}
