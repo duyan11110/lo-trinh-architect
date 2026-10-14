@@ -1,0 +1,227 @@
+{
+  "id": "design.l3.read-model",
+  "technical": {
+    "reviewed_at": "2026-10-14T21:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "refs apply-simplified-microservice-cqrs-ddd-patterns.md:24 \"It uses a single data source or database, but two logical models\"; cqrs-microservice-reads.md: \"the returned type can be specifically made for the clients, based on the data returned by the queries\". Supports a read model shaped for one query, living in the same database. 'Written from the write side's changes' is the course glossary's definition of the term.",
+        "source": "refs/dotnet-docs/docs/architecture/microservices/microservice-ddd-cqrs-patterns/apply-simplified-microservice-cqrs-ddd-patterns.md; cqrs-microservice-reads.md"
+      },
+      {
+        "n": 2,
+        "verdict": "rephrased",
+        "evidence": "Migrations/20261005224255_AddOrderStatusHistory.Designer.cs maps orders as id, customer_id, idempotency_key, placed_at, status (+ xmin): only placed_at is a time, as claimed. But the same model at that migration still has a `notifications` table (order_id, subject, created_at), and outputs/stage-2/scripts/backend/order-email.txt shows a row 'email | order placed' per order email. So 'no table keeps past statuses or their times' is too strong. git show stage-2 was not runnable in this session.",
+        "source": "examples/don-hang DonHang.Infrastructure/Migrations/20261005224255_AddOrderStatusHistory.Designer.cs:67-160; outputs/stage-2/scripts/backend/order-email.txt",
+        "suggested_text": "At stage-2 orders has id, customer_id, placed_at, status and idempotency_key; status is overwritten on each change, so the orders row keeps no past status and no time other than placed_at."
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "OrderService.cs:59-68: `var order = await repository.FindAsync(orderId) ?? throw ...; order.Cancel(); await events.DispatchAsync(order); await repository.SaveChangesAsync();` No mention of history. Entities.cs:121-133 Cancel() checks four statuses, sets `Status = \"cancelled\"`, then `domainEvents.Add(new OrderCancelled(this, DateTimeOffset.UtcNow));`.",
+        "source": "examples/don-hang (working tree, see issue notes) DonHang.Domain/OrderService.cs:59-68, Entities.cs:121-133"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "RecordOrderStatusHistory.cs:13-15 implements IDomainEventHandler<> for OrderPlaced, OrderCancelled, OrderShipped, OrderRefundRequested, OrderRefunded, OrderRefundFailed. ServiceCollectionExtensions.cs:36-41: six `services.AddScoped<IDomainEventHandler<...>, RecordOrderStatusHistory>();`. DomainEvents.cs:15-27 declares exactly these six records; Entities.cs adds each once (lines 87, 132, 142, 155, 165, 176).",
+        "source": "examples/don-hang DonHang.Infrastructure/RecordOrderStatusHistory.cs, ServiceCollectionExtensions.cs:36-41, DonHang.Domain/DomainEvents.cs"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "RecordOrderStatusHistory.cs:17-28 maps placed/new, cancelled/cancelled, shipped/shipped, refund-requested/refunding, refunded/cancelled, refund-failed/paid. AddRow (30-40) calls only `db.OrderStatusHistory.Add(...)` and returns `Task.CompletedTask`; no SaveChanges. Matches Entities.cs: CompleteRefund sets cancelled, FailRefund sets paid.",
+        "source": "examples/don-hang DonHang.Infrastructure/RecordOrderStatusHistory.cs:17-40"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Order (Entities.cs:29-178) has properties Id, CustomerId, PlacedAt, Status, Items, DomainEvents, IdempotencyKey, Version, Customer; none refers to history. OrderStatusHistoryEntry.cs:5-6 \"Only RecordOrderStatusHistory writes these and only EfOrderHistory reads them; Order has no property pointing here.\" Model snapshot: `b.HasOne(\"DonHang.Domain.Order\", \"Order\").WithMany()` (no inverse navigation). Grep: only those two classes use OrderStatusHistory in C#.",
+        "source": "examples/don-hang DonHang.Domain/Entities.cs; DonHang.Infrastructure/OrderStatusHistoryEntry.cs; Migrations/DonHangDbContextModelSnapshot.cs:239-242"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "refs efcore saving/transactions.md:17 \"By default, if the database provider supports transactions, all changes in a single call to `SaveChanges` are applied in a transaction. If any of the changes fail, then the transaction is rolled back and none of the changes are applied to the database.\"",
+        "source": "refs/efcore-docs/entity-framework/core/saving/transactions.md"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "PostgreSQL 17, 13.2.1 (WebFetch, quoted block): \"Read Committed is the default isolation level in PostgreSQL. When a transaction uses this isolation level, a SELECT query (without a FOR UPDATE/SHARE clause) sees only data committed before the query began\". Capture order-history.txt line 13 shows both rows right after `cancel -> 200`.",
+        "source": "https://www.postgresql.org/docs/17/transaction-iso.html; examples/don-hang outputs/stage-3/scripts/design/order-history.txt"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "refs efcore saving/related-data.md:28 \"If you reference a new entity from the navigation property of an entity that is already tracked by the context, the entity will be discovered and inserted\"; :36 \"If you change the navigation property of an entity, the corresponding changes will be made to the foreign key column in the database.\" Execution: capture order-history.txt shows the new order's `placed` row found by `WHERE order_id = $order`, i.e. order_id was filled for an order created in the same save.",
+        "source": "refs/efcore-docs/entity-framework/core/saving/related-data.md; examples/don-hang outputs/stage-3/scripts/design/order-history.txt:15-20"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "OrdersController.cs:83-95: `[HttpGet(\"{id:int}/history\")]`, `var order = await repository.FindForReadingAsync(id); if (order is null) return NotFound();`, `AuthorizeAsync(User, order, \"OrderOwner\")` -> `Forbid()`, then `history.ListAsync(id)` mapped to `OrderStatusChangeDto(c.Event, c.Status, c.OccurredAt)`. EfOrderRepository.cs:15-16 FindForReadingAsync uses `AsNoTracking()`.",
+        "source": "examples/don-hang DonHang.Api/Controllers/OrdersController.cs:78-95; DonHang.Infrastructure/EfOrderRepository.cs:15-16"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "EfOrderHistory.cs:12-17: `db.OrderStatusHistory.Where(row => row.OrderId == orderId).OrderBy(row => row.Id).Select(row => new OrderStatusChange(row.Event, row.Status, row.OccurredAt)).ToListAsync();` id is an identity column (migration: IdentityByDefaultColumn), so Id order is insertion order.",
+        "source": "examples/don-hang DonHang.Infrastructure/EfOrderHistory.cs:10-18; Migrations/20261005224255_AddOrderStatusHistory.cs:19-20"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "refs efcore querying/tracking.md:67 \"If the result set doesn't contain any entity types, then no tracking is done. In the following query, we return an anonymous type with some of the values from the entity (but no instances of the actual entity type). There are no tracked entities coming out of the query.\" OrderStatusChange is a record of three scalars (OrderStatusChange.cs:6), not an entity type.",
+        "source": "refs/efcore-docs/entity-framework/core/querying/tracking.md"
+      },
+      {
+        "n": 13,
+        "verdict": "rephrased",
+        "evidence": "Migration Up (AddOrderStatusHistory.cs:47-50): `INSERT INTO order_status_history (order_id, event, status, occurred_at) SELECT id, 'placed', 'new', placed_at FROM orders ORDER BY id`. Verified as to what the migration writes. 'Nothing else is recoverable' holds for orders but not absolutely: the stage-2 notifications table kept order_id, subject ('order placed', ...) and created_at per email job (see claim 2).",
+        "source": "examples/don-hang DonHang.Infrastructure/Migrations/20261005224255_AddOrderStatusHistory.cs:42-50",
+        "suggested_text": "Migration AddOrderStatusHistory backfills one row per existing order: 'placed', 'new', orders.placed_at. orders holds nothing else about earlier changes, so nothing else can be rebuilt from it."
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "outputs/stage-3/scripts/design/order-history.txt: `7 | 3 | shipped`; `[{\"event\":\"placed\",\"status\":\"new\",\"occurredAt\":\"2026-03-18T00:45:00+00:00\"}]`; `cancel -> 200`; new order history `placed`/`new` then `cancelled`/`cancelled`; SQL `(2 rows)`. Script order-history.sh re-execs via lab-run.sh when run on the host, so running it in Git Bash is supported.",
+        "source": "examples/don-hang scripts/design/order-history.sh; outputs/stage-3/scripts/design/order-history.txt"
+      },
+      {
+        "n": 15,
+        "verdict": "not-needed",
+        "evidence": "Opinion with its condition stated in the text (s6 myth 1: \"is an option when writes must not wait for it; readers then see the change only after the message is handled\"). The factual half (same-transaction read model does not lag) rests on claims 7 and 8.",
+        "source": "lesson s6; claims 7, 8"
+      },
+      {
+        "n": 16,
+        "verdict": "not-needed",
+        "evidence": "Design opinion; the text ties it to a stated condition (\"no rule of `Order` reads the history\") and the code bears the premise out: no method of Order reads past statuses (Entities.cs:109-177 check only the current Status).",
+        "source": "examples/don-hang DonHang.Domain/Entities.cs:109-177"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "major",
+        "section": 3,
+        "kind": "accuracy",
+        "text": "Unlisted and inexact claim. The history row is defined as \"one row per change to an order\", s4 says \"one more insert on every status change\", and s6 says it \"never trails the order's status\". But `Order.MarkPaid()` (Entities.cs:109-114) sets `Status = \"paid\"` and records no event, so that change gets no row. The author's self_check notes the gap; the text still says every change. No claim covers it.",
+        "quote": "the history row — one row per change to an order",
+        "fix": "s3: \"one row per event `Order` records: the event's name, the status the order moved to and the time it happened.\" s4: \"The price is one more insert on every change that records an event.\" s6 myth 1: \"...so it never trails a status change that recorded an event.\" Add a claim citing Entities.cs MarkPaid (no event) and RecordOrderStatusHistory's six handlers."
+      },
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "Unlisted claim with a missing condition. A new use case gets a row only if it calls `events.DispatchAsync(order)` before `SaveChangesAsync`, as every OrderService method does (OrderService.cs:49-50, 65-66, 77-78, 92-93, 105-106, 117-118). A use case that records the event but skips dispatch gets no row. Not in the claims ledger.",
+        "quote": "A new use case that records one of these events gets its history row without any change to the use case.",
+        "fix": "Rewrite: \"A new use case that records one of these events and dispatches them before its save, as every `OrderService` method does, gets its history row with no line about the history.\" Add a claim citing OrderService.cs."
+      },
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "accuracy",
+        "text": "Overstated. The statuses in between are gone from `orders`, but at stage-2 the `notifications` table in the same database kept order_id, subject (\"order placed\", …) and created_at for each email job (AddOrderStatusHistory.Designer.cs:67-119; outputs/stage-2/scripts/backend/order-email.txt). 'Cannot be recovered' with no qualifier is stronger than the evidence.",
+        "quote": "the statuses in between were overwritten and cannot be recovered.",
+        "fix": "Summary 5: \"Orders placed before stage-3 have only a `placed` row: `orders` overwrote the statuses in between, so the migration had nothing else to copy.\" Same qualifier ('from `orders`') in the Try-it answer if that sentence is touched. Update claim 13 to match."
+      },
+      {
+        "severity": "minor",
+        "section": 2,
+        "kind": "accuracy",
+        "text": "The stage-2 row also holds `idempotency_key` (Designer.cs:134-136), and claim 2 says so. The sentence reads as a complete list of the row.",
+        "quote": "Besides its id and its customer, it holds `placed_at` and a `status` of `shipped`.",
+        "fix": "\"Besides its id, its customer and its idempotency key, it holds `placed_at` and a `status` of `shipped`.\" Or make it explicitly partial: \"Among its columns are `placed_at` and a `status` of `shipped`.\""
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "code",
+        "text": "Review limitation, not a defect found. `git show stage-3:` and `tools/extract-code` could not run in this session (shell needed approval). Both blocks were compared with the submodule working tree on master 7ef8fff, which is at or after stage-3. They match character for character: RecordOrderStatusHistory.cs:17-40, OrdersController.cs:78-95. Line ranges were not confirmed against the tag object itself.",
+        "fix": "Before approval, run `tools/extract-code DonHang.Infrastructure/RecordOrderStatusHistory.cs --tag stage-3 --lines 17-40` and `tools/extract-code DonHang.Api/Controllers/OrdersController.cs --tag stage-3 --lines 78-95` (or `tools/validate design.l3.read-model`), and confirm they match the lesson."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "fix-required"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-14T22:00:00+07:00",
+    "reviewer": "review-junior (prompt 05), claude-opus-5-5",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "code",
+        "text": "I stop at this comment: why would a new order not have an order_id? Nothing in the prose says a just-placed order gets its id only when it is saved, so 'even for a new order' warns me about a problem I did not know existed, and I cannot tell why the row points to `Order` instead of an id.",
+        "quote": "Order = domainEvent.Order, // EF Core fills in order_id, even for a new order",
+        "fix": "Add one sentence after 'There is one `HandleAsync` for each of the six events…' saying that a placed order has no id until `SaveChangesAsync` runs, so the row points to the `Order` object and EF Core fills `order_id` in that same save."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "gap",
+        "text": "The prose explains why `refund-failed` leads to `paid`, but not why `refunded` leads to `cancelled`. Only the Connections line about the `event` column tells me a refund ends the order as cancelled; while reading the code I guessed it was a typo.",
+        "quote": "public Task HandleAsync(OrderRefunded domainEvent) => AddRow(domainEvent, \"refunded\", \"cancelled\");",
+        "fix": "In the paragraph after the block, add: \"`refunded` leaves the order `cancelled`, the same status a cancel gives; the event name keeps the two apart.\""
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "code",
+        "text": "The code comment says the untracked copy is loaded 'as in Get', but no `Get` endpoint appears in this lesson or the prerequisite summaries. The prose explains the untracked load well enough, so I can go on, but the reference has nothing to point to.",
+        "quote": "so it runs on an untracked copy first, as in Get",
+        "fix": "In 'The order is loaded once, untracked, and only for the `OrderOwner` check', add 'as the single-order endpoint `Get` does' so the comment's `Get` has something to refer to."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "diagram",
+        "text": "The prose says `OrderService` first loads the order, but the diagram goes straight from `CancelOrderAsync(id)` to `Cancel()` with no load arrow. When I trace the prose against the diagram, I cannot find that step.",
+        "quote": "`OrderService` loads the order and calls `Cancel()`, which checks the status rule and records `OrderCancelled`.",
+        "fix": "Either add an arrow `S->>D: load the Order` before `S->>O`, or shorten the sentence to '`OrderService` calls `Cancel()`, which…'."
+      },
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "style",
+        "text": "'could write' reads as something the migration was able to do, not what it did. I only learned that it really wrote the `placed` rows from the Try-it suggested answer.",
+        "quote": "The migration that created the table could write one `placed` row per existing order and nothing more.",
+        "fix": "Replace with: \"The migration that created the table writes one `placed` row per existing order, from `placed_at`, because that is all `orders` still holds.\""
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "style",
+        "text": "'the lab' is not named anywhere in this lesson or the summaries. I can still follow the step, because it says the lab is started by `scripts/up.sh`, but the word makes me wonder whether this is a separate setup.",
+        "quote": "with the lab started by `scripts/up.sh`",
+        "fix": "Replace 'with the lab started by `scripts/up.sh`' with 'after running `scripts/up.sh`'."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "text": "q2 options c and d repeat the sentences of section 4 almost word for word ('checks the status rule and records `OrderCancelled`', 'hands … to every handler registered for it'). I can order them by remembering the paragraph, not by understanding why the save must come last.",
+        "quote": "`Cancel()` checks the status rule and records `OrderCancelled`.",
+        "fix": "Reword options c and d in different words, e.g. c: '`Order` accepts the cancel and notes that it happened'; d: 'Each handler for that event is called with it'."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [
+        "Order = domainEvent.Order, // EF Core fills in order_id, even for a new order",
+        "public Task HandleAsync(OrderRefunded domainEvent) => AddRow(domainEvent, \"refunded\", \"cancelled\");",
+        "The migration that created the table could write one `placed` row per existing order and nothing more."
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

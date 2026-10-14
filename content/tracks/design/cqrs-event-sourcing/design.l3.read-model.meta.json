@@ -1,0 +1,170 @@
+{
+  "id": "design.l3.read-model",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-10-14T00:00:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "A read model is data stored in the shape one query needs, written from the write side's changes rather than by the use cases; it can live in the same database as the write side and need not be a separate store.",
+      "kind": "fact",
+      "source_hint": "refs/dotnet-docs/docs/architecture/microservices/microservice-ddd-cqrs-patterns/ (CQRS read model); glossary read-model",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 2,
+      "text": "At stage-2 orders has id, customer_id, placed_at, status and idempotency_key; status is overwritten on each change, so the orders row keeps no past status and no time other than placed_at.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: DonHang.Domain/Entities.cs (Order), DonHangDbContext.cs",
+      "needs_verification": true,
+      "section": 2
+    },
+    {
+      "n": 3,
+      "text": "At stage-3 OrderService.CancelOrderAsync calls repository.FindAsync, order.Cancel(), events.DispatchAsync(order), then repository.SaveChangesAsync(); Cancel() records OrderCancelled; CancelOrderAsync does not mention the history.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Domain/OrderService.cs:56-68, Entities.cs:132",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 4,
+      "text": "At stage-3 RecordOrderStatusHistory implements IDomainEventHandler<T> for the six events Order records (OrderPlaced, OrderCancelled, OrderShipped, OrderRefundRequested, OrderRefunded, OrderRefundFailed) and is registered once per event with AddScoped.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: RecordOrderStatusHistory.cs:13-15, ServiceCollectionExtensions.cs:36-41, Entities.cs domainEvents.Add x6",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 5,
+      "text": "Mapping event→(name,status): placed→new, cancelled→cancelled, shipped→shipped, refund-requested→refunding, refunded→cancelled, refund-failed→paid; AddRow only calls db.OrderStatusHistory.Add and does not save.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Infrastructure/RecordOrderStatusHistory.cs:17-40",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 6,
+      "text": "Order has no property referring to order_status_history; OrderStatusHistoryEntry lives in DonHang.Infrastructure and only RecordOrderStatusHistory writes it, only EfOrderHistory reads it.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Domain/Entities.cs (Order), DonHang.Infrastructure/OrderStatusHistoryEntry.cs:5-6",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 7,
+      "text": "SaveChangesAsync saves all tracked changes of the DbContext in one transaction by default, so the order's new status and the added history row are committed together or not at all.",
+      "kind": "behavior",
+      "version_key": "efcore",
+      "source_hint": "EF Core docs: Transactions (Default transaction behavior); lesson design.l3.dispatching-domain-events",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 8,
+      "text": "In PostgreSQL a statement that starts after a transaction commits sees that transaction's changes (Read Committed default), so a request after the save sees both the status and the history row.",
+      "kind": "behavior",
+      "version_key": "postgresql",
+      "source_hint": "PostgreSQL 17 docs: 13.2.1 Read Committed Isolation Level; lesson backend.l3.eventual-consistency",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 9,
+      "text": "A placed order gets its id only when SaveChangesAsync inserts it; setting the navigation Order on a new OrderStatusHistoryEntry lets EF Core fill order_id in that same save (dependent inserted after principal).",
+      "kind": "behavior",
+      "version_key": "efcore",
+      "source_hint": "EF Core docs: Changing Foreign Keys and Navigations (fixup); RecordOrderStatusHistory.cs:34 comment",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 10,
+      "text": "OrdersController.History (GET /api/v1/orders/{id}/history) loads the order with FindForReadingAsync, as Get does, only for the OrderOwner check (404 if absent, Forbid if denied), then returns history.ListAsync(id) mapped to OrderStatusChangeDto.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Api/Controllers/OrdersController.cs:64-95 (Get, History)",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 11,
+      "text": "EfOrderHistory.ListAsync filters order_status_history by OrderId, orders by Id (insertion order) and selects Event, Status, OccurredAt into OrderStatusChange; no Order is built, nothing tracked.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Infrastructure/EfOrderHistory.cs:10-17",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 12,
+      "text": "Query results that contain no entity types (a Select into a record of scalar columns) are not tracked by EF Core.",
+      "kind": "behavior",
+      "version_key": "efcore",
+      "source_hint": "EF Core docs: Tracking vs. No-Tracking Queries, 'Tracking and custom projections'",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 13,
+      "text": "Migration AddOrderStatusHistory backfills one row per existing order: 'placed', 'new', orders.placed_at. orders holds nothing else about earlier changes, so nothing else can be rebuilt from it.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Infrastructure/Migrations/20261005224255_AddOrderStatusHistory.cs (Up, migrationBuilder.Sql)",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 14,
+      "text": "scripts/design/order-history.sh at stage-3 prints order 7 as shipped in orders with history [placed/new] only; a new order placed then cancelled has history placed, cancelled and two rows (placed/new, cancelled/cancelled).",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: scripts/design/order-history.sh, outputs/stage-3/scripts/design/order-history.txt",
+      "needs_verification": true,
+      "section": 7
+    },
+    {
+      "n": 15,
+      "text": "Keep the read model in the write side's transaction when readers must never see it behind the status; a read model in another database fed by a message consumer suits writes that must not wait, at the cost of readers seeing changes later.",
+      "kind": "opinion",
+      "source_hint": "outline item 4, misconception 1; depth_notes (trade-off only); lesson backend.l3.eventual-consistency",
+      "needs_verification": false,
+      "section": 6
+    },
+    {
+      "n": 16,
+      "text": "Keep history out of the Order aggregate when no rule of Order needs it: a list inside would travel with every changed order and each new screen shape would grow the aggregate. Opposing context: a rule that depends on past statuses belongs in Order.",
+      "kind": "opinion",
+      "source_hint": "outline misconception 2; lesson design.l3.aggregate-root",
+      "needs_verification": false,
+      "section": 6
+    },
+    {
+      "n": 17,
+      "text": "A history row exists only for changes that record an event: Order.MarkPaid() sets status paid and records no event, so it gets no row; RecordOrderStatusHistory handles only the six events Order records.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Domain/Entities.cs (MarkPaid); DonHang.Infrastructure/RecordOrderStatusHistory.cs:13-15",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 18,
+      "text": "Every OrderService method calls events.DispatchAsync(order) before repository.SaveChangesAsync(); a use case that records an event but does not dispatch it before its save gets no history row.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Domain/OrderService.cs (DispatchAsync before SaveChangesAsync in each method)",
+      "needs_verification": true,
+      "section": 4
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [1, 2, 3, 4, 5, 6],
+    "outline_items_missing": [],
+    "beyond_scope": ["Try it relies on scripts/up.sh to start the lab (STAGE.md)"]
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1500,
+    "notes": "apply-review 2026-10-14: history row = one per recorded event (MarkPaid, claim 17); dispatch-before-save condition (claim 18); stage-2 row lists idempotency key; claims 2, 13 per suggested_text; summary 4-5 qualified; junior: new-order id, refunded->cancelled, Get, diagram sentence, migration wording, up.sh. Prose trimmed in s4-s5 to hold word budget. Quiz q2 c/d rewording left to /quiz."
+  },
+  "open_questions": [],
+  "repo_changes_needed": []
+}
