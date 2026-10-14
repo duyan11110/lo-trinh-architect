@@ -1,0 +1,181 @@
+{
+  "id": "k8s.l2.tls-at-the-gateway",
+  "technical": {
+    "reviewed_at": "2026-10-15T00:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Round 2: lesson now uses round 1's suggested_text. API spec, ListenerTLSConfig.mode: Terminate = \"The TLS session between the downstream client and the Gateway is terminated at the Gateway.\" certificateRefs \"is required to have at least one element when the mode is set to Terminate\". TLS guide: backend re-encryption is BackendTLSPolicy, a separate setting; none configured at stage-3.",
+        "source": "https://gateway-api.sigs.k8s.io/references/spec/ (ListenerTLSConfig); https://gateway-api.sigs.k8s.io/guides/tls/"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "API spec, SecretObjectReference.namespace: \"When unspecified, the local namespace is inferred.\" The Gateway donhang is in namespace donhang (gateway.yaml L10 @stage-3).",
+        "source": "https://gateway-api.sigs.k8s.io/references/spec/ (SecretObjectReference)"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "secret.md L366-374: \"When using this type of Secret, the `tls.key` and the `tls.crt` key must be provided in the `data` (or `stringData`) field\"; L390-396 `kubectl create secret tls my-tls-secret --cert=... --key=...`. kubectl_create_secret_tls.md L75 (--dry-run): \"If client strategy, only print the object that would be sent, without sending it.\"",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/configuration/secret.md L364-399; refs/.../reference/kubectl/generated/kubectl_create/kubectl_create_secret_tls.md L75"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "gateway.yaml @stage-3 L3-5: \"Each port is one of Traefik's own (8000 for HTTP, 8443 for HTTPS); the staging node publishes them on this machine as localhost:18080 and localhost:18443.\" tofu staging cluster main.tf L18-20 published_ports 30080->18080, 30443->18443. L21-27 https listener 8443, Terminate, donhang-tls; redirect-to-https on sectionName http, scheme https, port 18443, 301.",
+        "source": "examples/don-hang deploy/gitops/config-repo/platform/edge/gateway.yaml; deploy/tofu/envs/staging/cluster/main.tf"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Carried from round 1. seal-secrets.sh @stage-3: `kubectl create secret tls donhang-tls -n donhang --cert=secrets/donhang-tls.crt --key=secrets/donhang-tls.key --dry-run=client -o yaml | kubeseal --cert secrets/sealing.crt --format yaml > \"$config_repo/platform/edge/sealed-donhang-tls.yaml\"`.",
+        "source": "examples/don-hang scripts/devops/seal-secrets.sh @stage-3"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Carried from round 1. README: SealedSecret is \"a recipe for creating a secret\"; example shows spec.encryptedData as ciphertext; \"the SealedSecret and Secret must have the same namespace and name\". Lab clone sealed-donhang-tls.yaml: encryptedData holds tls.crt and tls.key. Lesson wording 'only in encrypted form' matches.",
+        "source": "https://github.com/bitnami-labs/sealed-secrets (README)"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Carried from round 1. RFC 8446 §4.4.2: \"This message conveys the endpoint's certificate chain to the peer.\" §4.4.3: \"This message is used to provide explicit proof that an endpoint possesses the private key corresponding to its certificate.\"",
+        "source": "https://www.rfc-editor.org/rfc/rfc8446 §4.4.2, §4.4.3"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "dev-secrets.sh L77-81 @stage-3: lab CA (CN=Don Hang lab CA), donhang-tls.crt signed with `-days 825`, extfile `subjectAltName=DNS:donhang.localhost,DNS:auth.donhang.localhost`, inside `if [ ! -f secrets/donhang-tls.key ]`.",
+        "source": "examples/don-hang scripts/dev-secrets.sh @stage-3"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Execution: gateway-tls.txt @stage-3 shows `curl: error 60, the certificate is not trusted` without --cacert and `HTTP 200 over HTTPS` with it. gateway-tls.sh L9-13: comment \"curl on Windows checks certificates through Schannel, which also asks...\"; `if command curl --version | grep -q Schannel; then curl() { command curl --ssl-no-revoke \"$@\"; }`.",
+        "source": "examples/don-hang scripts/k8s/gateway-tls.sh L9-13; outputs/stage-3/scripts/k8s/gateway-tls.txt"
+      },
+      {
+        "n": 10,
+        "verdict": "rephrased",
+        "evidence": "Gateway API part verified (HTTPRequestRedirectFilter: hostname/path unset keep the request's; 301 allowed). RFC 9110 L7232-7239: \"The 3xx (Redirection) class ... There are several types of redirects: 1. ... as provided by the Location header field, as in the status codes 301, 302, 307, and 308.\" Type 2 (300) and 304 are 3xx without that meaning, so 'A redirect is a 3xx response whose Location...' over-generalises. L7367: 301 = \"assigned a new permanent URI\".",
+        "source": "https://gateway-api.sigs.k8s.io/references/spec/ (HTTPRequestRedirectFilter); refs/rfc/rfc9110.txt L7232-7239, L7367",
+        "suggested_text": "A redirect, such as `301`, is a 3xx response whose `Location` header gives the address the client should send the request to instead; `301` says the move is permanent."
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Carried from round 1. outputs/stage-3/scripts/k8s/gateway-tls.txt is identical to the lesson's output block: http 1 route / https 2 routes Programmed=True, 301 + Location, error 60 then 200, HTTPS iss, 401 then 200.",
+        "source": "examples/don-hang outputs/stage-3/scripts/k8s/gateway-tls.txt @stage-3"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Carried from round 1. Keycloak hostname guide: hostname option sets the frontend URL; base URL \"has an important impact on how tokens are issued and validated\". Execution: KC_HOSTNAME=https://auth.donhang.localhost:18443 gives \"iss\":\"https://auth.donhang.localhost:18443/realms/donhang\".",
+        "source": "https://www.keycloak.org/server/hostname; outputs/stage-3/scripts/k8s/gateway-tls.txt"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "gateway-tls.sh L32-36 @stage-3 as described. scripts/lib/gitops.sh L147-153: \"routes_without_refunds <httproutes.yaml>: staging's routes before Payments runs there ...: without the rule for /api/v1/refunds, whose Service does not exist yet\". config_commit runs `git add -A` then commit, so the SealedSecret from `seal-secrets.sh --no-commit` (L23) is included.",
+        "source": "examples/don-hang scripts/k8s/gateway-tls.sh, scripts/lib/gitops.sh @stage-3"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "Round 2: claim and lesson now use round 1's suggested_text. JWT bearer doc: AddJwtBearer \"can validate just the audience and the issuer\". The relation Authority = same public address as iss is a config fact: api-configmap Keycloak__Authority and KC_HOSTNAME both change to https://auth.donhang.localhost:18443 (output diff), iss shows the same base.",
+        "source": "refs/aspnetcore-docs/aspnetcore/security/authentication/configure-jwt-bearer-authentication.md L135; outputs/stage-3/scripts/k8s/gateway-tls.txt"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "Carried from round 1. configmap.md L205: \"ConfigMaps consumed as environment variables are not updated automatically and require a pod restart.\" gateway-tls.sh deletes Pods -l app=api after the sync.",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/configuration/configmap.md L205"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "Round 2: claim now rests on standards.tls and the prerequisite lesson. RFC 8446 §6.2 alerts: certificate_expired \"A certificate has expired or is not currently valid\"; unknown_ca. foundation.l1.tls-and-https claim 9 verified (RFC 9110 §4.3.4 trust anchors; RFC 8446 §6.2). dev-secrets.sh comment: \"Nothing renews it\".",
+        "source": "https://www.rfc-editor.org/rfc/rfc8446 §6.2; content/tracks/foundation/network/foundation.l1.tls-and-https.review.json claim 9"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "Carried from round 1. envs/staging/api.yaml @stage-3: containerPort 8080, envFrom configMapRef api, no volumes/volumeMounts. httproutes.yaml: HTTPRoute api backendRefs name api, port 8080.",
+        "source": "examples/don-hang deploy/gitops/config-repo/envs/staging/api.yaml, platform/edge/httproutes.yaml"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "Round 2: flag changed to -dates. Execution evidence in repo: scripts/network/inspect-cert.sh L9 `openssl x509 -noout -subject -issuer -dates`; its captured output outputs/stage-3/scripts/network/inspect-cert.txt L4-5 prints `notBefore=...` and `notAfter=...`. -issuer exercised by gateway-tls.sh L22 (output `issuer=CN=Don Hang lab CA, O=donhang-dev`). 825 days from dev-secrets.sh `-days 825`.",
+        "source": "examples/don-hang scripts/network/inspect-cert.sh; outputs/stage-3/scripts/network/inspect-cert.txt; scripts/k8s/gateway-tls.sh"
+      },
+      {
+        "n": 19,
+        "verdict": "verified",
+        "evidence": "Round 2: lesson now says 'a cluster can instead let a controller issue certificates and renew them'. cert-manager docs: it \"creates TLS certificates for workloads in your Kubernetes or OpenShift cluster and renews the certificates before they expire\".",
+        "source": "https://cert-manager.io/docs/"
+      },
+      {
+        "n": 20,
+        "verdict": "verified",
+        "evidence": "v1.6 spec, ParentReference.sectionName: \"SectionName is the name of a section within the target resource. In the following resources, SectionName is interpreted as the following: Gateway: Listener name.\" (as verified in k8s.l2.gateway-api review). httproutes.yaml @stage-3: routes api and keycloak use sectionName: https.",
+        "source": "https://gateway-api.sigs.k8s.io/reference/api-spec/1.6/spec/; examples/don-hang platform/edge/httproutes.yaml"
+      },
+      {
+        "n": 21,
+        "verdict": "verified",
+        "evidence": "envs/staging/api-configmap.yaml L13: `Keycloak__MetadataAddress: \"http://keycloak:8080/realms/donhang/.well-known/openid-configuration\"`. DonHang.Api/Program.cs L64: `options.MetadataAddress = builder.Configuration[\"Keycloak:MetadataAddress\"]`. keycloak.yaml comment: keys fetched from keycloak:8080.",
+        "source": "examples/don-hang deploy/gitops/config-repo/envs/staging/api-configmap.yaml; DonHang.Api/Program.cs"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 3,
+        "kind": "accuracy",
+        "text": "New in round 2 (changed text). Defines every 3xx as a Location redirect; RFC 9110 §15.4 lists 300 (choice) and 304 as 3xx without that meaning. Claim 10 rephrased.",
+        "quote": "A redirect is a 3xx response whose `Location` header gives the address the client should send the request to instead",
+        "fix": "Apply claim 10's suggested_text: \"A redirect, such as `301`, is a 3xx response whose `Location` header gives the address the client should send the request to instead; `301` says the move is permanent.\""
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-14T18:00:00Z",
+    "reviewer": "claude-opus-5-5",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "code",
+        "text": "Carried from round 1 (partly fixed). The prose now explains the two `Synced, Healthy` lines, but `Programmed=True` on the listener lines is still never explained, so I don't know what it confirms.",
+        "quote": "http: 1 route(s), Programmed=True",
+        "fix": "Add half a sentence to 'The listener `http` holds one route…': '`Programmed=True` means Traefik accepted that listener'."
+      },
+      {
+        "severity": "minor",
+        "section": "k8s.l2.tls-at-the-gateway.q5",
+        "kind": "quiz",
+        "text": "New in round 2 (changed text). The correct option a repeats the lesson's new sentence almost word for word ('names Keycloak by that same public address'), so I can pick it by recognition without understanding why the api cares.",
+        "quote": "`Keycloak__Authority` names Keycloak by its public address, which moved with `KC_HOSTNAME` and now appears in each token's `iss`.",
+        "fix": "Reword option a to test the consequence, e.g. 'If only `KC_HOSTNAME` changed, tokens would carry an `iss` that no longer matches the address the api's settings name for Keycloak.'"
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}
