@@ -1,0 +1,112 @@
+{
+  "id": "backend.l3.compensating-action",
+  "technical": {
+    "reviewed_at": "2026-10-14T23:59:50+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "refund-declined.sh:2 'Ask for a refund the fake gateway refuses (order 3, paid by bank transfer)'; output: 'charge | paid | 3520000 | bank_transfer'. fake-gateway/Program.cs Decide(): 'if (method == \"bank_transfer\") return Results.UnprocessableEntity(new { reason = \"a bank transfer cannot be refunded through the card gateway\" });' with [3] = \"bank_transfer\". (Round 1, claim unchanged.)",
+        "source": "examples/don-hang @ stage-3: scripts/backend/refund-declined.sh; outputs/stage-3/scripts/backend/refund-declined.txt; fake-gateway/Program.cs"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Round 2, rewritten claim. Output: '-> 202', 'refund-requested | refunding', 'refund requested | sent'. refund-declined.sh:10-12 reads three databases: sql --dbname donhang (orders, order_status_history), payments_sql --dbname donhang_payments, notifications_sql --dbname donhang_notifications. RefundRequestedConsumer (DonHang.Payments) and OrderEventsConsumer (DonHang.Notifications) each consume order.refund-requested on their own queue, so 'independently' holds.",
+        "source": "examples/don-hang @ stage-3: scripts/backend/refund-declined.sh:10-12; outputs/stage-3/scripts/backend/refund-declined.txt; DonHang.Payments/RefundRequestedConsumer.cs; DonHang.Notifications/OrderEventsConsumer.cs:122"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "ROLLBACK: 'ROLLBACK rolls back the current transaction and causes all the updates made by the transaction to be discarded.' Notes: 'Issuing ROLLBACK outside of a transaction block emits a warning and otherwise has no effect.' COMMIT: 'COMMIT commits the current transaction. All changes made by the transaction become visible to others and are guaranteed to be durable if a crash occurs.' (Round 1, claim unchanged.)",
+        "source": "https://www.postgresql.org/docs/17/sql-rollback.html; https://www.postgresql.org/docs/17/sql-commit.html"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "RefundSender.cs:99-104 sets refund.Status = \"failed\", refund.FailureReason = result.Reason, returns Message(\"payment.refund-failed\", ...). SendDueAsync:44-65 opens BeginTransactionAsync, calls RecordResult, adds the returned message to db.OutboxMessages, then SaveChangesAsync and CommitAsync once. No Remove/DELETE in the method. Re-read round 2 (working tree; lesson block lines 81-105 match it verbatim).",
+        "source": "examples/don-hang @ stage-3: DonHang.Payments/RefundSender.cs:44-65, 88-112"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "PaymentEventsConsumer.HandleAsync: db.InboxMessages.Add(...); 'else if (routingKey == \"payment.refund-failed\") await orders.FailRefundAsync(message.OrderId);'. OrderService.FailRefundAsync: order.FailRefund(); events.DispatchAsync(order); repository.SaveChangesAsync(). EfOrderRepository and EfOutbox both take the scoped DonHangDbContext, so one SaveChangesAsync writes order, inbox and outbox rows. (Round 1 claim 6, unchanged.)",
+        "source": "examples/don-hang @ stage-3: DonHang.Api/Messaging/PaymentEventsConsumer.cs; DonHang.Domain/OrderService.cs:110-118; DonHang.Infrastructure/EfOrderRepository.cs, EfOutbox.cs"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Entities.cs:172-177: 'if (Status != \"refunding\") throw new OrderStatusException(Id, \"not-refunding\", ...); Status = \"paid\"; domainEvents.Add(new OrderRefundFailed(...));'. CompleteRefund():161-166 has the identical check and sets \"cancelled\". (Round 1 claim 7, unchanged.)",
+        "source": "examples/don-hang @ stage-3: DonHang.Domain/Entities.cs:158-177"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "NotifyCustomerOnOrderEvents.cs:25 'HandleAsync(OrderRefundFailed domainEvent) => AddMessage(\"order.refund-failed\", domainEvent)'. RecordOrderStatusHistory.cs:7-8 'Keeps the read model order_status_history: one row for every domain event Order records, with the status the order moved to'; :24 AddRow(..., \"refund-requested\", \"refunding\"); :26 (\"refunded\", \"cancelled\"); :28 (\"refund-failed\", \"paid\"). DonHangDbContext.cs:108 ToTable(\"order_status_history\").",
+        "source": "examples/don-hang @ stage-3: DonHang.Domain/NotifyCustomerOnOrderEvents.cs:25; DonHang.Infrastructure/RecordOrderStatusHistory.cs:7-28; DonHang.Infrastructure/DonHangDbContext.cs:108"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "OrderEventsConsumer.cs:124 '\"order.refund-failed\" => \"refund failed\"'. Entities.cs Ship(): rejects cancelled/shipped/refunding, 'if (Status != \"paid\") throw ...', so paid ships. OrdersController Ship is [Authorize(Policy = \"StaffOnly\")], matching 'staff can ship it'. (Round 1 claim 9, unchanged.)",
+        "source": "examples/don-hang @ stage-3: DonHang.Notifications/OrderEventsConsumer.cs:124; DonHang.Domain/Entities.cs:135-143; DonHang.Api/Controllers/OrdersController.cs:142-146"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "RefundsController: [Route(\"api/v1/refunds\")], [Authorize(Policy = \"StaffOnly\")], filters Kind == \"refund\" && Status == status. Payments Program.cs:59 'options.AddPolicy(\"StaffOnly\", policy => policy.RequireRole(\"staff\"))'. Output: staff '[{\"orderId\":3,\"amountVnd\":3520000,...,\"failureReason\":\"a bank transfer cannot be refunded through the card gateway\"}] -> 200'; customer 2 '-> 403'. Supports s4 'which only staff may call'.",
+        "source": "examples/don-hang @ stage-3: DonHang.Payments/RefundsController.cs; DonHang.Payments/Program.cs:59; outputs/stage-3/scripts/backend/refund-declined.txt"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Code: generic catch -> Task.Delay(RequeueAfter); BasicNackAsync(..., requeue: true); PoisonMessageException -> BasicRejectAsync(..., requeue: false). Queue declared with x-dead-letter-exchange = orders.dead-letter. RabbitMQ DLX docs: dead-lettering happens 'by an AMQP 0.9.1 consumer using basic.reject or basic.nack with requeue parameter set to false'; 'To set the DLX for a queue, specify the optional x-dead-letter-exchange argument when declaring the queue.' (Round 1 claim 11, unchanged.)",
+        "source": "https://www.rabbitmq.com/docs/dlx; examples/don-hang @ stage-3: DonHang.Api/Messaging/PaymentEventsConsumer.cs:59-80, RabbitMqTopology.cs"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Round 3: s7 step 2 now names 'the emails to customer 2' and Expected adds '`refund requested | sent` and `refund failed | sent`'; both covered. refund-declined.sh:44 'SELECT kind, status, attempts, failure_reason FROM payments ...'; :45 '== donhang_notifications: the emails to customer 2', :47 'SELECT subject, status'. Output: '-> 202', 'refund-requested | refunding', 'refund-failed | paid', 'now: paid', 'refund | failed | 1 | ...', 'refund requested | sent', 'refund failed | sent', '-> 200', '-> 403'.",
+        "source": "examples/don-hang @ stage-3: scripts/backend/refund-declined.sh:38-54; outputs/stage-3/scripts/backend/refund-declined.txt"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "refund-requirements.md: 'YC-6: Khi cổng thanh toán từ chối, nhân viên thấy yêu cầu đó trong danh sách cần xử lý, kèm lý do cổng trả về.' (Round 1 claim 14, unchanged.)",
+        "source": "examples/don-hang @ stage-3: docs/team/refund-requirements.md"
+      },
+      {
+        "n": 13,
+        "verdict": "not-needed",
+        "evidence": "Conditioned opinion ('when a saga step cannot be rolled back', 'when a step's effect has left the system'); matches refund-design.md step 8 'đơn quay về paid (hành động bù ...) ... Dòng failed bên Payments giữ nguyên làm lịch sử, không bị xóa.' No unconditional recommendation in the lesson text. (Round 1 claim 15, unchanged.)",
+        "source": "examples/don-hang @ stage-3: docs/design/refund-design.md step 8"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "Round 3, new claim. RefundRequestedConsumer.HandleAsync:80-101 adds InboxMessage and NewRefund (Status = \"pending\") and calls one SaveChangesAsync; comment :76 'Nothing calls the gateway here; that is RefundSender's job, a moment later'. RefundSender.SendDueAsync:44-65 calls gateway.RefundAsync later, in its own transaction. Supports s4 note 'refund row pending, commit' and 'Both changes committed before the gateway answered.' Zero issues: opened lesson s4-s7, meta claims 1-14, these two files.",
+        "source": "examples/don-hang @ stage-3 (working tree): DonHang.Payments/RefundRequestedConsumer.cs:73-110; DonHang.Payments/RefundSender.cs:42-65"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-14T23:59:58+07:00",
+    "reviewer": "claude-opus-5-5 (junior)",
+    "issues": [],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

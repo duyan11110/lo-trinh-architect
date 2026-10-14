@@ -1,0 +1,309 @@
+{
+  "lesson": "backend.l3.eventual-consistency",
+  "stage": 3,
+  "questions": [
+    {
+      "id": "backend.l3.eventual-consistency.q1",
+      "type": "single",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["backend.consistency.distributed"],
+      "section_ref": 4,
+      "question": {
+        "en": "`DonHang.Payments` is stopped. The transaction for customer 1's refund request on order 10 has just committed in `donhang`. Right after, one query starts in `donhang` and one in `donhang_payments`. What do they find?",
+        "vi": "`DonHang.Payments` đang dừng. Giao dịch cho yêu cầu hoàn tiền đơn 10 của khách hàng 1 vừa commit trong `donhang`. Ngay sau đó, một query bắt đầu trong `donhang` và một query trong `donhang_payments`. Chúng thấy gì?"
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "`donhang` shows order 10 as `refunding`; `donhang_payments` has no refund row for it yet.",
+          "vi": "`donhang` thấy đơn 10 ở `refunding`; `donhang_payments` chưa có dòng hoàn tiền nào cho đơn này."
+        },
+        {
+          "id": "b",
+          "en": "`donhang` may still show `paid` for a moment, since a saved change takes a while to spread.",
+          "vi": "`donhang` có thể vẫn thấy `paid` một lúc, vì thay đổi đã lưu cần thời gian để lan ra."
+        },
+        {
+          "id": "c",
+          "en": "Both show the refund, since the order and its message were saved in one transaction.",
+          "vi": "Cả hai đều thấy lần hoàn tiền, vì đơn và message của nó được lưu trong một giao dịch."
+        },
+        {
+          "id": "d",
+          "en": "`donhang_payments` shows a `pending` refund row, waiting for Payments to start.",
+          "vi": "`donhang_payments` thấy một dòng hoàn tiền `pending`, chờ Payments khởi động."
+        }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "Inside `donhang` you get strong consistency: a query that starts after the commit sees `refunding`. That guarantee stops at the service's edge, and only the `order.refund-requested` message, now waiting in its queue, will tell `donhang_payments`.",
+          "b": "Across services a change does take a while to show up, so expecting a delay is natural. But this query runs in the same database as the commit, and at PostgreSQL's default isolation level it sees every change committed before it started.",
+          "c": "One transaction did save both the order change and the message, which makes the refund feel recorded everywhere. But the message is an outbox row in `donhang`; `donhang_payments` is another database that has not heard of the refund.",
+          "d": "A `pending` row is the first thing Payments saves for a refund, so it looks like the next state. But Payments saves it only when it handles the message, and Payments is stopped."
+        },
+        "vi": {
+          "correct": "Bên trong `donhang` bạn có strong consistency: một query bắt đầu sau khi commit sẽ thấy `refunding`. Đảm bảo đó dừng ở ranh giới của service, và chỉ có message `order.refund-requested`, đang chờ trong queue của nó, mới báo được cho `donhang_payments`.",
+          "b": "Giữa các service, thay đổi đúng là cần một lúc mới hiện ra, nên chờ một độ trễ là điều dễ nghĩ. Nhưng query này chạy trong cùng database với lần commit, và ở isolation level mặc định của PostgreSQL nó thấy mọi thay đổi đã commit trước khi nó bắt đầu.",
+          "c": "Một giao dịch đúng là đã lưu cả thay đổi của đơn lẫn message, nên lần hoàn tiền trông như đã được ghi ở mọi nơi. Nhưng message là một dòng outbox trong `donhang`; `donhang_payments` là một database khác, chưa hề biết về lần hoàn tiền.",
+          "d": "Dòng `pending` là thứ đầu tiên Payments lưu cho một lần hoàn tiền, nên trông như trạng thái kế tiếp. Nhưng Payments chỉ lưu nó khi xử lý message, mà Payments đang dừng."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.eventual-consistency.q2",
+      "type": "order",
+      "bloom": "understand",
+      "difficulty": 2,
+      "skills": ["backend.consistency.distributed"],
+      "section_ref": 4,
+      "question": {
+        "en": "Customer 1 asks for order 10's refund while Payments is stopped, and Payments is started again later. Put what the two databases show in the order it happens.",
+        "vi": "Khách hàng 1 yêu cầu hoàn tiền đơn 10 khi Payments đang dừng, và sau đó Payments được chạy lại. Sắp xếp những gì hai database cho thấy theo đúng thứ tự xảy ra."
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "Payments has a `refunded` refund row, while the order still says `refunding`.",
+          "vi": "Payments có một dòng hoàn tiền `refunded`, trong khi đơn vẫn là `refunding`."
+        },
+        {
+          "id": "b",
+          "en": "The order says `refunding`, Payments has no refund row, and one message waits in the queue.",
+          "vi": "Đơn là `refunding`, Payments chưa có dòng hoàn tiền nào, và một message đang chờ trong queue."
+        },
+        {
+          "id": "c",
+          "en": "The order says `cancelled` and the refund row says `refunded`.",
+          "vi": "Đơn là `cancelled` và dòng hoàn tiền là `refunded`."
+        },
+        {
+          "id": "d",
+          "en": "Payments has handled the message and saved a `pending` refund row; the order says `refunding`.",
+          "vi": "Payments đã xử lý message và lưu một dòng hoàn tiền `pending`; đơn là `refunding`."
+        }
+      ],
+      "answer": ["b", "d", "a", "c"],
+      "explanation": {
+        "en": {
+          "correct": "Each message in flight opens a stretch when the two databases disagree. `order.refund-requested` waits until Payments is back, Payments then saves `pending` and later `refunded`, and only when `payment.refunded` reaches `DonHang.Api` does the order become `cancelled` and the two agree."
+        },
+        "vi": {
+          "correct": "Mỗi message đang trên đường mở ra một khoảng thời gian hai database lệch nhau. `order.refund-requested` chờ tới khi Payments chạy lại, sau đó Payments lưu `pending` rồi `refunded`, và chỉ khi `payment.refunded` tới được `DonHang.Api` thì đơn mới thành `cancelled` và hai bên khớp nhau."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.eventual-consistency.q3",
+      "type": "multi",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["backend.consistency.distributed"],
+      "section_ref": 5,
+      "question": {
+        "en": "Look at the output of `payments-down.sh` up to and including the \"5 seconds later\" part. Which conclusions does it support? Select all that apply.",
+        "vi": "Nhìn output của `payments-down.sh` từ đầu tới hết phần \"5 seconds later\". Nó cho phép kết luận những điều nào? Chọn tất cả các đáp án đúng."
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "The refund request was accepted even though Payments was stopped.",
+          "vi": "Yêu cầu hoàn tiền đã được nhận dù Payments đang dừng."
+        },
+        {
+          "id": "b",
+          "en": "`order.refund-requested` is not lost: it waits in `payments.refund-requests`.",
+          "vi": "`order.refund-requested` không bị mất: nó đang chờ trong `payments.refund-requests`."
+        },
+        {
+          "id": "c",
+          "en": "Payments has not heard of the refund yet, so `donhang_payments` has no refund row.",
+          "vi": "Payments chưa biết gì về lần hoàn tiền, nên `donhang_payments` chưa có dòng hoàn tiền nào."
+        },
+        {
+          "id": "d",
+          "en": "The refund has failed, because the order did not reach `cancelled` within 5 seconds.",
+          "vi": "Lần hoàn tiền đã thất bại, vì đơn không thành `cancelled` trong vòng 5 giây.",
+          "misconception": "Eventually consistent services catch up within a fixed time, such as a second."
+        },
+        {
+          "id": "e",
+          "en": "The order's move to `refunding` has not committed yet, which is why Payments cannot see it.",
+          "vi": "Việc chuyển đơn sang `refunding` chưa commit, nên Payments mới không thấy nó."
+        }
+      ],
+      "answer": ["a", "b", "c"],
+      "explanation": {
+        "en": {
+          "correct": "The first answer was `202` with Payments stopped, one message waits in `payments.refund-requests`, and the count of refund rows is `0`. Together they show the expected disagreement, with the message kept until Payments handles it.",
+          "d": "Five seconds can feel like plenty of time for a refund to finish. But eventual consistency promises agreement, not a time limit; the order stays `refunding` as long as Payments is stopped, and the last part of the output shows it reaching `cancelled`.",
+          "e": "Payments not seeing the change could suggest the change is not saved yet. But `GET /api/v1/orders/10` already shows `refunding`, so it committed in `donhang`; Payments cannot see it because it has its own database and learns only through the message."
+        },
+        "vi": {
+          "correct": "Câu trả lời đầu tiên là `202` khi Payments đang dừng, một message đang chờ trong `payments.refund-requests`, và số dòng hoàn tiền là `0`. Gộp lại, chúng cho thấy sự lệch nhau được dự tính trước, với message được giữ cho tới khi Payments xử lý nó.",
+          "d": "Năm giây nghe như đủ lâu để một lần hoàn tiền xong. Nhưng eventual consistency hứa sự khớp nhau, không hứa thời hạn; đơn vẫn là `refunding` chừng nào Payments còn dừng, và phần cuối của output cho thấy nó thành `cancelled`.",
+          "e": "Payments không thấy thay đổi có thể khiến bạn nghĩ thay đổi chưa được lưu. Nhưng `GET /api/v1/orders/10` đã cho thấy `refunding`, tức là nó đã commit trong `donhang`; Payments không thấy vì nó có database riêng và chỉ biết qua message."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.eventual-consistency.q4",
+      "type": "truefalse",
+      "bloom": "analyze",
+      "difficulty": 4,
+      "skills": ["backend.consistency.distributed"],
+      "section_ref": 6,
+      "question": {
+        "en": "Statement: if `Refund` answered with an error whenever Payments is stopped, `donhang` and `donhang_payments` would never disagree about a refund.",
+        "vi": "Nhận định: nếu `Refund` trả về lỗi mỗi khi Payments đang dừng, thì `donhang` và `donhang_payments` sẽ không bao giờ lệch nhau về một lần hoàn tiền."
+      },
+      "options": [
+        {
+          "id": "a",
+          "polarity": "true",
+          "en": "True, because a refused request changes neither database, so no message would ever be in flight.",
+          "vi": "Đúng, vì một request bị từ chối không đổi database nào, nên sẽ không bao giờ có message nào đang trên đường.",
+          "misconception": "While Payments is down, refund requests should fail, so the services never disagree."
+        },
+        {
+          "id": "b",
+          "polarity": "true",
+          "en": "True, because with Payments running, the refund row would be saved in the request's own transaction.",
+          "vi": "Đúng, vì khi Payments đang chạy, dòng hoàn tiền sẽ được lưu ngay trong giao dịch của request."
+        },
+        {
+          "id": "c",
+          "polarity": "false",
+          "en": "False, because even with Payments running, the order says `refunding` before Payments has handled the message.",
+          "vi": "Sai, vì ngay cả khi Payments đang chạy, đơn đã là `refunding` trước khi Payments xử lý message."
+        },
+        {
+          "id": "d",
+          "polarity": "false",
+          "en": "False, because the outbox would still send `order.refund-requested` after the error answer.",
+          "vi": "Sai, vì outbox vẫn sẽ gửi `order.refund-requested` sau khi trả lỗi."
+        }
+      ],
+      "answer": ["c"],
+      "explanation": {
+        "en": {
+          "correct": "There is always a message in flight between the two services after a refund request, so they disagree after every request, not only while Payments is down. Failing the request while Payments is stopped would remove none of that; it would only make the customer try again later.",
+          "a": "While Payments is stopped this holds: a refused request saves nothing. But the statement says \"never\", and once Payments runs again every accepted request still leaves the order `refunding` before Payments has a refund row.",
+          "b": "Saving both sides at once would indeed prevent any disagreement. But each service has its own database, and the refund row is saved by Payments when it handles the message, never in `DonHang.Api`'s transaction.",
+          "d": "The outbox does keep a saved message from being lost, so it can seem to send one regardless. But the outbox row is saved in the same transaction as the move to `refunding`; a request refused before that transaction saves no row to send."
+        },
+        "vi": {
+          "correct": "Sau một yêu cầu hoàn tiền luôn có một message đang trên đường giữa hai service, nên chúng lệch nhau sau mọi request, không chỉ khi Payments dừng. Từ chối request khi Payments dừng không loại bỏ được điều đó; nó chỉ bắt khách hàng thử lại sau.",
+          "a": "Khi Payments đang dừng thì điều này đúng: request bị từ chối không lưu gì cả. Nhưng nhận định nói \"không bao giờ\", và khi Payments chạy lại, mọi request được nhận vẫn để đơn ở `refunding` trước khi Payments có dòng hoàn tiền.",
+          "b": "Lưu cả hai phía cùng lúc đúng là sẽ tránh được mọi sự lệch nhau. Nhưng mỗi service có database riêng, và dòng hoàn tiền do Payments lưu khi xử lý message, không bao giờ nằm trong giao dịch của `DonHang.Api`.",
+          "d": "Outbox đúng là giữ cho message đã lưu không bị mất, nên trông như nó vẫn gửi đi bất kể thế nào. Nhưng dòng outbox được lưu trong cùng giao dịch với việc chuyển sang `refunding`; một request bị từ chối trước giao dịch đó không lưu dòng nào để gửi."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.eventual-consistency.q5",
+      "type": "scenario",
+      "bloom": "evaluate",
+      "difficulty": 4,
+      "skills": ["backend.consistency.distributed"],
+      "section_ref": 6,
+      "context": {
+        "en": "It is stage-3. A teammate adds a test against the running lab for refunds: it sends `POST /api/v1/orders/10/refund`, waits one second, then reads the order and expects `cancelled`. On most runs it passes. On some runs, when Payments restarts or the gateway is slow, it fails with `refunding`. The teammate wants the test to be reliable. The refund requirements stay as they are: the customer must see that the order is being refunded, and the request must be accepted within 2 seconds even when the gateway does not answer.",
+        "vi": "Đang ở stage-3. Một đồng nghiệp thêm một test chạy với lab đang bật cho hoàn tiền: nó gửi `POST /api/v1/orders/10/refund`, chờ một giây, rồi đọc đơn và mong thấy `cancelled`. Phần lớn các lần chạy đều qua. Một số lần, khi Payments khởi động lại hoặc cổng thanh toán chậm, nó lỗi với `refunding`. Đồng nghiệp muốn test chạy ổn định. Yêu cầu hoàn tiền giữ nguyên: khách hàng phải thấy đơn đang được hoàn tiền, và request phải được nhận trong vòng 2 giây kể cả khi cổng thanh toán không trả lời."
+      },
+      "question": {
+        "en": "Which change to the test fits best?",
+        "vi": "Cách sửa test nào phù hợp nhất?"
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "Check that the `202` answer says `refunding`, then wait for `cancelled` the way `wait_for_status` does.",
+          "vi": "Kiểm tra câu trả lời `202` có `refunding`, rồi chờ tới `cancelled` theo cách `wait_for_status` làm."
+        },
+        {
+          "id": "b",
+          "en": "Raise the wait from one second to five, so Payments always has enough time to catch up.",
+          "vi": "Tăng thời gian chờ từ một giây lên năm giây, để Payments luôn có đủ thời gian bắt kịp.",
+          "misconception": "Eventually consistent services catch up within a fixed time, such as a second."
+        },
+        {
+          "id": "c",
+          "en": "Make the refund endpoint wait for Payments, so its answer already says `cancelled`.",
+          "vi": "Cho endpoint hoàn tiền chờ Payments, để câu trả lời của nó đã là `cancelled`."
+        },
+        {
+          "id": "d",
+          "en": "Read the refund row in `donhang_payments` instead, and pass once it says `refunded`.",
+          "vi": "Đọc dòng hoàn tiền trong `donhang_payments` thay vào đó, và cho qua khi nó là `refunded`."
+        }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "Eventual consistency promises that the order reaches `cancelled` once the messages are handled, not when. The test then checks what the API is sure of at once, `refunding`, and waits for the agreement instead of a fixed moment, as `payments-down.sh` does.",
+          "b": "Five seconds passes more often than one, so it looks like a fix. But nothing limits the time: the order stays `refunding` as long as Payments is stopped, and Payments may keep asking the gateway for hours. A fixed wait fits only when something does limit the time, like a TTL on a cached copy.",
+          "c": "An answer that already says `cancelled` would make the test trivial. But the request would then depend on Payments and the gateway, against the 2-second requirement, and the customer would no longer see `refunding`. It fits only when the step behind the call is fast, local and always available.",
+          "d": "`refunded` in Payments does mean the money moved, so it looks like the real result. But the order can still say `refunding` at that point, until `payment.refunded` reaches `DonHang.Api`. It fits when the test is about Payments' own step, not about what the customer sees."
+        },
+        "vi": {
+          "correct": "Eventual consistency hứa rằng đơn sẽ thành `cancelled` khi các message đã được xử lý, không hứa lúc nào. Khi đó test kiểm tra thứ API chắc chắn ngay, `refunding`, và chờ sự khớp nhau thay vì một thời điểm cố định, như `payments-down.sh` làm.",
+          "b": "Năm giây qua được nhiều lần hơn một giây, nên trông như đã sửa được. Nhưng không gì giới hạn thời gian: đơn vẫn là `refunding` chừng nào Payments còn dừng, và Payments có thể hỏi lại cổng thanh toán hàng giờ. Chờ cố định chỉ hợp khi có thứ thật sự giới hạn thời gian, như TTL của một bản sao trong cache.",
+          "c": "Một câu trả lời đã là `cancelled` sẽ làm test trở nên đơn giản. Nhưng khi đó request phụ thuộc vào Payments và cổng thanh toán, trái với yêu cầu 2 giây, và khách hàng không còn thấy `refunding`. Chỉ hợp khi bước đứng sau lời gọi nhanh, cục bộ và luôn sẵn sàng.",
+          "d": "`refunded` ở Payments đúng là nghĩa là tiền đã chuyển, nên trông như kết quả thật. Nhưng lúc đó đơn vẫn có thể là `refunding`, cho tới khi `payment.refunded` tới được `DonHang.Api`. Chỉ hợp khi test nói về bước riêng của Payments, không phải về thứ khách hàng thấy."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.eventual-consistency.q6",
+      "type": "single",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["backend.consistency.distributed"],
+      "section_ref": 3,
+      "question": {
+        "en": "Payments stays stopped for an hour after customer 1 asks for order 10's refund. A teammate says the order will now stay `refunding` for good. What decides whether `donhang` and `donhang_payments` come to agree?",
+        "vi": "Payments vẫn dừng suốt một giờ sau khi khách hàng 1 yêu cầu hoàn tiền đơn 10. Một đồng nghiệp nói đơn sẽ mãi ở `refunding`. Điều gì quyết định việc `donhang` và `donhang_payments` có khớp nhau hay không?"
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "Whether the waiting message gets handled once Payments is back; the queue keeps it until then.",
+          "vi": "Message đang chờ có được xử lý khi Payments chạy lại hay không; queue giữ nó tới lúc đó."
+        },
+        {
+          "id": "b",
+          "en": "Nothing does: after this long the data stays wrong for good, so staff must fix order 10.",
+          "vi": "Không gì cả: sau chừng ấy thời gian dữ liệu sẽ sai mãi, nên nhân viên phải tự sửa đơn 10.",
+          "misconception": "Eventual consistency means the data may stay wrong for good."
+        },
+        {
+          "id": "c",
+          "en": "Whether Payments comes back within the time limit that eventual consistency allows.",
+          "vi": "Payments có chạy lại trong thời hạn mà eventual consistency cho phép hay không."
+        },
+        {
+          "id": "d",
+          "en": "Whether the customer asks again, so `DonHang.Api` sends Payments a fresh request.",
+          "vi": "Khách hàng có yêu cầu lại hay không, để `DonHang.Api` gửi cho Payments một yêu cầu mới."
+        }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "Eventual consistency means the services agree once every message has been handled. The outbox kept `order.refund-requested` from being lost and the queue keeps it, so when Payments is back and handles it, the saga goes on to `cancelled` without anyone touching the order.",
+          "b": "An hour of disagreement can look like a broken system that needs a person. But nothing was lost: the message still waits, and `payments-down.sh` shows the order moving to `cancelled` on its own once Payments starts. A person is needed only if a message is parked in a dead-letter queue.",
+          "c": "Many promises in software come with a deadline, so one seems likely here. But eventual consistency promises agreement, not a time limit; a message can wait as long as its consumer is stopped.",
+          "d": "Asking again feels like the way to push a stuck request along. But the first request's message already waits in the queue, and a second request is not what ends the disagreement; handling the waiting message is."
+        },
+        "vi": {
+          "correct": "Eventual consistency nghĩa là các service khớp nhau khi mọi message đã được xử lý. Outbox giữ cho `order.refund-requested` không bị mất và queue vẫn giữ nó, nên khi Payments chạy lại và xử lý nó, saga đi tiếp tới `cancelled` mà không ai phải động vào đơn.",
+          "b": "Lệch nhau suốt một giờ có thể trông như hệ thống hỏng và cần người can thiệp. Nhưng không có gì bị mất: message vẫn đang chờ, và `payments-down.sh` cho thấy đơn tự chuyển sang `cancelled` khi Payments khởi động. Chỉ cần người can thiệp khi một message bị đẩy vào dead-letter queue.",
+          "c": "Nhiều lời hứa trong phần mềm đi kèm thời hạn, nên ở đây dễ nghĩ cũng vậy. Nhưng eventual consistency hứa sự khớp nhau, không hứa thời hạn; một message có thể chờ chừng nào consumer của nó còn dừng.",
+          "d": "Yêu cầu lại nghe như cách đẩy một request bị kẹt đi tiếp. Nhưng message của request đầu tiên đã nằm chờ trong queue, và thứ chấm dứt sự lệch nhau không phải một request thứ hai mà là việc xử lý message đang chờ."
+        }
+      }
+    }
+  ]
+}

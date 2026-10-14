@@ -1,0 +1,106 @@
+{
+  "id": "backend.l3.eventual-consistency",
+  "technical": {
+    "reviewed_at": "2026-10-15T00:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "PostgreSQL 17, 13.2: \"Read Committed is the default isolation level in PostgreSQL.\" 13.2.1: \"a SELECT query (without a FOR UPDATE/SHARE clause) sees only data committed before the query began\". No override of default_transaction_isolation or IsolationLevel found in examples/don-hang (grep over *.cs, *.conf, *.yml, *.sql).",
+        "source": "https://www.postgresql.org/docs/17/transaction-iso.html"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "STAGE.md (stage-3): \"Order emails moved to DonHang.Notifications and refunds to DonHang.Payments, each with a database of its own (donhang_notifications, donhang_payments).\" refund-design.md: \"bảng payments chỉ nằm trong cơ sở dữ liệu donhang_payments của service đó\". payments-down.sh lines 10-11: sql uses --dbname donhang, payments_sql uses --dbname donhang_payments.",
+        "source": "examples/don-hang: STAGE.md; docs/design/refund-design.md; scripts/backend/payments-down.sh"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "refund-design.md steps 1, 3, 4, 6, 7: Api moves order to refunding and writes order.refund-requested to outbox_messages in the same transaction, returns 202; Payments writes a pending refund row; background job calls the gateway; on confirmation the row becomes refunded and payment.refunded goes to Payments' outbox; Api on payment.refunded moves the order to cancelled. OrderService.RequestRefundAsync / CompleteRefundAsync match.",
+        "source": "examples/don-hang: docs/design/refund-design.md; DonHang.Domain/OrderService.cs"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "DonHang.Payments/RabbitMqTopology.cs: Queue = \"payments.refund-requests\", declared durable: true, x-queue-type quorum, bound to donhang.orders with order.refund-requested. RabbitMQ docs: \"Quorum queues are always durable\". Captured output outputs/stage-3/scripts/backend/payments-down.txt shows \"messages waiting in payments.refund-requests: 1\" while stopped and \": 0\" after restart. Not re-run (lab not started).",
+        "source": "https://www.rabbitmq.com/docs/quorum-queues; examples/don-hang: DonHang.Payments/RabbitMqTopology.cs"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "refund-design.md line 46: \"...giờ giữa hai lần, trong 24 giờ kể từ `requested_at` (YC-10).\" The file exists at docs/design/refund-design.md, the path §4 now gives. Lesson §4 \"may retry the gateway for up to 24 hours\" and §6 \"up to 24 hours\" match it.",
+        "source": "examples/don-hang: docs/design/refund-design.md"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Round 2: §4 now uses the round-1 suggested_text, with the dead-letter condition. Outbox row saved with the state change (refund-design step 1); RabbitMqPublisher Persistent = true, publisherConfirmationsEnabled: true. Payments queue: x-delivery-limit 5 + DLX; RabbitMQ docs: past the limit the message is \"dropped (removed) or dead-lettered (if a DLX is configured)\".",
+        "source": "https://www.rabbitmq.com/docs/quorum-queues; examples/don-hang: DonHang.Payments/RabbitMqTopology.cs, DonHang.Messaging/RabbitMqPublisher.cs"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "payments-down.sh: order_10 (12-17) curls GET /api/v1/orders/10 and prints \"status $status\"; waiting_in_queue (18-29) runs rabbitmqctl list_queues, loops seq 30 x sleep 0.5 until count = $1 (comment: \"give it up to 15 s\"), then prints the count read; 32 stop, 42-44 POST, 45 sleep 5, 47-50 print, 53 start, 55 wait_for_status (refunds.sh, up to 60 s). Working tree read; git show blocked.",
+        "source": "examples/don-hang: scripts/backend/payments-down.sh; scripts/lib/refunds.sh"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "outputs/stage-3/scripts/backend/payments-down.txt is identical to the lesson's output block: \"-> 202\", \"status refunding\", \"payments.refund-requests: 1\", \"donhang_payments: 0\", then \"status cancelled\", \"payments.refund-requests: 0\", \"the refund row: refunded\". Not re-run.",
+        "source": "examples/don-hang: outputs/stage-3/scripts/backend/payments-down.txt"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "OrdersController.cs 117-135 matches the lesson block; body calls CurrentCustomerAsync, repository.FindForReadingAsync, orderService.RequestRefundAsync, returns Accepted(ToDto(order)); no Payments call. OrderService.RequestRefundAsync: order.RequestRefund(); events.DispatchAsync(order); repository.SaveChangesAsync(); return order.",
+        "source": "examples/don-hang: DonHang.Api/Controllers/OrdersController.cs; DonHang.Domain/OrderService.cs"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "ControllerBase.Accepted(Object), aspnetcore-10.0: \"Creates an AcceptedResult object that produces a Status202Accepted response.\" Parameter value: \"The optional content value to format in the entity body; may be null.\"",
+        "source": "https://learn.microsoft.com/en-us/dotnet/api/microsoft.aspnetcore.mvc.controllerbase.accepted?view=aspnetcore-10.0"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "refund-requirements.md: \"YC-4: Sau khi gửi yêu cầu, khách thấy đơn đang hoàn tiền và không gửi được yêu cầu thứ hai cho cùng đơn.\" \"YC-7: Yêu cầu hoàn tiền của khách được nhận và trả lời trong 2 giây, kể cả khi cổng thanh toán không trả lời hoặc báo lỗi.\"",
+        "source": "examples/don-hang: docs/team/refund-requirements.md"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Payments queue dead-letters to payments.dead-letter -> payments.refund-requests.dead (RabbitMqTopology.cs). No consumer of any *.dead queue exists in the repo (grep DeadLetterQueue: only declarations); scripts/backend/dead-letter.sh shows a person taking a dead-lettered message via the management API. RabbitMQ docs: past the limit the message is \"dead-lettered (if a DLX is configured)\".",
+        "source": "examples/don-hang: DonHang.Payments/RabbitMqTopology.cs, scripts/backend/dead-letter.sh; https://www.rabbitmq.com/docs/quorum-queues"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Stated in the lesson with its condition (YC-7). refund-design.md, rejected option: calling the gateway in the request means \"khi cổng lỗi hoặc chậm, khách chờ rồi nhận lỗi, và yêu cầu không được ghi lại. Điều đó trái YC-7\". The \"disagreement exists whenever a message is in flight\" part follows from claim 3.",
+        "source": "examples/don-hang: docs/design/refund-design.md; docs/team/refund-requirements.md"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-14T18:30:00Z",
+    "reviewer": "review-junior (claude-opus-5-5)",
+    "issues": [],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

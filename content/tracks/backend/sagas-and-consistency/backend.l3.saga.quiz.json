@@ -1,0 +1,317 @@
+{
+  "lesson": "backend.l3.saga",
+  "stage": 3,
+  "questions": [
+    {
+      "id": "backend.l3.saga.q1",
+      "type": "order",
+      "bloom": "understand",
+      "difficulty": 2,
+      "skills": ["backend.sagas.steps"],
+      "section_ref": 4,
+      "question": {
+        "en": "Customer 1 asks for a refund of order 1 at stage-3, and every part works the first time. Put the saga's local transactions in order.",
+        "vi": "Ở stage-3, khách hàng 1 yêu cầu hoàn tiền đơn 1, và mọi phần đều chạy được ngay lần đầu. Sắp xếp các giao dịch cục bộ của saga theo đúng thứ tự."
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "`DonHang.Payments` saves the gateway's answer on the refund row together with a `payment.refunded` outbox row.",
+          "vi": "`DonHang.Payments` lưu câu trả lời của cổng thanh toán vào dòng hoàn tiền cùng một dòng outbox `payment.refunded`."
+        },
+        {
+          "id": "b",
+          "en": "`DonHang.Api` moves order 1 to `refunding` and saves an `order.refund-requested` outbox row.",
+          "vi": "`DonHang.Api` chuyển đơn 1 sang `refunding` và lưu một dòng outbox `order.refund-requested`."
+        },
+        {
+          "id": "c",
+          "en": "`DonHang.Api` moves order 1 to `cancelled` and saves an `order.refunded` outbox row.",
+          "vi": "`DonHang.Api` chuyển đơn 1 sang `cancelled` và lưu một dòng outbox `order.refunded`."
+        },
+        {
+          "id": "d",
+          "en": "`DonHang.Payments` saves a `pending` refund row and the message id in its inbox.",
+          "vi": "`DonHang.Payments` lưu một dòng hoàn tiền `pending` và id của message vào inbox của nó."
+        }
+      ],
+      "answer": ["b", "d", "a", "c"],
+      "explanation": {
+        "en": {
+          "correct": "Each step starts from what the step before it saved. The request starts step 1 in `DonHang.Api`; `order.refund-requested` starts step 2, which only records a `pending` row; a background job picks that row up for step 3, which saves the gateway's answer with `payment.refunded`, which starts step 4 back in `DonHang.Api`."
+        },
+        "vi": {
+          "correct": "Mỗi bước bắt đầu từ thứ mà bước trước đã lưu. Request khởi động bước 1 trong `DonHang.Api`; `order.refund-requested` khởi động bước 2, bước này chỉ ghi một dòng `pending`; một background job nhặt dòng đó cho bước 3, bước này lưu câu trả lời của cổng thanh toán cùng `payment.refunded`, và message đó khởi động bước 4 ở lại `DonHang.Api`."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.saga.q2",
+      "type": "single",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["backend.sagas.steps"],
+      "section_ref": 6,
+      "question": {
+        "en": "Steps 1 and 2 of order 1's refund have committed. In step 3 the gateway refuses the refund. As long as no new step runs, what do you find for order 1 in `donhang`?",
+        "vi": "Bước 1 và bước 2 của lần hoàn tiền đơn 1 đã commit. Ở bước 3, cổng thanh toán từ chối hoàn tiền. Chừng nào chưa có bước mới nào chạy, bạn thấy đơn 1 trong `donhang` ở trạng thái nào?"
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "`refunding`: the refusal happened in another database, and only a new message to `DonHang.Api` could change the order.",
+          "vi": "`refunding`: việc từ chối xảy ra ở một database khác, và chỉ một message mới gửi tới `DonHang.Api` mới đổi được đơn."
+        },
+        {
+          "id": "b",
+          "en": "`paid`, since the failure in Payments undoes step 1, as it would inside one transaction.",
+          "vi": "`paid`, vì lỗi ở Payments hoàn tác bước 1, như khi mọi thứ nằm trong một giao dịch.",
+          "misconception": "When a later step of a saga fails, the earlier steps are rolled back automatically."
+        },
+        {
+          "id": "c",
+          "en": "`cancelled`, since the `202` from step 1 already promised the customer the refund.",
+          "vi": "`cancelled`, vì mã `202` từ bước 1 đã hứa hoàn tiền cho khách hàng."
+        },
+        {
+          "id": "d",
+          "en": "`paid`, once `DonHang.Api` sees that step 3 failed and rolls back step 1 by itself.",
+          "vi": "`paid`, khi `DonHang.Api` thấy bước 3 lỗi và tự roll back bước 1."
+        }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "Each step's transaction committed in its own database and ended there. Nothing ties step 1 to step 3 except messages and the `pending` row, so order 1 stays `refunding` until some new step changes it.",
+          "b": "In one transaction a failure would indeed undo everything, which makes this feel natural. But step 1 already committed in `donhang`; a failure later in `donhang_payments` cannot reach back into it.",
+          "c": "The `202` came back, so the refund can look settled. But `202` only says the request was accepted, and `cancelled` is set by step 4, which runs only after `payment.refunded` arrives.",
+          "d": "A service that rolls itself back sounds like a sensible safety net. But `DonHang.Api` hears about Payments only through messages, and nothing is undone in place; only a new step, started by a message such as `payment.refund-failed`, can change the order."
+        },
+        "vi": {
+          "correct": "Giao dịch của mỗi bước đã commit trong database riêng của nó và kết thúc ở đó. Giữa bước 1 và bước 3 chỉ có các message và dòng `pending` nối lại, nên đơn 1 vẫn là `refunding` cho tới khi một bước mới nào đó đổi nó.",
+          "b": "Trong một giao dịch, lỗi đúng là sẽ hoàn tác tất cả, nên đáp án này nghe rất tự nhiên. Nhưng bước 1 đã commit trong `donhang`; một lỗi xảy ra sau đó trong `donhang_payments` không với ngược lại được.",
+          "c": "Mã `202` đã trả về, nên lần hoàn tiền trông như đã xong. Nhưng `202` chỉ nói request đã được nhận, còn `cancelled` do bước 4 đặt, và bước 4 chỉ chạy khi `payment.refunded` tới.",
+          "d": "Một service tự roll back nghe như một lưới an toàn hợp lý. Nhưng `DonHang.Api` chỉ biết về Payments qua message, và không có gì được hoàn tác tại chỗ; chỉ một bước mới, do một message như `payment.refund-failed` khởi động, mới đổi được đơn."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.saga.q3",
+      "type": "multi",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["backend.sagas.steps"],
+      "section_ref": 5,
+      "question": {
+        "en": "You run `scripts/backend/refund-saga.sh` against the stage-3 lab. Which statements match its output and the steps behind it? Select all that apply.",
+        "vi": "Bạn chạy `scripts/backend/refund-saga.sh` trên lab ở stage-3. Những nhận định nào khớp với output của nó và các bước đứng sau? Chọn tất cả các đáp án đúng."
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "The `202` came back before any money moved.",
+          "vi": "Mã `202` trả về trước khi có tiền nào được chuyển."
+        },
+        {
+          "id": "b",
+          "en": "The refund row in `donhang_payments` reached `refunded` after one attempt.",
+          "vi": "Dòng hoàn tiền trong `donhang_payments` thành `refunded` sau một lần thử."
+        },
+        {
+          "id": "c",
+          "en": "The `order.refunded` row in `donhang` was saved together with the order's move to `cancelled`.",
+          "vi": "Dòng `order.refunded` trong `donhang` được lưu cùng lúc với việc chuyển đơn sang `cancelled`."
+        },
+        {
+          "id": "d",
+          "en": "The two rows of `order_status_history` were saved in one transaction.",
+          "vi": "Hai dòng của `order_status_history` được lưu trong cùng một giao dịch."
+        },
+        {
+          "id": "e",
+          "en": "`donhang_payments` also holds an `order.refund-requested` outbox row, which Payments passes on.",
+          "vi": "`donhang_payments` cũng có một dòng outbox `order.refund-requested`, để Payments chuyển tiếp."
+        },
+        {
+          "id": "f",
+          "en": "The endpoint waited for Payments, so the first answer already shows the refund's final result.",
+          "vi": "Endpoint đã chờ Payments, nên câu trả lời đầu tiên đã cho thấy kết quả cuối cùng của lần hoàn tiền.",
+          "misconception": "The refund endpoint should wait for Payments, so it can return the final result."
+        }
+      ],
+      "answer": ["a", "b", "c"],
+      "explanation": {
+        "en": {
+          "correct": "Step 1 answers `202` with the order still `refunding`, before Payments has even seen the message. The payment rows show `refund | refunded` with `1` attempt, and step 4 saves `order.refunded` in the same transaction that moves the order to `cancelled`.",
+          "d": "Both rows sit in the same table of the same database, so one save seems likely. But `refund-requested | refunding` comes from step 1 and `refunded | cancelled` from step 4, two local transactions with Payments' steps between them.",
+          "e": "Payments does take part in passing the refund along, so a forwarded row sounds plausible. But its outbox section shows only `payment.refunded`; `order.refund-requested` lives in `donhang`, saved by step 1.",
+          "f": "The script does print `cancelled` at the end, so the endpoint can seem to have waited. But the first answer says `refunding`; `wait_for_status` is the script waiting afterwards, not the endpoint."
+        },
+        "vi": {
+          "correct": "Bước 1 trả `202` khi đơn vẫn là `refunding`, trước cả khi Payments thấy message. Các dòng thanh toán cho thấy `refund | refunded` với `1` lần thử, và bước 4 lưu `order.refunded` trong cùng giao dịch chuyển đơn sang `cancelled`.",
+          "d": "Cả hai dòng nằm trong cùng một bảng của cùng một database, nên dễ nghĩ chúng được lưu một lần. Nhưng `refund-requested | refunding` đến từ bước 1 còn `refunded | cancelled` từ bước 4, là hai giao dịch cục bộ với các bước của Payments ở giữa.",
+          "e": "Payments đúng là góp phần chuyển lần hoàn tiền đi tiếp, nên một dòng chuyển tiếp nghe có lý. Nhưng phần outbox của nó chỉ có `payment.refunded`; `order.refund-requested` nằm trong `donhang`, do bước 1 lưu.",
+          "f": "Cuối cùng script đúng là in ra `cancelled`, nên trông như endpoint đã chờ. Nhưng câu trả lời đầu tiên là `refunding`; `wait_for_status` là script chờ sau đó, không phải endpoint."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.saga.q4",
+      "type": "truefalse",
+      "bloom": "analyze",
+      "difficulty": 4,
+      "skills": ["backend.sagas.steps"],
+      "section_ref": 5,
+      "question": {
+        "en": "Statement: if RabbitMQ delivers the same `order.refund-requested` message to `RefundRequestedConsumer` twice, `donhang_payments` ends up with two `pending` refund rows for order 1.",
+        "vi": "Nhận định: nếu RabbitMQ giao cùng một message `order.refund-requested` cho `RefundRequestedConsumer` hai lần, `donhang_payments` sẽ có hai dòng hoàn tiền `pending` cho đơn 1."
+      },
+      "options": [
+        {
+          "id": "a",
+          "polarity": "true",
+          "en": "True, because each delivery runs `HandleAsync`, and `HandleAsync` adds a new refund row every time.",
+          "vi": "Đúng, vì mỗi lần giao đều chạy `HandleAsync`, và `HandleAsync` lần nào cũng thêm một dòng hoàn tiền mới."
+        },
+        {
+          "id": "b",
+          "polarity": "true",
+          "en": "True, because the inbox row and the refund row are saved in two separate transactions.",
+          "vi": "Đúng, vì dòng inbox và dòng hoàn tiền được lưu trong hai giao dịch riêng."
+        },
+        {
+          "id": "c",
+          "polarity": "false",
+          "en": "False, because the inbox row and the refund row commit together, so a repeat fails as a whole and only logs.",
+          "vi": "Sai, vì dòng inbox và dòng hoàn tiền cùng commit, nên một bản lặp lại thất bại trọn vẹn và chỉ ghi log."
+        },
+        {
+          "id": "d",
+          "polarity": "false",
+          "en": "False, because the consumer throws `PoisonMessageException` for the second copy, so it is never handled.",
+          "vi": "Sai, vì consumer ném `PoisonMessageException` cho bản thứ hai, nên nó không bao giờ được xử lý."
+        }
+      ],
+      "answer": ["c"],
+      "explanation": {
+        "en": {
+          "correct": "The inbox row and the refund row are added together and saved in one `SaveChangesAsync`. A second copy breaks a unique index, the catch block logs it, and neither row of that copy is saved, so the step does not run twice.",
+          "a": "`HandleAsync` does run for every delivery and does call `db.Payments.Add`, so a second row looks certain. But the add only takes effect if `SaveChangesAsync` succeeds, and for a repeat it fails on the unique index.",
+          "b": "The code adds the two rows on separate lines, which can look like two saves. But a single `SaveChangesAsync` saves both, so they commit or fail together; that is the step's one local transaction.",
+          "d": "The method does throw `PoisonMessageException`, so it can seem to guard against repeats. But it throws only when the message has no id or the order has no charge; a repeat is caught as a `DbUpdateException` instead."
+        },
+        "vi": {
+          "correct": "Dòng inbox và dòng hoàn tiền được thêm cùng nhau và lưu trong một lần `SaveChangesAsync`. Bản thứ hai vi phạm một unique index, khối catch ghi log, và không dòng nào của bản đó được lưu, nên bước này không chạy hai lần.",
+          "a": "`HandleAsync` đúng là chạy cho mỗi lần giao và có gọi `db.Payments.Add`, nên dòng thứ hai trông như chắc chắn có. Nhưng lệnh thêm chỉ có hiệu lực khi `SaveChangesAsync` thành công, và với bản lặp lại thì nó lỗi ở unique index.",
+          "b": "Code thêm hai dòng ở hai dòng lệnh khác nhau, nên trông như hai lần lưu. Nhưng chỉ một `SaveChangesAsync` lưu cả hai, nên chúng cùng commit hoặc cùng lỗi; đó là giao dịch cục bộ duy nhất của bước này.",
+          "d": "Method đúng là có ném `PoisonMessageException`, nên trông như nó chặn bản lặp lại. Nhưng nó chỉ ném khi message không có id hoặc đơn không có khoản thanh toán; bản lặp lại được bắt dưới dạng `DbUpdateException`."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.saga.q5",
+      "type": "scenario",
+      "bloom": "evaluate",
+      "difficulty": 4,
+      "skills": ["backend.sagas.steps"],
+      "section_ref": 6,
+      "context": {
+        "en": "It is stage-3. A new teammate reads `refund-design.md`, sees that the refund is a saga, and searches `docker-compose.yml` for it. Finding nothing, they conclude the saga was never built and propose adding a saga product as a new container before more flows span services. The team is small and already runs PostgreSQL and RabbitMQ. `refund-saga.sh` ends with order 1 `cancelled` and the refund `refunded`. Payments must keep owning its data, and refund requests must not wait for the gateway.",
+        "vi": "Đang ở stage-3. Một đồng nghiệp mới đọc `refund-design.md`, thấy việc hoàn tiền là một saga, rồi tìm nó trong `docker-compose.yml`. Không thấy gì, họ kết luận saga chưa từng được làm và đề xuất thêm một sản phẩm saga dưới dạng container mới trước khi có thêm luồng trải qua nhiều service. Team nhỏ và đã chạy PostgreSQL cùng RabbitMQ. `refund-saga.sh` kết thúc với đơn 1 ở `cancelled` và dòng hoàn tiền ở `refunded`. Payments phải tiếp tục sở hữu dữ liệu của mình, và request hoàn tiền không được chờ cổng thanh toán."
+      },
+      "question": {
+        "en": "Which response to the teammate fits best?",
+        "vi": "Cách đáp lại đồng nghiệp nào phù hợp nhất?"
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "Show them the saga is already running in the consumers and walk one refund through it.",
+          "vi": "Cho họ thấy saga đã chạy sẵn trong các consumer và cùng lần theo một lần hoàn tiền."
+        },
+        {
+          "id": "b",
+          "en": "Add the saga product as a new container, so the refund finally has a saga running somewhere.",
+          "vi": "Thêm sản phẩm saga thành một container mới, để việc hoàn tiền cuối cùng cũng có một saga chạy ở đâu đó.",
+          "misconception": "A saga is a product you install, like RabbitMQ."
+        },
+        {
+          "id": "c",
+          "en": "Move the refund row back into `donhang`, so one local transaction covers the refund again.",
+          "vi": "Chuyển dòng hoàn tiền về lại `donhang`, để một giao dịch cục bộ lại bao trọn lần hoàn tiền."
+        },
+        {
+          "id": "d",
+          "en": "Have the refund endpoint call Payments and wait, so the whole refund is visible in one request.",
+          "vi": "Cho endpoint hoàn tiền gọi Payments rồi chờ, để cả lần hoàn tiền hiện ra trong một request.",
+          "misconception": "The refund endpoint should wait for Payments, so it can return the final result."
+        }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "A saga is a way of arranging pieces the team already runs, and `refund-saga.sh` shows this one working. The answer adds nothing to operate, keeps Payments' data where it is and leaves the request free of the gateway.",
+          "b": "Finding nothing in `docker-compose.yml` makes the saga look missing, so installing one feels like the fix. But the refund saga is two status methods on `Order` (`RequestRefund`, `CompleteRefund`), two consumers and a background job, and it already ends correctly. Weigh a new part only when the pieces you already run stop being enough.",
+          "c": "One local transaction is simpler than four, which is tempting. But it takes the refund row away from Payments, against the context. It fits only when the split itself was a mistake and one service may own both changes.",
+          "d": "Seeing the final result in one response would make the saga easy to follow. But the request would then depend on the gateway's speed and on Payments being up, which the context rules out. It fits only when the step behind the call is fast, local and always available."
+        },
+        "vi": {
+          "correct": "Saga là một cách sắp xếp những phần team đã chạy sẵn, và `refund-saga.sh` cho thấy saga này đang chạy đúng. Cách đáp này không thêm gì phải vận hành, giữ dữ liệu của Payments ở chỗ cũ và không để request phụ thuộc vào cổng thanh toán.",
+          "b": "Không thấy gì trong `docker-compose.yml` khiến saga trông như đang thiếu, nên cài một cái nghe như cách sửa. Nhưng saga hoàn tiền là hai method trạng thái trên `Order` (`RequestRefund`, `CompleteRefund`), hai consumer và một background job, và nó đã kết thúc đúng. Chỉ nên cân nhắc thêm một phần mới khi những phần đang chạy không còn đủ.",
+          "c": "Một giao dịch cục bộ đơn giản hơn bốn, nên rất hấp dẫn. Nhưng nó lấy dòng hoàn tiền khỏi tay Payments, trái với bối cảnh. Chỉ hợp khi chính việc tách service là sai và một service được sở hữu cả hai thay đổi.",
+          "d": "Thấy kết quả cuối cùng trong một response sẽ giúp dễ theo dõi saga. Nhưng khi đó request phụ thuộc vào tốc độ của cổng thanh toán và việc Payments có đang chạy, điều bối cảnh không cho phép. Chỉ hợp khi bước đứng sau lời gọi nhanh, cục bộ và luôn sẵn sàng."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.saga.q6",
+      "type": "single",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["backend.sagas.steps"],
+      "section_ref": 4,
+      "question": {
+        "en": "Step 3 of order 1's refund has committed in `donhang_payments`, and then Payments stops before `payment.refunded` reaches RabbitMQ. What lets step 4 still run later?",
+        "vi": "Bước 3 của lần hoàn tiền đơn 1 đã commit trong `donhang_payments`, rồi Payments dừng trước khi `payment.refunded` tới được RabbitMQ. Điều gì giúp bước 4 vẫn chạy được sau đó?"
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "The `payment.refunded` outbox row was saved in step 3's transaction, so it is published once Payments runs again.",
+          "vi": "Dòng outbox `payment.refunded` đã được lưu trong giao dịch của bước 3, nên nó được publish khi Payments chạy lại."
+        },
+        {
+          "id": "b",
+          "en": "`DonHang.Api` reads `donhang_payments` for refunded rows, so it notices step 3 without any message.",
+          "vi": "`DonHang.Api` đọc `donhang_payments` để tìm dòng đã hoàn tiền, nên nó biết bước 3 mà không cần message nào."
+        },
+        {
+          "id": "c",
+          "en": "Nothing does: the stop rolls back steps 1 to 3, so the customer must ask for the refund again.",
+          "vi": "Không gì cả: việc dừng làm roll back bước 1 tới bước 3, nên khách hàng phải yêu cầu hoàn tiền lại.",
+          "misconception": "When a later step of a saga fails, the earlier steps are rolled back automatically."
+        },
+        {
+          "id": "d",
+          "en": "The inbox in `DonHang.Api` already holds step 3's message id, so step 4 starts from that row.",
+          "vi": "Inbox trong `DonHang.Api` đã có id message của bước 3, nên bước 4 bắt đầu từ dòng đó."
+        }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "The outbox means a committed step cannot lose its message. The row was saved with the gateway's answer, so it waits in `donhang_payments` and is published after Payments comes back, and that message starts step 4.",
+          "b": "Reading the other database would skip the message entirely, which sounds direct. But `donhang_payments` belongs to Payments, and services are linked only by messages.",
+          "c": "A crash mid-way feels like it should cancel the whole refund. But step 3 already committed, and steps 1 and 2 committed earlier in their own databases; a later stop rolls none of them back.",
+          "d": "The inbox does hold message ids, so it can look like a record of what happened. But a consumer saves an id there only when the message arrives, and this message has not been published yet."
+        },
+        "vi": {
+          "correct": "Outbox đảm bảo một bước đã commit không thể mất message của nó. Dòng đó được lưu cùng câu trả lời của cổng thanh toán, nên nó nằm chờ trong `donhang_payments` và được publish khi Payments chạy lại, và message đó khởi động bước 4.",
+          "b": "Đọc thẳng database kia sẽ bỏ qua hẳn message, nghe có vẻ gọn. Nhưng `donhang_payments` thuộc về Payments, và các service chỉ nối nhau bằng message.",
+          "c": "Dừng giữa chừng nghe như phải hủy cả lần hoàn tiền. Nhưng bước 3 đã commit, bước 1 và 2 cũng đã commit trước đó trong database riêng của chúng; một lần dừng sau đó không roll back bước nào.",
+          "d": "Inbox đúng là chứa id message, nên trông như một bản ghi những gì đã xảy ra. Nhưng consumer chỉ lưu id vào đó khi message tới, mà message này còn chưa được publish."
+        }
+      }
+    }
+  ]
+}

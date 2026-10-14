@@ -1,0 +1,115 @@
+{
+  "id": "backend.l3.choreography-vs-orchestration",
+  "technical": {
+    "reviewed_at": "2026-10-14T23:59:59+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "git show stage-3:DonHang.Api/Controllers/OrdersController.cs:117-134: \"the order moves to `refunding` and its order.refund-requested message is saved in the same transaction; the answer is 202 Accepted ... Payments does the rest.\" ... \"return Accepted(ToDto(order));\". DonHang.Domain/OrderService.cs:83-93 RequestRefundAsync: one SaveChangesAsync, comment \"its order.refund-requested outbox row is saved with it\". No HTTP call to Payments in the refund path.",
+        "source": "examples/don-hang @ stage-3: DonHang.Api/Controllers/OrdersController.cs; DonHang.Domain/OrderService.cs"
+      },
+      {
+        "n": 2,
+        "verdict": "not-needed",
+        "evidence": "Definition of the lesson's own vocab (saga-choreography, saga-orchestration). Consistent with refs/dotnet-docs/docs/architecture/cloud-native/distributed-data.md:100: \"Saga patterns are typically choreographed as a series of related events, or orchestrated as a set of related commands.\" The details \"keeps the saga's state\" and \"picks the next step from each reply\" are not stated in any allowed source; acceptable as definition, not as sourced fact.",
+        "source": "refs/dotnet-docs/docs/architecture/cloud-native/distributed-data.md"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "git show stage-3:DonHang.Payments/RabbitMqTopology.cs: line 9 OrdersExchange = \"donhang.orders\", 10 PaymentsExchange = \"donhang.payments\", 11 Queue = \"payments.refund-requests\"; line 23 ExchangeDeclareAsync(OrdersExchange, ExchangeType.Topic ...); line 25 ExchangeDeclareAsync(PaymentsExchange, ...); line 29 QueueBindAsync(Queue, OrdersExchange, \"order.refund-requested\", ...).",
+        "source": "examples/don-hang @ stage-3: DonHang.Payments/RabbitMqTopology.cs"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "DonHang.Notifications/RabbitMqTopology.cs:27 QueueBindAsync(Queue, OrdersExchange, \"order.*\", ...). OrderEventsConsumer.SubjectFor maps \"order.refund-requested\", \"order.refunded\", \"order.refund-failed\" to email subjects and saves a pending email job. RabbitMQ Exchanges page (topic): keys \"are separated into segments by `.`\"; `*` matches exactly one segment, so order.* matches order.refund-requested.",
+        "source": "examples/don-hang @ stage-3: DonHang.Notifications/*; https://www.rabbitmq.com/docs/exchanges"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "DonHang.Payments/Program.cs:36 AddOutboxRelay<PaymentsDbContext>(exchange: \"donhang.payments\"); RefundSender.cs:96/104 Message(\"payment.refunded\"...)/Message(\"payment.refund-failed\"...). DonHang.Api/Messaging/RabbitMqTopology.cs:11 Queue = \"orders.payment-events\"; :25 QueueBindAsync(Queue, PaymentsExchange, \"payment.*\", ...).",
+        "source": "examples/don-hang @ stage-3: DonHang.Payments/Program.cs, RefundSender.cs; DonHang.Api/Messaging/RabbitMqTopology.cs"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "DonHang.Api/Messaging/PaymentEventsConsumer.cs:107-109: if (routingKey == \"payment.refunded\") await orders.CompleteRefundAsync(...); else if (routingKey == \"payment.refund-failed\") await orders.FailRefundAsync(...); else throw new PoisonMessageException(...). Comment above HandleAsync: \"payment.refunded cancels the order and saves an order.refunded outbox row; payment.refund-failed compensates instead, back to `paid`, with an order.refund-failed row.\"",
+        "source": "examples/don-hang @ stage-3: DonHang.Api/Messaging/PaymentEventsConsumer.cs"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "PaymentEventsConsumer.OnReceivedAsync: catch (PoisonMessageException) { ... await channel.BasicRejectAsync(delivery.DeliveryTag, requeue: false); }. The throw happens before any SaveChangesAsync, so the order is unchanged. RabbitMQ DLX page: messages are dead-lettered when rejected \"by an AMQP 0.9.1 consumer using basic.reject or basic.nack with requeue parameter set to false\"; orders.payment-events has x-dead-letter-exchange = orders.dead-letter.",
+        "source": "examples/don-hang @ stage-3: DonHang.Api/Messaging/PaymentEventsConsumer.cs, RabbitMqTopology.cs; https://www.rabbitmq.com/docs/dlx"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "docs/design/refund-design.md @ stage-3: \"Không service nào điều khiển cả chuỗi: mỗi service phản ứng với message của service khác (choreography). Muốn theo một yêu cầu hoàn tiền, đọc binding và consumer của ba service.\" and \"Không có bộ điều phối (orchestrator) riêng cho chuỗi hoàn tiền: ba bước, hai nhánh thất bại, choreography đủ dùng.\"",
+        "source": "examples/don-hang @ stage-3: docs/design/refund-design.md"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "refs/dotnet-docs/.../microservice-application-layer-implementation-web-api.md:203: \"You send a command to a single receiver; you do not publish a command. Publishing is for events that state a fact—that something has happened and might be interesting for event receivers. In the case of events, the publisher has no concerns about which receivers get the event or what they do it.\"",
+        "source": "refs/dotnet-docs/docs/architecture/microservices/microservice-ddd-cqrs-patterns/microservice-application-layer-implementation-web-api.md"
+      },
+      {
+        "n": 10,
+        "verdict": "unverified",
+        "evidence": "Opinion-kind claim. Grepped refs/dotnet-docs/docs/architecture for orchestrator/process manager: only container orchestrators and line 195 \"from a process manager when the process manager is directing an aggregate\", which does not settle where an orchestrator may be hosted. source_hint (Richardson book) is outside the allowed docs roots. Wording in the lesson is conditional (\"can live\", \"as long as its state is saved\"); no issue raised.",
+        "source": "refs/dotnet-docs/docs/architecture (grep)"
+      },
+      {
+        "n": 11,
+        "verdict": "unverified",
+        "evidence": "Opinion-kind claim, written with conditions (\"fits when\", \"tends to\"). The refund half is backed by refund-design.md (\"ba bước, hai nhánh thất bại, choreography đủ dùng\"); the general claim that an orchestrator pays off as steps grow has no source among the versions.yaml docs roots (Richardson book not allowed). Conditional wording acceptable; no issue raised.",
+        "source": "examples/don-hang @ stage-3: docs/design/refund-design.md"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "git -C examples/don-hang grep -n \"QueueBindAsync(Queue,\" stage-3 -- '*RabbitMqTopology.cs' returned exactly three lines: DonHang.Api/Messaging/RabbitMqTopology.cs:25 (Queue, PaymentsExchange, \"payment.*\"), DonHang.Notifications/RabbitMqTopology.cs:27 (Queue, OrdersExchange, \"order.*\"), DonHang.Payments/RabbitMqTopology.cs:29 (Queue, OrdersExchange, \"order.refund-requested\"). Only three files with that name exist at the tag.",
+        "source": "examples/don-hang @ stage-3 (git grep)"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Round 2. DonHang.Payments/RefundSender.cs:13 GiveUpAfter = TimeSpan.FromHours(24); :88 RecordResult(...); :96 return Message(\"payment.refunded\", ...); :99 if (result.Outcome == RefundOutcome.Refused || now - refund.RequestedAt >= settings.GiveUpAfter) ... :104 return Message(\"payment.refund-failed\", ...). Read from the submodule working tree (git show needed approval this session); lines 96/104 match the stage-3 lines cited for claim 5 in round 1.",
+        "source": "examples/don-hang @ stage-3: DonHang.Payments/RefundSender.cs"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "New in round 2 (changed text): the plain-words rewrite drops where the message goes. orders.payment-events is declared with x-dead-letter-exchange (DonHang.Api/Messaging/RabbitMqTopology.cs:43), so BasicRejectAsync(requeue: false) dead-letters the message; it is not simply dropped. \"give up on the message\" can read as discarded.",
+        "quote": "turns into telling RabbitMQ to give up on the message instead of delivering it again, so it never changes the order.",
+        "fix": "Rewrite the end as: \"...turns into telling RabbitMQ not to deliver the message again; it goes to the dead-letter queue and never changes the order.\" (dead-letter-queue is known vocab)."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-14T23:59:59+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation, round 2 targeted re-review)",
+    "issues": [],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

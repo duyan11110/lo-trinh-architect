@@ -1,0 +1,176 @@
+{
+  "id": "backend.l3.payments-service",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-10-14T23:30:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "Up to stage-2 DonHangDbContext mapped a Payment class (DbSet<Payment>); at stage-3 it maps no Payment entity, and DonHang.Api neither reads nor writes payment rows. The old payments table stays in donhang, unread.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: DonHang.Infrastructure/DonHangDbContext.cs:13, 78; @ stage-3: DonHangDbContext.cs:10-15, 98-101; Migrations/20261005231652_PaymentsAndNotificationsLeaveOrdering.cs:7-9",
+      "needs_verification": true,
+      "section": 2
+    },
+    {
+      "n": 2,
+      "text": "In docker-compose.yml at stage-3 only the payments service gets Gateway__BaseAddress and Gateway__ApiKey (lines 370-371); the api service has no Gateway setting; fake-gateway also reads Gateway__ApiKey (line 412) to check calls.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: docker-compose.yml:149-198 (api), 359-371 (payments), 404-412 (fake-gateway)",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 3,
+      "text": "Line 367 is the payments connection string: host db, database donhang_payments, user donhang. The api service (line 158) uses the same host db and user donhang with database donhang; only payments and payments-migrate name donhang_payments.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: docker-compose.yml:158, 351, 367",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 4,
+      "text": "refund-design.md v2 'Vì sao tách': key and money rows are the most sensitive data; in v1 every DonHang.Api copy held the key and could read/write payments; after the split the key is in one service's config, payments in donhang_payments, service deployed/given access/audited alone.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: docs/design/refund-design.md:17-24",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 5,
+      "text": "A refund changes data owned by three services: the refund row in Payments (donhang_payments.payments), the order's status in DonHang.Api (donhang.orders) and the customer's email in Notifications.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: docs/design/refund-design.md:28-59 (steps 1, 3, 6-8)",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 6,
+      "text": "DonHang.Api saves order.refund-requested in outbox_messages; the relay publishes to donhang.orders; payments.refund-requests (bound with order.refund-requested) feeds RefundRequestedConsumer, inbox + ack after save. Answers go to donhang.payments and reach DonHang.Api via orders.payment-events.",
+      "kind": "fact",
+      "source_hint": "don-hang @ stage-3: DonHang.Payments/RefundRequestedConsumer.cs:51-101, Program.cs:36; DonHang.Api/Messaging/RabbitMqTopology.cs:10-16, PaymentEventsConsumer.cs:15; rabbitmq-topology.txt:14-17",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 7,
+      "text": "Program.cs lines 20-22 register PaymentsDbContext with UseNpgsql on ConnectionStrings:Default; 27-28 read section Gateway and call AddGatewayRefundClient; 34-36 call AddRabbitMq and AddOutboxRelay<PaymentsDbContext>(exchange: donhang.payments); 37 adds RefundRequestedConsumer.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Payments/Program.cs:15-37",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 8,
+      "text": "PaymentsDbContext maps three tables: payments, outbox_messages and inbox_messages.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Payments/PaymentsDbContext.cs:12-14, 23, 50, 62",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 9,
+      "text": "AddRabbitMq and AddOutboxRelay are defined in the shared project DonHang.Messaging; DonHang.Api calls the same two with exchange donhang.orders.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Messaging/MessagingServiceCollectionExtensions.cs:12, 20; DonHang.Api/Program.cs:47-48",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 10,
+      "text": "POST /api/v1/orders/{id}/refund saves the order change and an order.refund-requested outbox row in one transaction and answers 202 Accepted without waiting for Payments.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Api/Controllers/OrdersController.cs:115-134; refund-design.md:28-31",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 11,
+      "text": "The refund design rejected calling the gateway inside the customer's request because YC-7 requires accepting a refund request even while the gateway fails.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: docs/design/refund-design.md:14-15, 76-80",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 12,
+      "text": "The Order class decides which status changes are allowed (e.g. Cancel() refuses paid/refunding orders, Ship() refuses refunding ones); a row written to orders from outside DonHang.Api would bypass those rules.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Domain/Entities.cs (Order.Cancel, Ship, RequestRefund); DonHang.Tests OrderTests",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 13,
+      "text": "Opinion: a waiting HTTP call to Payments adds its downtime to refund failures; with the key out of the many API copies, fewer places can leak it; when one RabbitMQ already serves all services, a second broker adds a server to run, back up and watch, for nothing Payments needs.",
+      "kind": "opinion",
+      "source_hint": "reasoning from refund-design.md YC-7; design.l3.when-to-extract-a-service (costs of more infrastructure)",
+      "needs_verification": false,
+      "section": 6
+    },
+    {
+      "n": 14,
+      "text": "scripts/backend/rabbitmq-topology.sh prints, under '== bindings on donhang.orders and donhang.payments': donhang.orders --[order.*]--> notifications.order-events, donhang.orders --[order.refund-requested]--> payments.refund-requests, donhang.payments --[payment.*]--> orders.payment-events.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: outputs/stage-3/scripts/backend/rabbitmq-topology.txt",
+      "needs_verification": true,
+      "section": 7
+    },
+    {
+      "n": 15,
+      "text": "GatewayRefundClient turns the gateway's answers into Đơn Hàng's own RefundOutcome (Refunded, Refused, TryAgainLater), acting as the anti-corruption layer toward the gateway.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Payments/GatewayRefundClient.cs:7-16; DECISIONS.md 2026-10-06 (ACL GatewayRefundClient)",
+      "needs_verification": true,
+      "section": 8
+    },
+    {
+      "n": 16,
+      "text": "At stage-3 DonHang.Api contains no gateway client and no Gateway settings; the only code that calls the payment gateway is GatewayRefundClient in DonHang.Payments.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: grep -ri gateway DonHang.Api (comments only); docker-compose.yml api service 149-198; DonHang.Payments/GatewayRefundClient.cs",
+      "needs_verification": true,
+      "section": 2
+    },
+    {
+      "n": 17,
+      "text": "One PostgreSQL server (cluster) holds several databases isolated from each other; a client connection reaches only the database it names when connecting.",
+      "kind": "behavior",
+      "source_hint": "PostgreSQL 17 docs, Managing Databases > Overview (manage-ag-overview)",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 18,
+      "text": "DonHang.Payments/RabbitMqTopology.cs declares exchange donhang.payments, queue payments.refund-requests, and a dead-letter exchange payments.dead-letter with queue payments.refund-requests.dead.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Payments/RabbitMqTopology.cs:9-35; outputs/stage-3/scripts/backend/rabbitmq-topology.txt:6, 13",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 19,
+      "text": "In a topic exchange binding pattern, * matches exactly one dot-separated word, so order.* matches order.refund-requested and notifications.order-events also receives refund requests.",
+      "kind": "behavior",
+      "source_hint": "RabbitMQ docs, Exchanges > Topic exchange; DonHang.Notifications/OrderEventsConsumer.cs SubjectFor (order.refund-requested)",
+      "version_key": "rabbitmq",
+      "needs_verification": true,
+      "section": 7
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [1, 2, 3, 4, 5],
+    "outline_items_missing": [],
+    "beyond_scope": []
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1360,
+    "notes": "apply-review 2026-10-14: situation looks for gateway code (Api keeps its refund endpoint); s4 adds design's sensitivity reason, answers via orders.payment-events, labelled arrows; s5 defines connection string, same user as api; s6 PG database isolation, DLX, conditioned broker opinion; s7 order.* also gets refund requests. 'resilience pipeline' not named (not in known_vocab). Claims 16-19 added."
+  },
+  "open_questions": [],
+  "repo_changes_needed": []
+}
