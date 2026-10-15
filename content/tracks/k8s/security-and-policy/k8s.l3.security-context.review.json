@@ -1,0 +1,163 @@
+{
+  "id": "k8s.l3.security-context",
+  "technical": {
+    "reviewed_at": "2026-10-16T01:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "\"To specify security settings for a Pod, include the securityContext field in the Pod specification ... The security settings that you specify for a Pod apply to all Containers in the Pod.\" and \"To specify security settings for a Container, include the securityContext field in the Container manifest.\" Same text seen on the v1-34 page via WebFetch (Pod-level sentence).",
+        "source": "refs/kubernetes-website/content/en/docs/tasks/configure-pod-container/security-context.md (lines 55-58, 414-419); v1-34.docs.kubernetes.io/docs/tasks/configure-pod-container/security-context/"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Docker run reference: \"The default user within a container is `root` (uid = 0). You can set a default user to run the first process with the Dockerfile `USER` instruction.\" Execution: outputs/stage-3 shows `USER of donhang-api:1.0.0: \"\"` and for caddy:2.10.0 (no USER) the kubelet reports `image will run as root`.",
+        "source": "refs/docker-docs/_vendor/github.com/docker/cli/docs/reference/run.md:1141; examples/don-hang/outputs/stage-3/scripts/k8s/security-context.txt"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "SecurityContext.runAsUser: \"The UID to run the entrypoint of the container process. Defaults to user specified in image metadata if unspecified.\"",
+        "source": "refs/kubernetes-website/content/en/docs/reference/kubernetes-api/core/pod-v1.md:2977 (mirror is v1.37; field text unchanged in v1.34 API)"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "SecurityContext.runAsNonRoot: \"Indicates that the container must run as a non-root user. If true, the Kubelet will validate the image at runtime to ensure that it does not run as UID 0 (root) and fail to start the container if it does.\" Execution: root-caddy refused, prometheus-by-number (runAsUser 65534) Running; runAsNonRoot set no user in either.",
+        "source": "refs/kubernetes-website/content/en/docs/reference/kubernetes-api/core/pod-v1.md:2973; outputs/stage-3/scripts/k8s/security-context.txt"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Execution: `prometheus-by-name: container has runAsNonRoot and image has non-numeric user (nobody), cannot verify user is non-root`. .NET docs: the APP_UID variable \"is useful for the Kubernetes runAsNonRoot test, which requires that the container user be set via UID and not by name.\"",
+        "source": "outputs/stage-3/scripts/k8s/security-context.txt; learn.microsoft.com/dotnet/core/whats-new/dotnet-8/containers (Non-root user)"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Execution: `root-caddy 0/1 CreateContainerConfigError` and `prometheus-by-name 0/1 CreateContainerConfigError`, messages read from .status.containerStatuses[0].state.waiting.message (script line 42). runAsUser 0 case not executed; covered by the API text \"fail to start the container if it does [run as UID 0]\".",
+        "source": "outputs/stage-3/scripts/k8s/security-context.txt; scripts/k8s/security-context.sh:42; pod-v1.md:2973"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "API: \"AllowPrivilegeEscalation controls whether a process can gain more privileges than its parent process. This bool directly controls if the no_new_privs flag will be set ... AllowPrivilegeEscalation is true always when the container is: 1) run as Privileged 2) has CAP_SYS_ADMIN\"; privileged: \"Processes in privileged containers are essentially equivalent to root on the host.\" Round 3 glosses (\"holds nearly every power of root on the node\", \"a broad capability covering many administrative actions\") match.",
+        "source": "refs/kubernetes-website/content/en/docs/reference/kubernetes-api/core/pod-v1.md:2945, 2957; concepts/security/linux-kernel-security-constraints.md:250-256"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "capabilities: \"Defaults to the default set of capabilities granted by the container runtime.\" K8s blog: \"Non-root containers cannot bind to the privileged ports under 1024 (this is gated by the CAP_NET_BIND_SERVICE kernel capability)\" although Docker keeps NET_BIND_SERVICE by default. Round 3: lesson now uses the round-2 suggested_text verbatim (non-root cannot use all directly; drop ALL removes the set whatever the user).",
+        "source": "pod-v1.md:2953; refs/docker-docs/_vendor/github.com/docker/cli/docs/reference/run.md:781-795; refs/kubernetes-website/content/en/blog/_posts/2018/11-ways-not-to-get-hacked.md:180"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Seccomp: \"Filter a process's system calls.\" and \"Most container runtimes provide a sane set of default syscalls that are allowed or not. You can adopt these defaults ... by setting the seccomp type ... to RuntimeDefault.\" Round 2: lesson now says RuntimeDefault applies \"the runtime's own list of kernel requests it allows and blocks\", which matches.",
+        "source": "security-context.md:30; refs/kubernetes-website/content/en/docs/tutorials/security/seccomp.md:165-167"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "\"Security settings that you specify for a Container apply only to the individual Container, and they override settings made at the Pod level when there is overlap.\" API: \"If set in both SecurityContext and PodSecurityContext, the value specified in SecurityContext takes precedence.\" allowPrivilegeEscalation (pod-v1.md:2945) and capabilities (:2953) appear only in SecurityContext, not in PodSecurityContext.",
+        "source": "security-context.md:417-419; pod-v1.md:2397-2401, 2945, 2953"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "\"Images include a non-root user ... USER app\" and \".NET 8 adds an environment variable for the UID for the non-root user, which is 1654.\" Execution on the 10.0 aspnet-based image: `USER of the api image staging runs: \"1654\"`, `uid=1654(app)`.",
+        "source": "learn.microsoft.com/dotnet/core/whats-new/dotnet-8/containers; outputs/stage-3/scripts/k8s/security-context.txt"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "DonHang.Api/Dockerfile: line 61 `USER $APP_UID`, line 62 `ENTRYPOINT [\"dotnet\", \"DonHang.Api.dll\"]` in stage `final`. Output: `USER of donhang-api:1.0.0: \"\"`. Read from the submodule working tree (master 7ef8fff); git show at the tag was not permitted in this session, HEAD log shows the 4 commits after stage-3 touch CI, trace-refund and kubectl run -i scripts only.",
+        "source": "examples/don-hang/DonHang.Api/Dockerfile:57-62"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "base/api.yaml lines 50-61 match the lesson block character for character (working tree); comment states the other .NET services and migration hooks set the same four; runAsNonRoot also found in base/notifications.yaml, payments.yaml, fake-gateway.yaml, migrate-hook.yaml. envs/staging/kustomization.yaml: `resources: - ../../base`.",
+        "source": "examples/don-hang/deploy/gitops/config-repo-kustomize/base/api.yaml:50-61; envs/staging/kustomization.yaml:7-8"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "security-context.sh: line 6 `show() { echo \"\\$ $*\"; \"$@\"; }`, line 7 `--context kind-donhang-staging`, lines 17-19 image_user (docker buildx imagetools inspect) and `kubectl exec deployment/api -- id`, line 24 reads containers[0].securityContext, lines 34-39 `seq 60` with `sleep 1`. Lines 27-43 match the lesson block (working tree, see claim 12 note).",
+        "source": "examples/don-hang/scripts/k8s/security-context.sh"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "root-caddy-pod.yaml: three Pods in namespace security-lessons; root-caddy image caddy:2.10.0; prometheus-by-name and prometheus-by-number image prom/prometheus:v3.5.5; the last adds `runAsUser: 65534`; all set `runAsNonRoot: true`.",
+        "source": "examples/don-hang/deploy/k8s/lessons/root-caddy-pod.yaml"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "Execution: caddy:2.10.0 -> `image will run as root`; prometheus -> `non-numeric user (nobody), cannot verify user is non-root`; runAsUser 65534 -> `prometheus-by-number 1/1 Running`. Round 2: lesson and q2 option-d explanation no longer say 65534 is nobody's number, only that it is not 0.",
+        "source": "outputs/stage-3/scripts/k8s/security-context.txt"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "\"A pod can opt-in to use user namespaces by setting the pod.spec.hostUsers field to false.\" \"Without using a user namespace a container running as root, in the case of a container breakout, has root privileges on the node. And if some capability were granted to the container, the capabilities are valid on the host too.\"",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/workloads/pods/user-namespaces.md:73-74, 143-146"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "\"The runAsUser, runAsGroup, fsGroup, etc. fields ... always refer to the user inside the container. These users will be used for volume mounts ... the inodes created/read in volumes mounted by the pod will be the same as if the pod wasn't using user namespaces ... This applies to any volume ... including hostPath\". Without user namespaces the container's UID 0 is UID 0 on the node (claim 17).",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/workloads/pods/user-namespaces.md:79-91"
+      },
+      {
+        "n": 19,
+        "verdict": "verified",
+        "evidence": "Output: `kubectl exec deployment/api -n donhang -- id` -> `uid=1654(app) gid=1654(app) groups=1654(app)`; Deployment securityContext prints all four fields. The api Pod is running (exec succeeds) under those settings.",
+        "source": "outputs/stage-3/scripts/k8s/security-context.txt:3-7"
+      },
+      {
+        "n": 20,
+        "verdict": "not-needed",
+        "evidence": "Opinion with an explicit condition (\"when a process does not need root or kernel powers\"); the lesson does not phrase it as an unconditional rule. Consistent with PSS restricted controls (drop ALL, runAsNonRoot, allowPrivilegeEscalation false, RuntimeDefault).",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/security/pod-security-standards.md"
+      },
+      {
+        "n": 21,
+        "verdict": "verified",
+        "evidence": "Same mechanism executed: prometheus-by-number (image USER is a name, runAsUser numeric) is Running. runAsUser \"Defaults to user specified in image metadata if unspecified\", so when set it replaces the name; 1654 is the uid `id` printed for `app`. Round 3 (targeted, section 4 only) re-opened pod-v1.md, linux-kernel-security-constraints.md; no issue remains.",
+        "source": "outputs/stage-3/scripts/k8s/security-context.txt; pod-v1.md:2977"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-16T02:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "style",
+        "text": "New in round 3 (changed sentence). I follow that a non-root process cannot use every default capability directly, but 'stay within reach of the container' does not tell me how they could still be used. I had to re-read it, and I still cannot say why dropping them matters for a non-root process like the api's.",
+        "quote": "A non-root process cannot use all of them directly, but they stay within reach of the container until dropped",
+        "fix": "Replace 'stay within reach of the container' with a concrete clause that says what can still use them, e.g. 'a process that gains more rights later can still use them'."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}
