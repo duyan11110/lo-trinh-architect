@@ -1,0 +1,152 @@
+{
+  "id": "design.l3.rebuilding-state-from-events",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-10-15T00:00:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "Event replay rebuilds an aggregate's state by applying its stored events again, in stored order, to an empty instance; in the sample InMemoryEventStore.Load does it with EventSourcedOrder.FromEvents each time it loads an order.",
+      "kind": "fact",
+      "source_hint": "glossary event-replay; examples/don-hang @ stage-3: EventSourcedOrder.cs:51-63, InMemoryEventStore.cs Load",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 2,
+      "text": "InMemoryEventStore.Load(orderId) is EventSourcedOrder.FromEvents(ReadStream(orderId)); ReadStream with the default afterVersion 0 returns the whole stream, oldest first.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: InMemoryEventStore.cs:32-44",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 3,
+      "text": "FromEvents creates an order with the private constructor (Status \"\", Version 0) and calls Apply for each event in the sequence, in order; it calls no Pay, Cancel or Ship and does not call Record.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: EventSourcedOrder.cs:27-30, 40-42, 54-63",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 4,
+      "text": "Apply switches on the event's type: OrderPlaced sets Id, CustomerId, TotalVnd and Status new; OrderPaid sets paid; OrderShipped sets shipped; OrderCancelled sets cancelled; then Version++. It checks no previous status and throws nothing.",
+      "kind": "fact",
+      "version_key": "dotnet",
+      "source_hint": "examples/don-hang @ stage-3: EventSourcedOrder.cs:95-121; C# docs: switch statement, type pattern",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 5,
+      "text": "Replaying placed, paid, cancelled for order 5 gives Status cancelled at Version 3.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: EventSourcedOrder.cs:99-121; EventSourcingTests.cs:16-26",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 6,
+      "text": "Replay leaves newEvents empty, so InMemoryEventStore.Save right after Load appends nothing: Append(order.Id, LoadedVersion = Version - 0, []) passes the version check and AddRange adds no event.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: EventSourcedOrder.cs:22, 38, 89-93; InMemoryEventStore.cs:17-30, 46-51",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 7,
+      "text": "Ship throws InvalidOperationException when Status is not paid, before calling Record, so a cancelled order records nothing (NewEvents stays empty), as Ship_CancelledOrder_ThrowsAndRecordsNothing asserts.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: EventSourcedOrder.cs:80-84; EventSourcingTests.cs:29-38",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 8,
+      "text": "In the sample, newEvents is filled only by Record, which only Place, Pay, Cancel and Ship call, each after its rule (Place has none); so an OrderShipped enters new events only through Ship().",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: EventSourcedOrder.cs:44-93",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 9,
+      "text": "Enumerable.Take(2) returns the first two elements of the sequence, so FromEvents(stream.Take(2)) replays OrderPlaced and OrderPaid only and gives Status paid.",
+      "kind": "behavior",
+      "version_key": "dotnet",
+      "source_hint": "refs/dotnet-docs: Enumerable.Take; EventSourcingTests.cs:26",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 10,
+      "text": "At stage-2 the real Order's Cancel had no paid check and overwrote orders.status (paid with cancelled); the row kept no earlier status.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: DonHang.Domain/Entities.cs Cancel (lines 83-88); outline item 4",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 11,
+      "text": "scripts/design/event-sourcing.sh runs dotnet run --project samples/DonHang.Samples -- event-sourcing on the host, no containers; output starts with order 5's stream (v1 OrderPlaced 09:00, v2 OrderPaid 09:30), then '== replayed: order 5 is paid at version 2', printed before the cancel is appended.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: scripts/design/event-sourcing.sh; EventSourcingDemo.cs:14-28; outputs/stage-3/scripts/design/event-sourcing.txt:1-4",
+      "needs_verification": true,
+      "section": 7
+    },
+    {
+      "n": 12,
+      "text": "Nothing in the replay path (Load, ReadStream, FromEvents, Apply) sends a message or calls RabbitMQ; the sample project has no broker code in this path.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: InMemoryEventStore.cs, EventSourcedOrder.cs",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 13,
+      "text": "Keep rule checks in the method that records an event and keep Apply free of checks when, as in the sample's store, events are never changed or deleted: an Apply that threw on a stored event would refuse that order on every later load.",
+      "kind": "opinion",
+      "source_hint": "outline items 2-3, misconceptions 1 and 3; EventSourcedOrder.cs:95-98 comment",
+      "needs_verification": false,
+      "section": 6
+    },
+    {
+      "n": 14,
+      "text": "An order loaded by replay remembers the version it was loaded at (LoadedVersion = Version minus new events), and Save passes it to Append, which refuses when the stream's count differs.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: EventSourcedOrder.cs LoadedVersion; InMemoryEventStore.cs Append, Save",
+      "needs_verification": true,
+      "section": 8
+    },
+    {
+      "n": 15,
+      "text": "In the sample, loading from a snapshot plus the later events gives the same order as a full replay.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: EventSourcingTests.cs Snapshot_LoadsTheSameOrder_AndCanBeDeleted; OrderSnapshots.cs:28-40",
+      "needs_verification": true,
+      "section": 8
+    },
+    {
+      "n": 16,
+      "text": "The real Order's constructor throws ArgumentException on invalid input, before the order exists.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Domain/Entities.cs:78-82 Order constructor",
+      "needs_verification": true,
+      "section": 8
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [1, 2, 3, 4, 5],
+    "outline_items_missing": [],
+    "beyond_scope": ["Try it reads only the first two output blocks of scripts/design/event-sourcing.sh; later blocks belong to stream-concurrency, projections and snapshots lessons"]
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1500,
+    "notes": "generate 2026-10-15. apply-review 2026-10-15: s4 stage-2 row sentence past tense (claim 10, quiz q2c); claim 1 per suggested_text; s6 evidence names dotnet run and no broker path, store condition on Apply; added At, InMemoryEventStore, Try-it note; claims 14-16; quiz q3b, q4d reworded. Cut s4 per-event sentence and s6 repeat for length. Git Bash kept: taught in foundation.l1.terminal-basics."
+  },
+  "open_questions": [],
+  "repo_changes_needed": []
+}

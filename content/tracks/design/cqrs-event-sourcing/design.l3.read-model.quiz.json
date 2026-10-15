@@ -17,7 +17,7 @@
         {
           "id": "a",
           "en": "It lives in a database of its own, which a message consumer fills some time after each change.",
-          "vi": "Nó nằm trong một database riêng, được một consumer message điền vào một lúc sau mỗi thay đổi.",
+          "vi": "Nó nằm trong một database riêng, được một message consumer điền vào một lúc sau mỗi thay đổi.",
           "misconception": "A read model always lives in a separate database and lags behind the writes."
         },
         {
@@ -41,13 +41,13 @@
         "en": {
           "correct": "A read model is defined by its shape and by who writes it. `order_status_history` holds exactly the event, status and time the history needs, and `RecordOrderStatusHistory` writes it from the events `Order` records, while `orders` is what the use cases change.",
           "a": "A separate database is a common picture of a read model, so it sounds like the definition. But `order_status_history` sits in the same database as `orders` and is saved in the same transaction; a separate store is only one option.",
-          "c": "Reading without tracking is true of this query, which makes it tempting. But `FindForReadingAsync` also reads `orders` untracked, and `orders` is not a read model; how a table is read does not decide what it is.",
+          "c": "Reading without tracking is true of this query, which makes it tempting. But the history endpoint also loads the order untracked, and `orders` is not a read model; how a table is read does not decide what it is.",
           "d": "Someone has to add the rows, and `Order` makes the changes, so it seems the natural writer. But `Order` has no property that leads to the table; the handler adds the row after `Order` has made the change."
         },
         "vi": {
           "correct": "Read model được xác định bởi hình dạng của nó và bởi ai ghi nó. `order_status_history` giữ đúng event, trạng thái và thời điểm mà lịch sử cần, và `RecordOrderStatusHistory` ghi nó từ các event `Order` ghi lại, còn `orders` là thứ các use case thay đổi.",
           "a": "Database riêng là hình ảnh quen thuộc về read model, nên nghe như định nghĩa. Nhưng `order_status_history` nằm cùng database với `orders` và được lưu trong cùng giao dịch; nơi lưu riêng chỉ là một lựa chọn.",
-          "c": "Truy vấn này đúng là đọc không theo dõi, nên dễ bị chọn. Nhưng `FindForReadingAsync` cũng đọc `orders` không theo dõi, mà `orders` không phải read model; cách đọc một bảng không quyết định nó là gì.",
+          "c": "Truy vấn này đúng là đọc không theo dõi, nên dễ bị chọn. Nhưng endpoint lịch sử cũng nạp đơn ở dạng không theo dõi, mà `orders` không phải read model; cách đọc một bảng không quyết định nó là gì.",
           "d": "Phải có ai đó thêm dòng, và `Order` là nơi tạo ra thay đổi, nên trông như người ghi tự nhiên. Nhưng `Order` không có property nào dẫn tới bảng đó; handler thêm dòng sau khi `Order` đã thay đổi."
         }
       }
@@ -60,42 +60,42 @@
       "skills": ["design.cqrs.read-models"],
       "section_ref": 4,
       "question": {
-        "en": "At stage-3 a customer cancels an order. Put these steps in the order they happen.",
-        "vi": "Ở stage-3 một khách hàng hủy một đơn. Sắp xếp các bước sau theo đúng thứ tự xảy ra."
+        "en": "At stage-3 a customer cancels an order, and the history must never trail the status. Put these steps in the order they happen.",
+        "vi": "Ở stage-3 một khách hàng hủy một đơn, và lịch sử không bao giờ được chậm hơn trạng thái. Sắp xếp các bước sau theo đúng thứ tự xảy ra."
       },
       "options": [
         {
           "id": "a",
-          "en": "`SaveChangesAsync` stores the new status and the history row together.",
-          "vi": "`SaveChangesAsync` lưu trạng thái mới và dòng lịch sử cùng lúc."
+          "en": "One transaction writes the order's new status and the new row to the database.",
+          "vi": "Một giao dịch ghi trạng thái mới của đơn và dòng mới xuống database."
         },
         {
           "id": "b",
-          "en": "`RecordOrderStatusHistory` adds one `order_status_history` row to `DonHangDbContext`.",
-          "vi": "`RecordOrderStatusHistory` thêm một dòng `order_status_history` vào `DonHangDbContext`."
+          "en": "The history handler puts a new row into the same `DonHangDbContext` as the order.",
+          "vi": "Handler lịch sử đặt một dòng mới vào cùng `DonHangDbContext` với đơn."
         },
         {
           "id": "c",
-          "en": "`Cancel()` checks the status rule and records `OrderCancelled`.",
-          "vi": "`Cancel()` kiểm tra quy tắc trạng thái và ghi lại `OrderCancelled`."
+          "en": "`Order` accepts the cancel and notes, as an event, that it happened.",
+          "vi": "`Order` chấp nhận việc hủy và ghi lại, dưới dạng một event, rằng việc đó đã xảy ra."
         },
         {
           "id": "d",
-          "en": "`DispatchAsync` hands `OrderCancelled` to every handler registered for it.",
-          "vi": "`DispatchAsync` trao `OrderCancelled` cho mọi handler đăng ký cho nó."
+          "en": "Each handler interested in that event is called with it.",
+          "vi": "Mỗi handler quan tâm tới event đó được gọi kèm event."
         }
       ],
       "answer": ["c", "d", "b", "a"],
       "explanation": {
         "en": {
-          "correct": "`Order` makes the change first and records the event. Dispatch then hands the event to the handlers, the history handler adds its row, and only after that does `SaveChangesAsync` store both in one transaction.",
-          "a": "Saving feels like the moment a change becomes real, so it is easy to place it right after `Cancel()`. But if the save came before the handler, the row would not be part of it and the history could trail the status.",
-          "b": "The row is the visible result, so it is tempting to place it early. But the handler only runs when dispatch hands it an event, and the event exists only after `Cancel()` has recorded it."
+          "correct": "There is no event to react to until `Order` has accepted the change. The handlers then run, and the history handler only adds its row to the context. Writing comes last so that the status and the row land in one transaction.",
+          "a": "Writing to the database feels like the moment a change becomes real, so it is easy to place it right after the cancel. But if it came before the handler, the row would miss that write and the history could trail the status.",
+          "b": "The row is the visible result, so it is tempting to place it early. But the history handler runs only when it is called with an event, and the event exists only after `Order` has accepted the cancel."
         },
         "vi": {
-          "correct": "`Order` thay đổi trước và ghi lại event. Sau đó dispatch trao event cho các handler, handler lịch sử thêm dòng của nó, và chỉ sau đó `SaveChangesAsync` mới lưu cả hai trong một giao dịch.",
-          "a": "Lưu nghe như lúc thay đổi trở thành thật, nên dễ đặt nó ngay sau `Cancel()`. Nhưng nếu lưu trước khi handler chạy, dòng lịch sử sẽ không nằm trong lần lưu đó và lịch sử có thể chậm hơn trạng thái.",
-          "b": "Dòng lịch sử là kết quả thấy được, nên dễ đặt nó sớm. Nhưng handler chỉ chạy khi dispatch trao cho nó một event, và event chỉ có sau khi `Cancel()` đã ghi lại."
+          "correct": "Chưa có event nào để phản ứng cho tới khi `Order` chấp nhận thay đổi. Sau đó các handler chạy, và handler lịch sử chỉ thêm dòng của nó vào context. Việc ghi xuống database đứng cuối để trạng thái và dòng lịch sử nằm trong một giao dịch.",
+          "a": "Ghi xuống database nghe như lúc thay đổi trở thành thật, nên dễ đặt nó ngay sau việc hủy. Nhưng nếu nó đứng trước handler, dòng lịch sử sẽ lỡ lần ghi đó và lịch sử có thể chậm hơn trạng thái.",
+          "b": "Dòng lịch sử là kết quả thấy được, nên dễ đặt nó sớm. Nhưng handler lịch sử chỉ chạy khi được gọi kèm một event, và event chỉ có sau khi `Order` đã chấp nhận việc hủy."
         }
       }
     },
@@ -143,13 +143,13 @@
         "en": {
           "correct": "`HandleAsync(OrderRefundFailed)` maps the event to `refund-failed` and `paid` and adds a row. `AddRow` only calls `Add`; the use case's `SaveChangesAsync` stores the row and the order's new status together.",
           "c": "A handler that writes something seems likely to save it too. But `AddRow` saves nothing: the save belongs to the use case that dispatched the event, which is why the row and the status are stored together or not at all.",
-          "d": "Changing an existing value is how `orders.status` works, so it is easy to expect the same here. But each change adds a new row; keeping the step back to `paid` next to the earlier rows is what the history is for.",
+          "d": "Changing an existing value is how `orders.status` works, so it is easy to expect the same here. But each event adds a new row; keeping the step back to `paid` next to the earlier rows is what the history is for.",
           "e": "Keeping the history next to the status it describes sounds tidy. But no rule of `Order` reads the history, and `Order` has no property that leads to it; the handler writes the row outside `Order`."
         },
         "vi": {
           "correct": "`HandleAsync(OrderRefundFailed)` chuyển event thành `refund-failed` và `paid` rồi thêm một dòng. `AddRow` chỉ gọi `Add`; `SaveChangesAsync` của use case lưu dòng đó cùng trạng thái mới của đơn.",
           "c": "Một handler ghi dữ liệu thì trông như cũng tự lưu. Nhưng `AddRow` không lưu gì: việc lưu thuộc về use case đã dispatch event, nên dòng lịch sử và trạng thái được lưu cùng nhau hoặc không cái nào được lưu.",
-          "d": "Ghi đè giá trị cũ là cách `orders.status` hoạt động, nên dễ nghĩ ở đây cũng vậy. Nhưng mỗi thay đổi thêm một dòng mới; giữ lại bước lùi về `paid` cạnh các dòng trước chính là việc của lịch sử.",
+          "d": "Ghi đè giá trị cũ là cách `orders.status` hoạt động, nên dễ nghĩ ở đây cũng vậy. Nhưng mỗi event thêm một dòng mới; giữ lại bước lùi về `paid` cạnh các dòng trước chính là việc của lịch sử.",
           "e": "Giữ lịch sử ngay cạnh trạng thái mà nó mô tả nghe gọn gàng. Nhưng không quy tắc nào của `Order` đọc lịch sử, và `Order` không có property nào dẫn tới nó; handler ghi dòng lịch sử bên ngoài `Order`."
         }
       }
@@ -202,7 +202,7 @@
         },
         "vi": {
           "correct": "Handler thêm dòng của nó trước chính `SaveChangesAsync` lưu đơn, nên một giao dịch lưu cả hai hoặc không cái nào. Request bắt đầu sau khi request hủy trả về sẽ thấy dòng `cancelled`.",
-          "a": "Read model được một consumer message điền vào ở database khác thì đúng là chậm hơn, nên câu này nghe như quy luật chung. Nhưng `order_status_history` nằm cùng database và cùng lần lưu với `orders`; độ trễ đến từ việc read model được ghi ở đâu và bằng cách nào, không đến từ việc nó là read model.",
+          "a": "Read model được một message consumer điền vào ở database khác thì đúng là chậm hơn, nên câu này nghe như quy luật chung. Nhưng `order_status_history` nằm cùng database và cùng lần lưu với `orders`; độ trễ đến từ việc read model được ghi ở đâu và bằng cách nào, không đến từ việc nó là read model.",
           "b": "Phản ứng với một thay đổi nghe như phải xảy ra sau khi thay đổi đã được lưu. Nhưng dispatch chạy trước `SaveChangesAsync`, và dòng của handler nằm trong lần lưu đó.",
           "d": "Kết luận đúng nhưng lý do sai. `EfOrderHistory` chỉ đọc `order_status_history`; dòng `cancelled` có ở đó vì nó được lưu cùng đơn."
         }
@@ -216,8 +216,8 @@
       "skills": ["design.cqrs.read-models"],
       "section_ref": 4,
       "context": {
-        "en": "Đơn Hàng runs on one PostgreSQL database, maintained by a team of three. Support needs a screen showing every status an order passed through, with the time of each change. Every change to an order already goes through a method of `Order` that records a domain event. The team expects new use cases that change orders in the coming months. Support must never see a history that trails the order's current status.",
-        "vi": "Đơn Hàng chạy trên một database PostgreSQL, do một nhóm ba người bảo trì. Bộ phận hỗ trợ cần một màn hình hiện mọi trạng thái một đơn đã đi qua, kèm thời điểm của từng thay đổi. Mọi thay đổi trên đơn đã đi qua một method của `Order` có ghi lại domain event. Nhóm dự kiến sẽ có thêm use case mới thay đổi đơn trong vài tháng tới. Hỗ trợ không bao giờ được thấy lịch sử chậm hơn trạng thái hiện tại của đơn."
+        "en": "Đơn Hàng runs on one PostgreSQL database, maintained by a team of three. Support needs a screen showing every status an order passed through, with the time of each change. Every status change support cares about goes through a method of `Order` that records a domain event, and every use case dispatches those events before it saves. The team expects new use cases that change orders in the coming months. Support must never see a history that trails the order's current status.",
+        "vi": "Đơn Hàng chạy trên một database PostgreSQL, do một nhóm ba người bảo trì. Bộ phận hỗ trợ cần một màn hình hiện mọi trạng thái một đơn đã đi qua, kèm thời điểm của từng thay đổi. Mọi thay đổi trạng thái mà bộ phận hỗ trợ quan tâm đều đi qua một method của `Order` có ghi lại domain event, và mọi use case đều dispatch các event đó trước khi lưu. Nhóm dự kiến sẽ có thêm use case mới thay đổi đơn trong vài tháng tới. Hỗ trợ không bao giờ được thấy lịch sử chậm hơn trạng thái hiện tại của đơn."
       },
       "question": {
         "en": "Where should the history be written?",
@@ -243,22 +243,22 @@
         {
           "id": "d",
           "en": "In a second database, filled by a consumer of messages sent after each change.",
-          "vi": "Trong một database thứ hai, được một consumer điền từ các message gửi sau mỗi thay đổi.",
+          "vi": "Trong một database thứ hai, được một message consumer điền từ các message gửi sau mỗi thay đổi.",
           "misconception": "A read model always lives in a separate database and lags behind the writes."
         }
       ],
       "answer": ["c"],
       "explanation": {
         "en": {
-          "correct": "A handler reacts to the events `Order` already records, so a new use case gets its history row without being changed. Because the row joins the order's `SaveChangesAsync`, the history never trails the status; the price is one extra insert per change.",
+          "correct": "A handler reacts to the events `Order` already records, so a new use case that dispatches them gets its history row with no line about the history. Because the row joins the order's `SaveChangesAsync`, the history never trails the status; the price is one extra insert per event.",
           "a": "Keeping the history inside the object that changes looks cohesive. But no rule of `Order` reads it, it would be carried along with every order a use case changes, and the next screen wanting another shape would grow `Order` again. It fits when a rule of `Order` actually needs the history.",
-          "b": "Writing the row where the change happens is direct and easy to read. But every new use case must remember to do it, and one that forgets leaves a gap. It fits when there are only a few use cases and no domain events to react to.",
+          "b": "Writing the row where the change happens is direct and easy to read. But a use case writing the row itself would have to remember to, and a new one that forgets leaves a gap. It fits when a change records no event, since then no handler is called to write the row.",
           "d": "A separate store keeps the order's save from waiting on the history. But readers then see a change only after the message is handled, which breaks the support requirement here. It fits when writes must not wait and a short delay is acceptable."
         },
         "vi": {
-          "correct": "Handler phản ứng với các event mà `Order` đã ghi lại, nên use case mới có dòng lịch sử mà không phải sửa gì. Vì dòng đó nằm trong `SaveChangesAsync` của đơn, lịch sử không bao giờ chậm hơn trạng thái; cái giá là thêm một lệnh insert cho mỗi thay đổi.",
+          "correct": "Handler phản ứng với các event mà `Order` đã ghi lại, nên use case mới có dispatch các event đó sẽ có dòng lịch sử mà không cần dòng code nào về lịch sử. Vì dòng đó nằm trong `SaveChangesAsync` của đơn, lịch sử không bao giờ chậm hơn trạng thái; cái giá là thêm một lệnh insert cho mỗi event.",
           "a": "Giữ lịch sử ngay trong đối tượng thay đổi trông chặt chẽ. Nhưng không quy tắc nào của `Order` đọc nó, nó sẽ bị mang theo với mọi đơn mà một use case thay đổi, và màn hình kế tiếp cần hình dạng khác lại làm `Order` phình thêm. Cách này hợp khi một quy tắc của `Order` thật sự cần lịch sử.",
-          "b": "Ghi dòng lịch sử ngay chỗ thay đổi xảy ra thì trực tiếp và dễ đọc. Nhưng mỗi use case mới phải nhớ làm việc này, và use case nào quên sẽ để lại lỗ hổng. Cách này hợp khi chỉ có vài use case và không có domain event nào để phản ứng.",
+          "b": "Ghi dòng lịch sử ngay chỗ thay đổi xảy ra thì trực tiếp và dễ đọc. Nhưng use case tự ghi dòng lịch sử thì phải nhớ làm việc đó, và use case mới nào quên sẽ để lại lỗ hổng. Cách này hợp khi một thay đổi không ghi lại event nào, vì khi đó không có handler nào được gọi để ghi dòng lịch sử.",
           "d": "Nơi lưu riêng giúp lần lưu đơn không phải chờ lịch sử. Nhưng người đọc chỉ thấy thay đổi sau khi message được xử lý, điều đó vi phạm yêu cầu của bộ phận hỗ trợ ở đây. Cách này hợp khi phía ghi không được chờ và chấp nhận được độ trễ ngắn."
         }
       }
@@ -294,22 +294,22 @@
         {
           "id": "d",
           "en": "The later rows of order 7 are still waiting for a consumer to copy them into the table.",
-          "vi": "Các dòng sau của đơn 7 vẫn đang chờ một consumer chép chúng vào bảng."
+          "vi": "Các dòng sau của đơn 7 vẫn đang chờ một message consumer chép chúng vào bảng."
         }
       ],
       "answer": ["a"],
       "explanation": {
         "en": {
           "correct": "Order 7 was shipped at stage-2, when each change wrote the new status over the old one and no history table existed. The migration could only use what `orders` still held: `placed_at`, which gives one `placed` row.",
-          "b": "The `orders` row is still there, so it seems to hold enough to rebuild from. But it keeps only the current status and the time the order was placed; every status in between and its time is gone.",
+          "b": "The `orders` row is still there, so it seems to hold enough to rebuild from. But it keeps only the current status and the time the order was placed; every status in between and its time is gone from it.",
           "c": "A missing handler would explain a missing row, so it is a reasonable first guess. But `HandleAsync(OrderShipped)` exists; the shipping of order 7 simply happened before the handler did.",
           "d": "Read models filled by a consumer do arrive later, so waiting sounds plausible. But this table is written in the same save as the order, with no consumer and no message; nothing is on its way."
         },
         "vi": {
           "correct": "Đơn 7 được giao ở stage-2, khi mỗi thay đổi ghi trạng thái mới đè lên trạng thái cũ và chưa có bảng lịch sử. Migration chỉ dùng được những gì `orders` còn giữ: `placed_at`, cho ra một dòng `placed`.",
-          "b": "Dòng trong `orders` vẫn còn, nên trông như đủ để dựng lại. Nhưng nó chỉ giữ trạng thái hiện tại và thời điểm đặt đơn; mọi trạng thái ở giữa và thời điểm của chúng đã mất.",
+          "b": "Dòng trong `orders` vẫn còn, nên trông như đủ để dựng lại. Nhưng nó chỉ giữ trạng thái hiện tại và thời điểm đặt đơn; mọi trạng thái ở giữa và thời điểm của chúng đã mất khỏi nó.",
           "c": "Thiếu handler sẽ giải thích được việc thiếu dòng, nên đây là phỏng đoán đầu tiên hợp lý. Nhưng `HandleAsync(OrderShipped)` có tồn tại; việc giao đơn 7 chỉ đơn giản xảy ra trước khi handler có mặt.",
-          "d": "Read model do consumer điền thì đúng là đến muộn, nên chờ đợi nghe hợp lý. Nhưng bảng này được ghi trong cùng lần lưu với đơn, không có consumer hay message nào; không có gì đang trên đường tới."
+          "d": "Read model do message consumer điền thì đúng là đến muộn, nên chờ đợi nghe hợp lý. Nhưng bảng này được ghi trong cùng lần lưu với đơn, không có consumer hay message nào; không có gì đang trên đường tới."
         }
       }
     }

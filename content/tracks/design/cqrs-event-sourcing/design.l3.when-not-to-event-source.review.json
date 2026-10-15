@@ -1,0 +1,124 @@
+{
+  "id": "design.l3.when-not-to-event-source",
+  "technical": {
+    "reviewed_at": "2026-10-15T22:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Round 2. Entities.cs @ stage-3: constructor adds OrderPlaced, Cancel adds OrderCancelled, Ship adds OrderShipped, the three refund methods add OrderRefundRequested/OrderRefunded/OrderRefundFailed; MarkPaid sets `Status = \"paid\";` with no event and is called only from DonHang.Tests. s2 now reads \"every status change its use cases make\", which matches the claim as revised.",
+        "source": "examples/don-hang @ stage-3 DonHang.Domain/Entities.cs (Order); DomainEvents.cs"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Carried from round 1. DonHangDbContext.cs maps Order `e.ToTable(\"orders\")` and OrderStatusHistoryEntry `e.ToTable(\"order_status_history\")`; RecordOrderStatusHistory is registered for all six events (ServiceCollectionExtensions.cs:36-41). samples/.../Design/EventSourcing/ holds EventSourcedOrder.cs, EventSourcingDemo.cs, InMemoryEventStore.cs, OrderProjections.cs, OrderSnapshots.cs.",
+        "source": "examples/don-hang @ stage-3 DonHang.Infrastructure/DonHangDbContext.cs, RecordOrderStatusHistory.cs, ServiceCollectionExtensions.cs; samples/.../EventSourcing/"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Carried from round 1. order-history-design.md:12 \"Nhu cầu chỉ là một danh sách cho từng đơn, cũ trước mới sau.\"; :15 \"## Phương án A: event sourcing cho `Order`\"; :27 \"## Phương án B: read model cập nhật từ domain event (chọn)\"; :39 \"## Phương án C: đọc bảng `outbox_messages`\".",
+        "source": "examples/don-hang @ stage-3 docs/design/order-history-design.md:7-52"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Carried from round 1. order-history-design.md:21-24 \"Mất: mọi use case, truy vấn và test đang nạp và lưu `Order` qua EF Core phải đổi (`OrderService`, `EfOrderRepository`, danh sách đơn, kiểm tra `xmin`, outbox). Mỗi truy vấn cần một projection. Event cũ phải đọc được mãi sau khi code đổi. Cả đội phải học một cách lưu dữ liệu mới.\" Code blocks unchanged since round 1 (matched character-for-character).",
+        "source": "examples/don-hang @ stage-3 docs/design/order-history-design.md:20-24"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Carried from round 1. EfOrderRepository.cs: `public sealed class EfOrderRepository(DonHangDbContext db) : IOrderRepository`, loads via `db.Orders.Include(o => o.Items)`. DonHangDbContext.cs: \"IsRowVersion() on a uint makes the Npgsql provider map Version to PostgreSQL's xmin column\" + `e.Property(o => o.Version).IsRowVersion();`. Entities.cs:60 `public uint Version { get; private set; }`.",
+        "source": "examples/don-hang @ stage-3 DonHang.Infrastructure/EfOrderRepository.cs; DonHangDbContext.cs; DonHang.Domain/Entities.cs"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Carried from round 1. order-history-design.md:33-37 \"Được: lịch sử không bao giờ chậm hơn trạng thái của đơn; `Order` không biết bảng này tồn tại; không use case nào phải đổi. Mất: thêm một lệnh INSERT mỗi lần đổi trạng thái. Đơn có trước stage-3 chỉ có một dòng `placed`\". Migration AddOrderStatusHistory: `INSERT INTO order_status_history (...) SELECT id, 'placed', 'new', placed_at FROM orders`.",
+        "source": "examples/don-hang @ stage-3 docs/design/order-history-design.md:27-37; Migrations/20261005224255_AddOrderStatusHistory.cs"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Carried from round 1. order-history-design.md:44-46 \"dòng outbox chỉ mang thứ service nhận cần (email, tên khách) ... đơn có trước stage-3 không có dòng nào. Một màn hình dựa vào nó sẽ hỏng khi hình dạng message đổi.\" OrderMessage.cs: `record OrderMessage(int OrderId, string CustomerEmail, string CustomerName, DateTimeOffset OccurredAt)`.",
+        "source": "examples/don-hang @ stage-3 docs/design/order-history-design.md:39-46; DonHang.Domain/OrderMessage.cs"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Carried from round 1. order-history-design.md:50 \"Chọn B.\"; :56-60 three bullets (cả đơn ở một thời điểm bất kỳ trong quá khứ; nhiều read model mới ... mỗi cái lại cần một handler riêng; kiểm toán đòi chứng minh lịch sử chưa từng bị sửa); :62-63 \"Khi đó cân nhắc event sourcing riêng cho `Order`; các aggregate khác vẫn có thể lưu theo trạng thái.\"",
+        "source": "examples/don-hang @ stage-3 docs/design/order-history-design.md:48-63"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Carried from round 1. OrdersController.cs `[HttpGet(\"{id:int}/history\")]`: after the OrderOwner check, `var changes = await history.ListAsync(id);`. EfOrderHistory.ListAsync selects from `db.OrderStatusHistory`; comment \"No Order is loaded\". (The owner check loads an untracked Order, so \"never builds an Order\" holds for IOrderHistory.) git diff stage-2 stage-3 of EfOrderRepository: Find*/List unchanged, supporting s6 \"the way orders are loaded did not change\".",
+        "source": "examples/don-hang @ stage-3 DonHang.Api/Controllers/OrdersController.cs; DonHang.Infrastructure/EfOrderHistory.cs"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Round 2: now stated in s6 bullet 2. InMemoryEventStore.cs:5 \"It only ever appends; no event is changed or removed once stored\"; :46 \"Saving appends only the new events\". order_status_history is a plain EF-mapped table (DonHangDbContext.cs:106-108 `e.ToTable(\"order_status_history\")`, ordinary CreateTable migration) with no rule blocking UPDATE; OrderStatusHistoryEntry.cs:5 only says by convention \"Only RecordOrderStatusHistory writes these\".",
+        "source": "examples/don-hang @ stage-3 samples/.../EventSourcing/InMemoryEventStore.cs; DonHang.Infrastructure/DonHangDbContext.cs; OrderStatusHistoryEntry.cs"
+      },
+      {
+        "n": 11,
+        "verdict": "not-needed",
+        "evidence": "Carried from round 1. Conditional design judgement (\"pays off when ...\") matching outline item 1; each condition mirrors a revisit bullet in order-history-design.md:56-60. Not phrased as an unconditional rule. No official doc in versions.yaml governs design-pattern guidance."
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Round 2: s4 now reads \"a question about one order means replaying or reading its stream, and any question across orders, such as a list or a count, needs a read model built by an event projection\" (round-1 suggested_text). Matches the sample: InMemoryEventStore.ReadStream(orderId) and `Load(...) => EventSourcedOrder.FromEvents(ReadStream(orderId))` for one order; OrderProjections (OrderTimeline, OrderStatusCounts) for queries across orders. s6 bullet 2 and summary line 2 now say \"across orders/aggregates\".",
+        "source": "examples/don-hang @ stage-3 samples/.../EventSourcing/InMemoryEventStore.cs (ReadStream, Load); OrderProjections.cs"
+      },
+      {
+        "n": 13,
+        "verdict": "not-needed",
+        "evidence": "Carried from round 1. Design reasoning stated with \"can\"; the Đơn Hàng instance is backed by order-history-design.md:62-63 \"cân nhắc event sourcing riêng cho `Order`; các aggregate khác vẫn có thể lưu theo trạng thái\" and by IOrderRepository/EfOrderRepository being Order-specific."
+      },
+      {
+        "n": 14,
+        "verdict": "not-needed",
+        "evidence": "Design reasoning answering misconceptions 1-2. Checkable part holds: order-history-design.md:50-51 \"B đáp ứng đúng nhu cầu đó với một bảng và một handler\"; RecordOrderStatusHistory.cs is that one handler. Round 2 re-read only the changed parts (s2, s4, s5 prose, s6 bullet 2, s7 (b)/(c), summary line 2, quiz q1/q6 and explanations mentioning event projection) against Entities.cs, InMemoryEventStore.cs, DonHangDbContext.cs, OrderStatusHistoryEntry.cs, RecordOrderStatusHistory.cs."
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "New in round 2 (s7 (b)). Entities.cs @ stage-3: Order.CustomerId and PlacedAt are `{ get; private set; }`, set only in the constructor; items are added once (`this.items.AddRange(items);`, line 80) and exposed as `IReadOnlyList<OrderItem> Items => items.AsReadOnly()`; OrderItem's ProductId, Quantity, UnitPrice are `private set` initialised from the constructor. Only Status changes after placement, and only status changes reach order_status_history (RecordOrderStatusHistory, one row per domain event).",
+        "source": "examples/don-hang @ stage-3 DonHang.Domain/Entities.cs (Order, OrderItem); DonHang.Infrastructure/RecordOrderStatusHistory.cs"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-15T23:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior reader, prompt 05, round 2 targeted re-review)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 3,
+        "kind": "style",
+        "text": "Carried from round 1. The four Core concepts terms are still not bolded, so later uses of \"state-based\" and \"reason to revisit\" do not stand out as defined terms I can look back to. (Apply-review log says bold is forbidden here because vocab is []; left as minor for the author to decide.)",
+        "quote": "- state-based storage — keeping an aggregate's current state as the record and overwriting it on each change",
+        "fix": "If the content rules allow it, bold the term at the start of each Core concepts bullet; otherwise close this issue as not applicable."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

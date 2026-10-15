@@ -15,9 +15,9 @@ vocab: [read-model]
 example_tag: stage-3
 versions_used: [dotnet, aspnetcore, efcore, postgresql]
 content_version: 1
-status: draft
-approved_by: null
-reviewed_at: null
+status: approved
+approved_by: auto
+reviewed_at: "2026-10-15T06:14:49+07:00"
 ---
 
 ## Before you start
@@ -56,13 +56,13 @@ sequenceDiagram
   Q->>D: Select three columns into OrderStatusChange
 ```
 
-In the situation above, the read model is a new table, `order_status_history`, added at stage-3. Follow a cancel through the diagram. `OrderService` calls `Cancel()`, which checks the status rule and records `OrderCancelled`. `DispatchAsync` then hands that event to every handler registered for it. One of them is `RecordOrderStatusHistory`, which adds one row: the event `cancelled`, the status `cancelled` and the event's time.
+In the situation above, the read model is a new table, `order_status_history`, added at stage-3. Follow a cancel through the diagram. `OrdersController` calls `CancelOrderAsync(id)` on `OrderService`, which calls `Cancel()`; `Cancel()` checks the status rule and records `OrderCancelled`. `DispatchAsync` then hands that event to every handler registered for it. One is `RecordOrderStatusHistory`, which adds one row: the event `cancelled`, the status `cancelled` and the event's time.
 
-Notice who writes the row. `CancelOrderAsync` does not mention the history, and `Order` has no property that points to the table. The handler reacts after `Order` has made the change. A new use case that records one of these events and dispatches them before its save, as every `OrderService` method does, gets its history row with no line about the history.
+Notice who writes the row. `CancelOrderAsync` does not mention the history, and `Order` has no property that points to the table. The handler reacts after `Order` has made the change. A new use case that records one of these events and dispatches them before its save, as every `OrderService` method does, gets its history row with no line about the history; a use case writing the row itself would have to remember to.
 
 The row joins the same `DonHangDbContext` before `SaveChangesAsync`, so one transaction stores the new status and its history row, or neither. A request that starts after the save finds both. The price is one more insert on every change that records an event.
 
-Reading takes the other path. `GET /api/v1/orders/{id}/history` asks `EfOrderHistory`, which selects the event, the status and the time of that order's rows into `OrderStatusChange` records. The table already has the shape the screen needs, so the query builds no `Order` and runs no rule.
+Reading takes the other path. `OrdersController` handles `GET /api/v1/orders/{id}/history` by calling `ListAsync(id)` on `EfOrderHistory`, which selects the event, the status and the time of that order's rows into `OrderStatusChange` records. The table already has the shape the screen needs, so the query builds no `Order` and runs no rule.
 
 ## In the Đơn Hàng system
 
@@ -95,7 +95,9 @@ The history handler, from the method for the first event to the one that adds th
     }
 ```
 
-There is one `HandleAsync` for each of the six events `Order` records, and each maps its event to a name and a status. A placed order has no id until `SaveChangesAsync` runs, so the row points to the `Order` object and EF Core fills `order_id` in that save. `refunded` leaves the order `cancelled`, as a cancel does; the event name keeps the two apart. `refund-failed` leads back to `paid`, a step backwards the history keeps. `AddRow` only calls `Add` and saves nothing: the save belongs to the use case that dispatched the event.
+There is one `HandleAsync` for each of the six events `Order` records, and each maps its event to a name and a status. A placed order starts with the status `new`, so the `placed` row records `new`. `refunded` leaves the order `cancelled`, as a cancel does; the event name keeps the two apart. `refund-failed` leads back to `paid`, a step backwards the history keeps.
+
+`OrderStatusHistoryEntry` is the class for one `order_status_history` row, and `AddRow` adds one to `db.OrderStatusHistory`. The row points to the `Order` object rather than copying its id, and EF Core sets `order_id` from it when it saves the row. `AddRow` saves nothing: the save belongs to the use case that dispatched the event.
 
 The endpoint that reads it:
 
@@ -130,7 +132,7 @@ The order is loaded once, untracked as the single-order endpoint `Get` does, and
 
 ## Try it (3 minutes)
 
-1. In the root folder of the example repository at `stage-3`, after running `scripts/up.sh`, run `scripts/design/order-history.sh` in Git Bash.
+1. In the root folder of the example repository at `stage-3`, after running `scripts/up.sh`, run `scripts/design/order-history.sh` in a bash shell (Git Bash on Windows). It gets an access token for the customer who owns order 7 by itself, then prints order 7's row in `orders` and its history, places and cancels a new order, and prints that order's history and its `order_status_history` rows.
 2. Compare the history of order 7 with the history of the order the script places and then cancels.
 
 Expected result: order 7 shows `shipped` in `orders`, yet its history holds one entry, `placed` with status `new`. The new order's history holds two entries, `placed` then `cancelled`, and `order_status_history` shows the same two rows for it.
@@ -139,7 +141,7 @@ Expected result: order 7 shows `shipped` in `orders`, yet its history holds one 
 
 Order 7 changed before stage-3. When it was shipped, the new status overwrote the old one in `orders`, and no history table existed yet. The migration that created `order_status_history` could only write what `orders` still knew: one `placed` row, taken from `placed_at`.
 
-The new order changed after stage-3. Placing it recorded `OrderPlaced` and cancelling it recorded `OrderCancelled`. Each event reached `RecordOrderStatusHistory`, which added a row before the same `SaveChangesAsync` that saved the order. That is why both rows exist as soon as each request returns.
+The new order changed after stage-3. Placing it recorded `OrderPlaced` and cancelling it recorded `OrderCancelled`. Each event reached `RecordOrderStatusHistory`, which added a row before the same `SaveChangesAsync` that saved the order.
 
 </details>
 

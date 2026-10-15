@@ -1,0 +1,136 @@
+{
+  "id": "design.l3.stream-concurrency",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-10-15T00:00:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "EventSourcedOrder.LoadedVersion is Version minus the number of new events recorded since the load; after replay with no new events it equals Version.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: EventSourcedOrder.cs:29-38",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 2,
+      "text": "InMemoryEventStore.Save calls Append(order.Id, order.LoadedVersion, order.NewEvents), then order.MarkSaved(), which clears the new events; if Append throws, MarkSaved is not reached.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: InMemoryEventStore.cs:46-51; EventSourcedOrder.cs:86-87",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 3,
+      "text": "Append throws StreamConcurrencyException when stream.Count != expectedVersion; the check comes before stream.AddRange and all.AddRange, so a refused append adds no event to the stream or to the all list.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: InMemoryEventStore.cs:17-30",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 4,
+      "text": "A stream's version equals its event count: Apply ends with Version++ for every event, and replay applies each stored event once to an order starting at Version 0.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: EventSourcedOrder.cs:29-30, 54-63, 99-121",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 5,
+      "text": "Cancel() passes for a paid order (it refuses only cancelled or shipped) and Ship() requires paid; both call Record, which applies the event, so Version becomes 3 and LoadedVersion stays 2.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: EventSourcedOrder.cs:74-93",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 6,
+      "text": "In TwoWriters_SecondAppendIsRefused_AndRetryMeetsTheRule, Place and Pay then Save put the stream at version 2; writerA and writerB both Load(5); A's Cancel saves; B's Save throws StreamConcurrencyException; ReadStream(5).Count is 3; Load(5).Ship throws InvalidOperationException.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: samples/DonHang.Samples.Tests/EventSourcingTests.cs:40-60",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 7,
+      "text": "At stage-2, Order.Version is mapped to PostgreSQL's xmin system column with IsRowVersion(), through the Npgsql EF Core provider.",
+      "kind": "behavior",
+      "version_key": "npgsql_efcore",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Infrastructure/DonHangDbContext.cs:73-77; Npgsql EF Core docs: concurrency tokens (xmin)",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 8,
+      "text": "EF Core adds the concurrency token value it read (here xmin) to the WHERE of the UPDATE; optimistic concurrency takes no locks between read and save.",
+      "kind": "behavior",
+      "version_key": "efcore",
+      "source_hint": "EF Core docs: Saving data > Handling concurrency conflicts; backend.l2.optimistic-concurrency claims",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 9,
+      "text": "Apply checks no rule, so a stream placed, paid, cancelled, shipped would replay to Status shipped (the last event sets it).",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: EventSourcedOrder.cs:95-121",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 10,
+      "text": "Calling Append(5, 3, writerB.NewEvents) after the refusal would pass the check (the stream holds 3 events) and append OrderShipped after OrderCancelled.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: InMemoryEventStore.cs:17-30; EventSourcedOrder.cs:86-93 (B's NewEvents not cleared after the failed Save)",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 11,
+      "text": "The sample store has no lock: Load and Save take nothing and hold nothing between calls; the only concurrency check is the version comparison in Append.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: InMemoryEventStore.cs:8-52",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 12,
+      "text": "When an append is refused, reload the stream and call the method again rather than re-appending the same event at the new version, because the event was decided against the old state.",
+      "kind": "opinion",
+      "source_hint": "outline item 5, misconception 2; InMemoryEventStore.cs:13-16 comment",
+      "needs_verification": false,
+      "section": 6
+    },
+    {
+      "n": 13,
+      "text": "scripts/design/event-sourcing.sh runs the samples project with dotnet on the host; its block '== two writers load order 5 at version 2' has the three lines quoted in Try it, ending 'B reloads and ships again: order 5 is cancelled, so it cannot be shipped'.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: scripts/design/event-sourcing.sh; outputs/stage-3/scripts/design/event-sourcing.txt:5-8",
+      "needs_verification": true,
+      "section": 7
+    },
+    {
+      "n": 14,
+      "text": "StreamConcurrencyException's message is 'order {orderId}: expected version {expectedVersion}, but the stream is at version {actualVersion}'.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: InMemoryEventStore.cs:54-55",
+      "needs_verification": true,
+      "section": 7
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [1, 2, 3, 4, 5],
+    "outline_items_missing": [],
+    "beyond_scope": []
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1450,
+    "notes": "generate 2026-10-15. vocab empty: core concepts listed without bold. xmin mapping referenced by file (DonHangDbContext.cs:73-77 at stage-3), not quoted. validate L18: situation split into two paragraphs (9 sentences > 6). Try it reads only the two-writers block. apply-review: removed unique-key sentence (old claim 7); s5 split, Save-order guarantee added (claim 2); At clause; lost-update clause; Ship(); versions_used + efcore, npgsql_efcore, old claim 8 split into 7/8. Quiz issues left to /quiz."
+  },
+  "open_questions": [],
+  "repo_changes_needed": []
+}
