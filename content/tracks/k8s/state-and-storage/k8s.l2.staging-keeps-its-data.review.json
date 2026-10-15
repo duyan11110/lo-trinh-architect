@@ -1,0 +1,125 @@
+{
+  "id": "k8s.l2.staging-keeps-its-data",
+  "technical": {
+    "reviewed_at": "2026-10-15T15:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "stateful-staging.sh L30-39: config_take base/db.yaml base/rabbitmq.yaml base/notifications.yaml base/payments.yaml base/fake-gateway.yaml base/api.yaml base/migrate-hook.yaml; cp .../httproutes.yaml; git status --short; config_commit. Captured output L1-5: 'M base/kustomization.yaml', 'M platform/edge/httproutes.yaml', '?? base/fake-gateway.yaml', '?? base/notifications.yaml', '?? base/payments.yaml'. (git show was denied in this session; compared against the submodule working tree.)",
+        "source": "examples/don-hang scripts/k8s/stateful-staging.sh; outputs/stage-3/scripts/k8s/stateful-staging.txt"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "payments.yaml L6-16: kind: Pod, name: payments-migrate, argocd.argoproj.io/hook: Sync, argocd.argoproj.io/sync-wave: \"1\"; L38-44: kind: Deployment, name: payments, sync-wave: \"2\". notifications.yaml L4-15: Pod notifications-migrate, hook: Sync, sync-wave: \"1\"; L37-43 Deployment notifications wave \"2\".",
+        "source": "examples/don-hang deploy/gitops/config-repo-kustomize/base/payments.yaml, notifications.yaml"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Argo CD 3.1 Sync Phases and Waves: \"When Argo CD starts a sync, it orders the resources in the following precedence\" (phase, wave, kind, name); next wave is \"the first number where any resource is out-of-sync or unhealthy\"; \"It repeats this process until all phases and waves are in-sync and healthy.\" Sync hooks: \"If any of them fails the whole sync process will be marked as failed.\" Captured output shows all three hooks Succeeded before the Deployments.",
+        "source": "https://argo-cd.readthedocs.io/en/release-3.1/user-guide/sync-waves/"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Round 2. httproutes.yaml L17-29: rule 1 PathPrefix /api/v1, /api/v2, /openapi -> api:8080, so without rule 2 /api/v1/refunds falls under /api/v1 and reaches the api; no refunds route in DonHang.Api (only DonHang.Payments/RefundsController.cs L17 [Route(\"api/v1/refunds\")]). L30-39: rule 2 PathPrefix /api/v1/refunds -> payments:8080; lesson block matches L17-39. docker-compose.yml L53 image: caddy:2.10.0, ./Caddyfile mounted at L59.",
+        "source": "examples/don-hang deploy/gitops/config-repo/platform/edge/httproutes.yaml; DonHang.Payments/RefundsController.cs; docker-compose.yml"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Gateway API v1.6 spec, HTTPRouteRule.matches: \"Proxy or Load Balancer routing configuration generated from HTTPRoutes MUST prioritize matches\" ... \"Across all rules specified on applicable Routes\": \"Exact\" path match; \"Prefix\" path match with largest number of characters; ... Only on ties: \"If ties still exist within an HTTPRoute, matching precedence MUST be granted to the FIRST matching rule (in list order)\". So rule order matters only on a tie.",
+        "source": "https://gateway-api.sigs.k8s.io/reference/api-spec/1.6/spec/ (HTTPRouteRule)"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Docker docs, PostgreSQL guide: \"When the container starts, it checks whether the PostgreSQL data directory is empty. If the directory already contains data, PostgreSQL starts immediately without running any initialization. If the directory is empty, the container runs initdb ..., then executes all scripts in /docker-entrypoint-initdb.d/\". Captured run: statefulset-db.txt L25 'PostgreSQL Database directory appears to contain a database; Skipping initialization'.",
+        "source": "refs/docker-docs/content/guides/postgresql.md L414; examples/don-hang outputs/stage-3/scripts/k8s/statefulset-db.txt"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Volumes: \"the emptyDir volume is initially empty ... When a Pod is removed from a node for any reason, the data in the emptyDir is deleted permanently.\" StatefulSet Stable Storage: \"When a Pod is (re)scheduled onto a node, its volumeMounts mount the PersistentVolumes associated with its PersistentVolume Claims. Note that, the PersistentVolumes associated with the Pods' PersistentVolume Claims are not deleted when the Pods, or StatefulSet are deleted.\"",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/storage/volumes.md L163-167; .../workloads/controllers/statefulset.md L234-243"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Argo CD 3.1 Automated Sync Policy: \"By default, changes that are made to the live cluster will not trigger automated sync.\" Self-heal enables \"automatic sync when the live cluster's state deviates from the state defined in Git\"; it is an option of the automated policy (\"skip automated sync even if prune, self-heal and allowEmpty are set\" when automated is off). apps/staging.yaml L22-25 sets automated.selfHeal: true; script L64 patches automated: null, L85 re-applies apps/staging.yaml.",
+        "source": "https://argo-cd.readthedocs.io/en/release-3.1/user-guide/auto_sync/; examples/don-hang deploy/gitops/config-repo/apps/staging.yaml"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "outputs/stage-3/scripts/k8s/stateful-staging.txt matches the lesson's output block line for line: migrate/notifications-migrate/payments-migrate Succeeded; '[]' 'HTTP 200'; 'placed order 13'; 'messages waiting for Notifications: 1' before and after deletion; 'order 13: new'; 'Notifications back: messages waiting 0'.",
+        "source": "examples/don-hang outputs/stage-3/scripts/k8s/stateful-staging.txt"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "stateful-staging.sh: L8 show(), L9 psql_db() runs psql in db-0, L10 waiting() filters list_queues for notifications.order-events, L13-18 wait_rabbit() loops rabbitmq-diagnostics check_running, L48-58 list hook Pods, Deployments and curl /api/v1/refunds as lan.do, L64 patch automated null, L76-80 delete both Pods and re-read, L85 kubectl apply apps/staging.yaml.",
+        "source": "examples/don-hang scripts/k8s/stateful-staging.sh"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "StatefulSet: \"stable network identity, and stable storage. The identity sticks to the Pod, regardless of which node it's (re)scheduled on.\" Stable Storage: \"When a Pod is (re)scheduled onto a node, its volumeMounts mount the PersistentVolumes associated with its PersistentVolume Claims.\" db.yaml/rabbitmq.yaml volumeClaimTemplates name: data -> data-db-0, data-rabbitmq-0.",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/workloads/controllers/statefulset.md L168-169, L234-243"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "local-path-provisioner README: it will \"create either hostPath or local based persistent volume on the node\"; PVs use node affinity so \"the volume is only accessible on the node where it was provisioned.\" kind: \"a tool for running local Kubernetes clusters using Docker container \\\"nodes\\\".\" tofu envs/staging/cluster/main.tf L2: \"the kind-cluster module with one node\".",
+        "source": "https://github.com/rancher/local-path-provisioner; https://kind.sigs.k8s.io/; examples/don-hang deploy/tofu/envs/staging/cluster/main.tf"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "dr-drill.sh L2-3 'delete donhang-staging, rebuild it'; L49-50 tofu destroy of platform and cluster layers, L54 'tofu-env.sh staging up'. A new cluster gives db-0 a new claim; with claim 6 (init scripts run on empty data dir) the rebuilt db is seeded from db-init. No captured output shows the row count after the drill; supported by code, not by a run.",
+        "source": "examples/don-hang scripts/devops/dr-drill.sh; deploy/gitops/config-repo-kustomize/base/db.yaml L48-49"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "db-init.yaml L76-88: INSERT INTO orders ids 1..12 only; L126: SELECT setval(pg_get_serial_sequence('orders', 'id'), 12). A reseeded db has no row with id 13.",
+        "source": "examples/don-hang deploy/gitops/config-repo-kustomize/base/db-init.yaml"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "RabbitMQ Queues > Durability: \"Durable queues will be recovered on node boot, including messages in them published as persistent.\" RabbitMqPublisher.cs L28 Persistent = true; DonHang.Notifications/RabbitMqTopology.cs L25 QueueDeclareAsync(Queue, durable: true, ...) with Queue = \"notifications.order-events\".",
+        "source": "https://www.rabbitmq.com/docs/queues; examples/don-hang DonHang.Messaging/RabbitMqPublisher.cs; DonHang.Notifications/RabbitMqTopology.cs"
+      },
+      {
+        "n": 16,
+        "verdict": "rephrased",
+        "evidence": "kubectl wait usage lists --for=create; example 'Wait for pod busybox1 to be created AND reach the Ready status condition: kubectl wait --for=condition=Ready --for=create pod/busybox1'; 'If --for=create is passed, it is always waited first.' The page does not literally say a missing Pod gives NotFound. The lesson's step 2 is conditional ('If kubectl wait reports that db-0 is not found'), so only the ledger wording is too strong. psql 17: -A unaligned, -t tuples only, -c command.",
+        "source": "refs/kubernetes-website/content/en/docs/reference/kubectl/generated/kubectl_wait/_index.md L36, L65-66, L122; https://www.postgresql.org/docs/17/app-psql.html",
+        "suggested_text": "Ledger: kubectl wait --for=condition=Ready waits for the Ready condition; the docs add --for=create to also wait for the Pod to be created, so a wait issued before the replacement exists may fail and can be run again. psql -tAc prints only the value."
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-15T16:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation, round 2 targeted re-review)",
+    "issues": [],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

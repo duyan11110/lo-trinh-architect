@@ -13,11 +13,11 @@ prereqs: [k8s.l1.deploying-don-hang, k8s.l1.configmap-files, devops.l1.volumes]
 related: [devops.l3.rpo-and-rto]
 vocab: [persistent-volume, persistent-volume-claim]
 example_tag: stage-3
-versions_used: [kubernetes, kind]
+versions_used: [kubernetes, kind, docker]
 content_version: 1
-status: draft
-approved_by: null
-reviewed_at: null
+status: approved
+approved_by: auto
+reviewed_at: "2026-10-15T06:09:23+07:00"
 ---
 
 ## Before you start
@@ -33,9 +33,9 @@ On the cluster `donhang`, `deploy/k8s/db.yaml` runs PostgreSQL as a one-replica 
 ## Core concepts
 
 - `emptyDir` — a volume declared inside a Pod, created empty when the Pod starts on a node and deleted with the Pod.
-- **PersistentVolume** — a piece of storage the cluster knows about, kept as an object of its own, apart from any Pod.
+- **PersistentVolume** — a piece of storage the cluster knows about, kept as an object of its own, apart from any Pod, and belonging to no namespace.
 - **PersistentVolumeClaim (PVC)** — a request, in one namespace, for storage of a size and an access mode; Kubernetes binds it to one PersistentVolume.
-- Access mode — how nodes may mount a volume; `ReadWriteOnce` lets one node at a time mount it read-write.
+- Access mode — how nodes may mount a volume; `ReadWriteOnce` means the volume can be mounted read-write by one node at a time.
 - `persistentVolumeClaim` — the entry under a Pod's `volumes` that uses a claim, named by `claimName`.
 
 ## How it works
@@ -51,7 +51,7 @@ sequenceDiagram
   S->>K: apply claim data, then Pod writer
   K->>C: bind to one PersistentVolume
   C->>PV: Bound: 100Mi, ReadWriteOnce
-  W1->>PV: mount at /data, write note.txt
+  W1->>PV: mount through claim data at /data, write note.txt
   S->>K: delete Pod writer
   Note over C,PV: claim and volume stay
   S->>K: apply Pod writer again
@@ -60,9 +60,9 @@ sequenceDiagram
 
 In the situation above, the `db` Pod's data folder sat on an `emptyDir`. Kubernetes creates that volume when the Pod is placed on a node and deletes it, files included, when the Pod is removed. A container restart inside the same Pod keeps it. A replacement Pod is a new Pod, so it gets a new, empty one.
 
-A claim moves the storage out of the Pod. `pvc.sh` first applies the claim `data`, which asks for `100Mi` with the access mode `ReadWriteOnce`. Then it applies the Pod `writer`, which names `data` under `volumes`. Kubernetes binds the claim to one PersistentVolume with at least that size and that mode, and the claim shows `Bound`. Where that PersistentVolume comes from in this cluster is the next lesson's subject.
+A claim moves the storage out of the Pod. `pvc.sh` first applies the claim `data`, which asks for `100Mi` (100 mebibytes) with the access mode `ReadWriteOnce`. Then it applies the Pod `writer`, which names `data` under `volumes`. Kubernetes binds the claim to one PersistentVolume with at least that size and that mode, and the claim shows `Bound`. Where that PersistentVolume comes from in this cluster is the next lesson's subject.
 
-The kubelet on the Pod's node mounts the volume at `/data` in the container, and the script writes `note.txt` there. Deleting `writer` removes the Pod and nothing else. The claim stays `Bound` to the same PersistentVolume, and the file stays on it. A new Pod that names the same claim gets the same volume, so `cat` finds the file.
+On the Pod's node, the volume is mounted into the container at `/data`, and the script writes `note.txt` there. Deleting `writer` removes the Pod and nothing else. The claim stays `Bound` to the same PersistentVolume, and the file stays on it. A new Pod that names the same claim gets the same volume, so `cat` finds the file.
 
 A Pod refers only to the claim, by name, in its own namespace; it never names the PersistentVolume. Once bound, the claim holds that PersistentVolume for itself, and no other claim is bound to it.
 
@@ -94,7 +94,7 @@ spec:
         claimName: data
 ```
 
-Lines 18–21 are the whole link to the storage: the volume `data` is a `persistentVolumeClaim` entry naming the claim `data`. Lines 15–17 mount it at `/data`. Compare `deploy/k8s/db.yaml`, where the volume of the same name reads `emptyDir: {}`. The mount looks the same in both files; only the volume's source decides whether the files outlive the Pod. The claim itself is in `deploy/k8s/lessons/data-pvc.yaml`, which sets `accessModes: ["ReadWriteOnce"]` and requests `storage: 100Mi` in the same namespace. The container runs `sleep 3600` only to stay up, so the script can run commands in it with `kubectl exec`.
+Lines 18–21 are the whole link to the storage: the volume `data` is a `persistentVolumeClaim` entry naming the claim `data`. Lines 15–17 mount it at `/data`. Compare `deploy/k8s/db.yaml`, where the volume of the same name reads `emptyDir: {}`. The mount looks the same in both files; only the volume's source decides whether the files outlive the Pod. The claim itself is in `deploy/k8s/lessons/data-pvc.yaml`, which sets `accessModes: ["ReadWriteOnce"]` and requests `storage: 100Mi` in the same namespace. The image only supplies a shell here; the container runs `sleep 3600` only to stay up, so the script can run commands in it with `kubectl exec`.
 
 ```bash file=scripts/k8s/pvc.sh tag=stage-3 lines=24-47
 echo "\$ kubectl exec writer -n storage-lessons -- sh -c 'echo \"order 13: written by \$(hostname)\" > /data/note.txt'"
@@ -156,14 +156,16 @@ writer-2   Running
 nodes they run on: 1
 ```
 
-Above the excerpt, the script creates the namespace `storage-lessons`, applies the claim and the Pod, and prints the claim's status: `Bound`, `100Mi`, `ReadWriteOnce`. `show` prints a command after `$`, then runs it. After `kubectl delete pod`, the claim still reads `Bound`. The second `writer` is a new Pod from the same manifest. It prints `order 13: written by writer` because a Pod's hostname is its name and both Pods were called `writer`: the line is the first Pod's.
+Above the excerpt, the script creates the namespace `storage-lessons`, applies the claim and the Pod, and prints the claim's status: `Bound`, `100Mi`, `ReadWriteOnce`. `show` prints a command after `$`, then runs it; an `echo "\$ ..."` line does the same by hand, and the next line runs the command. `-o custom-columns=...` makes kubectl print only the listed columns; plain `kubectl get pvc` prints more, including `VOLUME`. After `kubectl delete pod`, the claim still reads `Bound`.
 
-Line 40 reads which node `writer` runs on. Lines 42–43 apply a copy of the manifest named `writer-2` with `nodeName` set to that node, a field that places a Pod on one node directly. `writer-2` appends its own line and prints both. Two Pods are `Running`, and the script's last count, below the excerpt, finds them on one node.
+The second `writer` is a new Pod from the same manifest. `$(hostname)` inserts the name the container sees as its own; in a Pod, that name is the Pod's name. Both Pods were called `writer`, so `order 13: written by writer` is the first Pod's line.
+
+Line 40, `node=$(...)`, reads which node `writer` runs on. Lines 42–43 apply a copy of the manifest named `writer-2` with `nodeName` set to that node, a field that places a Pod on one node directly (`sed` edits the file's text on its way to `kubectl apply -f -`). `writer-2` appends its own line and prints both. Two Pods are `Running`, and the script's last count, below the excerpt, finds them on one node.
 
 ## Seniors often assume…
 
-- **"A volume declared inside a Pod keeps its data after the Pod is deleted."** → Actually an `emptyDir` lives and dies with its Pod, because Kubernetes creates it for that Pod and removes it with that Pod. Only a volume that names a claim leaves its data outside the Pod. You notice this when a replacement `db` Pod runs the init scripts again, which PostgreSQL does only on an empty data folder.
-- **"`ReadWriteOnce` means only one Pod can ever use the volume."** → Actually it limits the volume to one node at a time, read-write; several Pods on that node can use it together. If you need a single writer, this mode alone does not give it. You notice this when the script's `writer-2` appends a line to the file `writer` wrote, while both Pods are `Running`.
+- **"A volume declared inside a Pod keeps its data after the Pod is deleted."** → Actually an `emptyDir` lives and dies with its Pod, because Kubernetes creates it for that Pod and removes it with that Pod. A volume that names a claim leaves its data outside the Pod, on the claim's PersistentVolume. You notice this when a replacement `db` Pod runs the init scripts again, which the PostgreSQL image does only on an empty data folder.
+- **"`ReadWriteOnce` means only one Pod can ever use the volume."** → Actually it means the volume can be mounted read-write by one node at a time; several Pods on that node can use it together. If you need a single writer, this mode alone does not give it. You notice this when the script's `writer-2` appends a line to the file `writer` wrote, while both Pods are `Running`.
 - **"A PersistentVolumeClaim is the storage itself rather than a request for it."** → Actually the claim holds a size, an access mode and, once bound, the name of its PersistentVolume; the files sit on the storage that PersistentVolume stands for. The claim lives in a namespace, the PersistentVolume in none. You notice this when `kubectl get pvc` without `-o custom-columns` shows a `VOLUME` column, and `kubectl get pv` lists that name as a separate object.
 
 ## Try it (3 minutes)
@@ -184,8 +186,8 @@ Expected result: the output matches the one shown above. The line is `order 13: 
 
 ## Five-line summary
 
-1. A PersistentVolumeClaim keeps data apart from any Pod, so a replacement Pod that names the claim finds the same files.
+1. A PersistentVolumeClaim ties a Pod to a PersistentVolume that lives apart from any Pod, so a replacement Pod naming the claim finds the same files.
 2. An `emptyDir` is created with its Pod and deleted with it, which is why a new `db` Pod starts empty.
 3. A claim asks for a size and an access mode; Kubernetes binds it to one PersistentVolume, the storage itself.
 4. A Pod uses a claim under `volumes` with `persistentVolumeClaim` and `claimName`, and mounts it like any volume.
-5. `ReadWriteOnce` allows one node at a time read-write, so several Pods on that node can share the volume.
+5. `ReadWriteOnce` means the volume can be mounted read-write by one node at a time, so several Pods on that node can share it.

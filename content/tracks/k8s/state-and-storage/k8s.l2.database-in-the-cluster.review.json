@@ -1,0 +1,143 @@
+{
+  "id": "k8s.l2.database-in-the-cluster",
+  "technical": {
+    "reviewed_at": "2026-10-15T20:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "statefulset.md: \"StatefulSet Pods have a unique identity that consists of an ordinal, a stable network identity, and stable storage.\" / \"For each VolumeClaimTemplate entry defined in a StatefulSet, each Pod receives one PersistentVolumeClaim... When a Pod is (re)scheduled onto a node, its volumeMounts mount the PersistentVolumes associated with its PersistentVolume Claims.\" Replication is the app's job: run-replicated-stateful-application.md does it with init containers and an xtrabackup sidecar, \"MySQL itself does not provide a mechanism to do this\".",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/workloads/controllers/statefulset.md L167-169, L236-242; tasks/run-application/run-replicated-stateful-application.md L186-210"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "statefulset.md L236: \"each Pod receives one PersistentVolumeClaim\" (db-1 would get data-db-1, newly provisioned). run-replicated-stateful-application.md L186-188: a replica must clone data \"the first time it starts up on an empty PersistentVolume\" via a script the user writes. Captured statefulset-db.txt shows postgres initialises only when the directory is empty (\"Database directory appears to contain a database; Skipping initialization\"). db.yaml L17 replicas: 1.",
+        "source": "refs/kubernetes-website .../statefulset.md L236-242; .../run-replicated-stateful-application.md L186-189; examples/don-hang outputs/stage-3/scripts/k8s/statefulset-db.txt"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "PG 17 docs (WebFetch summary): \"In standby mode, the server continuously applies WAL received from the primary server... or directly from the primary over a TCP connection (streaming replication).\" \"Standby mode is exited and the server switches to normal operation when pg_ctl promote is run, or pg_promote() is called.\" \"...standby servers ready to take over operations if the primary server fails.\"",
+        "source": "https://www.postgresql.org/docs/17/warm-standby.html"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Round 2: lesson s4 now reads \"They must be converted, or the data dumped and loaded again or copied to a new server of the new version.\" PG 17 docs: \"For major releases of PostgreSQL, the internal data storage format is subject to change\"; pg_upgrade migrates in place; dump/restore via pg_dumpall; \"It is also possible to use logical replication methods to create a standby server with the updated version\". All three paths now covered.",
+        "source": "https://www.postgresql.org/docs/17/upgrading.html"
+      },
+      {
+        "n": 5,
+        "verdict": "rephrased",
+        "evidence": "Round 2: s4 now says \"for the code only the database address in its config changes\". In Don Hang that config value is ConnectionStrings__Default, read whole from a Secret key (base/api.yaml L40-44; payments.yaml L25-29). A different server comes with its own user and password, which live in that same value, so more than the address changes. The code itself is unchanged: that part holds.",
+        "source": "examples/don-hang deploy/gitops/config-repo-kustomize/base/api.yaml L40-44, payments.yaml L25-29 (stage-3)",
+        "suggested_text": "The api reaches the server by host name and port like any outside server, so for the code only its database settings in config change: the address, and the user and password that go with it."
+      },
+      {
+        "n": 6,
+        "verdict": "unverified",
+        "evidence": "Carried from round 1: no docs root in versions.yaml covers managed database services (depth_notes forbids naming a provider). Round 2: lesson s4 and summary line 2 now hedge with \"usually\", as suggested, so the sentence no longer asserts a universal fact. Claim kind is fact, not number/syntax, so this verdict does not block.",
+        "source": "content/versions.yaml (no applicable docs root)"
+      },
+      {
+        "n": 7,
+        "verdict": "not-needed",
+        "evidence": "Opinion, ledger kind opinion; lesson §4 states it with conditions (\"Which branch fits depends on your context\", \"usually fits\", \"fits when no such service exists... or when the data must stay on them\"). Matches outline item 4.",
+        "source": "content/tracks/k8s/track.yaml outline item 4"
+      },
+      {
+        "n": 8,
+        "verdict": "not-needed",
+        "evidence": "Round 2: opinion, ledger kind opinion. s4 now reads \"whoever took a backup, only a restore of it shows that it gives your data back, and how long that takes\" (the round-1 suggested_text). It no longer competes with db-backup.yaml's \"counts once it is copied off the cluster\" rule that the Suggested answer uses.",
+        "source": "content/tracks/k8s/state-and-storage/k8s.l2.database-in-the-cluster.en.md s4"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "tools/extract-code db.yaml --tag stage-3: L2-5 comment (db-0, data-db-0), L7 kind: StatefulSet, L16 serviceName: db-headless, L17 replicas: 1, L28 image: postgres:17.6-alpine, L62-69 volumeClaimTemplates name data, ReadWriteOnce, 1Gi, no storageClassName. Block lines 1-17 matches the source character for character. deploy/k8s/db.yaml L3 \"emptyDir volume: ... is deleted\", L60 emptyDir: {}.",
+        "source": "examples/don-hang deploy/gitops/config-repo-kustomize/base/db.yaml @ stage-3; deploy/k8s/db.yaml L3, L60"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "kind quick start (WebFetch): \"kind runs a local Kubernetes cluster by using Docker containers as \"nodes\".\" local-path-provisioner README: \"PersistentVolumes created by the provisioner use the kubernetes.io/hostname label for node affinity. This ensures the volume is only accessible on the node where it was provisioned.\" Captured storage-class.txt: standard (default) rancher.io/local-path; after cordon the writer is Pending on node affinity.",
+        "source": "https://kind.sigs.k8s.io/docs/user/quick-start/; https://github.com/rancher/local-path-provisioner; outputs/stage-3/scripts/k8s/storage-class.txt"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "STAGE.md @ stage-3 L114: \"All clusters are kind clusters on Docker Desktop\"; L123: \"donhang-staging (one node, ...): created by tofu-env.sh staging\". No cloud resources in deploy/tofu (kind provider only).",
+        "source": "examples/don-hang STAGE.md L112-130"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Round 2: s5 now reads \"The only scheduled work on PostgreSQL that staging does on its own is the CronJob in db-backup.yaml, and its dumps stay on that same node.\" db-backup.yaml: CronJob db-backup, schedule \"0 2 * * *\", pg_dump of three databases into claim db-backups on the same node as data-db-0. migrate-hook.yaml is a sync hook, not scheduled, so \"scheduled\" makes the sentence true.",
+        "source": "examples/don-hang deploy/gitops/config-repo-kustomize/base/db-backup.yaml, migrate-hook.yaml (stage-3)"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "rabbitmq.yaml @ stage-3: StatefulSet rabbitmq, volumeClaimTemplates data mounted at /var/lib/rabbitmq (claim data-rabbitmq-0). Captured stateful-staging.txt: \"placed order 13\", \"messages waiting for Notifications: 1\", \"$ kubectl delete pod db-0 rabbitmq-0 -n donhang\", then \"order 13: new\", \"messages waiting for Notifications: 1\".",
+        "source": "examples/don-hang deploy/gitops/config-repo-kustomize/base/rabbitmq.yaml; outputs/stage-3/scripts/k8s/stateful-staging.txt"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "tools/extract-code redis.yaml --tag stage-3: L1-4 comment, L6 kind: Deployment, L20-24 containers: redis, image redis:8.10.2-alpine, containerPort 6379; no volumes in the file. Block lines 1-24 matches the source character for character.",
+        "source": "examples/don-hang deploy/gitops/config-repo-kustomize/base/redis.yaml @ stage-3"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "volumes.md L38-41: \"On-disk files in a container are ephemeral... the container state is not saved, so all of the files that were created or modified during the lifetime of the container are lost.\" Repo: the only Redis user is DonHang.Catalog/ProductCache.cs (lesson backend.l2.cache-aside), wrapping IProductRepository: StringGetAsync, then StringSetAsync on a miss.",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/storage/volumes.md L38-41; examples/don-hang DonHang.Catalog/ProductCache.cs L13, L68, L90"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "kubectl get reference: \"kubectl get rc,services\" (comma-separated types). kind quick start: \"you only need to specify the cluster name as a context in kubectl: kubectl cluster-info --context kind-kind\". scripts/lib/gitops.sh L7: kubectl() { command kubectl --context kind-donhang-staging \"$@\"; }. Base at stage-3: StatefulSets db, rabbitmq; Deployment redis; claims data-db-0, data-rabbitmq-0, db-backups.",
+        "source": "refs/kubernetes-website .../kubectl_get/_index.md L69-70; https://kind.sigs.k8s.io/docs/user/quick-start/; examples/don-hang scripts/lib/gitops.sh L7"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "New in round 2 (changed text). ConnectionStrings__Default comes whole from a Secret and holds the user and password as well as the host and port (base/api.yaml L40-44). A managed server has its own credentials, so saying only the address changes understates it. Claim 5 now says the same thing and needs the same edit.",
+        "quote": "so for the code only the database address in its config changes",
+        "fix": "Write \"so for the code only its database settings in config change: the address, and the user and password that go with it.\" Update claim 5 to match."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-15T21:00:00+07:00",
+    "reviewer": "review-junior (claude-opus-5-5), round 2",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "style",
+        "text": "New in round 2 (changed text). The second sentence chains two \"or\"s, so I had to re-read it to see three ways (convert the files; dump and load; copy to a new server) rather than two. Quiz q2 option a depends on reading it right.",
+        "quote": "They must be converted, or the data dumped and loaded again or copied to a new server of the new version.",
+        "fix": "Write \"There are three ways: convert the files in place, dump the data and load it into a server of the new version, or copy it to such a server.\""
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}
