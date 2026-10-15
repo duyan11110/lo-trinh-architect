@@ -1,0 +1,142 @@
+{
+  "id": "backend.l3.tracing-through-the-outbox",
+  "technical": {
+    "reviewed_at": "2026-10-15T18:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Round 2: §3 now uses the round-1 suggested_text verbatim; §4 and §6 say RabbitMQ delivers the headers the publisher set and does not create/touch traceparent. Publishers page: headers = \"An arbitrary map of headers with string header names\", set by publishers. Quorum Queues: \"x-delivery-count\" header \"included with any redelivered message\". DLX: \"Dead-lettering a message modifies its headers\". The new wording allows for both.",
+        "source": "https://www.rabbitmq.com/docs/publishers; https://www.rabbitmq.com/docs/quorum-queues; https://www.rabbitmq.com/docs/dlx"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "OutboxMessage.cs L24-29: `public string? TraceParent { get; init; } = MessageTracing.CurrentTraceParent();`. MessageTracing.cs L22-23: `Activity.Current is { IdFormat: ActivityIdFormat.W3C } current ? current.Id : null`. Migrations AddOutboxTraceParent/AddTraceParent add trace_parent `nullable: true`, so older rows are NULL. Read from the working tree: git show / tools/extract-code at stage-3 were not permitted in this session (Bash denied); the excerpts match the working tree character for character.",
+        "source": "examples/don-hang DonHang.Messaging/OutboxMessage.cs, MessageTracing.cs; DonHang.Infrastructure/Migrations/20261006004259_AddOutboxTraceParent.cs"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "C# programming guide, Constructors: \"The following actions take place in the following order: ... Field initializers run ... The instance constructor runs ... Object initializers run.\" An auto-property initializer initialises the backing field, so it runs at construction. Repo: no `TraceParent =` assignment on any OutboxMessage (grep), so no caller passes it.",
+        "source": "refs/dotnet-docs/docs/csharp/programming-guide/classes-and-structs/constructors.md L14-21"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "DonHangDbContext.cs L131 `e.Property(m => m.TraceParent).HasColumnName(\"trace_parent\")`; PaymentsDbContext.cs L56 same for OutboxMessage, L36 for Payment. Migrations 20261006004259_AddOutboxTraceParent (outbox_messages) and 20261006004242_AddTraceParent (payments, outbox_messages) add the column. Working tree, see claim 2.",
+        "source": "examples/don-hang DonHang.Infrastructure/DonHangDbContext.cs; DonHang.Payments/PaymentsDbContext.cs; Migrations/*TraceParent.cs"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Payment.cs L30 TraceParent; RefundRequestedConsumer.cs L114 sets it inside the StartConsume span (L55). RefundSender.cs (working tree) L20-21 BackgroundService; L56 `StartChildOf(refund.TraceParent, \"refund attempt\")`; L59-60 RecordResult's message added to OutboxMessages inside that span; L111 returns null on a retry (no row). PaymentEventsConsumer.cs L63: the Api also creates rows in a consumer span.",
+        "source": "examples/don-hang DonHang.Payments/Payment.cs, RefundRequestedConsumer.cs, RefundSender.cs; DonHang.Api/Messaging/PaymentEventsConsumer.cs"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "PostgreSQL 17, Transaction Isolation: \"Read Committed is the default isolation level ... a SELECT query ... never sees either uncommitted data\"; \"SELECT FOR UPDATE ... will only find target rows that were committed as of the command start time.\" OutboxRelay.cs L16 `Tick = TimeSpan.FromSeconds(1)`, L21 PeriodicTimer, L76-82 `FOR UPDATE SKIP LOCKED`.",
+        "source": "https://www.postgresql.org/docs/17/transaction-iso.html; examples/don-hang DonHang.Messaging/OutboxRelay.cs"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": ".NET docs: \"The current activity automatically flows along all synchronous calls on a thread and follows async calls that are processed on different threads.\" OutboxRelay.cs (working tree) L19-35: ExecuteAsync loop driven by PeriodicTimer, called from no request, starts no Activity; the only span in RelayDueAsync is StartPublish (L57), per message. So no span is current in the loop, as §4 now says.",
+        "source": "refs/dotnet-docs/docs/core/diagnostics/distributed-tracing-concepts.md L62-69; examples/don-hang DonHang.Messaging/OutboxRelay.cs L19-70"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "MessageTracing.cs L31 `StartChildOf(message.TraceParent, $\"publish {message.RoutingKey}\", ActivityKind.Producer)`; L53 `ActivityContext.TryParse(traceParent, null, isRemote: true, out var saved)`; L56 `Source.StartActivity(name, kind, parent)` with `Source = new(SourceName)` (\"DonHang.Messaging\").",
+        "source": "examples/don-hang DonHang.Messaging/MessageTracing.cs L16-57"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Concepts doc: \"Another common industry name for units of work in a distributed trace are 'Spans'. .NET adopted the term 'Activity'\". ActivityKind API: Producer = \"Output provided to external components.\", Consumer = \"Output received from an external component.\" Walkthrough uses SetTag to add tags. StartActivity parentContext: \"The parent ActivityContext object to initialize the created activity object with.\" TracePropagationTests L91: null row has no parent.",
+        "source": "refs/dotnet-docs/docs/core/diagnostics/distributed-tracing-concepts.md L33-34; https://learn.microsoft.com/dotnet/api/system.diagnostics.activitykind?view=net-10.0; ActivitySource.StartActivity API page"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "OutboxRelay.cs L57-58: `using var activity = MessageTracing.StartPublish(message, publisher.Exchange); await publisher.PublishAsync(message, stoppingToken);` inside `foreach (var message in due)`. RabbitMqPublisher.cs L33-35: `var traceParent = MessageTracing.CurrentTraceParent() ?? message.TraceParent;` then `Headers = ... { [MessageTracing.TraceParentHeader] = traceParent }` with TraceParentHeader = \"traceparent\".",
+        "source": "examples/don-hang DonHang.Messaging/OutboxRelay.cs, RabbitMqPublisher.cs"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "MessageTracing.cs L43 `StartChildOf(Read(properties), $\"process {queue}\", ActivityKind.Consumer)`, Read() L60-63 reads header \"traceparent\". Calls: DonHang.Notifications/OrderEventsConsumer.cs L71, DonHang.Payments/RefundRequestedConsumer.cs L55, DonHang.Api/Messaging/PaymentEventsConsumer.cs L63; these are the only three AsyncEventingBasicConsumer users in the repo. §5 now names the three services.",
+        "source": "examples/don-hang DonHang.Messaging/MessageTracing.cs; the three consumer files"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "StartChildOf L53-56: null traceParent -> `default` context -> StartActivity uses the current Activity (none in the relay loop) -> root. RabbitMqPublisher L33 then writes the publish span's id, so the consumer joins that trace. TracePropagationTests.ARowWithNoTraceParent_StartsANewTrace L77-92 asserts `Assert.Equal(default, publish.ParentSpanId); Assert.Equal(publish.TraceId, consume.TraceId);` (inspected; dotnet test not runnable in this session).",
+        "source": "examples/don-hang DonHang.Messaging/MessageTracing.cs, RabbitMqPublisher.cs; DonHang.Tests/Messaging/TracePropagationTests.cs L74-93"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "TracePropagationTests uses PostgresFixture and RabbitMqFixture (class fixtures, L20-21; header says \"against the same containers as OutboxRelayTests\"). L62 saved traceparent == `00-{traceId}-{requestSpanId}-01`; L70 `Assert.Equal(requestSpanId, publish.ParentSpanId)`; L71 `Assert.Equal(publish.SpanId, consume.ParentSpanId)`; L68-69 filter both spans by the same traceId.",
+        "source": "examples/don-hang DonHang.Tests/Messaging/TracePropagationTests.cs L14-72"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "Tempo, Introduction to tracing: \"By definition, traces are never complete.\" \"You can always push another batch of spans, even if days have passed since the last one.\" Backends \"find all the spans for that specific trace and collate them\" by trace ID.",
+        "source": "https://grafana.com/docs/tempo/latest/introduction/"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "outputs/stage-3/scripts/backend/trace-refund.txt L4-14: `donhang-api: POST api/v1/orders/{id:int}/refund` > `donhang-api: publish order.refund-requested` > `donhang-notifications: process notifications.order-events`, `donhang-payments: process payments.refund-requests` > `refund attempt` > `donhang-payments: publish payment.refunded` > `donhang-api: process orders.payment-events` > `publish order.refunded` > notifications process. L2 `-> 202`. Matches Situation and Try it.",
+        "source": "examples/don-hang outputs/stage-3/scripts/backend/trace-refund.txt"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "trace-refund.sh L2 \"Ask for a refund of order 10, then print its trace from Tempo as a tree of spans\"; L3 monitoring profile; L28 wait_for_status, L37 wait_for_spans, L39 print_trace_tree. Round-2 step 1 (\"asks for a refund of order 10, waits, then prints\") matches. Expected result matches trace-refund.txt L5-14: every publish line has a process line from another service under it.",
+        "source": "examples/don-hang scripts/backend/trace-refund.sh; outputs/stage-3/scripts/backend/trace-refund.txt"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "New in round 2 (changed text). RefundSender saves an outbox row only when the gateway refunds or refuses, or GiveUpAfter has passed; on a try-again-later result RecordResult returns null and no row is saved (RefundSender.cs L107-111). The sentence reads as if every attempt saves one.",
+        "quote": "calls the gateway and saves an outbox row with the result, such as `payment.refunded`",
+        "fix": "Write: \"calls the gateway and, once the refund is done or refused, saves an outbox row with the result, such as `payment.refunded`.\""
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-15T19:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation, prompt 05, targeted re-review round 2)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": "backend.l3.tracing-through-the-outbox.q7",
+        "kind": "quiz",
+        "text": "New in round 2 (q7 rewritten). The correct option c repeats the §5 sentence \"It starts its `refund attempt` span from the refund row's `trace_parent`\" almost word for word, so I can pick it by matching words without understanding why the relay-like pattern applies.",
+        "quote": "It starts `refund attempt` from the refund row's `trace_parent`, saved while the process span was current.",
+        "fix": "Reword c by consequence, e.g. \"The context the Payments consumer's span left in the refund row when it saved it.\""
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

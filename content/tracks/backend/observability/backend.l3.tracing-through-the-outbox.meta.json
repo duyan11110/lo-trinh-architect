@@ -1,0 +1,162 @@
+{
+  "id": "backend.l3.tracing-through-the-outbox",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-10-15T11:17:58+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "RabbitMQ stores a message's headers (set by the publisher) with it and delivers them to consumers; it does not create or rewrite a traceparent, though it may add its own x- headers (e.g. x-delivery-count on a quorum-queue redelivery).",
+      "kind": "behavior",
+      "source_hint": "RabbitMQ docs 'Publishers' (message properties, headers), 'Quorum Queues' (x-delivery-count), 'Dead Letter Exchanges'",
+      "version_key": "rabbitmq",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 2,
+      "text": "At stage-3 OutboxMessage.TraceParent defaults to MessageTracing.CurrentTraceParent(), the W3C id of Activity.Current, when the row object is created; null when no span is current and in rows saved before the column existed.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Messaging/OutboxMessage.cs lines 24-29; DonHang.Messaging/MessageTracing.cs lines 20-23",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 3,
+      "text": "A C# property initializer runs when the object is constructed, so the row takes the traceparent current at construction; no caller passes it.",
+      "kind": "behavior",
+      "source_hint": "C# language reference 'Properties' (auto-property initializers)",
+      "version_key": "dotnet",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 4,
+      "text": "Both DonHangDbContext and PaymentsDbContext map OutboxMessage.TraceParent to column trace_parent, added at stage-3 by migrations AddOutboxTraceParent (DonHang.Api's database) and AddTraceParent (Payments).",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Infrastructure/DonHangDbContext.cs line 131; DonHang.Payments/PaymentsDbContext.cs lines 36, 56; Migrations/*AddOutboxTraceParent.cs, *AddTraceParent.cs",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 5,
+      "text": "Payment.TraceParent (payments.trace_parent) is set by RefundRequestedConsumer from its process span; RefundSender, a BackgroundService, starts 'refund attempt' from it and adds the result's outbox row inside it. Api outbox rows are made in a request or consumer span.",
+      "kind": "fact",
+      "source_hint": "don-hang @ stage-3: DonHang.Payments/Payment.cs 30; RefundRequestedConsumer.cs 114; RefundSender.cs 20-21, 56-60, 88-96; DonHang.Api/Messaging/PaymentEventsConsumer.cs 63",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 6,
+      "text": "OutboxRelay can claim a row only after the transaction that inserted it has committed (uncommitted rows are not visible to its SELECT ... FOR UPDATE SKIP LOCKED); it claims rows on a 1-second PeriodicTimer tick.",
+      "kind": "behavior",
+      "source_hint": "PostgreSQL 17 docs 'Transaction Isolation' (Read Committed sees only committed rows); examples/don-hang @ stage-3 DonHang.Messaging/OutboxRelay.cs lines 15, 21-24, 72-83",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 7,
+      "text": "Activity.Current flows with the async execution context; the relay's hosted-service loop does not run in the request's flow and starts no span of its own, so no span is current there.",
+      "kind": "behavior",
+      "source_hint": ".NET API docs System.Diagnostics.Activity.Current (AsyncLocal, flows across async calls); .NET docs 'Distributed tracing concepts'",
+      "version_key": "dotnet",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 8,
+      "text": "StartPublish calls StartChildOf(message.TraceParent, \"publish <routing key>\", Producer); StartChildOf parses the string with ActivityContext.TryParse(isRemote: true) and starts the activity from Đơn Hàng's ActivitySource with that context as parent.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Messaging/MessageTracing.cs lines 29-36, 51-57",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 9,
+      "text": "In .NET a span is an Activity; ActivityKind Producer/Consumer mark the sending/receiving side; SetTag adds tags. StartActivity with an explicit parent ActivityContext uses its trace and parent ids; with default and none current it starts a new trace.",
+      "kind": "behavior",
+      "source_hint": ".NET docs 'Distributed tracing concepts' (Activity = span), ActivityKind enum, Activity.SetTag; ActivitySource.StartActivity(String, ActivityKind, ActivityContext, ...)",
+      "version_key": "dotnet",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 10,
+      "text": "OutboxRelay.RelayDueAsync starts MessageTracing.StartPublish for each message just before publisher.PublishAsync; RabbitMqPublisher puts the current span's traceparent (the publish span) in the message headers under 'traceparent'.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Messaging/OutboxRelay.cs lines 53-61; DonHang.Messaging/RabbitMqPublisher.cs lines 30-35",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 11,
+      "text": "StartConsume reads the traceparent header from the delivery's IReadOnlyBasicProperties.Headers (Read) and starts a 'process <queue>' Consumer span under it; OrderEventsConsumer (Notifications), RefundRequestedConsumer (Payments), PaymentEventsConsumer (Api) call it.",
+      "kind": "fact",
+      "source_hint": "don-hang @ stage-3: MessageTracing.cs 41-47, 59-63; OrderEventsConsumer.cs 71; RefundRequestedConsumer.cs 55; DonHang.Api/Messaging/PaymentEventsConsumer.cs 63",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 12,
+      "text": "A row with TraceParent null is still published; its publish span has no parent and starts a new trace, and the consumer's span joins that new trace (TracePropagationTests.ARowWithNoTraceParent_StartsANewTrace).",
+      "kind": "behavior",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Tests/Messaging/TracePropagationTests.cs lines 74-92",
+      "version_key": "opentelemetry_dotnet",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 13,
+      "text": "TracePropagationTests runs against real PostgreSQL and RabbitMQ containers and checks: the saved traceparent equals the request span's; the publish span's parent is the request span; the consumer span's parent is the publish span; one trace id.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Tests/Messaging/TracePropagationTests.cs lines 14-72",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 14,
+      "text": "Tempo groups spans by trace id, not by time; a trace has no end event and includes every span carrying its trace id, including spans started after the root span ended.",
+      "kind": "behavior",
+      "source_hint": "Grafana Tempo docs 'Introduction to tracing' (traces looked up by trace ID); OpenTelemetry spec 'Tracing API' (span parent/child, trace = set of spans sharing trace id)",
+      "version_key": "tempo",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 15,
+      "text": "Captured trace-refund.sh output at stage-3: under the POST refund span, 'donhang-api: publish order.refund-requested' with Notifications and Payments process spans; 'publish payment.refunded' under 'refund attempt', then api process and 'publish order.refunded' with a Notifications process span.",
+      "kind": "behavior",
+      "source_hint": "examples/don-hang @ stage-3: outputs/stage-3/scripts/backend/trace-refund.txt lines 4-14",
+      "version_key": "opentelemetry_dotnet",
+      "needs_verification": true,
+      "section": 7
+    },
+    {
+      "n": 16,
+      "text": "Try it: with the monitoring profile up, trace-refund.sh requests a refund of order 10, waits for it and its spans, and prints its trace from Tempo as an indented tree, one line per span with service and name.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: scripts/backend/trace-refund.sh; content backend.l3.traces-and-spans 'Try it'",
+      "needs_verification": true,
+      "section": 7
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [1, 2, 3, 4, 5, 6],
+    "outline_items_missing": [],
+    "beyond_scope": [
+      "RefundSender's role (claims the refund row, calls the gateway, saves the result's outbox row in the 'refund attempt' span), to explain item 3's refund row and Try it",
+      "TracePropagationTests named as the check of both cases, not quoted"
+    ]
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1570,
+    "notes": "generate: vocab empty, plain Core concepts bullets; Try it uses trace-refund.sh, lines match outputs/stage-3. apply-review: headers wording per claim 1 (s3,s4,s6); s5 row origins fixed (API request/consumer span, Payments in refund attempt); relay loop has no current span (s4); Activity/ActivityKind/SetTag, Read/properties, RefundSender explained; three services named; 00-T-A-01 explained; Try it step 1 + expected process line. Cut prose in s6, Connections."
+  },
+  "open_questions": [
+    "No script in example_files shows a row without trace_parent end to end; the lesson relies on TracePropagationTests for that case (claim 12)."
+  ]
+}

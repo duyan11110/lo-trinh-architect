@@ -1,0 +1,130 @@
+{
+  "id": "backend.l3.trace-sampling",
+  "technical": {
+    "reviewed_at": "2026-10-15T19:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "OTel .NET Sampling page: \"By reducing the number of collected spans, sampling helps control overhead and telemetry volume.\" refs dotnet-docs distributed-tracing-concepts.md: \"For improved performance in high throughput applications, distributed tracing on .NET supports sampling only a subset of traces rather than recording all of them.\" (round 1 evidence, claim unchanged)",
+        "source": "https://opentelemetry.io/docs/languages/dotnet/sampling/ ; refs/dotnet-docs/docs/core/diagnostics/distributed-tracing-concepts.md L112-131"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "OTel .NET Sampling page: \"sampling decisions are typically made when a trace is started (head-based sampling)\". Tail-based sampling page: \"head-based sampling, which makes decisions at the beginning of the trace.\" (round 1 evidence, claim unchanged)",
+        "source": "https://opentelemetry.io/docs/languages/dotnet/sampling/ ; https://opentelemetry.io/docs/languages/dotnet/traces/tail-based-sampling/"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Round 2: ActivityTraceFlags API page: \"Specifies flags defined by the W3C standard that are associated with an activity.\" \"This enumeration supports a bitwise combination of its member values.\" Fields: \"None | 0 | The activity has not been marked.\" \"Recorded | 1 | The activity (or more likely its parents) has been marked as useful to record.\" So the sampled/recorded flag is the bit of value 1 (lowest bit). Round 1: tempo.sh builds 00-<trace>-<span>-01/00; captured run 1 vs 0 spans.",
+        "source": "https://learn.microsoft.com/dotnet/api/system.diagnostics.activitytraceflags ; refs/dotnet-docs/docs/core/diagnostics/distributed-tracing-collection-walkthroughs.md L452-463"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Ledger text now equals the round 1 suggested_text. OTel .NET Sampling page: ParentBased \"Uses the sampling decision of the parent span when one exists.\" \"If there is no parent, it delegates to a root sampler.\" Program.cs passes the root sampler to the constructor: new ParentBasedSampler(new TraceIdRatioBasedSampler(sampleRatio)).",
+        "source": "https://opentelemetry.io/docs/languages/dotnet/sampling/ ; examples/don-hang DonHang.Api/Program.cs L110"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Round 2: \"computed from the trace id\" removed from claim and lesson. OTel .NET Sampling page: TraceIdRatioBased \"Samples traces based on a fixed probability\" (example 10%). Program.cs passes the probability to the constructor: new TraceIdRatioBasedSampler(sampleRatio).",
+        "source": "https://opentelemetry.io/docs/languages/dotnet/sampling/ ; examples/don-hang DonHang.Api/Program.cs L110"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Round 2: claim narrowed to the round 1 suggested_text (single-service evidence + services that follow the flag). OTel .NET Sampling page: \"Sampling controls which traces are recorded and exported.\" Captured output: \"spans in Tempo for the trace marked 00: 0\". Also supports the new s4 sentence \"the services never record or send the spans of a dropped trace\".",
+        "source": "https://opentelemetry.io/docs/languages/dotnet/sampling/ ; outputs/stage-3/scripts/backend/trace-sampling.txt"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "OTel .NET tail-based sampling page: \"Tail-based sampling makes sampling decisions after the trace has been completed\". Repo: deploy/monitoring/alloy/config.alloy has only otelcol.receiver.otlp -> otelcol.processor.batch -> otelcol.exporter.otlp \"tempo\"; no sampling processor. (round 1 evidence, claim unchanged)",
+        "source": "https://opentelemetry.io/docs/languages/dotnet/traces/tail-based-sampling/ ; examples/don-hang deploy/monitoring/alloy/config.alloy L54-72"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "OTel .NET Sampling page: TraceIdRatioBased \"Samples traces based on a fixed probability\" (example: 10%). Probability 0.1 of keeping gives 0.9 dropped on average; decided at the start (claim 2), so an error trace is not favoured. (round 1, unchanged)",
+        "source": "https://opentelemetry.io/docs/languages/dotnet/sampling/"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "DonHang.Api/Program.cs L106: var sampleRatio = builder.Configuration.GetValue(\"Telemetry:SampleRatio\", 0.1); L110: .SetSampler(new ParentBasedSampler(new TraceIdRatioBasedSampler(sampleRatio))). Code block not changed in round 1 apply-review; round 1 match stands.",
+        "source": "examples/don-hang DonHang.Api/Program.cs L101-116"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "refs aspnetcore-docs configuration: \"If `NumberKey` isn't found in the configuration, the default value of `99` is used.\" and \"A double underscore (`__`) is supported by all platforms and is automatically converted into a colon (`:`) when the configuration is read by the app.\" Supports the new s5 wording \"which configuration reads as Telemetry:SampleRatio\".",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/configuration/index.md L276, L1125-1136"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Round 3: ledger text equals the round 2 suggested_text; s2 now reads \"every request you send to the api's endpoints without a `traceparent`\". docker-compose.yml: Telemetry__SampleRatio: \"1.0\" for api, notifications, payments, fake-gateway; same ParentBased(TraceIdRatioBased) in each Program.cs. Program.cs L111-112 filters /health and /metrics, matching the ledger's \"(not /health or /metrics)\". Round 3 re-read: s2, s4 diagram, s5, quiz q5 c.",
+        "source": "examples/don-hang docker-compose.yml; DonHang.Api/Program.cs L111-112; scripts/backend/trace-sampling.sh L29-30"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "scripts/backend/trace-sampling.sh L23-37: new_traceparent 01 / 00, curl loop, wait_for_spans on the 01 trace id, sleep 10, span_count for both, product_reads delta. Supports the round 3 split s5 sentences (wait until the 01 trace has arrived, then ten more seconds before counting) and quiz q5 explanation c.",
+        "source": "examples/don-hang scripts/backend/trace-sampling.sh; scripts/lib/tempo.sh"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "outputs/stage-3/scripts/backend/trace-sampling.txt: \"-> 200\" twice; \"spans in Tempo for the trace marked 01: 1\"; \"... marked 00: 0\"; counter delta \"2\". Identical to the lesson's output block. (round 1, unchanged)",
+        "source": "examples/don-hang outputs/stage-3/scripts/backend/trace-sampling.txt"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "OTel .NET Sampling page: \"Sampling controls which traces are recorded and exported.\" Execution: both requests, sampled and not, answer 200 in the captured stage-3 output. (round 1, unchanged)",
+        "source": "https://opentelemetry.io/docs/languages/dotnet/sampling/ ; outputs/stage-3/scripts/backend/trace-sampling.txt"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "prometheus-net README: UseHttpMetrics exposes \"Total number of received HTTP requests\". DonHang.Api/Program.cs L191-195: \"Measures every request except those to /metrics itself\" ... app.UseHttpMetrics(). Captured output: counter delta 2 with one trace in Tempo. Supports the new s5 description of prometheus-net.",
+        "source": "https://github.com/prometheus-net/prometheus-net ; DonHang.Api/Program.cs L191-195 ; outputs/stage-3/scripts/backend/trace-sampling.txt"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "trace-sampling.sh L3: \"Needs the monitoring profile: docker compose --profile monitoring up -d\"; tempo service has profiles: [monitoring]. Captured output gives 1, 0 and 2. (round 1, unchanged)",
+        "source": "examples/don-hang scripts/backend/trace-sampling.sh; docker-compose.yml; outputs/stage-3/scripts/backend/trace-sampling.txt"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "Round 2: kind now behavior, text equals round 1 suggestion. OTel .NET Sampling page: ParentBased \"helps ensure consistent sampling decisions across distributed services that participate in the same trace.\" Each service reads its own Telemetry:SampleRatio in its own Program.cs (Payments L69, Notifications L40, fake-gateway L21).",
+        "source": "https://opentelemetry.io/docs/languages/dotnet/sampling/ ; examples/don-hang DonHang.Payments/Program.cs; DonHang.Notifications/Program.cs; fake-gateway/Program.cs"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-15T20:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (prompt 05, junior reader, targeted re-review round 3)",
+    "issues": [],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

@@ -1,0 +1,152 @@
+{
+  "id": "backend.l3.traces-and-spans",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-10-15T15:00:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "A trace records one piece of work, such as one request, across every process it reaches, and every span in it carries the same trace id.",
+      "kind": "fact",
+      "source_hint": "OpenTelemetry docs 'Observability primer' / 'Traces' (trace, trace_id shared by all spans); Tempo docs 'Traces' introduction",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 2,
+      "text": "A span is one timed operation in a trace, such as handling one HTTP request or running one SQL command, with a name, a start time, a duration and attributes (name-value pairs describing it).",
+      "kind": "fact",
+      "source_hint": "OpenTelemetry docs 'Traces' > Spans (name, start/end timestamps, attributes)",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 3,
+      "text": "Every span except the one that starts the trace names its parent span, so the spans of a trace form a tree showing which operation caused which.",
+      "kind": "fact",
+      "source_hint": "OpenTelemetry docs 'Traces' > Span context / parent span id, root span",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 4,
+      "text": "Tempo is a store for traces that keeps spans by trace id; Grafana queries it as a data source, next to Prometheus and Loki, and asking it for one trace id returns all the trace's spans.",
+      "kind": "behavior",
+      "source_hint": "Grafana Tempo docs 'Introduction' and HTTP API GET /api/traces/<traceid>; examples/don-hang @ stage-3 scripts/lib/tempo.sh tempo_trace",
+      "version_key": "tempo",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 5,
+      "text": "At stage-3 every service (donhang-api, donhang-payments, donhang-notifications, fake-gateway) sends its spans to Alloy, a collector container in the lab, at alloy:4317, which forwards them to Tempo.",
+      "kind": "behavior",
+      "source_hint": "examples/don-hang @ stage-3: STAGE.md diagram 'API & N & PAY -->|OTLP| A[Alloy] --> T[Tempo]'; docker-compose.yml OTEL_EXPORTER_OTLP_ENDPOINT, lines 547, 564-576",
+      "version_key": "alloy",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 6,
+      "text": "In the refund trace, each SQL command the api runs is a span whose parent is the request span; publishing order.refund-requested, recorded by the api's outbox relay after the commit, is a child of the request span; each consumer's span, named 'process <queue>', is a child of the publish span.",
+      "kind": "behavior",
+      "source_hint": "examples/don-hang @ stage-3: outputs/stage-3/scripts/backend/trace-refund.txt; DonHang.Messaging/MessageTracing.cs line 43, OutboxRelay.cs",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 7,
+      "text": "Payments' 'refund attempt' span is a child of its consumer span; the outgoing POST and the 'publish payment.refunded' span are children of the attempt; fake-gateway's 'POST /v1/refunds' span is a child of that POST, recorded in another process.",
+      "kind": "behavior",
+      "source_hint": "examples/don-hang @ stage-3: outputs/stage-3/scripts/backend/trace-refund.txt lines 7-9",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 8,
+      "text": "The api's outbox relay is a background loop publishing saved outbox rows about once a second. The api answers 202 once step 1 has committed; the relay publishes on its next pass, so publish and consumer spans normally start after the 202. A child ends first only when its parent waits.",
+      "kind": "behavior",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Messaging/OutboxRelay.cs (Tick 1 s), DonHang.Domain/OrderService.cs; OpenTelemetry docs 'Traces' (consumer spans may start after the producer span ended)",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 9,
+      "text": "The traceparent header value carries the trace id. trace-refund.sh line 24 makes one up (random trace id and parent span id); lines 26-27 send it with curl, the access token and print only the status code; without it the api makes up its own trace id.",
+      "kind": "behavior",
+      "source_hint": "examples/don-hang @ stage-3: scripts/backend/trace-refund.sh lines 21-24; scripts/lib/tempo.sh new_traceparent, trace_id",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 10,
+      "text": "wait_for_spans waits until Tempo holds at least the given number of spans (20 here) for the trace id and the count has stopped growing between two checks.",
+      "kind": "behavior",
+      "source_hint": "examples/don-hang @ stage-3: scripts/lib/tempo.sh wait_for_spans; trace-refund.sh line 36",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 11,
+      "text": "print_trace_tree prints each span indented under its parent as '<service>: <span name>' and counts the SQL spans (scope Npgsql) on their parent's line instead of printing them; the api's span is printed at the top because its parent id (the made-up one) is not among the returned spans.",
+      "kind": "behavior",
+      "source_hint": "examples/don-hang @ stage-3: scripts/lib/tempo.sh print_trace_tree",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 12,
+      "text": "The captured output shows 202, then 11 span lines from four services (donhang-api, donhang-notifications, donhang-payments, fake-gateway) under one trace id; with the 13 counted SQL spans that makes 24 spans, at least the 20 the script waits for.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang: outputs/stage-3/scripts/backend/trace-refund.txt",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 13,
+      "text": "Grafana's data source file has Tempo as the third entry after Prometheus and Loki, uid tempo, url http://tempo:3200; scripts/lib/tempo.sh queries the same address. Grafana's Explore page, with Tempo chosen as the data source, draws a trace's spans on a timeline.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: deploy/monitoring/grafana/provisioning/datasources/datasources.yml lines 7, 16, 34-41; scripts/lib/tempo.sh tempo_trace",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 14,
+      "text": "A trace holds only operations recorded as spans (requests, messages, SQL commands, the refund attempt), not every line or method call; code between spans shows only as part of a parent's duration.",
+      "kind": "behavior",
+      "source_hint": "OpenTelemetry docs 'Traces' (spans represent units of work); outputs/stage-3/scripts/backend/trace-refund.txt (11 spans + SQL counts)",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 15,
+      "text": "trace-refund.sh needs the monitoring Compose profile: docker compose --profile monitoring up -d.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: scripts/backend/trace-refund.sh line 3; STAGE.md profiles table",
+      "needs_verification": true,
+      "section": 7
+    },
+    {
+      "n": 16,
+      "text": "RefundSender is the background job in DonHang.Payments that makes the refund attempt (calls the gateway).",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Payments/RefundSender.cs lines 16-21",
+      "needs_verification": true,
+      "section": 5
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [1, 2, 3, 4, 5, 6],
+    "outline_items_missing": [],
+    "beyond_scope": ["one clause that the script makes up the trace id itself (line 24), with how it travels deferred to a later lesson"]
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1450,
+    "notes": "apply-review r3 2026-10-15: §4 defines the outbox relay in a clause (background loop, about once a second), 'next tick' -> 'next pass', adds payment.refunded publish as child of the attempt (diagram node G); 'need not nest' sentence shortened for budget; §6 Explore wording; quiz q3 expl d (en, vi). Claims 7, 8, 13 updated."
+  },
+  "open_questions": [],
+  "repo_changes_needed": []
+}

@@ -1,0 +1,147 @@
+{
+  "id": "backend.l3.trace-context-propagation",
+  "technical": {
+    "reviewed_at": "2026-10-15T20:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Round 2: ledger text now matches round-1 suggested_text; version_key dotnet. dotnet docs: \".NET's implementation of distributed tracing supports two ID schemes: the W3C standard TraceContext, which is the default in .NET 5+\"; aspnetcore logging: \"If the W3C Trace Context specification traceparent http request header is set\". Lesson s3 'defined by a shared web standard named Trace Context' is supported.",
+        "source": "refs/dotnet-docs/docs/core/diagnostics/distributed-tracing-concepts.md L39-42; refs/aspnetcore-docs/aspnetcore/fundamentals/logging/index.md L1330"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Round 2: ledger text now matches round-1 suggested_text. dotnet docs: \"every trace is assigned a globally unique 16-byte trace-id ... and every Activity within the trace is assigned a unique 8-byte span-id\" (= 32 and 16 hex digits); walkthrough output \"Activity.ParentId: 00-9d5aa439e0df7e49b4abff8d2d5329a9-f16529d0b7c49e44-01\" shows version, trace id, parent id and flags joined by dashes.",
+        "source": "refs/dotnet-docs/docs/core/diagnostics/distributed-tracing-concepts.md L44-46; distributed-tracing-instrumentation-walkthroughs.md L367"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "dotnet docs: \"Each Activity records the trace-id, its own span-id, and the span-id of its parent ... parent and child Activities may not be in the same process. The combination of a trace-id and parent span-id can uniquely identify the parent Activity globally\"; \"Activity parent IDs need to be transmitted across the network so that the receiving process can create Activities that refer to them.\" aspnetcore logging: \"ParentId ... shows the parent-id from in-bound traceparent header.\" Captured output: \"the api's span names the header's span id as its parent: yes\".",
+        "source": "refs/dotnet-docs/docs/core/diagnostics/distributed-tracing-concepts.md L46-51, L77-80; refs/aspnetcore-docs/aspnetcore/fundamentals/logging/index.md L1332; outputs/stage-3/scripts/backend/traceparent.txt"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Round 2: ledger and lesson now say HttpClient writes the header by default and the instrumentation records the span. dotnet docs: \"System.Net.Http natively understand how to decode and encode Activity IDs on HTTP messages ... with no special coding by the app developer\"; networking config: \"When enabled, outgoing HTTP requests propagate trace context headers (such as traceparent)\", EnableActivityPropagation \"true - enabled (default)\".",
+        "source": "refs/dotnet-docs/docs/core/diagnostics/distributed-tracing-concepts.md L82-87; refs/dotnet-docs/docs/core/runtime-config/networking.md L77-84"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "dotnet docs: \".NET in-box libraries such as the ASP.NET web server and System.Net.Http natively understand how to decode and encode Activity IDs on HTTP messages.\" aspnetcore logging (>= 5.0): \"If the W3C Trace Context specification traceparent http request header is set: The ParentId in the log scope shows the parent-id from in-bound traceparent header.\" Lab: fake-gateway has only AddAspNetCoreInstrumentation and its span's parent is Payments' POST span (captured output: yes).",
+        "source": "refs/dotnet-docs/docs/core/diagnostics/distributed-tracing-concepts.md L82-84; refs/aspnetcore-docs/aspnetcore/fundamentals/logging/index.md L1330-1333"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "dotnet docs: \"The first Activity created for a new request forms the root of the trace tree\"; \"every trace is assigned a globally unique 16-byte trace-id\". Tempo intro: a span \"usually has a reference to a parent span, unless it's the first, or root, span in a trace.\" A request with no incoming context yields a root Activity with a fresh trace id.",
+        "source": "refs/dotnet-docs/docs/core/diagnostics/distributed-tracing-concepts.md L19-20, L44; https://grafana.com/docs/tempo/latest/introduction/"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Round 2: claim extended with 'Tempo does not merge two trace ids into one trace'. Tempo intro (WebFetch summary, round 1): \"That same trace ID applies to every span as the request and response generate activity across the system\"; Tempo finds \"all the spans for that specific trace and collate them\". API: GET /api/traces/<traceid> returns one trace by id. Retrieval keyed only by trace id supports the claim; no merge feature is documented.",
+        "source": "https://grafana.com/docs/tempo/latest/introduction/; https://grafana.com/docs/tempo/latest/api_docs/"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "dotnet docs: \"The current activity automatically flows along all synchronous calls on a thread and follows async calls that are processed on different threads. If Activity A is the current activity on a thread and code starts a new Activity B, then B becomes the new current activity on that thread. By default, activity B will also treat Activity A as its parent.\"",
+        "source": "refs/dotnet-docs/docs/core/diagnostics/distributed-tracing-concepts.md L62-68"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "scripts/lib/tempo.sh: new_traceparent() { echo \"00-$(openssl rand -hex 16)-$(openssl rand -hex 8)-${1:-01}\" }; traceparent.sh calls new_traceparent with no argument (lines 18, 40). docker-compose.yml sets Telemetry__SampleRatio \"1.0\" for every traced service, so lab traces are sampled. Read from the working tree (git show at the tag was not permitted in this session).",
+        "source": "examples/don-hang scripts/lib/tempo.sh L4-8; scripts/backend/traceparent.sh L15-18; docker-compose.yml L189, 325, 386, 416"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "GatewayRefundClient.cs L59-75: signature RefundAsync(Payment refund, CancellationToken cancellationToken); new HttpRequestMessage(HttpMethod.Post, \"v1/refunds\") with JsonContent.Create; request.Headers.Add(\"Idempotency-Key\", ...); no trace parameter and no trace code. Compared against the working tree; git show stage-3 was not permitted here.",
+        "source": "examples/don-hang DonHang.Payments/GatewayRefundClient.cs L59-75"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Program.cs L105: http.DefaultRequestHeaders.Authorization = new(\"Bearer\", gateway.ApiKey); L72 .AddHttpClientInstrumentation(). Round 2: the lesson no longer relies on the Program.cs comment that credits the instrumentation with writing the header.",
+        "source": "examples/don-hang DonHang.Payments/Program.cs L61-75, L102-106"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "traceparent.sh L17 curl products/3 (warm read), L18-21 new_traceparent + curl with -H \"traceparent: ...\", L25-28 trace_id, wait_for_spans, print_trace_tree, L29-32 cut -d- -f3 then jq selects SPAN_KIND_SERVER parentSpanId and compares with span_id_base64. tempo.sh: trace_id cuts -f2, tempo_trace curls /api/traces/<id>, span_id_base64 \"a span id the way Tempo's JSON writes it\" (matches round-2 s5 prose).",
+        "source": "examples/don-hang scripts/backend/traceparent.sh L14-32; scripts/lib/tempo.sh L10-29, L49-69; DonHang.Api/Program.cs L107-116"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "outputs/stage-3/scripts/backend/traceparent.txt: \"donhang-api: GET api/v1/products/{id:int}\" / \"the api's span names the header's span id as its parent: yes\" / \"-> 202\" / \"donhang-payments: POST\" / \"fake-gateway: POST /v1/refunds\" / \"the gateway span's parent is Payments' call: yes\". Matches the lesson's output block line for line. Span name 'POST' matches dotnet docs DisplayName \"{HTTP method}\" for System.Net.Http.HttpRequestOut.",
+        "source": "examples/don-hang outputs/stage-3/scripts/backend/traceparent.txt; refs/dotnet-docs/docs/core/diagnostics/distributed-tracing-builtin-activities.md L21-23"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "fake-gateway/Program.cs L13-24: comment \"A real gateway would not send its spans to Đơn Hàng; this one does\"; AddOpenTelemetry ... AddService(\"fake-gateway\") ... AddAspNetCoreInstrumentation ... AddOtlpExporter(). docker-compose.yml L415: OTEL_EXPORTER_OTLP_ENDPOINT \"http://alloy:4317\" for fake-gateway; deploy/monitoring/alloy/config.alloy L66-74 forwards traces to tempo:4317 (round-2 s4 'to Alloy, which forwards them to Tempo').",
+        "source": "examples/don-hang fake-gateway/Program.cs L13-24; docker-compose.yml L404-416; deploy/monitoring/alloy/config.alloy L66-74"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "traceparent.sh L3 \"Needs the monitoring profile: docker compose --profile monitoring up -d\"; L20 echoes the header, L25-27 echoes the same trace id cut from it; new_traceparent uses openssl rand, so each run differs; captured output ends both checks in \"yes\". Not re-run in this session (no docker access permitted).",
+        "source": "examples/don-hang scripts/backend/traceparent.sh L3, L18-32, L48-54; scripts/lib/tempo.sh L6-8; outputs/stage-3/scripts/backend/traceparent.txt"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "track.yaml: backend.l3.tracing-through-the-outbox title \"Through the outbox, the trace context is saved with the message row\". Repo: PaymentsDbContext maps OutboxMessage.TraceParent to column \"trace_parent\" (L56); DonHang.Messaging/OutboxMessage.cs L25 \"From stage-3: the traceparent of the span current when the row was ...\".",
+        "source": "content/tracks/backend/track.yaml L2273-2276; examples/don-hang DonHang.Payments/PaymentsDbContext.cs L56; DonHang.Messaging/OutboxMessage.cs L25"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "Payment.cs L27-30: \"a refund only: the trace of the request that asked for it, so that RefundSender's gateway calls, made later, join that trace\"; public string? TraceParent. RefundSender.cs L56-58: MessageTracing.StartChildOf(refund.TraceParent, \"refund attempt\") then await gateway.RefundAsync(refund, ...). Working tree; git show not permitted. Round 2 opened: lesson s2-s6, s10, quiz q1/q4/q5, meta, tempo.sh, config.alloy.",
+        "source": "examples/don-hang DonHang.Payments/Payment.cs L27-30; DonHang.Payments/RefundSender.cs L51-61"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-15T21:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (prompt 05, junior reader, round 2 targeted re-review)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "text": "New in round 2. 'that is the decision the flags carry' speaks of 'the decision' as if I already knew one was made, but nothing before it says the flags carry a decision at all. 'sampled' is now pointed to a later lesson, which is enough to move on, but the definite article makes me look back for a decision I missed.",
+        "quote": "The lab uses flags `01`, which the script's comment calls `sampled`: that is the decision the flags carry, taught in [[backend.l3.trace-sampling]].",
+        "fix": "Replace 'that is the decision the flags carry' with 'the flags carry a decision, and sampled is its name; what it decides is taught in [[backend.l3.trace-sampling]]'."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "style",
+        "text": "New in round 2. '(`Payment.cs`, `RefundSender.cs`, outside the excerpts; ...)' - section 4 has no code excerpts, so I looked for one before realising it means the code shown in section 5.",
+        "quote": "(`Payment.cs`, `RefundSender.cs`, outside the excerpts; saving trace context in a row is [[backend.l3.tracing-through-the-outbox]])",
+        "fix": "Change 'outside the excerpts' to 'not shown in this lesson'."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

@@ -1,0 +1,149 @@
+{
+  "id": "backend.l3.queue-backlog-metrics",
+  "technical": {
+    "reviewed_at": "2026-10-16T00:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Round 2 (claim text updated). DonHang.Api/Program.cs:48 builder.Services.AddOutboxRelay<DonHangDbContext>(exchange: \"donhang.orders\") hosts the relay in the api. EfOutbox.cs: OrderService's SaveChangesAsync writes the order's change and the outbox row in one transaction; OutboxRelay publishes later from its loop. Captured output: five 201 with notifications stopped.",
+        "source": "examples/don-hang: DonHang.Api/Program.cs, DonHang.Infrastructure/EfOutbox.cs, DonHang.Messaging/OutboxRelay.cs; outputs/stage-3/scripts/backend/queue-backlog.txt"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "RabbitMQ Queues page: enqueued messages are \"Ready for delivery\" or \"Delivered but not yet acknowledged by consumer\"; \"Durable queues will be recovered on node boot, including messages in them published as persistent.\" Topology (Notifications/RabbitMqTopology.cs) declares the queue durable with no x-message-ttl or x-max-length. Execution: captured output shows ready count 5 after 5 orders with notifications stopped.",
+        "source": "https://www.rabbitmq.com/docs/queues; outputs/stage-3/scripts/backend/queue-backlog.txt"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "\"Notice that RabbitMQ exposes the metrics on a dedicated TCP port, 15692 by default.\" docker-compose.yml at stage-3 sets no prometheus.tcp.port; prometheus.yml targets rabbitmq:15692 and the captured scrape returned a value.",
+        "source": "https://www.rabbitmq.com/docs/prometheus"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "\"RabbitMQ returns aggregated metrics on this endpoint by default.\" \"You can therefore keep the default value of prometheus.return_per_object_metrics, which is false, and still scrape per-object metrics when necessary\".",
+        "source": "https://www.rabbitmq.com/docs/prometheus"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Round 2 (adds 'named groups of metrics'). /metrics/detailed: \"By default it does not return any metrics.\" \"Zero or more family values. Only the requested metric families will be returned.\" Prefix rabbitmq_detailed_; rabbitmq_detailed_queue_messages_ready \"Grouped under queue_coarse_metrics\". queue label confirmed by execution: {queue=\"notifications.order-events\"} returned 5.",
+        "source": "https://www.rabbitmq.com/docs/prometheus; outputs/stage-3/scripts/backend/queue-backlog.txt"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Metric table: messages_ready \"Messages ready to be delivered to consumers\"; messages \"Sum of ready and unacknowledged messages - total queue depth\"; gauge shown by 5 -> 0 in the run. Confirms guide: a positive ack instructs RabbitMQ \"to record a message as delivered and can be discarded\". OrderEventsConsumer.cs:55 autoAck: false; :42 \"RabbitMQ keeps every message it delivers until this consumer acknowledges it\".",
+        "source": "https://www.rabbitmq.com/docs/prometheus; https://www.rabbitmq.com/docs/confirms; DonHang.Notifications/OrderEventsConsumer.cs"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "scrape_config: \"[ metrics_path: <path> | default = /metrics ]\"; \"# Optional HTTP URL parameters.\" \"params: [ <string>: [<string>, ...] ]\". (Docs fetched at /latest; no 3.5-specific page exists at prometheus.io/docs/prometheus/3.5/ — 404.)",
+        "source": "https://prometheus.io/docs/prometheus/latest/configuration/configuration/"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "tools/extract-code deploy/monitoring/prometheus.yml --tag stage-3: lines 13-23 are exactly the job rabbitmq block in the lesson (metrics_path: /metrics/detailed, params family: [queue_coarse_metrics], targets [\"rabbitmq:15692\"]).",
+        "source": "examples/don-hang @ stage-3: deploy/monitoring/prometheus.yml"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "docker-compose.yml @ stage-3 rabbitmq service: image rabbitmq:4.1.8-management-alpine, no enabled_plugins mount or command, ports only \"15672:15672\". Execution: Prometheus scraped rabbitmq:15692 and returned rabbitmq_detailed_queue_messages_ready = 5, so the plugin is on in that image. RabbitMQ docs page does not state the image default (not used as evidence).",
+        "source": "examples/don-hang @ stage-3: docker-compose.yml lines 265-282; outputs/stage-3/scripts/backend/queue-backlog.txt"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "donhang-api.json @ stage-3: panel \"Order emails waiting in RabbitMQ\" expr rabbitmq_detailed_queue_messages_ready{queue=\"notifications.order-events\"}; panel \"Dead-lettered order messages\" expr rabbitmq_detailed_queue_messages{queue=\"notifications.order-events.dead\"}. Neither expr contains rate().",
+        "source": "examples/don-hang @ stage-3: deploy/monitoring/grafana/dashboards/donhang-api.json"
+      },
+      {
+        "n": 11,
+        "verdict": "not-needed",
+        "evidence": "Reading of a gauge that follows directly from claim 6 (ready = not yet delivered). Notifications uses prefetchCount 10 (OrderEventsConsumer.cs:51), so up to 10 delivered-unacked messages do not appear in ready, but arrivals beyond that still raise the line; statement holds."
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Round 2. No consumer of notifications.order-events.dead in the repo: only RabbitMqTopology.cs:14 declares it, dead-letter.sh reads its count. With no consumer nothing is delivered, so unacked = 0 and messages = messages_ready (claim 6 definitions). donhang-api.json:242 \"Any message at all here needs a person to look at it.\"",
+        "source": "examples/don-hang: DonHang.Notifications/RabbitMqTopology.cs; scripts/backend/dead-letter.sh; deploy/monitoring/grafana/dashboards/donhang-api.json"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Round 2. Excerpt lines 27-48 of queue-backlog.sh match the lesson (wait_for 0, docker compose stop, trap 'docker compose start notifications 2>/dev/null' EXIT, five POSTs, wait_for 5, 5xx delta). scripts/lib/keycloak.sh:39 defines keycloak_access_token(). A trap on EXIT runs its command when the shell exits. Lines 50-54 restart and wait for 0.",
+        "source": "examples/don-hang @ stage-3: scripts/backend/queue-backlog.sh; scripts/lib/keycloak.sh"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "outputs/stage-3/scripts/backend/queue-backlog.txt at tag stage-3 is identical to the lesson's output block: five \"-> 201\", \"value: 5\", \"5xx responses from the api meanwhile: 0\", \"notifications is back\", \"value: 0\".",
+        "source": "examples/don-hang @ stage-3: outputs/stage-3/scripts/backend/queue-backlog.txt"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "prometheus-net README: \"Total number of received HTTP requests.\" and \"metrics are collected separately for each response status code\" (metric name not shown in fetched text). Execution: outputs/stage-3/scripts/devops/metrics-endpoint.txt shows http_requests_received_total{code=\"200\",method=\"GET\",controller=\"Products\",...} from the api's /metrics.",
+        "source": "https://github.com/prometheus-net/prometheus-net; examples/don-hang outputs/stage-3/scripts/devops/metrics-endpoint.txt"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "rate(): \"calculates the per-second average rate of increase of the time series in the range vector.\" \"Breaks in monotonicity (such as counter resets due to target restarts) are automatically adjusted for.\" \"rate should only be used with counters\". A drop is handled as a reset (post-drop value counted as growth), so the result is never negative. Fetched /latest (no 3.5 page).",
+        "source": "https://prometheus.io/docs/prometheus/latest/querying/functions/"
+      },
+      {
+        "n": 17,
+        "verdict": "not-needed",
+        "evidence": "Round 2 (Payments dropped; Notifications only). Definitional: container state and consumption speed are different observations; claims 2/6 show the latter is visible only in the queue gauge."
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "Script line 3: \"Needs the monitoring profile.\" Captured output matches the expected result. The panel expr is the same string as $waiting (script line 15 vs donhang-api.json line 233), and scrape_interval is 5s, so the panel follows the same 0 -> 5 -> 0 values. Lab could not be re-run here (Docker engine not running).",
+        "source": "examples/don-hang @ stage-3: scripts/backend/queue-backlog.sh; deploy/monitoring/prometheus.yml; outputs/stage-3/scripts/backend/queue-backlog.txt"
+      },
+      {
+        "n": 19,
+        "verdict": "verified",
+        "evidence": "docker-compose.yml mailpit comment: \"A fake mail server: it accepts every email the api sends over SMTP (mailpit:1025) and delivers none. Its web page and HTTP API, on port 8025, show what arrived\"; notifications Smtp__Host \"mailpit\". Api panels unchanged: 5xx delta 0 in the captured run; the queue panels are separate (claim 10).",
+        "source": "examples/don-hang @ stage-3: docker-compose.yml lines 244-256, 319-321; outputs/stage-3/scripts/backend/queue-backlog.txt"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-16T00:45:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation, prompt 05, round 2 targeted re-review)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "length",
+        "text": "New in round 2, in the changed text. The paragraph before the script now carries five separate facts (promql/wait_for, keycloak_access_token, $waiting/$errors, why it first waits for 0, trap … EXIT). Each is clear, but I re-read it twice to map each one to a line of the excerpt.",
+        "quote": "The lab script repeats the situation. `promql` and `wait_for`, defined above the excerpt, ask Prometheus for a query's value and wait until it reaches a number;",
+        "fix": "Split the paragraph in two: first the helpers (promql, wait_for, keycloak_access_token) and the two queries; then a second paragraph with 'The script first waits until the queue is empty…' and the trap … EXIT sentence."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

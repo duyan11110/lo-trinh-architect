@@ -1,0 +1,124 @@
+{
+  "id": "backend.l3.traces-and-spans",
+  "technical": {
+    "reviewed_at": "2026-10-15T20:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Tempo intro: \"A trace represents the whole journey of a request or an action as it moves through all the nodes of a distributed system\"; \"Setting up tracing adds an identifier, or trace ID, to all of these events.\" Output of trace-refund.sh (outputs/stage-3) shows spans of four services returned for one trace id.",
+        "source": "https://grafana.com/docs/tempo/latest/introduction/"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Tempo intro: \"A span is a unit of work within a trace that has a start time relative to the beginning of the trace, a duration, and an operation name for the unit of work. It frequently includes key/value attributes that are relevant to the span itself\". OpenTelemetry Traces page lists Name, Start and End Timestamps, Attributes.",
+        "source": "https://grafana.com/docs/tempo/latest/introduction/ ; https://opentelemetry.io/docs/concepts/signals/traces/"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Tempo intro: \"It usually has a reference to a parent span, unless it's the first, or root, span in a trace.\" OpenTelemetry Traces: \"Parent span ID (empty for root spans)\". Round 2: §5 now says the script's top span names a made-up parent that was never recorded, so the general statement no longer clashes with the example.",
+        "source": "https://grafana.com/docs/tempo/latest/introduction/ ; https://opentelemetry.io/docs/concepts/signals/traces/"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Tempo v2.8.x architecture: distributor \"routes spans to ingesters by hashing the `traceID`\"; \"The querier finds the requested trace ID in either the ingesters or the backend storage.\" Tempo architecture (latest): \"When a trace ID is queried in Tempo, it returns all of the currently stored/ingested spans that belong to that trace\". datasources.yml @ stage-3 lines 36-41: Tempo entry after Prometheus and Loki.",
+        "source": "https://grafana.com/docs/tempo/v2.8.x/operations/architecture/ ; https://grafana.com/docs/tempo/latest/introduction/architecture/"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "docker-compose.yml @ stage-3: OTEL_EXPORTER_OTLP_ENDPOINT: \"http://alloy:4317\" for the four services; alloy is a Compose service (profile monitoring). config.alloy @ stage-3: otelcol.receiver.otlp grpc \"0.0.0.0:4317\" -> otelcol.processor.batch -> otelcol.exporter.otlp \"tempo\" endpoint \"tempo:4317\". Round 1 evidence, unchanged.",
+        "source": "examples/don-hang @ stage-3: docker-compose.yml; deploy/monitoring/alloy/config.alloy"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "trace-refund.txt (stage-3): \"publish order.refund-requested\" under the request span, both consumers under it. MessageTracing.StartConsume: StartChildOf(Read(properties), $\"process {queue}\", ActivityKind.Consumer), called with RabbitMqTopology.Queue in each consumer, so consumer spans are named after the queue. Publish span started by OutboxRelay (Tick = 1 s) from the outbox row's saved traceparent.",
+        "source": "examples/don-hang: DonHang.Messaging/MessageTracing.cs l.41-43, OutboxRelay.cs l.16, DonHang.Payments/RefundRequestedConsumer.cs l.55; outputs/stage-3/scripts/backend/trace-refund.txt"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "trace-refund.txt: \"donhang-payments: refund attempt\" with two children at the same depth: \"donhang-payments: POST\" (> \"fake-gateway: POST /v1/refunds\") and \"donhang-payments: publish payment.refunded\". Round 3: §4 prose now names both children of the attempt, and diagram nodes E2 and G match the output.",
+        "source": "examples/don-hang @ stage-3: outputs/stage-3/scripts/backend/trace-refund.txt"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "OutboxRelay.cs: class OutboxRelay<TDbContext> : BackgroundService; Tick = TimeSpan.FromSeconds(1); PeriodicTimer loop calls RelayDueAsync, which claims rows WHERE published_at IS NULL and starts one publish span per row (MessageTracing.StartPublish). Supports \"a background loop that publishes saved outbox rows about once a second\" and \"next pass\". OTel Traces: consumer spans \"may start long after the producer span has already ended.\"",
+        "source": "examples/don-hang: DonHang.Messaging/OutboxRelay.cs lines 12-35; https://opentelemetry.io/docs/concepts/signals/traces/"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "trace-refund.sh @ stage-3 lines 21-24: \"It carries a traceparent made up here, so that this script knows the trace id to ask Tempo for; without one, the api would make up the trace id itself.\" tempo.sh new_traceparent: random trace id and random parent span id. Line 26 curl -o /dev/null -w '%{http_code}'; line 27 Authorization: Bearer $token, token for anh.tran@example.com = customer 1 (db/seed.sql l.17).",
+        "source": "examples/don-hang @ stage-3: scripts/backend/trace-refund.sh, scripts/lib/tempo.sh; db/seed.sql"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "tempo.sh wait_for_spans: loop of 60 x sleep 2; returns when [ \"$now\" -ge \"$2\" ] && [ \"$now\" = \"$last\" ]. trace-refund.sh @ stage-3 line 36: wait_for_spans \"$(trace_id \"$traceparent\")\" 20 (excerpt lines 24-38 confirm). Round 1 evidence, unchanged.",
+        "source": "examples/don-hang @ stage-3: scripts/lib/tempo.sh, scripts/backend/trace-refund.sh"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "tempo.sh print_trace_tree: line = (\"  \" * $depth) + $span.service + \": \" + $span.name + \"  (N SQL)\" when sql_count > 0; sql: ($scope == \"Npgsql\"); children() excludes .sql spans; roots are spans whose parent id is not among the returned ids, which is why the api span (parent = new_traceparent's random span id) prints at the top.",
+        "source": "examples/don-hang @ stage-3: scripts/lib/tempo.sh"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "trace-refund.txt: \"  -> 202\" then 11 span lines from donhang-api, donhang-notifications, donhang-payments, fake-gateway. SQL counts 5+1+2+4+1 = 13; 11 + 13 = 24 >= 20. Lesson output block matches the file line for line.",
+        "source": "examples/don-hang: outputs/stage-3/scripts/backend/trace-refund.txt"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "datasources.yml @ stage-3: Prometheus (line 7), Loki (line 16), Tempo lines 37-41: uid tempo, url http://tempo:3200; comment: \"Explore → Tempo finds a trace by its id and draws its spans as a tree on a timeline.\" tempo.sh tempo_trace queries http://tempo:3200/api/traces/. Round 3 §6 wording (\"Grafana's Explore page with Tempo chosen as the data source\") matches this comment.",
+        "source": "examples/don-hang @ stage-3: deploy/monitoring/grafana/provisioning/datasources/datasources.yml; scripts/lib/tempo.sh"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "OpenTelemetry Traces: \"A span represents a unit of work or operation.\" Tempo intro: span is \"a unit of work within a trace\". Captured trace has 11 non-SQL spans + SQL counts, no per-method spans. Round 1 evidence, unchanged.",
+        "source": "https://opentelemetry.io/docs/concepts/signals/traces/ ; examples/don-hang @ stage-3: outputs/stage-3/scripts/backend/trace-refund.txt"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "trace-refund.sh @ stage-3 line 3: \"# Needs the monitoring profile: docker compose --profile monitoring up -d\". docker-compose.yml: tempo, alloy, grafana services carry profiles: [monitoring].",
+        "source": "examples/don-hang @ stage-3: scripts/backend/trace-refund.sh, docker-compose.yml"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "RefundSender.cs: \"// The background job that calls the gateway\"; class RefundSender ... : BackgroundService; PeriodicTimer Tick 2 s; per due row: MessageTracing.StartChildOf(refund.TraceParent, \"refund attempt\") then gateway.RefundAsync. trace-refund.sh @ stage-3 comment names \"RefundSender's attempt\". Round 3 (zero issues) opened: OutboxRelay.cs, lesson output vs trace-refund.txt, quiz q3 en/vi, meta claims 6-8, 13.",
+        "source": "examples/don-hang: DonHang.Payments/RefundSender.cs lines 16-23, 56-58; scripts/backend/trace-refund.sh @ stage-3"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-15T21:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior)",
+    "issues": [],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

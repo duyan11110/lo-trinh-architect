@@ -1,0 +1,235 @@
+{
+  "lesson": "backend.l3.tracing-through-the-outbox",
+  "stage": 3,
+  "questions": [
+    {
+      "id": "backend.l3.tracing-through-the-outbox.q1",
+      "type": "single",
+      "bloom": "understand",
+      "difficulty": 2,
+      "skills": ["backend.observability.tracing"],
+      "section_ref": 4,
+      "question": {
+        "en": "The refund request saved its outbox row and answered `202`. On a later tick, `OutboxRelay` claims that row and starts a publish span. Which span becomes the publish span's parent?",
+        "vi": "Request hoàn tiền đã lưu dòng outbox và trả `202`. Ở một tick sau, `OutboxRelay` lấy dòng đó và bắt đầu một publish span. Span nào trở thành cha của publish span?"
+      },
+      "options": [
+        { "id": "a", "en": "Span A, the request's span, whose `traceparent` the row saved in its `trace_parent` column.", "vi": "Span A, span của request, mà `traceparent` của nó được dòng lưu trong cột `trace_parent`." },
+        { "id": "b", "en": "The span current in the relay's loop at that tick, since the relay is the one publishing.", "vi": "Span đang là span hiện tại trong vòng lặp của relay ở tick đó, vì relay là bên publish." },
+        { "id": "c", "en": "None: the trace ended when the API answered `202`, so the publish span starts a new trace.", "vi": "Không span nào: trace đã kết thúc khi API trả `202`, nên publish span bắt đầu một trace mới.", "misconception": "A trace has to end when the HTTP response is sent." },
+        { "id": "d", "en": "The request's span, which Tempo finds because the row was claimed within a second of it.", "vi": "Span của request, được Tempo tìm ra vì dòng được lấy trong vòng một giây sau nó." }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "The row copied the `traceparent` of the span current when it was created, the request's span A. The relay parses that saved value and starts P with trace T and parent A, so the publish joins the request's trace.",
+          "b": "The relay does the publishing, so its own current span looks like the natural parent. But its loop runs on a timer and never saw the request, and in Đơn Hàng no span is current there; a span started there would begin a new trace, so the relay uses the saved context instead.",
+          "c": "The request's span does end with the `202`, so the trace can seem to end too. But a trace holds every span that carries its trace id, whenever it starts, and the row's `trace_parent` hands that id to the publish span.",
+          "d": "The claim does follow the request closely, so timing can look like the link. But nothing in this chain compares times; each hop hands on two ids, through the row's column and then the message header."
+        },
+        "vi": {
+          "correct": "Dòng đã chép `traceparent` của span hiện tại lúc nó được tạo, tức span A của request. Relay parse giá trị đã lưu đó và bắt đầu P với trace T và cha A, nên lần publish nhập vào trace của request.",
+          "b": "Relay là bên publish, nên span hiện tại của chính nó có vẻ là cha hợp lý. Nhưng vòng lặp của nó chạy theo timer, chưa từng thấy request, và trong Đơn Hàng không có span nào là span hiện tại ở đó; span bắt đầu ở đó sẽ mở trace mới, nên relay dùng context đã lưu.",
+          "c": "Span của request đúng là kết thúc cùng `202`, nên có vẻ trace cũng kết thúc. Nhưng một trace chứa mọi span mang trace id của nó, dù span đó bắt đầu lúc nào, và `trace_parent` của dòng chuyển id đó cho publish span.",
+          "d": "Lần lấy dòng đúng là xảy ra ngay sau request, nên thời gian trông như mối nối. Nhưng chuỗi này không so sánh thời gian ở đâu cả; mỗi chặng chuyển tiếp hai id, qua cột của dòng rồi qua header của message."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.tracing-through-the-outbox.q2",
+      "type": "truefalse",
+      "bloom": "analyze",
+      "difficulty": 4,
+      "skills": ["backend.observability.tracing"],
+      "section_ref": 6,
+      "question": {
+        "en": "Statement: once `DonHang.Api` has answered `202` to the refund request, no span that starts afterwards can appear in that refund's trace.",
+        "vi": "Nhận định: khi `DonHang.Api` đã trả `202` cho request hoàn tiền, không span nào bắt đầu sau đó có thể nằm trong trace của lần hoàn tiền này."
+      },
+      "options": [
+        { "id": "a", "en": "True, because the request's span has ended, and a trace ends when its first span ends.", "vi": "Đúng, vì span của request đã kết thúc, và một trace kết thúc khi span đầu tiên của nó kết thúc.", "misconception": "A trace has to end when the HTTP response is sent.", "polarity": "true" },
+        { "id": "b", "en": "True, because `OutboxRelay` runs in its own hosted service, which never saw the request.", "vi": "Đúng, vì `OutboxRelay` chạy trong hosted service riêng, nơi chưa từng thấy request.", "polarity": "true" },
+        { "id": "c", "en": "False, because the relay's publish span gets the refund's trace id from the row, so it lands in that trace after the `202`.", "vi": "Sai, vì publish span của relay lấy trace id của lần hoàn tiền từ dòng, nên nó nằm trong trace đó sau `202`.", "polarity": "false" },
+        { "id": "d", "en": "False, because the API waits for `OutboxRelay` to publish the message before it answers `202`.", "vi": "Sai, vì API chờ `OutboxRelay` publish message xong rồi mới trả `202`.", "polarity": "false" }
+      ],
+      "answer": ["c"],
+      "explanation": {
+        "en": {
+          "correct": "A trace holds every span that carries its trace id, whatever its start time. The row saved the request's `traceparent`, so the relay's publish span, the Payments consumer and `RefundSender` all join the refund's trace after `202`.",
+          "a": "The request span is the top of the tree, so its end can look like the end of everything. But spans from the relay, Payments and Notifications sit in the refund's trace in `trace-refund.sh`'s output, though they ran after the response.",
+          "b": "The relay really does run apart from the request, and no span is current in its loop. But the context does not need the relay to have seen the request: it waits in the row's `trace_parent` and the relay starts its span from it.",
+          "d": "The statement is false, but not for this reason. The API saves the row, commits and answers; the relay can only see the row after that commit and publishes it on a later tick."
+        },
+        "vi": {
+          "correct": "Một trace chứa mọi span mang trace id của nó, bất kể span bắt đầu lúc nào. Dòng đã lưu `traceparent` của request, nên publish span của relay, consumer của Payments và `RefundSender` đều nhập vào trace của lần hoàn tiền sau `202`.",
+          "a": "Span của request nằm ở đỉnh cây, nên lúc nó kết thúc trông như mọi thứ kết thúc. Nhưng trong output của `trace-refund.sh`, các span của relay, Payments và Notifications vẫn nằm trong trace của lần hoàn tiền, dù chúng chạy sau response.",
+          "b": "Relay đúng là chạy tách khỏi request, và không có span nào là span hiện tại trong vòng lặp của nó. Nhưng context không cần relay phải thấy request: nó nằm chờ trong `trace_parent` của dòng, và relay bắt đầu span từ đó.",
+          "d": "Nhận định là sai, nhưng không phải vì lý do này. API lưu dòng, commit rồi trả lời; relay chỉ thấy được dòng sau commit đó và publish nó ở một tick sau."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.tracing-through-the-outbox.q3",
+      "type": "order",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["backend.observability.tracing"],
+      "section_ref": 4,
+      "question": {
+        "en": "A customer asks for a refund. Put the steps that end with Payments' process span inside the refund's trace in order.",
+        "vi": "Một khách hàng yêu cầu hoàn tiền. Sắp xếp các bước dẫn tới việc process span của Payments nằm trong trace của lần hoàn tiền theo đúng thứ tự."
+      },
+      "options": [
+        { "id": "a", "en": "The Payments consumer starts its process span in trace T with parent P", "vi": "Consumer của Payments bắt đầu process span trong trace T với cha P" },
+        { "id": "b", "en": "`OutboxRelay` starts publish span P in trace T with parent A", "vi": "`OutboxRelay` bắt đầu publish span P trong trace T với cha A" },
+        { "id": "c", "en": "The request, inside span A, adds an outbox row that saves A's `traceparent` and commits", "vi": "Request, bên trong span A, thêm một dòng outbox lưu `traceparent` của A rồi commit" },
+        { "id": "d", "en": "`RabbitMqPublisher` writes P's `traceparent` into the message headers", "vi": "`RabbitMqPublisher` ghi `traceparent` của P vào header của message" },
+        { "id": "e", "en": "`OutboxRelay` claims the row on a later tick of its timer", "vi": "`OutboxRelay` lấy dòng ở một tick sau của timer" }
+      ],
+      "answer": ["c", "e", "b", "d", "a"],
+      "explanation": {
+        "en": {
+          "correct": "The relay can see the row only after the request commits, so the claim comes after the save. It starts P from the saved context, and the header can carry P's ids only while P exists. The consumer reads that header last, when the message is delivered."
+        },
+        "vi": {
+          "correct": "Relay chỉ thấy được dòng sau khi request commit, nên việc lấy dòng đến sau việc lưu. Nó bắt đầu P từ context đã lưu, và header chỉ mang được id của P khi P đã tồn tại. Consumer đọc header đó sau cùng, khi message được giao tới."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.tracing-through-the-outbox.q4",
+      "type": "single",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["backend.observability.tracing"],
+      "section_ref": 5,
+      "question": {
+        "en": "A teammate adds code to a Payments consumer that creates a new `OutboxMessage` while handling a delivery. They ask whether they must set `TraceParent` themselves. What do you answer?",
+        "vi": "Một đồng đội thêm code vào một consumer của Payments để tạo một `OutboxMessage` mới khi xử lý một lần giao message. Họ hỏi có phải tự gán `TraceParent` không. Bạn trả lời gì?"
+      },
+      "options": [
+        { "id": "a", "en": "No: its initial value reads the span current when the row object is created, here the consumer's process span.", "vi": "Không: giá trị khởi tạo của nó đọc span hiện tại lúc đối tượng dòng được tạo, ở đây là process span của consumer." },
+        { "id": "b", "en": "Yes: copy the `traceparent` from the incoming HTTP request's headers, the way the API does for its rows.", "vi": "Có: chép `traceparent` từ header của HTTP request gửi tới, giống cách API làm cho các dòng của nó." },
+        { "id": "c", "en": "No: `OutboxRelay` fills it in at publish time from whatever span is current in its own loop.", "vi": "Không: `OutboxRelay` điền nó lúc publish, lấy từ span đang là span hiện tại trong vòng lặp của nó." },
+        { "id": "d", "en": "No: RabbitMQ puts a `traceparent` on every message by itself, so the row does not need one.", "vi": "Không: RabbitMQ tự gắn `traceparent` vào mọi message, nên dòng không cần có.", "misconception": "RabbitMQ passes the trace along by itself, so nothing needs to be done." }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "`TraceParent` has an initial value, `MessageTracing.CurrentTraceParent()`, that runs when code creates the row object. Inside the handler the consumer's process span is current, so the row saves its context and no caller passes it.",
+          "b": "Copying from a header is how the context crossed HTTP, so it looks like the pattern to repeat. But a consumer handles a delivery, not an HTTP request, and the API does not copy by hand either: the property's initial value does it.",
+          "c": "The relay does deal with `TraceParent` at publish time, so it can seem to be the one that sets it. But the relay only reads the saved value; no span is current in its loop, which never saw the delivery, so it has nothing there to connect the trace.",
+          "d": "Messages do arrive with a `traceparent` header, so the broker can seem to add it. But RabbitMQ delivers the headers the publisher set and does not create a `traceparent`; `RabbitMqPublisher` writes the header from the publish span, which starts from the row's saved context."
+        },
+        "vi": {
+          "correct": "`TraceParent` có giá trị khởi tạo, `MessageTracing.CurrentTraceParent()`, chạy khi code tạo đối tượng dòng. Trong handler, process span của consumer là span hiện tại, nên dòng lưu context của nó mà không caller nào phải truyền vào.",
+          "b": "Chép từ header là cách context đi qua HTTP, nên có vẻ đây là mẫu cần lặp lại. Nhưng consumer xử lý một lần giao message, không phải HTTP request, và API cũng không chép tay: giá trị khởi tạo của property làm việc đó.",
+          "c": "Relay đúng là xử lý `TraceParent` lúc publish, nên có vẻ nó là bên gán giá trị. Nhưng relay chỉ đọc giá trị đã lưu; vòng lặp của nó chưa từng thấy lần giao message và không có span nào là span hiện tại ở đó, nên nó không có gì để nối trace.",
+          "d": "Message đúng là tới nơi kèm header `traceparent`, nên có vẻ broker đã thêm vào. Nhưng RabbitMQ giao các header mà publisher đã đặt và không tự tạo `traceparent`; `RabbitMqPublisher` ghi header từ publish span, span này bắt đầu từ context đã lưu trong dòng."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.tracing-through-the-outbox.q5",
+      "type": "scenario",
+      "bloom": "evaluate",
+      "difficulty": 4,
+      "skills": ["backend.observability.tracing"],
+      "section_ref": 5,
+      "context": {
+        "en": "Right after `stage-3` is deployed, a teammate opens Tempo and finds a few traces that begin with `donhang-api: publish order.placed`, with a `process` span under it and no request span above. All of them belong to orders placed in the minutes before the deploy, and their messages were delivered normally. Orders placed since then show the full chain from the request down. The team of two has a release freeze for the rest of the week.",
+        "vi": "Ngay sau khi deploy `stage-3`, một đồng đội mở Tempo và thấy vài trace bắt đầu bằng `donhang-api: publish order.placed`, có một span `process` bên dưới và không có span request nào bên trên. Tất cả thuộc về các đơn đặt trong vài phút trước lần deploy, và message của chúng vẫn được giao bình thường. Các đơn đặt từ lúc đó trở đi hiện đủ chuỗi từ request trở xuống. Nhóm hai người đang đóng băng release đến hết tuần."
+      },
+      "question": {
+        "en": "What should the team do about these traces?",
+        "vi": "Nhóm nên làm gì với các trace này?"
+      },
+      "options": [
+        { "id": "a", "en": "Nothing: those rows were saved before `trace_parent` existed, so their messages started new traces; newer rows carry it.", "vi": "Không làm gì: các dòng đó được lưu trước khi có `trace_parent`, nên message của chúng mở trace mới; các dòng mới hơn đều có cột này." },
+        { "id": "b", "en": "Change `OutboxRelay` to start the publish span from the span current in its loop, so no publish span lacks a parent.", "vi": "Sửa `OutboxRelay` để bắt đầu publish span từ span hiện tại trong vòng lặp của nó, để publish span nào cũng có cha.", "misconception": "The relay publishes the request's row, so its publish belongs to that request's trace automatically." },
+        { "id": "c", "en": "Write a script that fills `trace_parent` in those old rows, so the relay connects them to their requests' traces.", "vi": "Viết một script điền `trace_parent` cho các dòng cũ đó, để relay nối chúng vào trace của request tương ứng." },
+        { "id": "d", "en": "Configure RabbitMQ to add a `traceparent` header to each message, so consumers always have a context to join.", "vi": "Cấu hình RabbitMQ thêm header `traceparent` vào mỗi message, để consumer luôn có context để nhập vào.", "misconception": "RabbitMQ passes the trace along by itself, so nothing needs to be done." }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "A row saved before the column existed has no `trace_parent`, so its publish span starts a new trace and the message is still published, as `TracePropagationTests` checks. Newer orders already show the full chain, so the gap ends by itself and nothing needs to ship during the freeze.",
+          "b": "A publish span with no parent looks like a defect to fix in the relay. But no span is current in the relay's loop, which never saw any request, so the publish span would still start a new trace, now for every row. Starting from the current span is right only when the code runs inside the work it belongs to, such as a request or a consumer handling a delivery.",
+          "c": "Filling in the missing column looks like the direct repair. But these rows were already published, and the relay claims only unpublished rows, so a backfill changes no trace. It would matter only when rows are still waiting and their request's context is known.",
+          "d": "A header on every message sounds like it would close the gap at the broker. But RabbitMQ delivers the headers the publisher set and does not create a `traceparent`, and a header made up there would name no span of the order's request. A broker-side step would help only when the publisher wrote no header at all; in Đơn Hàng it already does for new rows."
+        },
+        "vi": {
+          "correct": "Dòng lưu trước khi có cột này thì không có `trace_parent`, nên publish span của nó mở trace mới và message vẫn được publish, đúng như `TracePropagationTests` kiểm tra. Các đơn mới hơn đã hiện đủ chuỗi, nên khoảng hở tự hết và không cần ship gì trong thời gian đóng băng.",
+          "b": "Một publish span không có cha trông như lỗi cần sửa ở relay. Nhưng không có span nào là span hiện tại trong vòng lặp của relay, vốn chưa từng thấy request nào, nên publish span vẫn mở trace mới, giờ là cho mọi dòng. Bắt đầu từ span hiện tại chỉ đúng khi code chạy bên trong chính việc mà nó thuộc về, như một request hay một consumer đang xử lý một lần giao message.",
+          "c": "Điền cột còn thiếu trông như cách sửa trực tiếp. Nhưng các dòng này đã được publish, và relay chỉ lấy các dòng chưa publish, nên backfill không đổi trace nào. Nó chỉ có ý nghĩa khi dòng còn đang chờ và biết được context của request tương ứng.",
+          "d": "Một header trên mọi message nghe như sẽ bịt được khoảng hở ở phía broker. Nhưng RabbitMQ giao các header mà publisher đã đặt và không tự tạo `traceparent`, và một header tạo ra ở đó cũng không chỉ tới span nào của request đặt đơn. Một bước ở phía broker chỉ có ích khi publisher không ghi header nào; trong Đơn Hàng, publisher đã làm vậy cho các dòng mới."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.tracing-through-the-outbox.q6",
+      "type": "multi",
+      "bloom": "understand",
+      "difficulty": 2,
+      "skills": ["backend.observability.tracing"],
+      "section_ref": 3,
+      "question": {
+        "en": "An `order.refund-requested` message saved by the refund request reaches Payments' queue. Which statements about it are true? Select all that apply.",
+        "vi": "Một message `order.refund-requested` do request hoàn tiền lưu đã tới queue của Payments. Những nhận định nào về nó là đúng? Chọn tất cả đáp án đúng."
+      },
+      "options": [
+        { "id": "a", "en": "Its headers carry the `traceparent` of the relay's publish span P.", "vi": "Header của nó mang `traceparent` của publish span P của relay." },
+        { "id": "b", "en": "The `traceparent` the consumer reads is the one `RabbitMqPublisher` wrote, not one that RabbitMQ made.", "vi": "`traceparent` mà consumer đọc là cái do `RabbitMqPublisher` ghi, không phải cái do RabbitMQ tạo ra." },
+        { "id": "c", "en": "The process span the consumer starts for it carries trace id T, the refund request's trace.", "vi": "Process span mà consumer bắt đầu cho nó mang trace id T, tức trace của request hoàn tiền." },
+        { "id": "d", "en": "RabbitMQ wrote the `traceparent` into its headers while routing it to the queue.", "vi": "RabbitMQ đã ghi `traceparent` vào header của nó trong lúc định tuyến nó tới queue.", "misconception": "RabbitMQ passes the trace along by itself, so nothing needs to be done." },
+        { "id": "e", "en": "Its header names the request's span A, so the consumer's span becomes a direct child of A.", "vi": "Header của nó nêu span A của request, nên span của consumer trở thành con trực tiếp của A." }
+      ],
+      "answer": ["a", "b", "c"],
+      "explanation": {
+        "en": {
+          "correct": "While P is current, `RabbitMqPublisher` writes P's `traceparent` into the headers, and RabbitMQ delivers that header as it was set. The consumer starts its process span from that header, so it takes trace T and parent P.",
+          "d": "The header is there when the message arrives, so the broker can seem to have added it. But RabbitMQ delivers the headers the publisher set and does not create a `traceparent`; `RabbitMqPublisher` wrote this one.",
+          "e": "A is what the row saved, so it can look like what travels on. But the relay starts P as a child of A and the header carries P's ids, so the consumer's span sits under P, one level below A."
+        },
+        "vi": {
+          "correct": "Khi P là span hiện tại, `RabbitMqPublisher` ghi `traceparent` của P vào header, và RabbitMQ giao header đó đúng như lúc được đặt. Consumer bắt đầu process span từ header đó, nên span này lấy trace T và cha P.",
+          "d": "Header đã có sẵn khi message tới nơi, nên có vẻ broker đã thêm vào. Nhưng RabbitMQ giao các header mà publisher đã đặt và không tự tạo `traceparent`; `RabbitMqPublisher` mới là bên ghi header này.",
+          "e": "A là cái được dòng lưu lại, nên có vẻ nó là thứ được chuyển đi tiếp. Nhưng relay bắt đầu P làm con của A và header mang id của P, nên span của consumer nằm dưới P, thấp hơn A một cấp."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.tracing-through-the-outbox.q7",
+      "type": "single",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["backend.observability.tracing"],
+      "section_ref": 5,
+      "question": {
+        "en": "In `trace-refund.sh`'s output, `refund attempt` sits in the refund's trace, though `RefundSender` claims the refund row later, in its own hosted service. What connects `refund attempt` to that trace?",
+        "vi": "Trong output của `trace-refund.sh`, `refund attempt` nằm trong trace của lần hoàn tiền, dù `RefundSender` lấy dòng refund muộn hơn, trong hosted service riêng của nó. Điều gì nối `refund attempt` vào trace đó?"
+      },
+      "options": [
+        { "id": "a", "en": "Nothing extra: `RefundSender` handles that same refund, so its span joins the refund's trace automatically.", "vi": "Không cần gì thêm: `RefundSender` xử lý chính lần hoàn tiền đó, nên span của nó tự nhập vào trace của lần hoàn tiền.", "misconception": "The relay publishes the request's row, so its publish belongs to that request's trace automatically." },
+        { "id": "b", "en": "It reads the `traceparent` header of the `order.refund-requested` delivery, as the consumer did.", "vi": "Nó đọc header `traceparent` của lần giao `order.refund-requested`, giống như consumer đã làm." },
+        { "id": "c", "en": "It starts `refund attempt` from the refund row's `trace_parent`, saved while the process span was current.", "vi": "Nó bắt đầu `refund attempt` từ `trace_parent` của dòng refund, được lưu lúc process span là span hiện tại." },
+        { "id": "d", "en": "It parses the `trace_parent` of the `payment.refunded` outbox row before it calls the gateway.", "vi": "Nó parse `trace_parent` của dòng outbox `payment.refunded` trước khi gọi gateway." }
+      ],
+      "answer": ["c"],
+      "explanation": {
+        "en": {
+          "correct": "The Payments consumer saves the refund row inside its process span, so the row's `trace_parent` holds that span's context. `RefundSender` starts `refund attempt` from it, the same way the relay starts a publish span from an outbox row.",
+          "b": "The consumer did start its span from that header, so it looks like the way in. But `RefundSender` does not handle deliveries; it claims refund rows, so the context reaches it through the refund row's column.",
+          "a": "`RefundSender` works on the same refund, so belonging can seem automatic. But it runs later, in its own hosted service, like the relay; only the `trace_parent` saved in the refund row links its span to the trace.",
+          "d": "That outbox row does carry a `trace_parent`, so it can look like the source. But `RefundSender` saves it with the gateway's result, inside `refund attempt`, so it takes its context from that span and comes after it."
+        },
+        "vi": {
+          "correct": "Consumer của Payments lưu dòng refund bên trong process span của nó, nên `trace_parent` của dòng giữ context của span đó. `RefundSender` bắt đầu `refund attempt` từ giá trị này, giống cách relay bắt đầu publish span từ một dòng outbox.",
+          "b": "Consumer đúng là bắt đầu span từ header đó, nên có vẻ đây là lối vào. Nhưng `RefundSender` không xử lý lần giao message nào; nó lấy các dòng refund, nên context tới được nó qua cột của dòng refund.",
+          "a": "`RefundSender` xử lý chính lần hoàn tiền đó, nên việc thuộc về trace có vẻ là tự động. Nhưng nó chạy muộn hơn, trong hosted service riêng, giống relay; chỉ có `trace_parent` lưu trong dòng refund nối span của nó vào trace.",
+          "d": "Dòng outbox đó đúng là có `trace_parent`, nên trông như nguồn gốc. Nhưng `RefundSender` lưu nó cùng kết quả từ gateway, bên trong `refund attempt`, nên nó lấy context từ span đó và đến sau span đó."
+        }
+      }
+    }
+  ]
+}
