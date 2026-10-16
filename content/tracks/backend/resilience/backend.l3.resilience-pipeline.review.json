@@ -1,0 +1,141 @@
+{
+  "id": "backend.l3.resilience-pipeline",
+  "technical": {
+    "reviewed_at": "2026-10-16T15:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "git show stage-3:DonHang.Payments/Program.cs lines 102-106: `var client = services.AddHttpClient<GatewayRefundClient>(http => { http.BaseAddress = new Uri(gateway.BaseAddress); http.DefaultRequestHeaders.Authorization = new(\"Bearer\", gateway.ApiKey); });`. GatewayRefundClient.cs line 46: `public sealed class GatewayRefundClient(HttpClient http)`.",
+        "source": "examples/don-hang @ stage-3: DonHang.Payments/Program.cs, DonHang.Payments/GatewayRefundClient.cs"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Program.cs @ stage-3 line 107 `client.AddResilienceHandler(\"gateway\", ...`, line 113 `pipeline.AddCircuitBreaker(...)` with OnOpened \"Circuit to the gateway opened: no calls for {BreakSeconds} s\", line 124 `pipeline.AddTimeout(gateway.Timeout);`. No AddRetry anywhere. Round 2: the plain-words clause (\"counts how calls end and can stop sending calls for a while\") matches the comment lines 109-110 and OnOpened.",
+        "source": "examples/don-hang @ stage-3: DonHang.Payments/Program.cs"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "GatewayRefundClient.cs line 27: `Timeout ... = TimeSpan.FromSeconds(10);`. Program.cs line 27: `builder.Configuration.GetSection(\"Gateway\").Get<GatewaySettings>()`. docker-compose.yml line 379 (payments): `Gateway__Timeout: \"00:00:03\"`. refs aspnetcore configuration/index.md: \"A double underscore (`__`) is supported by all platforms and is automatically converted into a colon (`:`) when the configuration is read by the app.\"",
+        "source": "examples/don-hang @ stage-3: GatewayRefundClient.cs, Program.cs, docker-compose.yml; refs/aspnetcore-docs/aspnetcore/fundamentals/configuration/index.md"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "refs http-resilience.md: \"To have more control, you can customize the resilience handlers by using the `AddResilienceHandler` API. This method accepts a delegate that configures the `ResiliencePipelineBuilder<HttpResponseMessage>` instance that is used to create the resilience strategies.\" and \"To add resilience to an HttpClient, you chain a call on the IHttpClientBuilder type that is returned from calling any of the available AddHttpClient methods.\" Docs page is unversioned (ms.date 02/24/2026); pinned package 10.10.",
+        "source": "refs/dotnet-docs/docs/core/resilience/http-resilience.md (Add custom resilience handlers; Add resilience to an HTTP client)"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "refs index.md: \"Each configured strategy executes in order of configuration. In other words, order is important.\" pollydocs.org/pipelines (WebFetch summary, round 1): samples label the first strategy in the builder `// outer`, the later `// inner`. Round 2 sentence \"first on the way out and last on the way back\" follows from outer wrapping inner.",
+        "source": "refs/dotnet-docs/docs/core/resilience/index.md; https://www.pollydocs.org/pipelines/"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "refs http-resilience.md: \"Polly throws a `TimeoutRejectedException` (which inherits from Exception), not the standard TimeoutException.\" pollydocs.org/strategies/timeout (WebFetch): \"If the execution is canceled by the timeout strategy, it throws a `TimeoutRejectedException`.\"",
+        "source": "refs/dotnet-docs/docs/core/resilience/http-resilience.md (WARNING under Add custom resilience handlers); https://www.pollydocs.org/strategies/timeout"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "GatewayRefundClient.cs @ stage-3 line 68 `using var response = await http.SendAsync(request, cancellationToken);` is the only send; lines 74-85 catch HttpRequestException, TimeoutRejectedException (`\"the gateway did not answer in time\"`), BrokenCircuitException, each returning RefundOutcome.TryAgainLater.",
+        "source": "examples/don-hang @ stage-3: DonHang.Payments/GatewayRefundClient.cs"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "RefundSender.cs @ stage-3 SendDueAsync: `foreach (var refund in await ClaimDueAsync(db, stoppingToken)) { ... var result = await gateway.RefundAsync(refund, stoppingToken); ... }` (sequential await). RecordResult: `refund.Attempts++;` ... `refund.NextAttemptAt = now + delay;` with log \"attempt {Attempt} failed ({Reason})\".",
+        "source": "examples/don-hang @ stage-3: DonHang.Payments/RefundSender.cs"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "refs http-resilience.md: \"The default configuration chains five resilience strategies in the following order (from the outermost to the innermost)\": Rate limiter; Total timeout (30s); Retry (Max retries: 3); Circuit breaker; Attempt timeout (10s). Same page: \"there are overloads that allow you to customize the default options\". Round 2: lesson says \"default settings\" / \"default settings you can change\".",
+        "source": "refs/dotnet-docs/docs/core/resilience/http-resilience.md"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "refs http-resilience.md: \"By default, the standard resilience handler is configured to make retries for all HTTP methods.\" ... \"you can use the DisableFor(...) method\" ... \"Alternatively, you can use the DisableForUnsafeHttpMethods(...) method, which disables retries for POST, PATCH, PUT, DELETE, and CONNECT requests.\"",
+        "source": "refs/dotnet-docs/docs/core/resilience/http-resilience.md (Disable retries for a given list of HTTP methods)"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "refs index.md: \"if the RetryStrategy is configured to retry three times, the delegate is executed four times (one initial attempt plus three retry attempts) before the failure is propagated.\" Standard default Max retries: 3 (http-resilience.md table).",
+        "source": "refs/dotnet-docs/docs/core/resilience/index.md (Execute resilience pipeline); http-resilience.md"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "refs http-resilience.md table: Total timeout (order 2, before Retry) \"applies an overall timeout to the execution, ensuring that the request, including retry attempts, doesn't exceed the configured limit.\" Attempt timeout (order 5, after Retry) \"limits each request attempt duration and throws if it's exceeded.\"",
+        "source": "refs/dotnet-docs/docs/core/resilience/http-resilience.md"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Program.cs @ stage-3 lines 94-96: \"There is no retry strategy, unlike AddStandardResilienceHandler: RefundSender already tries each refund again on a later round, and retries in both places would multiply the calls.\"",
+        "source": "examples/don-hang @ stage-3: DonHang.Payments/Program.cs"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "Opinion stated with a condition (\"It fits when the caller does not retry and the request is safe to repeat\"). Supported in direction by refs http-resilience.md: retries for all methods \"could be undesirable or even harmful\" for POST. Round 2: \"fixed settings\" replaced by \"default settings you can change\", matching the docs' \"customize the default options\".",
+        "source": "refs/dotnet-docs/docs/core/resilience/http-resilience.md"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "Follows from claims 9/11 (up to 4 executions per call) and the repo: fake-gateway/Program.cs @ stage-3: \"A key seen before gets the answer it got then, and nothing is refunded again.\" — the key prevents a second refund; each repeat still reaches the endpoint (Task.Delay before the lookup).",
+        "source": "refs/dotnet-docs/docs/core/resilience/index.md; examples/don-hang @ stage-3: fake-gateway/Program.cs"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "scripts/backend/gateway-slow.sh @ stage-3 sets `/lab/delay?seconds=6`; outputs/stage-3/scripts/backend/gateway-slow.txt: \"-> 202\", \"attempt 1: the gateway did not answer in time\", \"pending\", \"[{\\\"orderId\\\":10,\\\"amountVnd\\\":1730000}]\", \"refunded\", then again one entry.",
+        "source": "examples/don-hang @ stage-3: scripts/backend/gateway-slow.sh, outputs/stage-3/scripts/backend/gateway-slow.txt"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "Directory.Packages.props @ stage-3 line 18: `<PackageVersion Include=\"Microsoft.Extensions.Http.Resilience\" Version=\"10.10.0\" />`; DonHang.Payments.csproj line 30 references it; DonHang.Payments/obj/project.assets.json: Polly.Core/8.4.2.",
+        "source": "examples/don-hang @ stage-3: Directory.Packages.props, DonHang.Payments/DonHang.Payments.csproj"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "Program.cs @ stage-3 lines 65-72: `GetValue(\"Telemetry:SampleRatio\", 0.1)`, `SetSampler(new ParentBasedSampler(new TraceIdRatioBasedSampler(sampleRatio)))`, `.AddHttpClientInstrumentation()`. Round 2 lesson text \"so a sampled refund attempt shows its gateway call as part of the trace\" matches.",
+        "source": "examples/don-hang @ stage-3: DonHang.Payments/Program.cs"
+      },
+      {
+        "n": 19,
+        "verdict": "not-needed",
+        "evidence": "Analogy between wrapping strategies and the Decorator pattern; definitional comparison, no external fact asserted. Round 2 (zero issues): opened refs dotnet-docs core/resilience http-resilience.md and index.md, refs aspnetcore-docs configuration/index.md, and Program.cs, GatewayRefundClient.cs, docker-compose.yml @ stage-3."
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-16T16:00:00+07:00",
+    "reviewer": "review-junior (claude-opus-5-5)",
+    "issues": [],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

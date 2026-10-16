@@ -1,0 +1,205 @@
+{
+  "lesson": "backend.l3.slow-dependencies",
+  "stage": 3,
+  "questions": [
+    {
+      "id": "backend.l3.slow-dependencies.q1",
+      "type": "truefalse",
+      "bloom": "understand",
+      "difficulty": 2,
+      "skills": ["backend.resilience.failure-modes"],
+      "section_ref": 4,
+      "question": {
+        "en": "Statement: in the lab, a stopped Redis hurts Đơn Hàng's product reads more than a paused Redis does.",
+        "vi": "Nhận định: trong lab, Redis bị dừng gây hại cho việc đọc sản phẩm của Đơn Hàng nhiều hơn Redis bị pause."
+      },
+      "options": [
+        { "id": "a", "en": "True, because with Redis stopped every read must go to PostgreSQL, while a paused Redis still holds the cached products.", "vi": "Đúng, vì khi Redis dừng mọi lần đọc phải sang PostgreSQL, còn Redis bị pause vẫn giữ các sản phẩm đã cache.", "misconception": "The worst thing a dependency can do is go down completely.", "polarity": "true" },
+        { "id": "b", "en": "True, because a stopped container breaks the connection, and the api must build a new one before each read.", "vi": "Đúng, vì container bị dừng làm đứt kết nối, và api phải tạo kết nối mới trước mỗi lần đọc.", "polarity": "true" },
+        { "id": "c", "en": "False, because with Redis stopped each command fails at once, while a paused Redis keeps each command waiting for its timeout.", "vi": "Sai, vì khi Redis dừng mỗi lệnh thất bại ngay, còn Redis bị pause bắt mỗi lệnh chờ tới timeout của nó.", "polarity": "false" },
+        { "id": "d", "en": "False, because Docker starts a stopped Redis again at once, so the read barely notices it was gone.", "vi": "Sai, vì Docker khởi động lại Redis bị dừng ngay lập tức, nên lần đọc hầu như không nhận ra nó đã vắng mặt.", "polarity": "false" }
+      ],
+      "answer": ["c"],
+      "explanation": {
+        "en": {
+          "correct": "When Redis stops, the connection breaks and StackExchange.Redis knows Redis is unreachable, so each command fails at once and `ProductCache` reads PostgreSQL. When Redis is paused, the connection stays open and each command waits until the Redis client's timeout. That is why the script prints `less than 1 s` for stopped and `more than 5 s` for paused.",
+          "a": "A Redis that is gone feels like the bigger loss, since none of its cached data is reachable. But the paused Redis cannot answer either, so its cached products help no read; every read still ends at PostgreSQL, only seconds later.",
+          "b": "A broken connection does sound expensive to repair. But the multiplexer keeps trying to connect in the background, and with `BacklogPolicy.FailFast` each command meanwhile fails at once; no read waits for a new connection.",
+          "d": "The statement is false, but not for this reason. Nothing restarts Redis by itself: `slow-dependency.sh` runs `docker compose start redis` after the read, and the read with Redis stopped is fast because the command fails at once."
+        },
+        "vi": {
+          "correct": "Khi Redis dừng, kết nối bị đứt và StackExchange.Redis biết Redis không tới được, nên mỗi lệnh thất bại ngay và `ProductCache` đọc PostgreSQL. Khi Redis bị pause, kết nối vẫn mở và mỗi lệnh chờ tới timeout của Redis client. Vì vậy script in `less than 1 s` cho lần dừng và `more than 5 s` cho lần pause.",
+          "a": "Redis biến mất có vẻ là mất mát lớn hơn, vì không lấy được chút dữ liệu cache nào. Nhưng Redis bị pause cũng không trả lời, nên các sản phẩm đã cache của nó không giúp được lần đọc nào; mọi lần đọc vẫn kết thúc ở PostgreSQL, chỉ là chậm hơn vài giây.",
+          "b": "Kết nối bị đứt nghe như tốn công sửa. Nhưng multiplexer tự thử kết nối lại ở nền, và với `BacklogPolicy.FailFast` mỗi lệnh trong lúc đó thất bại ngay; không lần đọc nào phải chờ kết nối mới.",
+          "d": "Nhận định là sai, nhưng không phải vì lý do này. Không có gì tự khởi động lại Redis: `slow-dependency.sh` chạy `docker compose start redis` sau lần đọc, và lần đọc khi Redis dừng nhanh là vì lệnh thất bại ngay."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.slow-dependencies.q2",
+      "type": "multi",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["backend.resilience.failure-modes"],
+      "section_ref": 4,
+      "question": {
+        "en": "Redis is paused, and a request for `GET /api/v1/products/3` is waiting for its Redis command to time out. What does that request keep, so that no other request can use it? Select all that apply.",
+        "vi": "Redis đang bị pause, và một request `GET /api/v1/products/3` đang chờ lệnh Redis của nó hết timeout. Request đó giữ những gì, khiến request khác không dùng được? Chọn tất cả đáp án đúng."
+      },
+      "options": [
+        { "id": "a", "en": "The open connection from the client that asked for product 3.", "vi": "Kết nối đang mở từ client đã hỏi sản phẩm 3." },
+        { "id": "b", "en": "The objects the api created for this request, still in memory.", "vi": "Các object mà api đã tạo cho request này, vẫn nằm trong bộ nhớ." },
+        { "id": "c", "en": "The database connection EF Core uses to read product 3.", "vi": "Kết nối database mà EF Core dùng để đọc sản phẩm 3." },
+        { "id": "d", "en": "The thread that started it, until Redis answers or the timeout passes.", "vi": "Thread đã bắt đầu nó, cho tới khi Redis trả lời hoặc hết timeout." },
+        { "id": "e", "en": "Nothing: with async/await, a waiting request gives everything back until its answer comes.", "vi": "Không gì cả: với async/await, request đang chờ trả lại mọi thứ cho tới khi có câu trả lời.", "misconception": "With async/await, a request that waits on a slow call costs the server nothing." }
+      ],
+      "answer": ["a", "b"],
+      "explanation": {
+        "en": {
+          "correct": "A waiting request keeps the client's connection open and its objects in memory until the wait ends; neither does any work, and neither is free for another request. It holds no database connection: its Redis wait comes before its query, and EF Core closes its database connection after each query.",
+          "c": "A database connection is one of the things a waiting request can hold, so this looks right. But this read waits on Redis before it reaches PostgreSQL, and EF Core closes its connection after each query; a request holds one while it waits only if it still has one open, for example inside a transaction.",
+          "d": "Waiting on the network once meant a blocked thread, so this is a natural guess. But async/await hands the thread back while the call waits, so the api can still run other code on it.",
+          "e": "async/await does free something, so it is easy to think it frees everything. But it frees only the thread; the client's connection and the request's memory stay taken until the wait ends."
+        },
+        "vi": {
+          "correct": "Request đang chờ giữ kết nối của client vẫn mở và các object của nó trong bộ nhớ cho tới khi hết chờ; không thứ nào làm việc gì, và không thứ nào rảnh cho request khác. Nó không giữ kết nối database nào: lúc chờ Redis diễn ra trước câu truy vấn, và EF Core đóng kết nối database sau mỗi câu truy vấn.",
+          "c": "Kết nối database là một trong những thứ request đang chờ có thể giữ, nên đáp án này trông có vẻ đúng. Nhưng lần đọc này chờ Redis trước khi tới PostgreSQL, và EF Core đóng kết nối sau mỗi câu truy vấn; request chỉ giữ một kết nối database trong lúc chờ nếu nó vẫn còn mở một kết nối, ví dụ bên trong một transaction.",
+          "d": "Chờ mạng từng đồng nghĩa với một thread bị chặn, nên đoán vậy là tự nhiên. Nhưng async/await trả thread lại trong lúc lời gọi chờ, nên api vẫn dùng được thread đó để chạy code khác.",
+          "e": "async/await đúng là giải phóng một thứ, nên dễ nghĩ nó giải phóng mọi thứ. Nhưng nó chỉ giải phóng thread; kết nối của client và bộ nhớ của request vẫn bị chiếm cho tới khi hết chờ."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.slow-dependencies.q3",
+      "type": "single",
+      "bloom": "analyze",
+      "difficulty": 4,
+      "skills": ["backend.resilience.failure-modes"],
+      "section_ref": 3,
+      "question": {
+        "en": "Four incident notes. Which one describes a cascading failure?",
+        "vi": "Bốn ghi chú sự cố. Ghi chú nào mô tả một cascading failure?"
+      },
+      "options": [
+        { "id": "a", "en": "Redis paused: product reads take seconds, and that is all the harm a slow Redis can do to the api.", "vi": "Redis bị pause: đọc sản phẩm mất vài giây, và đó là toàn bộ tác hại mà một Redis chậm gây ra cho api.", "misconception": "A slow dependency only slows its own feature; the rest of the app is not affected." },
+        { "id": "b", "en": "A dependency stops answering: requests waiting on it use up the api's open connections, and requests that never call it start to fail.", "vi": "Một phụ thuộc ngừng trả lời: các request đang chờ nó dùng hết kết nối đang mở của api, và các request không hề gọi nó bắt đầu thất bại." },
+        { "id": "c", "en": "Redis stopped: each Redis command fails at once, and product reads come from PostgreSQL in under a second.", "vi": "Redis bị dừng: mỗi lệnh Redis thất bại ngay, và đọc sản phẩm lấy từ PostgreSQL trong chưa tới một giây." },
+        { "id": "d", "en": "Redis stopped: `ProductCache` counts every Redis error as a miss, so each product read goes to PostgreSQL.", "vi": "Redis bị dừng: `ProductCache` coi mọi lỗi Redis là miss, nên mỗi lần đọc sản phẩm đều sang PostgreSQL." }
+      ],
+      "answer": ["b"],
+      "explanation": {
+        "en": {
+          "correct": "A cascading failure is a failure that spreads: one slow dependency uses up a shared limit until requests that never use it fail too. In this note, some requests never call the dependency, yet they fail because the waiting requests took the open connections the api accepts, which they also need.",
+          "a": "Slow product reads are the visible symptom, so it is tempting to stop there. But waiting requests draw from limits every request shares; the note leaves out the spread, which is what makes it a cascading failure.",
+          "c": "A dependency that is gone sounds like the start of a chain of failures. But here the caller learns at once and takes its fallback, so nothing waits and nothing spreads; this is failing fast, the cheap case.",
+          "d": "This is a real failure of Redis, and every read is affected by it. But counting an error as a miss is the fallback working as planned; the reads still finish quickly, so no shared limit runs out."
+        },
+        "vi": {
+          "correct": "Cascading failure là lỗi lan ra: một phụ thuộc chậm dùng hết một giới hạn chung cho tới khi cả những request không hề dùng nó cũng thất bại. Trong ghi chú này, có những request không hề gọi phụ thuộc đó, vậy mà vẫn thất bại vì các request đang chờ đã chiếm hết số kết nối api nhận, thứ mà chúng cũng cần.",
+          "a": "Đọc sản phẩm chậm là triệu chứng nhìn thấy được, nên dễ dừng ở đó. Nhưng các request đang chờ lấy từ những giới hạn mà mọi request dùng chung; ghi chú bỏ qua phần lan ra, chính là điều làm nên một cascading failure.",
+          "c": "Một phụ thuộc biến mất nghe như khởi đầu của một chuỗi lỗi. Nhưng ở đây bên gọi biết ngay và dùng đường dự phòng, nên không gì phải chờ và không gì lan ra; đây là thất bại nhanh, trường hợp rẻ.",
+          "d": "Đây là một lỗi thật của Redis, và mọi lần đọc đều bị ảnh hưởng. Nhưng coi lỗi là miss chính là đường dự phòng chạy đúng như đã định; các lần đọc vẫn xong nhanh, nên không giới hạn chung nào bị dùng hết."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.slow-dependencies.q4",
+      "type": "order",
+      "bloom": "understand",
+      "difficulty": 2,
+      "skills": ["backend.resilience.failure-modes"],
+      "section_ref": 4,
+      "question": {
+        "en": "Redis is paused. Put the steps of one `GET /api/v1/products/3` in the order they happen.",
+        "vi": "Redis đang bị pause. Sắp xếp các bước của một request `GET /api/v1/products/3` theo đúng thứ tự xảy ra."
+      },
+      "options": [
+        { "id": "a", "en": "`ProductCache` sends `GET product:3` to Redis over the open connection.", "vi": "`ProductCache` gửi `GET product:3` tới Redis qua kết nối đang mở." },
+        { "id": "b", "en": "The Redis client's timeout ends the wait.", "vi": "Timeout của Redis client kết thúc việc chờ." },
+        { "id": "c", "en": "The client sends `GET /api/v1/products/3` to the api.", "vi": "Client gửi `GET /api/v1/products/3` tới api." },
+        { "id": "d", "en": "The api answers `200` with the product.", "vi": "Api trả `200` kèm sản phẩm." },
+        { "id": "e", "en": "The read goes to PostgreSQL for the product.", "vi": "Lần đọc sang PostgreSQL để lấy sản phẩm." },
+        { "id": "f", "en": "The command waits with no answer, because Redis is frozen.", "vi": "Lệnh chờ mà không có câu trả lời, vì Redis đang bị đóng băng." }
+      ],
+      "answer": ["c", "a", "f", "b", "e", "d"],
+      "explanation": {
+        "en": {
+          "correct": "The paused Redis keeps the connection open, so the command is sent and then waits for an answer that never comes. Only the Redis client's timeout ends that wait, and `ProductCache` counts the error as a miss. The read's other Redis commands wait the same way, so the api still answers `200`, only seconds late."
+        },
+        "vi": {
+          "correct": "Redis bị pause vẫn giữ kết nối mở, nên lệnh được gửi đi rồi chờ một câu trả lời không bao giờ tới. Chỉ timeout của Redis client mới kết thúc việc chờ đó, và `ProductCache` coi lỗi đó là miss. Các lệnh Redis khác của lần đọc cũng chờ như vậy, nên api vẫn trả `200`, chỉ là trễ vài giây."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.slow-dependencies.q5",
+      "type": "single",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["backend.resilience.failure-modes"],
+      "section_ref": 5,
+      "question": {
+        "en": "`CatalogModule` connects to Redis with `abortConnect=false` and `BacklogPolicy.FailFast`. Which statement matches what `slow-dependency.sh` shows about these two settings?",
+        "vi": "`CatalogModule` kết nối tới Redis với `abortConnect=false` và `BacklogPolicy.FailFast`. Nhận định nào khớp với những gì `slow-dependency.sh` cho thấy về hai thiết lập này?"
+      },
+      "options": [
+        { "id": "a", "en": "They make commands fail at once while the connection is known to be down; paused, the connection looks healthy, so they do not help.", "vi": "Chúng làm lệnh thất bại ngay khi kết nối được biết là đã đứt; lúc pause, kết nối trông vẫn ổn, nên chúng không giúp được gì." },
+        { "id": "b", "en": "They cover every way Redis can fail, so going down completely is the worst Redis can do to product reads.", "vi": "Chúng xử lý mọi cách Redis có thể hỏng, nên sập hẳn là điều tệ nhất Redis có thể gây ra cho việc đọc sản phẩm.", "misconception": "The worst thing a dependency can do is go down completely." },
+        { "id": "c", "en": "They let the api start while Redis is down, then hold each command until the connection comes back.", "vi": "Chúng cho api khởi động khi Redis đang sập, rồi giữ mỗi lệnh lại cho tới khi kết nối có lại." },
+        { "id": "d", "en": "They make the stopped run the slow one, because the api must reconnect to Redis before each command.", "vi": "Chúng làm lần chạy khi Redis dừng thành lần chậm, vì api phải kết nối lại Redis trước mỗi lệnh." }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "`abortConnect=false` lets the multiplexer keep trying to connect in the background, and `BacklogPolicy.FailFast` makes a command fail at once while the connection is down. In the paused run the connection stays open, so neither setting applies, and each command waits for its timeout.",
+          "b": "The settings do make the stopped case cheap, so it is tempting to think Redis is fully covered. But they act only while the connection is known to be down; the paused run takes more than five seconds with both settings in place.",
+          "c": "`abortConnect=false` does let the api start while Redis is down. But holding commands until the connection comes back is exactly what `BacklogPolicy.FailFast` turns off; each command fails at once instead.",
+          "d": "A broken connection sounds like work before every command. But the multiplexer reconnects in the background, not per command, and the script prints `less than 1 s` for the stopped run."
+        },
+        "vi": {
+          "correct": "`abortConnect=false` cho multiplexer tiếp tục thử kết nối ở nền, và `BacklogPolicy.FailFast` làm một lệnh thất bại ngay khi kết nối đang đứt. Trong lần chạy pause, kết nối vẫn mở, nên không thiết lập nào có tác dụng, và mỗi lệnh chờ tới timeout của nó.",
+          "b": "Hai thiết lập đúng là làm trường hợp Redis dừng trở nên rẻ, nên dễ nghĩ Redis đã được lo trọn. Nhưng chúng chỉ tác dụng khi kết nối được biết là đã đứt; lần chạy pause vẫn mất hơn năm giây dù có đủ cả hai thiết lập.",
+          "c": "`abortConnect=false` đúng là cho api khởi động khi Redis đang sập. Nhưng giữ lệnh lại cho tới khi kết nối có lại chính là điều `BacklogPolicy.FailFast` tắt đi; thay vào đó mỗi lệnh thất bại ngay.",
+          "d": "Kết nối bị đứt nghe như phải làm thêm việc trước mỗi lệnh. Nhưng multiplexer kết nối lại ở nền, không phải theo từng lệnh, và script in `less than 1 s` cho lần chạy khi Redis dừng."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.slow-dependencies.q6",
+      "type": "scenario",
+      "bloom": "evaluate",
+      "difficulty": 4,
+      "skills": ["backend.resilience.failure-modes"],
+      "section_ref": 6,
+      "context": {
+        "en": "During a sale, a shop's api starts to struggle. Like Đơn Hàng, it reads products through Redis with a fallback to PostgreSQL, but nothing limits how many product reads run at once. Product pages load, and `GET /api/v1/products/{id}` still returns `200`, but each read takes several seconds. The number of requests in progress keeps climbing, while the api's CPU has little to do. Then `POST /api/v1/orders`, which never touches Redis, starts answering slowly and some orders fail. `docker compose ps` lists the `redis` container as running. You have a few minutes before you must report what is wrong.",
+        "vi": "Trong một đợt khuyến mãi, api của một cửa hàng bắt đầu chật vật. Giống Đơn Hàng, nó đọc sản phẩm qua Redis và quay về PostgreSQL khi cần, nhưng không có gì giới hạn số lần đọc sản phẩm chạy cùng lúc. Trang sản phẩm vẫn tải, và `GET /api/v1/products/{id}` vẫn trả `200`, nhưng mỗi lần đọc mất vài giây. Số request đang xử lý cứ tăng dần, trong khi CPU của api gần như rảnh. Rồi `POST /api/v1/orders`, vốn không hề chạm tới Redis, bắt đầu trả lời chậm và một số đơn hàng thất bại. `docker compose ps` liệt kê container `redis` là đang chạy. Bạn có vài phút trước khi phải báo cáo vấn đề nằm ở đâu."
+      },
+      "question": {
+        "en": "Where do you look first?",
+        "vi": "Bạn xem chỗ nào trước tiên?"
+      },
+      "options": [
+        { "id": "a", "en": "The orders code, since orders never call Redis and they are the requests that fail.", "vi": "Code của orders, vì orders không bao giờ gọi Redis và chính chúng là các request thất bại.", "misconception": "A slow dependency only slows its own feature; the rest of the app is not affected." },
+        { "id": "b", "en": "Redis: whether it accepts commands without answering, since product reads take seconds yet return `200`.", "vi": "Redis: liệu nó có nhận lệnh mà không trả lời không, vì đọc sản phẩm mất vài giây mà vẫn trả `200`." },
+        { "id": "c", "en": "Nowhere yet: the CPU is idle, so the waiting requests cost the api nothing.", "vi": "Chưa cần xem đâu: CPU đang rảnh, nên các request đang chờ không tốn gì của api.", "misconception": "With async/await, a request that waits on a slow call costs the server nothing." },
+        { "id": "d", "en": "PostgreSQL's load, since every product read falls back to it when Redis fails.", "vi": "Tải của PostgreSQL, vì mỗi lần đọc sản phẩm đều quay về nó khi Redis hỏng." }
+      ],
+      "answer": ["b"],
+      "explanation": {
+        "en": {
+          "correct": "Reads that return `200` after seconds, with the Redis container still running, match a Redis that accepts commands and never answers, like the paused case in the lab. The climbing number of requests in progress and the slow orders are its waiting reads using up limits that orders share, such as the connections the api accepts and its memory: a cascading failure that starts in Redis.",
+          "a": "Orders are where the errors show, so their code is a natural first suspect. But they fail during the same incident in which product reads wait for seconds; requests that never use Redis still draw from the same shared limits. Looking at the orders code first fits when product reads are fast and only orders fail.",
+          "c": "A quiet CPU usually means a calm server, so waiting can look free. But async/await frees only the thread; each waiting request keeps its client connection and its memory, which is why orders are already failing. Waiting is reasonable only when nothing else is slowing down.",
+          "d": "Product reads do fall back to PostgreSQL, so extra load there sounds plausible. But with Redis stopped the lab read took under a second from PostgreSQL; the seconds here are spent before PostgreSQL is reached. PostgreSQL's load is the place to look when product reads are fast but there are many more of them."
+        },
+        "vi": {
+          "correct": "Đọc sản phẩm trả `200` sau vài giây, trong khi container Redis vẫn chạy, khớp với một Redis nhận lệnh mà không bao giờ trả lời, giống trường hợp pause trong lab. Số request đang xử lý tăng dần và orders chậm là do các lần đọc đang chờ dùng hết những giới hạn mà orders dùng chung, như số kết nối api nhận và bộ nhớ của nó: một cascading failure bắt đầu từ Redis.",
+          "a": "Orders là nơi lỗi hiện ra, nên code của chúng là nghi phạm đầu tiên tự nhiên. Nhưng chúng thất bại đúng trong sự cố mà đọc sản phẩm phải chờ vài giây; các request không dùng Redis vẫn lấy từ cùng các giới hạn chung. Xem code orders trước là hợp lý khi đọc sản phẩm nhanh và chỉ orders thất bại.",
+          "c": "CPU yên thường nghĩa là server bình thường, nên việc chờ có vẻ không tốn gì. Nhưng async/await chỉ giải phóng thread; mỗi request đang chờ vẫn giữ kết nối của client và bộ nhớ của nó, nên orders mới đang thất bại. Chờ thêm chỉ hợp lý khi không có gì khác bị chậm theo.",
+          "d": "Đọc sản phẩm đúng là quay về PostgreSQL, nên tải ở đó tăng nghe hợp lý. Nhưng khi Redis dừng, lần đọc trong lab lấy từ PostgreSQL chưa tới một giây; vài giây ở đây đã mất trước khi tới PostgreSQL. Tải của PostgreSQL là chỗ cần xem khi đọc sản phẩm nhanh nhưng số lần đọc tăng lên nhiều."
+        }
+      }
+    }
+  ]
+}

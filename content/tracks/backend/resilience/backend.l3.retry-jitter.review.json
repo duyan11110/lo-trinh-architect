@@ -1,0 +1,155 @@
+{
+  "id": "backend.l3.retry-jitter",
+  "technical": {
+    "reviewed_at": "2026-10-16T03:55:28+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "RefundSender.cs @ stage-3 line 23 `Tick = TimeSpan.FromSeconds(2)`, line 24 `BatchSize = 10`; ClaimDueAsync lines 72-76: `... ORDER BY next_attempt_at, id LIMIT {BatchSize} FOR UPDATE SKIP LOCKED`; SendDueAsync lines 51-61: `foreach (var refund in await ClaimDueAsync(...)) { ... var result = await gateway.RefundAsync(refund, stoppingToken); ... }` — sequential awaits.",
+        "source": "git show stage-3:DonHang.Payments/RefundSender.cs"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Round 2. RefundSender.cs @ stage-3 line 59 `RecordResult(refund, result, DateTimeOffset.UtcNow)` (now per row, after its call); line 90 `refund.Attempts++`; lines 107-110 `var delay = NextDelay(refund.Attempts); refund.NextAttemptAt = now + delay;` and the 'attempt {Attempt} failed ({Reason}); next attempt in {DelaySeconds} s' log. docker-compose.yml @ stage-3 line 367 (payments): `ConnectionStrings__Default: \"Host=db;Database=donhang_payments;...\"`.",
+        "source": "git show stage-3:DonHang.Payments/RefundSender.cs; git show stage-3:docker-compose.yml"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Lines 11-13: `FirstRetryDelay = TimeSpan.FromMinutes(1)`, `MaxRetryDelay = TimeSpan.FromHours(1)`, `GiveUpAfter = TimeSpan.FromHours(24)`; lines 119-120: `settings.FirstRetryDelay * Math.Pow(2, attempts - 1)` then `delay < settings.MaxRetryDelay ? delay : settings.MaxRetryDelay`. Test BackoffDelay_DoublesUpToOneHour (1→1, 2→2, 4→8, 7→60, 20→60 min) passed in `dotnet test --filter RefundSenderTests` (13 passed, 0 failed).",
+        "source": "git show stage-3:DonHang.Payments/RefundSender.cs; dotnet test DonHang.Tests"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Round 2, claim reworded to round-1 suggested_text. Line 131 `return backoff * (0.5 + Random.Shared.NextDouble() * 0.5);`, a fresh draw per call; line 123 `// lesson: backend.l3.retry-jitter`, NextDelay ends line 132. Factor in [0.5, 1) per claim 5; claim now says 'up to the backoff delay' (inclusive), consistent with the test's Assert.InRange(delay, backoff / 2, backoff), which passed.",
+        "source": "git show stage-3:DonHang.Payments/RefundSender.cs lines 123-132; dotnet test DonHang.Tests (round 1)"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Random.NextDouble, Returns: 'A double-precision floating point number that is greater than or equal to 0.0, and less than 1.0.' Remarks: 'The actual upper bound of the random number returned by this method is 0.99999999999999978.' Random.Shared: 'Provides a thread-safe Random instance that may be used concurrently from any thread.' (net-10.0 moniker).",
+        "source": "https://learn.microsoft.com/dotnet/api/system.random.nextdouble?view=net-10.0 ; https://learn.microsoft.com/dotnet/api/system.random.shared?view=net-10.0"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Round 2, condition added. BackoffDelay depends only on attempts (line 119). GatewayRefundClient.cs @ stage-3: `catch (HttpRequestException ex)` -> TryAgainLater (line 74-76) and `catch (BrokenCircuitException)` -> TryAgainLater (82-84): with fake-gateway stopped, refused connections and, after 3 failures, the open circuit both fail without waiting the 10 s timeout, so 'now' differs by moments. ClaimDueAsync LIMIT 10 (BatchSize) claims all ten in one round.",
+        "source": "git show stage-3:DonHang.Payments/GatewayRefundClient.cs; git show stage-3:DonHang.Payments/RefundSender.cs lines 72-76, 117-121"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Computed from code (claims 3-4): attempt 1 backoff 1 min → 30-60 s; 2 → 2 min → 1-2 min; 3 → 4 min → 2-4 min; attempt 6 → 32 min → 16-32 min; attempt 7+ → 2^6 = 64 min capped at 60 → 30-60 min. Chaining holds before the cap, as the lesson's 'up to the cap' says; at the cap the range is 30-60 min. Test NextDelay_IsBetweenHalfAndAllOfTheBackoff cases (1,1), (3,4), (20,60) passed.",
+        "source": "git show stage-3:DonHang.Payments/RefundSender.cs lines 117-132; dotnet test DonHang.Tests"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "DonHang.Notifications/NotificationSender.cs line 16 `FirstRetryDelay = TimeSpan.FromSeconds(2)`, line 94 `var delay = FirstRetryDelay * Math.Pow(2, notification.Attempts - 1);`, line 95 `NextAttemptAt = DateTimeOffset.UtcNow + delay;` — no random part. (No cap either; the claim does not say there is one.)",
+        "source": "examples/don-hang DonHang.Notifications/NotificationSender.cs (working tree; RefundSenderTests at the same checkout matches stage-3)"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "RefundSenderTests.cs @ stage-3 lines 94-106: `[InlineData(1, 1)] [InlineData(3, 4)] [InlineData(20, 60)]`, `Enumerable.Range(0, 1000).Select(_ => sender.NextDelay(attempts))`, `Assert.All(delays, delay => Assert.InRange(delay, backoff / 2, backoff));`, `Assert.True(delays.Distinct().Count() > 1);`. Ran `dotnet test DonHang.Tests --filter FullyQualifiedName~RefundSenderTests`: 'Passed! - Failed: 0, Passed: 13'.",
+        "source": "git show stage-3:DonHang.Tests/Payments/RefundSenderTests.cs; dotnet test"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "xunit.assert 2.9.2 API documentation (lib/net6.0/xunit.assert.xml): InRange 'Verifies that a value is within a given range.' low: 'The (inclusive) low value of the range', high: 'The (inclusive) high value of the range'. All: 'Verifies that all items in the collection pass when executed against action.' Matches xunit 2.9.2 pinned in versions.yaml (version_key xunit now set); the test using both passed.",
+        "source": "~/.nuget/packages/xunit.assert/2.9.2/lib/net6.0/xunit.assert.xml; dotnet test DonHang.Tests"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Round 2, claim reworded to round-1 suggested_text. Line 99: `if (result.Outcome == RefundOutcome.Refused || now - refund.RequestedAt >= settings.GiveUpAfter)` inside RecordResult, which runs only after an attempt; so the refund is marked failed at the first failed attempt with now - RequestedAt >= GiveUpAfter. Line 13 `GiveUpAfter = TimeSpan.FromHours(24)`. The deadline itself (RequestedAt + GiveUpAfter) uses no wait.",
+        "source": "git show stage-3:DonHang.Payments/RefundSender.cs lines 11-13, 88-112"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "GatewayRefundClient.cs @ stage-3: `public static string IdempotencyKeyFor(Payment refund) => $\"refund-{refund.Id}\";` and `request.Headers.Add(\"Idempotency-Key\", IdempotencyKeyFor(refund));`. Test IdempotencyKeyFor_IsRefundAndTheRowId asserts 'refund-9' before and after Attempts = 3; passed.",
+        "source": "tools/extract-code DonHang.Payments/GatewayRefundClient.cs --tag stage-3"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "retry-jitter.sh @ stage-3: `docker compose stop fake-gateway`; `trap 'reset_all; docker compose start fake-gateway 2>/dev/null' EXIT`; POSTs /api/v1/orders/$order/refund for '1 5 10'; one `UPDATE payments SET attempts = 0, next_attempt_at = now() + interval '3 seconds' WHERE ... order_id IN (1, 5, 10)`; prints waits after 'attempt 1 failed', `count(DISTINCT next_attempt_at)`, and 'all between 1 s and 2 s?'.",
+        "source": "tools/extract-code scripts/backend/retry-jitter.sh --tag stage-3"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "outputs/stage-3/scripts/backend/retry-jitter.txt @ stage-3: 'POST /api/v1/orders/1/refund -> 202' (and 5, 10), 'for order 1 waits ... s' (5, 10; values elided in the capture), '== different next attempt times among the three rows: 3', '== all between 1 s and 2 s? yes'. OrdersController.Refund returns `Accepted(ToDto(order))`.",
+        "source": "tools/extract-code outputs/stage-3/scripts/backend/retry-jitter.txt --tag stage-3"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "docker-compose.yml @ stage-3 lines 374-375 (service payments): `Refunds__FirstRetryDelay: \"00:00:02\"`, `Refunds__MaxRetryDelay: \"00:00:10\"`. With NextDelay, attempt 1 → 1-2 s, a spread of at most 1 s, under the 2 s Tick.",
+        "source": "tools/extract-code docker-compose.yml --tag stage-3 --lines 359-400"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "Round 2, claim reworded to round-1 suggested_text. Conditioned recommendation ('when many retries can fail at the same moment'). Factual parts follow from code: factor in [0.5, 1) (line 131) so each wait is up to half shorter; GiveUpAfter is measured from RequestedAt (line 99), so shorter waits fit more attempts before it.",
+        "source": "git show stage-3:DonHang.Payments/RefundSender.cs lines 99, 128-132"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "GatewayRefundClient.cs @ stage-3 lines 78-80: `catch (TimeoutRejectedException) { return new(RefundOutcome.TryAgainLater, \"the gateway did not answer in time\"); }`; `using Polly.Timeout;` line 3. Program.cs line 124 `pipeline.AddTimeout(gateway.Timeout);`.",
+        "source": "git show stage-3:DonHang.Payments/GatewayRefundClient.cs; git show stage-3:DonHang.Payments/Program.cs"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "Program.cs @ stage-3 lines 107-125: AddResilienceHandler(\"gateway\", ...) adds only `pipeline.AddCircuitBreaker(...)` (113) and `pipeline.AddTimeout(gateway.Timeout)` (124); grep for 'retry' finds only the comment at line 94: 'There is no retry strategy, unlike ...'.",
+        "source": "git show stage-3:DonHang.Payments/Program.cs"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-16T12:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (review-junior, prompt 05, round 2 targeted)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": "backend.l3.retry-jitter.q3",
+        "kind": "quiz",
+        "text": "Carried from round 1. The line to complete is line 131 of the code block, word for word. I can fill `0.5` by copying from the block without understanding why the factor ends below 1.",
+        "quote": "Complete the line: `return backoff * (0.5 + Random.Shared.NextDouble() * ___);`",
+        "fix": "Ask for a variant the lesson does not show, e.g. the number that makes the range run from a quarter of the backoff delay to all of it (`0.25 + NextDouble() * ___`, answer 0.75)."
+      },
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "gap",
+        "text": "New in the changed bullet. The 'you notice this' hint points to `retry-jitter.sh` and 'the lab's backoff delay of 2 seconds' before I have met either: both are introduced only in Try it, the next section. I could not use the hint on first read, only after section 7.",
+        "quote": "You notice this when every wait `retry-jitter.sh` prints is at most the lab's backoff delay of 2 seconds.",
+        "fix": "Add 'in Try it below' after `retry-jitter.sh`, so the reader knows the script and the 2-second lab setting are explained in the next section."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [
+        "Section 6, third bullet: the hint refers to `retry-jitter.sh` and the lab's 2-second backoff before section 7 introduces them."
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

@@ -1,0 +1,196 @@
+{
+  "lesson": "backend.l3.graceful-degradation",
+  "stage": 3,
+  "questions": [
+    {
+      "id": "backend.l3.graceful-degradation.q1",
+      "type": "single",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["backend.resilience.failure-modes"],
+      "section_ref": 3,
+      "question": {
+        "en": "At stage-2, Mailpit stops during a sale while Redis and PostgreSQL keep running. How does Đơn Hàng treat the mail server, and what does a customer who places an order see?",
+        "vi": "Ở stage-2, Mailpit dừng giữa đợt khuyến mãi trong khi Redis và PostgreSQL vẫn chạy. Đơn Hàng coi mail server là loại phụ thuộc nào, và khách hàng đặt đơn lúc đó thấy gì?"
+      },
+      "options": [
+        { "id": "a", "en": "Required: `/health/ready` answers `503`, so the api gets no requests until the mail server is back.", "vi": "Bắt buộc: `/health/ready` trả `503`, nên api không nhận request nào cho tới khi mail server chạy lại.", "misconception": "If any dependency fails, the honest thing is for the whole API to report itself not ready." },
+        { "id": "b", "en": "Deferred: the order gets `201`, and its email waits as a `pending` row that `NotificationSender` retries.", "vi": "Hoãn lại: đơn hàng nhận `201`, còn email của nó chờ dưới dạng một dòng `pending` mà `NotificationSender` thử gửi lại." },
+        { "id": "c", "en": "Optional: the order gets `201`, and the api sends the email another way while the mail server is down.", "vi": "Tùy chọn: đơn hàng nhận `201`, và api gửi email theo một cách khác trong lúc mail server sập." },
+        { "id": "d", "en": "Deferred: the order waits for the mail server to answer, then gets `201` once the email is sent.", "vi": "Hoãn lại: đơn hàng chờ mail server trả lời, rồi nhận `201` khi email đã được gửi." }
+      ],
+      "answer": ["b"],
+      "explanation": {
+        "en": {
+          "correct": "Placing an order only saves a `pending` row in `notifications` together with the order; it never contacts the mail server. So the order succeeds, and `NotificationSender` sends the email once the mail server answers again, unless the row fails its fifth attempt first.",
+          "a": "A failed dependency feels like something the api must report, so \"not ready\" sounds honest. But `/health/ready` checks only PostgreSQL, and no request waits for the mail server, so the api keeps serving orders.",
+          "c": "The order does get `201`, so half of this is right. But nothing sends the email another way; the mail server's work waits for it, which makes it deferred, not optional.",
+          "d": "Waiting for the email feels like the safe way to confirm an order. But the order's request never contacts the mail server: `QueuedNotifier.Send` only adds a row, so the `201` comes without that wait."
+        },
+        "vi": {
+          "correct": "Đặt đơn chỉ lưu một dòng `pending` vào `notifications` cùng với đơn hàng; nó không hề liên lạc với mail server. Vì vậy đơn hàng thành công, và `NotificationSender` gửi email khi mail server trả lời lại, trừ khi dòng đó thất bại ở lần thử thứ năm trước.",
+          "a": "Một phụ thuộc hỏng có vẻ là điều api phải báo ra, nên \"chưa sẵn sàng\" nghe trung thực. Nhưng `/health/ready` chỉ kiểm PostgreSQL, và không request nào chờ mail server, nên api vẫn phục vụ đặt đơn.",
+          "c": "Đơn hàng đúng là nhận `201`, nên một nửa đáp án này đúng. Nhưng không có gì gửi email theo cách khác; việc của mail server chờ nó quay lại, nên nó là phụ thuộc hoãn lại, không phải tùy chọn.",
+          "d": "Chờ gửi xong email có vẻ là cách chắc chắn để xác nhận đơn. Nhưng request đặt đơn không hề liên lạc với mail server: `QueuedNotifier.Send` chỉ thêm một dòng, nên `201` đến mà không phải chờ như vậy."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.graceful-degradation.q2",
+      "type": "multi",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["backend.resilience.failure-modes"],
+      "section_ref": 4,
+      "question": {
+        "en": "At stage-2, the `redis` container crashes while PostgreSQL keeps running. What do you observe until Redis is back? Select all that apply.",
+        "vi": "Ở stage-2, container `redis` sập trong khi PostgreSQL vẫn chạy. Bạn quan sát thấy gì cho tới khi Redis chạy lại? Chọn tất cả đáp án đúng."
+      },
+      "options": [
+        { "id": "a", "en": "`GET /api/v1/products/3` still answers `200` with product 3.", "vi": "`GET /api/v1/products/3` vẫn trả `200` kèm sản phẩm 3." },
+        { "id": "b", "en": "`/health/ready` keeps answering `200`.", "vi": "`/health/ready` vẫn tiếp tục trả `200`." },
+        { "id": "c", "en": "PostgreSQL runs about one query for each read of one product.", "vi": "PostgreSQL chạy khoảng một câu truy vấn cho mỗi lần đọc một sản phẩm." },
+        { "id": "d", "en": "`/health/ready` answers `503`, because the api reports itself not ready while any dependency is down.", "vi": "`/health/ready` trả `503`, vì api tự báo chưa sẵn sàng khi có bất kỳ phụ thuộc nào sập.", "misconception": "If any dependency fails, the honest thing is for the whole API to report itself not ready." },
+        { "id": "e", "en": "Product reads return an empty result until Redis is back.", "vi": "Các lần đọc sản phẩm trả kết quả rỗng cho tới khi Redis chạy lại.", "misconception": "Graceful degradation means catching every exception and returning an empty result." }
+      ],
+      "answer": ["a", "b", "c"],
+      "explanation": {
+        "en": {
+          "correct": "`ProductCache` treats the Redis error as a cache miss and reads PostgreSQL, so product reads still succeed, each one now costing a query. Redis is left out of the ready check on purpose, so the api keeps reporting itself ready.",
+          "d": "Reporting \"not ready\" sounds like the honest reaction to a broken dependency. But the only ready check is the PostgreSQL one. Every api Pod uses the same Redis, so a Redis check would fail on all of them at once and leave no Pod to serve.",
+          "e": "Returning nothing is a common way to survive an error. But `ProductCache` returns `null` only to signal a miss, and the miss leads to a PostgreSQL read, so the customer still gets the real product."
+        },
+        "vi": {
+          "correct": "`ProductCache` coi lỗi Redis là cache miss và đọc PostgreSQL, nên các lần đọc sản phẩm vẫn thành công, chỉ là giờ mỗi lần tốn một câu truy vấn. Redis được cố ý để ngoài ready check, nên api vẫn báo mình sẵn sàng.",
+          "d": "Báo \"chưa sẵn sàng\" nghe như phản ứng trung thực khi một phụ thuộc hỏng. Nhưng ready check duy nhất là check PostgreSQL. Mọi Pod api dùng chung một Redis, nên một check Redis sẽ thất bại trên tất cả cùng lúc và không còn Pod nào phục vụ.",
+          "e": "Trả về rỗng là cách hay gặp để vượt qua một lỗi. Nhưng `ProductCache` trả `null` chỉ để báo miss, và miss dẫn tới một lần đọc PostgreSQL, nên khách hàng vẫn nhận đúng sản phẩm thật."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.graceful-degradation.q3",
+      "type": "fill",
+      "bloom": "understand",
+      "difficulty": 2,
+      "skills": ["backend.resilience.failure-modes"],
+      "section_ref": 5,
+      "question": {
+        "en": "In `ProductCache.GetAsync`, the `catch` block logs a warning and then returns the value that `FindAsync` treats as a cache miss. Complete the line: `return ___;`",
+        "vi": "Trong `ProductCache.GetAsync`, khối `catch` ghi một log warning rồi trả về giá trị mà `FindAsync` coi là cache miss. Điền vào dòng: `return ___;`"
+      },
+      "answer": ["null"],
+      "answer_regex": "^\\s*null\\s*;?\\s*$",
+      "explanation": {
+        "en": {
+          "correct": "`return null;` turns a Redis error into a miss. `FindAsync` then calls `inner.FindAsync`, one PostgreSQL query, so the read gets slower instead of failing."
+        },
+        "vi": {
+          "correct": "`return null;` biến một lỗi Redis thành một lần miss. Sau đó `FindAsync` gọi `inner.FindAsync`, một câu truy vấn PostgreSQL, nên lần đọc chậm hơn chứ không thất bại."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.graceful-degradation.q4",
+      "type": "truefalse",
+      "bloom": "understand",
+      "difficulty": 2,
+      "skills": ["backend.resilience.failure-modes"],
+      "section_ref": 5,
+      "question": {
+        "en": "Statement: Redis and the mail server have no health check in `DonHang.Api/Program.cs`, and at stage-2 the api still serves its requests while either of them is down.",
+        "vi": "Nhận định: Redis và mail server không có health check nào trong `DonHang.Api/Program.cs`, và ở stage-2 api vẫn phục vụ request của nó khi một trong hai sập."
+      },
+      "options": [
+        { "id": "a", "en": "True, because a dependency gets a ready check only when the api cannot serve without it: product reads fall back to PostgreSQL, emails wait as rows.", "vi": "Đúng, vì một phụ thuộc chỉ có ready check khi api không phục vụ được nếu thiếu nó: đọc sản phẩm quay về PostgreSQL, email chờ dưới dạng dòng.", "polarity": "true" },
+        { "id": "b", "en": "True, because the api never calls Redis or the mail server while it handles a request, so their state cannot matter.", "vi": "Đúng, vì api không bao giờ gọi Redis hay mail server trong lúc xử lý một request, nên trạng thái của chúng không ảnh hưởng gì.", "polarity": "true" },
+        { "id": "c", "en": "False, because a failed dependency must make the api report itself not ready, so it cannot keep serving while either is down.", "vi": "Sai, vì một phụ thuộc hỏng phải khiến api tự báo chưa sẵn sàng, nên api không thể tiếp tục phục vụ khi một trong hai sập.", "misconception": "If any dependency fails, the honest thing is for the whole API to report itself not ready.", "polarity": "false" },
+        { "id": "d", "en": "False, because Redis is missing from the checks only since the api has no way to notice a Redis error.", "vi": "Sai, vì Redis vắng mặt trong các check chỉ do api không có cách nào nhận ra lỗi Redis.", "polarity": "false" }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "The api registers one health check, tagged `ready`, and it covers PostgreSQL alone, because without PostgreSQL the api has nothing useful to answer. Without Redis, `ProductCache` reads PostgreSQL instead; without the mail server, the order still saves its `pending` email row. Both are left out because the api still serves without them.",
+          "b": "For the mail server this is right: placing an order only adds a row and never contacts it. But every product read asks Redis first through `ProductCache`; the api keeps serving because it treats a Redis error as a miss, not because it never calls Redis.",
+          "c": "Reporting every failure sounds like the honest choice. But readiness answers one question, whether the api can serve its requests now; without Redis or the mail server it still can, so adding them would turn a slower product page or a late email into no api at all.",
+          "d": "Leaving Redis out can look like a gap in what the api can see. But `ProductCache` does notice Redis errors: it catches them and logs a warning for each failed read. Redis is left out because the api still serves without it."
+        },
+        "vi": {
+          "correct": "Api đăng ký một health check duy nhất, gắn tag `ready`, và nó chỉ kiểm PostgreSQL, vì thiếu PostgreSQL api không còn gì hữu ích để trả lời. Thiếu Redis, `ProductCache` đọc PostgreSQL thay thế; thiếu mail server, đơn hàng vẫn lưu dòng email `pending` của nó. Cả hai bị để ngoài vì api vẫn phục vụ được khi thiếu chúng.",
+          "b": "Với mail server thì điều này đúng: đặt đơn chỉ thêm một dòng và không hề liên lạc với nó. Nhưng mỗi lần đọc sản phẩm đều hỏi Redis trước qua `ProductCache`; api vẫn phục vụ được vì nó coi lỗi Redis là một lần miss, chứ không phải vì nó không gọi Redis.",
+          "c": "Báo mọi lỗi nghe như lựa chọn trung thực. Nhưng readiness chỉ trả lời một câu hỏi: api có phục vụ được request của nó ngay lúc này không; thiếu Redis hay mail server nó vẫn phục vụ được, nên thêm chúng vào sẽ biến một trang sản phẩm chậm hơn hay một email đến muộn thành không còn api nào.",
+          "d": "Để Redis ngoài check có thể trông như api bị mù với Redis. Nhưng `ProductCache` có nhận ra lỗi Redis: nó bắt lỗi và ghi một log warning cho mỗi lần đọc hỏng. Redis bị để ngoài vì api vẫn phục vụ được khi thiếu nó."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.graceful-degradation.q5",
+      "type": "single",
+      "bloom": "analyze",
+      "difficulty": 4,
+      "skills": ["backend.resilience.failure-modes"],
+      "section_ref": 6,
+      "question": {
+        "en": "During a Redis outage at stage-2, PostgreSQL gets busy. A teammate proposes that `GET /api/v1/products/{id}` return an empty result while Redis is down, instead of reading PostgreSQL. What is wrong with this proposal?",
+        "vi": "Trong lúc Redis sập ở stage-2, PostgreSQL trở nên bận. Một đồng nghiệp đề xuất cho `GET /api/v1/products/{id}` trả kết quả rỗng khi Redis sập, thay vì đọc PostgreSQL. Đề xuất này sai ở đâu?"
+      },
+      "options": [
+        { "id": "a", "en": "Nothing: graceful degradation means catching the failure and returning an empty result, so the api stays up.", "vi": "Không sai gì: graceful degradation nghĩa là bắt lỗi và trả kết quả rỗng, nhờ vậy api vẫn chạy.", "misconception": "Graceful degradation means catching every exception and returning an empty result." },
+        { "id": "b", "en": "It solves a problem that does not exist, since a fallback only runs while Redis is already broken.", "vi": "Nó giải quyết một vấn đề không tồn tại, vì đường dự phòng chỉ chạy khi Redis đã hỏng rồi.", "misconception": "A fallback costs nothing, because it only runs when something is already broken." },
+        { "id": "c", "en": "A customer opening product 3 would be told it does not exist, which is false.", "vi": "Khách mở sản phẩm 3 sẽ được báo là sản phẩm không tồn tại, mà điều đó sai." },
+        { "id": "d", "en": "It makes `/health/ready` answer `503` for as long as product pages return nothing.", "vi": "Nó làm `/health/ready` trả `503` suốt thời gian các trang sản phẩm không trả về gì." }
+      ],
+      "answer": ["c"],
+      "explanation": {
+        "en": {
+          "correct": "Graceful degradation is a decision about what the user still gets. An empty answer for product 3 looks like a reply but is a false one, while the current fallback returns the real product, only more slowly. The worry about PostgreSQL's load is real, but it calls for limiting that load, not for answering wrongly.",
+          "a": "Returning something instead of an error does keep the api up, so it sounds graceful. But the customer is told product 3 does not exist and cannot tell that apart from a product the shop really does not sell.",
+          "b": "The fallback does run only during the outage, so it is easy to call it free. But during the outage it runs on every read of one product and moves that load onto PostgreSQL; the teammate's concern is real, only the remedy is wrong.",
+          "d": "Changing what a request returns sounds like something the ready check would see. But `/health/ready` checks only whether EF Core can open a connection to PostgreSQL; what product pages return does not change its answer."
+        },
+        "vi": {
+          "correct": "Graceful degradation là quyết định về việc người dùng vẫn nhận được gì. Một câu trả lời rỗng cho sản phẩm 3 trông như một câu trả lời nhưng là câu trả lời sai, trong khi đường dự phòng hiện tại trả đúng sản phẩm thật, chỉ chậm hơn. Lo ngại về tải của PostgreSQL là có thật, nhưng cách xử lý là giới hạn tải đó, không phải trả lời sai.",
+          "a": "Trả về một thứ gì đó thay vì lỗi đúng là giữ api chạy, nên nghe có vẻ graceful. Nhưng khách được báo sản phẩm 3 không tồn tại, và không thể phân biệt điều đó với một sản phẩm cửa hàng thật sự không bán.",
+          "b": "Đường dự phòng đúng là chỉ chạy trong lúc sự cố, nên dễ coi nó là miễn phí. Nhưng trong lúc sự cố nó chạy với mọi lần đọc một sản phẩm và dồn tải đó sang PostgreSQL; lo ngại của đồng nghiệp là có thật, chỉ có cách chữa là sai.",
+          "d": "Thay đổi thứ một request trả về nghe như điều ready check sẽ thấy. Nhưng `/health/ready` chỉ kiểm EF Core có mở được kết nối tới PostgreSQL không; các trang sản phẩm trả về gì không đổi câu trả lời của nó."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.graceful-degradation.q6",
+      "type": "scenario",
+      "bloom": "evaluate",
+      "difficulty": 4,
+      "skills": ["backend.resilience.failure-modes"],
+      "section_ref": 4,
+      "context": {
+        "en": "It is stage-2, during an evening sale. The `redis` container crashed a few minutes ago. Product pages still load, but PostgreSQL is far busier than usual, and the number of product queries jumped the moment Redis went down. `POST /api/v1/orders`, which never touches Redis, has started answering more slowly. `/health/ready` still answers `200`. A teammate wants to act now, and four actions are on the table.",
+        "vi": "Ở stage-2, giữa đợt khuyến mãi buổi tối. Container `redis` sập cách đây vài phút. Trang sản phẩm vẫn tải, nhưng PostgreSQL bận hơn bình thường rất nhiều, và số câu truy vấn sản phẩm tăng vọt ngay lúc Redis sập. `POST /api/v1/orders`, vốn không hề chạm tới Redis, bắt đầu trả lời chậm hơn. `/health/ready` vẫn trả `200`. Một đồng nghiệp muốn hành động ngay, và có bốn hướng đang được cân nhắc."
+      },
+      "question": {
+        "en": "Which action fits this situation best?",
+        "vi": "Hướng nào hợp nhất với tình huống này?"
+      },
+      "options": [
+        { "id": "a", "en": "Add a Redis check to `/health/ready`, so the api honestly reports itself not ready while Redis is down.", "vi": "Thêm check Redis vào `/health/ready`, để api trung thực báo mình chưa sẵn sàng khi Redis sập.", "misconception": "If any dependency fails, the honest thing is for the whole API to report itself not ready." },
+        { "id": "b", "en": "Make `GET /api/v1/products/{id}` return an empty result while Redis is down, so PostgreSQL is spared.", "vi": "Cho `GET /api/v1/products/{id}` trả kết quả rỗng khi Redis sập, để PostgreSQL được nhẹ tải.", "misconception": "Graceful degradation means catching every exception and returning an empty result." },
+        { "id": "c", "en": "Leave it as is: the fallback runs only while Redis is broken, so it costs nothing worth acting on.", "vi": "Cứ để vậy: đường dự phòng chỉ chạy khi Redis hỏng, nên nó không tốn gì đáng phải xử lý.", "misconception": "A fallback costs nothing, because it only runs when something is already broken." },
+        { "id": "d", "en": "Get Redis running again first, since the product queries moved onto PostgreSQL are what slows orders.", "vi": "Đưa Redis chạy lại trước tiên, vì chính các câu truy vấn sản phẩm bị dồn sang PostgreSQL đang làm chậm đặt đơn." }
+      ],
+      "answer": ["d"],
+      "explanation": {
+        "en": {
+          "correct": "Orders never touch Redis, yet they slow down: the product queries the fallback moved onto PostgreSQL are taking capacity that orders need. That extra load lasts until Redis is back, so getting Redis running again removes it at its source, while the api keeps serving in the meantime.",
+          "a": "A broken dependency feels like something readiness should report. But every api Pod uses the same Redis, so the check would fail on all of them at once, and slower orders would become no orders. A dependency belongs in the ready check when the api cannot serve its requests without it, as with PostgreSQL.",
+          "b": "Sparing PostgreSQL is the right worry here. But an empty result tells the customer the product does not exist, a wrong answer rather than a slower one. Returning an empty result is right only when there really is nothing to show.",
+          "c": "The fallback is working as designed, so leaving it can feel safe. But it runs on every product read during the outage, and slower orders show PostgreSQL is near what it can carry. Leaving it is reasonable when PostgreSQL carries the extra load and requests that never touch Redis stay fast."
+        },
+        "vi": {
+          "correct": "Đặt đơn không hề chạm tới Redis, vậy mà vẫn chậm đi: các câu truy vấn sản phẩm mà đường dự phòng dồn sang PostgreSQL đang chiếm phần năng lực mà đặt đơn cần. Phần tải thêm đó kéo dài cho tới khi Redis chạy lại, nên đưa Redis chạy lại gỡ nó từ gốc, trong khi api vẫn phục vụ suốt thời gian chờ.",
+          "a": "Một phụ thuộc hỏng có vẻ là điều readiness nên báo ra. Nhưng mọi Pod api dùng chung một Redis, nên check đó sẽ thất bại trên tất cả cùng lúc, và đặt đơn chậm sẽ thành không đặt được đơn nào. Một phụ thuộc nên nằm trong ready check khi api không phục vụ được request nếu thiếu nó, như PostgreSQL.",
+          "b": "Giảm tải cho PostgreSQL đúng là điều đáng lo ở đây. Nhưng kết quả rỗng báo với khách rằng sản phẩm không tồn tại, một câu trả lời sai chứ không phải chậm hơn. Trả kết quả rỗng chỉ đúng khi thật sự không có gì để hiển thị.",
+          "c": "Đường dự phòng đang chạy đúng như thiết kế, nên để yên có vẻ an toàn. Nhưng nó chạy với mọi lần đọc sản phẩm trong lúc sự cố, và đặt đơn chậm đi cho thấy PostgreSQL đã gần tới mức chịu được. Để yên là hợp lý khi PostgreSQL gánh được phần tải thêm và các request không chạm tới Redis vẫn nhanh."
+        }
+      }
+    }
+  ]
+}

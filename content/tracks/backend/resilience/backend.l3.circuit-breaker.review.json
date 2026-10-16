@@ -1,0 +1,150 @@
+{
+  "id": "backend.l3.circuit-breaker",
+  "technical": {
+    "reviewed_at": "2026-10-16T16:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Polly docs, Circuit breaker: \"If the sampled executions' failure-success ratio exceeds a predefined threshold then a circuit breaker...\"; \"every subsequent call will be shortcut with a `BrokenCircuitException`\"; BreakDuration: \"Defines a fixed time period for which the circuit will remain broken/open before attempting to reset.\"",
+        "source": "https://www.pollydocs.org/strategies/circuit-breaker.html"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Round 2: claim now says the first call after BreakDuration moves the circuit to HalfOpen. Polly docs: \"After a preset duration the circuit breaker performs a probe\"; \"HalfOpen --> Closed: Passes the probe\"; \"HalfOpen --> Open: Fails the probe\"; \"the state transition does not happen automatically in the background\" (it happens on the next execution). Lesson sections 3, 5 and q2/q6 now match.",
+        "source": "https://www.pollydocs.org/strategies/circuit-breaker.html"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Polly docs: MinimumThroughput \"The minimum number of executions that must occur within the specified sampling duration\"; \"the circuit will not break even if all of the executions failed when their quantity is below the minimum throughput\"; diagram: \"The circuit will break because the actual failure ratio meets the threshold (0.5) after the 2nd call\" (meeting, not only exceeding, opens it). SamplingDuration: \"The time period over which the failure-success ratio is calculated.\"",
+        "source": "https://www.pollydocs.org/strategies/circuit-breaker.html"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "refs/dotnet-docs/docs/core/resilience/http-resilience.md:109-118: \"The retry and circuit breaker strategies both handle a set of specific HTTP status codes and exceptions... HTTP 500 and above (Server errors) - HTTP 408 (Request timeout) - HTTP 429 (Too many requests). Additionally, these strategies handle the following exceptions: HttpRequestException, TimeoutRejectedException\". Repo: GatewayCircuitBreakerTests.Refusals_DoNotOpenTheCircuit (5 x 422, Calls == 5).",
+        "source": "refs/dotnet-docs/docs/core/resilience/http-resilience.md"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "refs http-resilience.md:97 \"chains five resilience strategies in the following order (from the outermost to the innermost)\" with the table listing them in registration order; Polly pipelines page labels the first-added strategy \"// outer\" and the later \"// inner\" (\"the inner strategy is a timeout... the outer is a retry which is timeout-aware\"). Program.cs:113 AddCircuitBreaker, :124 AddTimeout. TimeoutRejectedException is in the handled list (claim 4).",
+        "source": "https://www.pollydocs.org/pipelines/ ; refs/dotnet-docs/docs/core/resilience/http-resilience.md"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Polly docs: \"every subsequent call will be shortcut with a `BrokenCircuitException`\"; \"CircuitState.Open - Circuit is open; actions are blocked.\" Repo GatewayCircuitBreakerTests.ThreeFailedCalls_OpenTheCircuit_AndTheNextCallIsNotSent: 4 calls to RefundAsync, `Assert.Equal(3, gateway.Calls)` on the primary handler.",
+        "source": "https://www.pollydocs.org/strategies/circuit-breaker.html"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "GatewayRefundClient.cs:78-81 `catch (TimeoutRejectedException) { return new(RefundOutcome.TryAgainLater, ...` ; :82-85 `catch (BrokenCircuitException) { return new(RefundOutcome.TryAgainLater, \"the circuit to the gateway is open; not calling it\");` ; :70-71 422 -> RefundOutcome.Refused. Read from the submodule working tree (STAGE.md: 'Đơn Hàng at tag stage-3'); `git show stage-3:` was denied by the permission system.",
+        "source": "examples/don-hang DonHang.Payments/GatewayRefundClient.cs"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Program.cs:107 AddResilienceHandler(\"gateway\"), :113 AddCircuitBreaker(new HttpCircuitBreakerStrategyOptions, :115-118 four gateway settings, :119-122 OnOpened/OnHalfOpened/OnClosed via Log, :124 AddTimeout; :100 `GatewaySettings gateway` parameter; :129-133 `private static ValueTask Log(Action write)` calls write() and returns ValueTask.CompletedTask (only runs the write). GatewayRefundClient.cs:21 `public sealed class GatewaySettings`. Block 107-125 matches. Working tree read.",
+        "source": "examples/don-hang DonHang.Payments/Program.cs; DonHang.Payments/GatewayRefundClient.cs"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Polly docs options table: OnOpened \"invoked after the circuit transitions to the Opened state\"; OnHalfOpened \"invoked after the circuit transitions to the HalfOpened state\"; OnClosed \"invoked after the circuit transitions to either the Closed or Isolated states\"; example `OnOpened = static args => { args.Context.Properties.Set(SleepDurationKey, args.BreakDuration); ...`.",
+        "source": "https://www.pollydocs.org/strategies/circuit-breaker.html"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "GatewayRefundClient.cs:27 `Timeout ... = TimeSpan.FromSeconds(10)`, :33 `FailureRatio ... = 0.5`, :34 `MinimumThroughput ... = 3`, :35 `SamplingDuration ... = TimeSpan.FromMinutes(1)`, :36 `BreakDuration ... = TimeSpan.FromSeconds(30)`; docker-compose.yml:380 `Gateway__BreakDuration: \"00:00:10\"` (payments service). Captured output: \"Circuit to the gateway opened: no calls for 10 s\".",
+        "source": "examples/don-hang DonHang.Payments/GatewayRefundClient.cs; docker-compose.yml"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Behaviour, not opinion. Polly docs: \"the circuit will not break even if all of the executions failed when their quantity is below the minimum throughput.\" A minimum above what RefundSender sends within SamplingDuration therefore keeps the circuit closed.",
+        "source": "https://www.pollydocs.org/strategies/circuit-breaker.html"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Round 2: claim now carries the give-up condition. RefundSender.cs:99 `if (result.Outcome == RefundOutcome.Refused || now - refund.RequestedAt >= settings.GiveUpAfter)` sets status failed; otherwise the row stays pending and is rescheduled. Lesson section 5 (misconception 4), section 4 and summary line 5 now state the give-up condition.",
+        "source": "examples/don-hang DonHang.Payments/RefundSender.cs; scripts/backend/circuit-breaker.sh"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "GatewayCircuitBreakerTests.cs:70-82 three 500s, fourth `Assert.Contains(\"circuit\", refused.Reason); Assert.Equal(3, gateway.Calls);`; :86-99 five 422 -> `Assert.Equal(5, gateway.Calls)`; :103-120 after BreakDuration trial and next both Refunded, Calls == 5. Tests not run (Bash dotnet test not permitted); verdict on source only.",
+        "source": "examples/don-hang DonHang.Tests/Payments/GatewayCircuitBreakerTests.cs"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "circuit-breaker.sh:27-29 reset_refund 10, `docker compose restart payments`; :31 `docker compose stop fake-gateway`; :36 POST /api/v1/orders/10/refund; :54-57 attempts_log, circuit_log; :62 `docker compose start fake-gateway`; :64 `wait_for_status 10 cancelled` (refunds.sh: up to 60 s); :65-66 circuit_log again.",
+        "source": "examples/don-hang scripts/backend/circuit-breaker.sh; scripts/lib/refunds.sh"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "outputs/stage-3/scripts/backend/circuit-breaker.txt: \"-> 202\", \"attempt 1: the call failed\" ... \"attempt 3: the call failed\", \"attempt 4: not sent, the circuit is open\", \"Circuit to the gateway opened: no calls for 10 s\", after \"fake-gateway is back\": \"Circuit to the gateway half-open: one trial call\", \"Circuit to the gateway closed: calls go through again\".",
+        "source": "examples/don-hang outputs/stage-3/scripts/backend/circuit-breaker.txt"
+      },
+      {
+        "n": 16,
+        "verdict": "not-needed",
+        "evidence": "Reasoning that follows from claim 4 (422 is not handled) and the ratio rule (claim 3); the fake gateway refuses bank_transfer refunds with 422 (fake-gateway/Program.cs:93-94) and order 10 is card (:33). No separate source needed.",
+        "source": "examples/don-hang fake-gateway/Program.cs"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "Polly circuit breaker docs describe only blocking/permitting executions: \"Closed - Normal operation; actions are executed\", \"Open - ... actions are blocked\", calls \"shortcut with a BrokenCircuitException\"; no re-execution. Repo test ThreeFailedCalls...: 4 RefundAsync calls produce exactly 3 handler calls (no repeat). Round 2, no issues left: re-read sections 3-6, 8 and quiz q1-q4, q6 against the pollydocs circuit-breaker page, refs http-resilience.md:109-118, Program.cs, GatewayRefundClient.cs, RefundSender.cs.",
+        "source": "https://www.pollydocs.org/strategies/circuit-breaker.html"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-16T17:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (prompt 05, junior reader, targeted re-review round 2)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "text": "Carried from round 1. The text now says the next call after the break duration moves the circuit to half-open and goes through as a trial, but I still do not learn what other calls get while that trial is in progress: let through, or refused as in open?",
+        "quote": "When the break duration has passed, the next call moves the circuit to half-open and goes through as a trial.",
+        "fix": "Add one sentence after it saying what other calls get while the trial is in progress."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "gap",
+        "text": "New in the changed text. 'Its give-up time' appears here, in misconception 4 and summary line 5, but nothing says what it is or what happens to the refund once it has passed. Since misconception 4 tells me refunds are not lost, I am left unsure whether a long outage can still end the refund.",
+        "quote": "scheduled again with backoff until its give-up time has passed.",
+        "fix": "Add half a sentence at the first mention saying what the give-up time is and what `RefundSender` does with the refund after it passes."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [
+        "\"the next call moves the circuit to half-open and goes through as a trial\" — what other calls get during half-open is not said",
+        "\"until its give-up time has passed\" — what the give-up time is and what happens after it is not said"
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

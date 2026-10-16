@@ -1,0 +1,200 @@
+{
+  "id": "backend.l3.timeouts",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-10-16T10:00:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "MailKit's SmtpClient.Timeout (inherited from MailService) is a timeout in milliseconds for network operations with the server; when an operation gets no answer within it, the call throws an exception.",
+      "kind": "behavior",
+      "source_hint": "MailKit API docs: MailService.Timeout property (\"timeout for network streaming operations, in milliseconds\")",
+      "version_key": "mailkit",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 2,
+      "text": "MailKit's Timeout applies to each network operation (connect, each read/write of the SMTP exchange), not to the whole SendAsync as one total, so a send whose steps are each slow but answered can exceed it in total.",
+      "kind": "behavior",
+      "source_hint": "MailKit API docs: MailService.Timeout; SmtpClient.ConnectAsync remarks; MailKit source SocketUtils.ConnectAsync (timeout argument)",
+      "version_key": "mailkit",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 3,
+      "text": "MailKitEmailSender.cs @ stage-2 line 28 creates new SmtpClient { Timeout = 10_000 } (10 s); lines 30-32 call ConnectAsync, SendAsync and DisconnectAsync(quit: true) with the caller's cancellationToken.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: DonHang.Infrastructure/MailKitEmailSender.cs lines 18-34",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 4,
+      "text": "SmtpClient.DisconnectAsync(quit: true) sends the SMTP QUIT command before closing the connection.",
+      "kind": "syntax",
+      "source_hint": "MailKit API docs: SmtpClient.DisconnectAsync(bool quit, CancellationToken)",
+      "version_key": "mailkit",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 5,
+      "text": "SendOneAsync (NotificationSender.cs @ stage-2 lines 65-81) passes stoppingToken to IEmailSender.SendAsync and catches any exception (when not stopping) with RecordFailure, which adds one to Attempts.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: DonHang.Api/Jobs/NotificationSender.cs lines 65-101",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 6,
+      "text": "The stoppingToken that BackgroundService.ExecuteAsync receives is signalled when the host shuts down; it is not signalled by a slow call.",
+      "kind": "behavior",
+      "source_hint": "Microsoft Learn: 'Background tasks with hosted services in ASP.NET Core' (BackgroundService, ExecuteAsync stoppingToken); NotificationSender.cs @ stage-2 lines 21-24",
+      "version_key": "aspnetcore",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 7,
+      "text": "SendDueAsync (NotificationSender.cs @ stage-2 lines 47-59) claims up to BatchSize (10) rows, awaits SendOneAsync for each row in a foreach before the next, and calls CompleteAsync once after the loop.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: DonHang.Api/Jobs/NotificationSender.cs lines 13-14, 47-59",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 8,
+      "text": "Because sends of a batch are awaited one after another, one send that waits until its timeout delays every later email of the same batch by that wait.",
+      "kind": "fact",
+      "source_hint": "follows from claim 7 (sequential await in foreach)",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 9,
+      "text": "On a timeout MailKit drops the connection, but nothing asks the mail server to undo what it received: a server that had the whole email and only replied late to the message may still deliver it.",
+      "kind": "behavior",
+      "source_hint": "MailKit Net/NetworkStream.cs ReadAsync (disconnects, then throws TimeoutException); backend.l2.at-least-once-jobs",
+      "version_key": "mailkit",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 10,
+      "text": "docker-compose.yml @ stage-2 line 112 sets ConnectionStrings__Redis to \"redis:6379,abortConnect=false\" (no timeout option); ServiceCollectionExtensions.cs lines 33-38 parse it and set only BacklogPolicy.FailFast before Connect.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: docker-compose.yml line 112; DonHang.Infrastructure/ServiceCollectionExtensions.cs lines 33-38",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 11,
+      "text": "When the configuration sets no timeout options (connectTimeout, syncTimeout, asyncTimeout), StackExchange.Redis uses its own default timeouts for connecting and for commands.",
+      "kind": "behavior",
+      "source_hint": "StackExchange.Redis docs 'Configuration' (connectTimeout, syncTimeout, asyncTimeout defaults)",
+      "version_key": "stackexchange_redis",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 12,
+      "text": "docker-compose.yml @ stage-2 line 111, ConnectionStrings__Default \"Host=db;Database=donhang;Username=donhang;Password=...\", names no Timeout or Command Timeout, so the PostgreSQL client's defaults apply.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: docker-compose.yml line 111; Npgsql docs 'Connection String Parameters' (Timeout, Command Timeout)",
+      "version_key": "npgsql_efcore",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 13,
+      "text": "Each client library that talks over the network has its own timeout setting(s), names, units and defaults (e.g. MailKit Timeout in ms, StackExchange.Redis syncTimeout/asyncTimeout, Npgsql Timeout/Command Timeout in s).",
+      "kind": "fact",
+      "source_hint": "MailKit MailService.Timeout; StackExchange.Redis 'Configuration'; Npgsql 'Connection String Parameters'",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 14,
+      "text": "Without a timeout, a call to a server that accepted the connection but never answers may wait indefinitely or until a lower-level limit (the library's own default or the OS's TCP handling) ends it; that limit, if any, varies and cannot be counted on to be short.",
+      "kind": "opinion",
+      "source_hint": "follows from claims 1, 13; backend.l3.slow-dependencies claim 12",
+      "needs_verification": false,
+      "section": 4
+    },
+    {
+      "n": 15,
+      "text": "A longer timeout fails fewer slow calls but makes each stuck call hold its caller (and, in a sequential batch, everything behind it) for longer; a shorter one fails some calls that would have succeeded.",
+      "kind": "opinion",
+      "source_hint": "follows from claims 7-8; backend.l3.slow-dependencies (pile-up)",
+      "needs_verification": false,
+      "section": 6
+    },
+    {
+      "n": 16,
+      "text": "A library default is chosen by its authors for all users of the library, not for one application; when an app leaves it unset, its value is still the app's effective timeout, and the library's documentation for that setting gives it.",
+      "kind": "opinion",
+      "source_hint": "general; claims 11-13",
+      "needs_verification": false,
+      "section": 6
+    },
+    {
+      "n": 17,
+      "text": "email-retry.sh @ stage-2 runs on the host, stops mailpit (restarts it on EXIT), places an order as customer 1, waits while the row is pending, then prints the sender's failure log lines and the row's status, attempts and sent_at IS NULL.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: scripts/backend/email-retry.sh lines 1-42",
+      "needs_verification": true,
+      "section": 7
+    },
+    {
+      "n": 18,
+      "text": "Captured output of email-retry.sh @ stage-2: '-> 201', attempts 1-4 'next attempt in 2/4/8/16 s', attempt 5 'giving up', row 'failed | 5 | t'.",
+      "kind": "behavior",
+      "source_hint": "examples/don-hang @ stage-2: outputs/stage-2/scripts/backend/email-retry.txt",
+      "version_key": "mailpit",
+      "needs_verification": true,
+      "section": 7
+    },
+    {
+      "n": 19,
+      "text": "A stopped Mailpit accepts no connection, so no timeout is involved. If paused (cgroup freezer), nothing answers, so each MailKit send waits about the 10 s Timeout and throws; SendOneAsync/RecordFailure handle it as any failure.",
+      "kind": "behavior",
+      "source_hint": "Docker docs 'docker compose pause' (cgroup freezer); claims 1, 3, 5; backend.l3.slow-dependencies claim 1",
+      "version_key": "mailkit",
+      "needs_verification": true,
+      "section": 7
+    },
+    {
+      "n": 20,
+      "text": "Without the Timeout = 10_000 line, MailKit's SmtpClient own default timeout would still end each attempt, only after a much longer wait.",
+      "kind": "behavior",
+      "source_hint": "MailKit Net/Smtp/SmtpClient.cs (default timeout field)",
+      "version_key": "mailkit",
+      "needs_verification": true,
+      "section": 7
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [1, 2, 3, 4, 5],
+    "outline_items_missing": [],
+    "beyond_scope": [
+      "names that stoppingToken is signalled only at shutdown, so it does not bound a slow send (one sentence, section 5)",
+      "names that the PostgreSQL connection string also sets no timeout (one sentence, section 5); no default values stated for any library"
+    ]
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1500,
+    "notes": "apply-review: §7 answer uses MailKit default (claim 20); §4 claim 9 suggested_text, per-step total, 'below your code' named; §3 setting def; SMTP term removed; MailKit, StackExchange.Redis, connection string glossed in plain words; compose line numbers dropped; §6 where default is found; §7 t + step-1 contrast; versions_used +aspnetcore, npgsql_efcore; claim 2 section 4; cut 'growing waits' and 'wait its turn'. Quiz q1 c, q4, q5 wording."
+  },
+  "repo_changes_needed": [
+    {
+      "lesson": "backend.l3.timeouts",
+      "need": "Optional: a stage-2 script that pauses mailpit, places one order and prints the time until 'failed on attempt 1', so Try it could show the 10 s timeout directly instead of as a thinking exercise.",
+      "suggested_path": "scripts/backend/smtp-timeout.sh"
+    }
+  ]
+}

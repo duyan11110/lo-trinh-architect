@@ -1,0 +1,167 @@
+{
+  "id": "backend.l3.circuit-breaker",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-10-16T12:00:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "A circuit breaker (Polly) watches the outcomes of calls and, once too many fail, opens: calls are then rejected at once without executing the wrapped call, until a break duration passes.",
+      "kind": "behavior",
+      "source_hint": "Polly docs: Strategies > Circuit breaker (overview, 'Defaults' and state diagram)",
+      "version_key": "polly",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 2,
+      "text": "Polly breaker states: Closed (calls pass, outcomes sampled), Open (calls rejected with BrokenCircuitException); the first call after BreakDuration moves it to HalfOpen and passes as a trial (success closes it, failure reopens it for another BreakDuration). No manual action needed.",
+      "kind": "behavior",
+      "source_hint": "Polly docs: Strategies > Circuit breaker, 'Circuit breaker state' / state diagram",
+      "version_key": "polly",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 3,
+      "text": "Polly's circuit breaker opens when, within SamplingDuration, the failure ratio is at least FailureRatio and the number of calls is at least MinimumThroughput; BreakDuration is how long it stays open before half-open.",
+      "kind": "behavior",
+      "source_hint": "Polly docs: Strategies > Circuit breaker, CircuitBreakerStrategyOptions (FailureRatio, MinimumThroughput, SamplingDuration, BreakDuration)",
+      "version_key": "polly",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 4,
+      "text": "HttpCircuitBreakerStrategyOptions (Microsoft.Extensions.Http.Resilience) handles by default: HttpRequestException, TimeoutRejectedException, and responses with status 5xx, 408 (Request Timeout) or 429 (Too Many Requests); other answers, such as 200 or 422, are not counted as failures.",
+      "kind": "behavior",
+      "source_hint": "Microsoft Learn: Build resilient HTTP apps / HttpCircuitBreakerStrategyOptions, HttpClientResiliencePredicates.IsTransient; RFC 9110 §15.5.9 (408), RFC 6585 §4 (429)",
+      "version_key": "http_resilience",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 5,
+      "text": "Strategies run in the order added, the first added outermost: the breaker added before AddTimeout wraps the timeout and sees TimeoutRejectedException as the call's outcome, counting it as failed.",
+      "kind": "behavior",
+      "source_hint": "Polly docs: Resilience pipelines, strategy order; examples/don-hang @ stage-3: DonHang.Payments/Program.cs lines 89-96, 113, 124",
+      "version_key": "polly",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 6,
+      "text": "While the circuit is open, the circuit breaker strategy throws BrokenCircuitException (Polly.CircuitBreaker) instead of executing the call, so no request reaches the HttpClient's primary handler.",
+      "kind": "behavior",
+      "source_hint": "Polly docs: Strategies > Circuit breaker, BrokenCircuitException; examples/don-hang @ stage-3: GatewayCircuitBreakerTests.cs lines 67-82",
+      "version_key": "polly",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 7,
+      "text": "GatewayRefundClient.RefundAsync @ stage-3 catches BrokenCircuitException (lines 82-85) and TimeoutRejectedException (lines 78-81) and returns RefundOutcome.TryAgainLater; 422 returns Refused. fake-gateway answers 422 to bank_transfer refunds.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Payments/GatewayRefundClient.cs lines 66-85; fake-gateway/Program.cs lines 93-94",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 8,
+      "text": "Program.cs @ stage-3 107-125: AddCircuitBreaker(HttpCircuitBreakerStrategyOptions) at 113, four settings from gateway (the GatewaySettings parameter), OnOpened/OnHalfOpened/OnClosed logging via the Log helper below (it only runs the write), AddTimeout at 124.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Payments/Program.cs lines 107-125",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 9,
+      "text": "OnOpened, OnHalfOpened and OnClosed are callbacks of Polly's CircuitBreakerStrategyOptions invoked on each state change; OnOpened's arguments expose BreakDuration.",
+      "kind": "syntax",
+      "source_hint": "Polly docs: Strategies > Circuit breaker, CircuitBreakerStrategyOptions events (OnCircuitOpenedArguments.BreakDuration)",
+      "version_key": "polly",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 10,
+      "text": "GatewaySettings @ stage-3 defaults: FailureRatio 0.5, MinimumThroughput 3, SamplingDuration 1 minute, BreakDuration 30 s, Timeout 10 s; docker-compose.yml sets Gateway__BreakDuration \"00:00:10\" for payments, so the lab's break is 10 s.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Payments/GatewayRefundClient.cs lines 27-36; docker-compose.yml line 380",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 11,
+      "text": "A MinimumThroughput higher than the number of calls RefundSender sends within SamplingDuration would keep the circuit closed through an outage; it is set low when the caller sends few calls.",
+      "kind": "behavior",
+      "source_hint": "Polly docs: Strategies > Circuit breaker, MinimumThroughput",
+      "version_key": "polly",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 12,
+      "text": "A call refused by the open circuit is, for RefundSender, a failed attempt: the row stays pending and is scheduled again with backoff, until RefundSender's give-up time since the request has passed (RefundSender.cs line 99).",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: scripts/backend/circuit-breaker.sh lines 46-49; DonHang.Payments/RefundSender.cs",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 13,
+      "text": "GatewayCircuitBreakerTests @ stage-3: three 500 answers then a fourth call returns TryAgainLater with 'circuit' in the reason and the fake handler counts 3 calls; five 422 refusals all reach the handler (5 calls); after BreakDuration a successful trial closes the circuit.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Tests/Payments/GatewayCircuitBreakerTests.cs lines 67-120",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 14,
+      "text": "circuit-breaker.sh @ stage-3 restarts payments (breaker counts are in memory), stops fake-gateway, POSTs /api/v1/orders/10/refund, prints attempts and the breaker's log, starts fake-gateway and waits until order 10 is cancelled, the order's status once its refund succeeds.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: scripts/backend/circuit-breaker.sh lines 25-66; scripts/lib/refunds.sh wait_for_status",
+      "needs_verification": true,
+      "section": 7
+    },
+    {
+      "n": 15,
+      "text": "Captured output @ stage-3: 202; attempts 1-3 'the call failed', attempt 4 'not sent, the circuit is open'; 'Circuit to the gateway opened: no calls for 10 s'; after 'fake-gateway is back': half-open then closed lines.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: outputs/stage-3/scripts/backend/circuit-breaker.txt",
+      "needs_verification": true,
+      "section": 7
+    },
+    {
+      "n": 16,
+      "text": "Counting 422 refusals as failures would let a few refusals open the circuit and make refunds the gateway would accept fail at once; a refusal means the gateway is up.",
+      "kind": "opinion",
+      "needs_verification": false,
+      "section": 6
+    },
+    {
+      "n": 17,
+      "text": "A retry repeats one call after it fails, while a circuit breaker never repeats a call and only decides whether new calls are sent.",
+      "kind": "behavior",
+      "source_hint": "Polly docs: Strategies > Retry vs Circuit breaker overviews",
+      "version_key": "polly",
+      "needs_verification": true,
+      "section": 6
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [1, 2, 3, 4, 5, 6],
+    "outline_items_missing": [],
+    "beyond_scope": [
+      "mentions that the script restarts Payments so the breaker starts closed with no calls counted, without teaching per-instance breakers",
+      "names the lab's 10 s break via Gateway__BreakDuration"
+    ]
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1450,
+    "notes": "generate: blocks Program.cs 107-125, GatewayRefundClient.cs 29-36 @ stage-3. fix-validation: situation 6 sentences. apply-review: handled set narrowed (HttpRequestException); half-open set by next call; give-up condition; 408/429 glossed; claims 2,12 rephrased, 11 to behavior; junior minors applied except what calls get during half-open (no source, skipped); quiz q1-q4,q6 updated en/vi."
+  }
+}

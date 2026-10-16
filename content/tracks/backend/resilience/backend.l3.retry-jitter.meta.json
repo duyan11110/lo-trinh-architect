@@ -1,0 +1,169 @@
+{
+  "id": "backend.l3.retry-jitter",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-10-16T02:50:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "RefundSender.cs @ stage-3: Tick = 2 s, BatchSize = 10; SendDueAsync claims due refund rows (ORDER BY next_attempt_at, id LIMIT 10 FOR UPDATE SKIP LOCKED) and awaits gateway.RefundAsync for each row in a foreach, one after another.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Payments/RefundSender.cs lines 23-24, 43-78",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 2,
+      "text": "RecordResult @ stage-3 on try again later: Attempts++, then NextAttemptAt (column next_attempt_at, database donhang_payments) = now + NextDelay(Attempts), now taken per row after its call; logs 'attempt {Attempt} failed (...); next attempt in {DelaySeconds} s'.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Payments/RefundSender.cs lines 57-58, 88-112; docker-compose.yml payments connection string",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 3,
+      "text": "BackoffDelay(attempts) = FirstRetryDelay * 2^(attempts-1), capped at MaxRetryDelay; RefundSettings defaults: FirstRetryDelay 1 min, MaxRetryDelay 1 h, GiveUpAfter 24 h.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Payments/RefundSender.cs lines 9-14, 117-121",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 4,
+      "text": "NextDelay(attempts) returns BackoffDelay(attempts) * (0.5 + Random.Shared.NextDouble() * 0.5): a factor from 0.5 to just under 1, so a wait from half the backoff delay up to the backoff delay, drawn again on every call. Lines 123-132 are marked '// lesson: backend.l3.retry-jitter'.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Payments/RefundSender.cs lines 128-132",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 5,
+      "text": "Random.NextDouble() returns a random floating-point number greater than or equal to 0.0 and less than 1.0; Random.Shared is a shared Random instance.",
+      "kind": "behavior",
+      "source_hint": "Microsoft Learn .NET API: System.Random.NextDouble, System.Random.Shared",
+      "version_key": "dotnet",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 6,
+      "text": "Without jitter, rows that failed in one round have the same attempt count and get the same wait; when their calls fail quickly (refused connection, e.g. fake-gateway stopped), they come due within moments of each other, one round (BatchSize 10) claims them, and they stay together later.",
+      "kind": "fact",
+      "source_hint": "follows from claims 1-3 (BackoffDelay depends only on attempts); GatewayRefundClient.cs @ stage-3 catch blocks",
+      "needs_verification": true,
+      "section": 2
+    },
+    {
+      "n": 7,
+      "text": "With the defaults, ranges: attempt 1 → 30-60 s, attempt 2 → 1-2 min, attempt 3 → 2-4 min; each range starts where the previous ends, until the 1 h cap, where every wait is 30-60 min.",
+      "kind": "number",
+      "source_hint": "computed from claims 3-4",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 8,
+      "text": "NotificationSender @ stage-3 (DonHang.Notifications) computes its wait as FirstRetryDelay * 2^(attempts-1) with no random part.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Notifications/NotificationSender.cs lines 16, 94",
+      "needs_verification": true,
+      "section": 2
+    },
+    {
+      "n": 9,
+      "text": "RefundSenderTests @ stage-3 lines 94-107: for attempts 1, 3, 20 (backoff 1, 4, 60 min) it calls NextDelay 1000 times, asserts each is in [backoff/2, backoff] with Assert.InRange, and that there is more than one distinct value.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Tests/Payments/RefundSenderTests.cs lines 89-107",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 10,
+      "text": "xUnit Assert.InRange(actual, low, high) passes when actual is within the range low..high; Assert.All runs an assertion on every item of a collection.",
+      "kind": "syntax",
+      "source_hint": "xUnit Assert API (InRange, All)",
+      "version_key": "xunit",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 11,
+      "text": "The deadline for giving up does not depend on the waits: RecordResult marks the refund failed on the first try again later that comes at least GiveUpAfter (default 24 h) after RequestedAt (now - RequestedAt >= GiveUpAfter).",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Payments/RefundSender.cs lines 88-112",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 12,
+      "text": "A retry that comes earlier is still safe because every call for one row sends the same Idempotency-Key refund-<id>.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Payments/GatewayRefundClient.cs IdempotencyKeyFor; backend.l3.safe-to-repeat-saga-steps",
+      "needs_verification": true,
+      "section": 8
+    },
+    {
+      "n": 13,
+      "text": "retry-jitter.sh @ stage-3 (host): stops fake-gateway, POSTs refunds for orders 1, 5, 10, makes the rows due together in one UPDATE, prints each wait after attempt 1, the distinct next_attempt_at count and if all are 1-2 s; on EXIT resets rows, starts fake-gateway.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: scripts/backend/retry-jitter.sh lines 1-63",
+      "needs_verification": true,
+      "section": 7
+    },
+    {
+      "n": 14,
+      "text": "Captured output of retry-jitter.sh @ stage-3: three '-> 202' lines, 'for order 1/5/10 waits ... s', 'different next attempt times among the three rows: 3', 'all between 1 s and 2 s? yes'.",
+      "kind": "behavior",
+      "source_hint": "examples/don-hang @ stage-3: outputs/stage-3/scripts/backend/retry-jitter.txt",
+      "version_key": "docker",
+      "needs_verification": true,
+      "section": 7
+    },
+    {
+      "n": 15,
+      "text": "docker-compose.yml @ stage-3 sets Refunds__FirstRetryDelay \"00:00:02\" (and Refunds__MaxRetryDelay \"00:00:10\") for payments, so in the lab the first wait is 1-2 s, a spread under one 2-s round.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: docker-compose.yml lines 372-375; claim 1",
+      "needs_verification": true,
+      "section": 7
+    },
+    {
+      "n": 16,
+      "text": "Jitter is worth adding when many retries can fail at the same moment and come due together; each wait becomes up to half shorter than the backoff delay, so a refund that keeps failing makes somewhat more attempts before GiveUpAfter.",
+      "kind": "opinion",
+      "source_hint": "follows from claims 4, 6",
+      "needs_verification": false,
+      "section": 6
+    },
+    {
+      "n": 17,
+      "text": "GatewayRefundClient.RefundAsync @ stage-3 maps TimeoutRejectedException (the gateway did not answer in time) to RefundOutcome.TryAgainLater.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Payments/GatewayRefundClient.cs lines 78-80",
+      "needs_verification": true,
+      "section": 8
+    },
+    {
+      "n": 18,
+      "text": "DonHang.Payments/Program.cs @ stage-3: AddResilienceHandler(\"gateway\") registers no retry strategy, so the gateway HttpClient adds no retry of its own on top of RefundSender's.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Payments/Program.cs lines 107-130",
+      "needs_verification": true,
+      "section": 8
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [1, 2, 3, 4, 5],
+    "outline_items_missing": [],
+    "beyond_scope": [
+      "notes that in the lab the 1-2 s spread is less than one 2-s round, so the three retries may still share a round (one sentence, section 7)"
+    ]
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1450,
+    "notes": "apply-review: situation fails fast (refused calls), ten refunds asked in one round; s4 narrates diagram, names donhang_payments, adds fail-quickly condition; s5 says NextDelay is new, explains InlineData; s6 GiveUpAfter deadline reworded and named, hint points to script waits; s7 says script checks waits not rounds; claims 2,4,6,11,16 rephrased, 17-18 added, xunit in versions_used; quiz q1 'd' aligned."
+  }
+}
