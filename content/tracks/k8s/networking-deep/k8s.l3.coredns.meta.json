@@ -1,7 +1,7 @@
 {
   "id": "k8s.l3.coredns",
   "generated_by": "claude-opus-5-5",
-  "generated_at": "2026-10-16T18:00:00+07:00",
+  "generated_at": "2026-10-19T19:20:00+07:00",
   "claims": [
     {
       "n": 1,
@@ -23,11 +23,11 @@
     },
     {
       "n": 3,
-      "text": "Port 53 is the DNS port; DNS can be carried over UDP or TCP, which is why kube-dns lists 53/UDP and 53/TCP.",
+      "text": "Port 53 is the DNS port; DNS can be carried over UDP (single messages, no connection opened) or TCP, which is why kube-dns lists 53/UDP and 53/TCP.",
       "kind": "fact",
-      "source_hint": "RFC 1035 §4.2 Transport (UDP and TCP on port 53); outputs/stage-3/scripts/k8s/coredns.txt",
+      "source_hint": "RFC 1035 §4.2 Transport (UDP and TCP on port 53); UDP gloss = foundation.l1.tcp-vs-udp claim 5 (verified, RFC 768); outputs/stage-3/scripts/k8s/coredns.txt",
       "needs_verification": false,
-      "section": 4
+      "section": 5
     },
     {
       "n": 4,
@@ -40,10 +40,10 @@
     },
     {
       "n": 5,
-      "text": "The CoreDNS Service is named kube-dns (metadata.name), kept from the legacy kube-dns DNS server so Pods and tools relying on that name keep working.",
-      "kind": "history",
-      "version_key": "kubernetes",
-      "source_hint": "kubernetes.io: Tasks > Customizing DNS Service > CoreDNS ('both the CoreDNS and kube-dns Service are named kube-dns', legacy name kept for interoperability)",
+      "text": "The order of plugin lines in the Corefile does not set the order in which plugins see a query; that order is fixed when CoreDNS is built (plugin.cfg).",
+      "kind": "behavior",
+      "version_key": "coredns",
+      "source_hint": "coredns.io manual: Configuration > Plugins (plugin chain order comes from plugin.cfg, not the Corefile)",
       "needs_verification": true,
       "section": 4
     },
@@ -94,16 +94,16 @@
     },
     {
       "n": 11,
-      "text": "The CoreDNS Pods get the node's DNS settings in /etc/resolv.conf, not the cluster's: the coredns Deployment sets dnsPolicy: Default (named in the next lesson). If that file named kube-dns, 'forward . /etc/resolv.conf' would send outside names back to CoreDNS itself.",
+      "text": "The CoreDNS Pods do not use the default (cluster) DNS settings; they are set to take the node's own, so their /etc/resolv.conf lists the node's DNS servers, not kube-dns, and forward sends outside names out; if it named kube-dns, CoreDNS would forward them back to itself.",
       "kind": "behavior",
       "version_key": "kubernetes",
-      "source_hint": "kubernetes.io: DNS for Services and Pods > Pod's DNS Policy (Default); Customizing DNS Service; kubectl get deploy coredns -n kube-system -o yaml",
+      "source_hint": "coredns.io plugins/loop (kubelet passes the node's resolv.conf to Pods with dnsPolicy Default, 'this includes CoreDNS Pods'); kubernetes.io: DNS for Services and Pods > Pod's DNS Policy (Default)",
       "needs_verification": true,
       "section": 4
     },
     {
       "n": 12,
-      "text": "'cache 30' caches answers with a maximum TTL of 30 seconds; 'disable success cluster.local' and 'disable denial cluster.local' turn off caching of positive and negative answers for cluster.local.",
+      "text": "'cache 30' caches answers with a maximum TTL of 30 seconds, so a repeated outside name can be answered without asking upstream again; 'disable success cluster.local' and 'disable denial cluster.local' turn off caching of positive and negative answers for cluster.local.",
       "kind": "syntax",
       "version_key": "coredns",
       "source_hint": "coredns.io plugins/cache (Syntax: cache [TTL] [ZONES...]; disable success|denial [ZONES...])",
@@ -121,7 +121,7 @@
     },
     {
       "n": 14,
-      "text": "show (scripts/lib/network-lessons.sh) prints a command after '$' then runs it; coredns.sh rebuilds donhang first if it is gone (lessons_cluster) and its trap line runs restore on exit, scaling CoreDNS back to 2 replicas. donhang is a kind cluster running in Docker.",
+      "text": "show prints a command after '$' then runs it; coredns.sh rebuilds donhang (a kind cluster in Docker) if gone, saves the first echo-ip Pod's IP in pod_ip before the scale to 0, and its EXIT trap runs restore on exit, even after an error, scaling CoreDNS back to 2.",
       "kind": "fact",
       "source_hint": "examples/don-hang scripts/lib/network-lessons.sh and scripts/k8s/coredns.sh lines 10-15 at stage-3",
       "needs_verification": false,
@@ -154,7 +154,7 @@
     },
     {
       "n": 18,
-      "text": "While CoreDNS is down, connections to addresses keep working but every DNS lookup fails, so programs that reach Services by name fail although their Pods stay Running.",
+      "text": "While CoreDNS is down, connections to addresses keep working, but every new DNS lookup from Pods with the default DNS settings fails, so programs that reach Services by name fail although their Pods stay Running.",
       "kind": "behavior",
       "version_key": "kubernetes",
       "source_hint": "follows from claims 4 and 16; outputs/stage-3/scripts/k8s/coredns.txt",
@@ -175,7 +175,7 @@
     "outline_items_covered": [1, 2, 3, 4, 5],
     "outline_items_missing": [],
     "beyond_scope": [
-      "Why the Service is named kube-dns (one history sentence, claim 5)",
+      "Plugin chain order fixed at build time, not by line order (one sentence, claim 5; asked by the junior review)",
       "The disable lines of the cache plugin explained, since they appear in the Corefile on donhang",
       "Housekeeping plugins health and prometheus named in one sentence; the other lines not explained"
     ]
@@ -185,19 +185,11 @@
     "vocab_all_defined": true,
     "code_from_repo": true,
     "no_external_urls": true,
-    "word_count": 1540,
-    "notes": "apply-review: claims 8, 9, 17, 18 use suggested_text; 'every Pod' -> default DNS settings (s1, 4, 6, 7, 8, 9); resolvers -> DNS servers; situation command from script; first-level plugin lines; diagram watch moved; defined DNS record, zone file, server block, wget, trap, echo-ip, UDP. Claim 11 text kept (tech: no change until evidence); added why CoreDNS is the exception. Quiz items left to /quiz."
+    "word_count": 1591,
+    "notes": "apply-review r2: s4 cut 'cache comes before forward' (claim 5 unverified half); cache sentence no longer rests on chain order (claim 12); s5 trap sentence drops the repeated 'when the script exits'; claim 3 UDP gloss points to verified foundation.l1.tcp-vs-udp claim 5; quiz q6 b now names echo-new."
   },
   "open_questions": [
-    "Claim 11 (coredns Deployment uses dnsPolicy: Default) is still unverified: kubectl was not permitted in this session either. See repo_changes_needed.",
-    "Quiz items for /quiz k8s.l3.coredns apply-review: q1 'correct' explanation still says 'keeps an in-memory copy' (tech minor, claim 8); q1 d and q6 c use 'zone file' (junior major); q6 b mirrors lesson wording (junior minor); 'resolvers' wording in q1 a, q2 a/d, q3 d/e, q4 a/d now reads 'DNS servers' in the lesson.",
-    "Junior minor (split paragraph before 'cache 30') applied; the diagram fix used the move-the-arrow option."
-  ],
-  "repo_changes_needed": [
-    {
-      "lesson": "k8s.l3.coredns",
-      "need": "Prompt 08: add a line `show kubectl get deploy coredns -n kube-system -o jsonpath='{.spec.template.spec.dnsPolicy}'` at stage-3, recapture outputs/stage-3/scripts/k8s/coredns.txt, and cite it in claim 11.",
-      "suggested_path": "scripts/k8s/coredns.sh"
-    }
+    "Claims 11 and 5 are new or widened in apply-review; claim 11 still does not name the coredns Deployment's dnsPolicy. A capture of that dnsPolicy (prompt 08) would give direct evidence.",
+    "Quiz for /quiz k8s.l3.coredns: q1 d and q6 c use 'zone file'; q6 b mirrors lesson wording; 'resolvers' in q1 a, q2 a/d, q3 d/e, q4 a/d now reads 'DNS servers' in the lesson."
   ]
 }

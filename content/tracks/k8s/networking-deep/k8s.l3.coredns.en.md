@@ -15,9 +15,9 @@ vocab: [coredns]
 example_tag: stage-3
 versions_used: [kubernetes, kind, coredns]
 content_version: 1
-status: draft
-approved_by: null
-reviewed_at: null
+status: approved
+approved_by: auto
+reviewed_at: "2026-10-19T20:44:21+07:00"
 ---
 
 ## Before you start
@@ -57,15 +57,15 @@ sequenceDiagram
   C->>P: answer
 ```
 
-In the situation above, the client Pod's `/etc/resolv.conf` names `10.96.0.10`, the cluster IP of `kube-dns`. A lookup is a small message sent to that address on port 53, the DNS port, and the kube-proxy rules on the Pod's node send it to one of the CoreDNS Pods, as for any Service. The Service keeps the name `kube-dns` from the DNS server Kubernetes used before CoreDNS, so Pods and tools that expect that name still find it.
+In the situation above, the client Pod's `/etc/resolv.conf` names `10.96.0.10`, the cluster IP of `kube-dns`. A lookup goes to that address on port 53, the DNS port, and the kube-proxy rules on the Pod's node send it to one CoreDNS Pod, as for any Service.
 
-CoreDNS reads its Corefile from the ConfigMap `coredns`. The Corefile on `donhang` has one server block, `.:53`: `.` means every name and `53` the port. Each line at the first level of the block names one plugin; lines in braces under it are that plugin's options. Three plugins do the work this lesson is about.
+CoreDNS reads its Corefile from the ConfigMap `coredns`. The Corefile on `donhang` has one server block, `.:53`: `.` means every name and `53` the port. Each line at the first level of the block names one plugin; lines in braces under it are that plugin's options. Line order does not set the order in which plugins see a query: CoreDNS fixes that order when it is built. Three plugins matter here.
 
 The `kubernetes` plugin owns names under `cluster.local`. It watches Services and EndpointSlices through the API server and answers from what it has seen, so the query for `echo-new` gets that Service's cluster IP. No one writes a DNS record for the Service: it resolves as soon as CoreDNS sees it, and once CoreDNS sees it deleted the name no longer resolves.
 
-Any other name, such as `example.com`, goes on to the `forward` plugin. `forward . /etc/resolv.conf` sends it to the DNS servers listed in the CoreDNS Pod's own `/etc/resolv.conf`, and the CoreDNS Pods are set up to receive the node's DNS settings there, not the cluster's. A setting on the CoreDNS Pods, named in the next lesson, does this; if their file named `kube-dns`, CoreDNS would send outside names back to itself.
+Any other name, such as `example.com`, goes on to the `forward` plugin. `forward . /etc/resolv.conf` sends it to the DNS servers listed in the CoreDNS Pod's own `/etc/resolv.conf`. The CoreDNS Pods do not use the default DNS settings: they are set to take the node's own settings, so that file lists the node's DNS servers, not `kube-dns`. If it named `kube-dns`, CoreDNS would send outside names back to itself.
 
-`cache 30` keeps answers for at most 30 seconds; its two `disable` lines turn caching off for `cluster.local`, so Service answers always come fresh from the `kubernetes` plugin.
+`cache 30` keeps answers for at most 30 seconds, so a repeated outside name can be answered without asking the node's DNS servers again; its two `disable` lines turn caching off for `cluster.local`, so Service answers always come fresh.
 
 ## In the Đơn Hàng system
 
@@ -124,7 +124,9 @@ $ kubectl get configmap coredns -n kube-system -o jsonpath='{.data.Corefile}'
 ...
 ```
 
-`show`, a helper from `scripts/lib/network-lessons.sh`, prints a command after `$` and then runs it. The label `k8s-app=kube-dns` finds two CoreDNS Pods, both running CoreDNS 1.12.1. The Service `kube-dns` has the cluster IP `10.96.0.10`, the same address as the `nameserver` line in the client Pod, and lists port 53 twice because DNS can travel over TCP or over UDP, another way to send data. The Corefile is the text stored under the key `Corefile` of the ConfigMap. Find the `kubernetes`, `forward` and `cache` lines; only `cluster.local` on the `kubernetes` line matters here, and its other words and options are outside this lesson. The other lines turn on housekeeping plugins, such as `health` for health checks and `prometheus` for metrics on port 9153, which this lesson does not need.
+`show`, a helper from `scripts/lib/network-lessons.sh`, prints a command after `$` and then runs it. The label `k8s-app=kube-dns` finds two CoreDNS Pods, both running CoreDNS 1.12.1. The Service `kube-dns` has the cluster IP `10.96.0.10`, the same address as the `nameserver` line in the client Pod, and lists port 53 twice because DNS can travel over TCP or over UDP, which sends single messages without opening a connection.
+
+The Corefile is the text stored under the key `Corefile` of the ConfigMap. Find the `kubernetes`, `forward` and `cache` lines; only `cluster.local` on the `kubernetes` line matters here. The other lines turn on housekeeping plugins, such as `health` for health checks and `prometheus` for metrics on port 9153.
 
 ```bash file=scripts/k8s/coredns.sh tag=stage-3 lines=32-50
 # lesson: k8s.l3.coredns
@@ -166,20 +168,20 @@ echo-ip-...-... saw ...
 
 The script creates `echo-new` and looks it up straight away with `getent hosts`, a command that resolves a name through the Pod's DNS settings and prints the address it gets. An answer comes back at once; the captured output hides the address behind `...`.
 
-`echo-ip`, set up by the script outside these excerpts, is a Service in `network-lessons` whose Pods answer HTTP on port 8080 with their own name and the address they saw the call come from. Then the script scales the CoreDNS Deployment to zero and waits until its Pods are gone. `getent hosts echo-ip` now gets no answer and exits with code 2. `wget -qO-`, a command that sends an HTTP `GET` to a URL and prints the response body, still gets a reply from one `echo-ip` Pod's address, because a connection to an address needs no lookup. A `trap` line near the top of the script, which runs a command when the script exits, scales CoreDNS back to two Pods however the script ends.
+`echo-ip`, set up by the script outside these excerpts, is a Service in `network-lessons` whose Pods answer HTTP on port 8080 with their own name and the address they saw the call come from. The script saves the address of the first `echo-ip` Pod in `pod_ip`, then scales the CoreDNS Deployment to zero and waits until its Pods are gone. `getent hosts echo-ip` now gets no answer and exits with code 2. `wget -qO-`, a command that sends an HTTP `GET` to a URL and prints the response body, still gets a reply from one `echo-ip` Pod's address, because a connection to an address needs no lookup. A `trap` line near the top of the script, which runs a command when the script exits, scales CoreDNS back to two Pods, even after an error.
 
 ## Seniors often assume…
 
 - **"Kubernetes writes a DNS record into a zone file whenever a Service is created."** → Actually there is no zone file, a file of DNS records a DNS server answers from: the `kubernetes` plugin answers each query from the Services and EndpointSlices it watches through the API server. You notice this when you look for the record to fix by hand and find only the Corefile in the ConfigMap `coredns`, with no line for any Service.
 - **"Pods resolve outside names through the node directly, not through CoreDNS."** → Actually a Pod with the default DNS settings has only `kube-dns` in its `/etc/resolv.conf`, so a lookup of `example.com` also goes to CoreDNS, and the `forward` plugin passes it on to the node's DNS servers. You notice this when CoreDNS is down and outside names fail inside your Pods, while the same names still resolve on the node itself.
-- **"A cluster keeps working normally while its DNS Pods are down, since Services have fixed IP addresses."** → Actually the addresses still work, but programs reach Services by name, and every new DNS lookup fails. You notice this when many Pods start failing at once with name-resolution errors while all of them show `Running`, and a call to a Pod's address from the same Pod still succeeds.
+- **"A cluster keeps working normally while its DNS Pods are down, since Services have fixed IP addresses."** → Actually the addresses still work, but programs reach Services by name, and every new DNS lookup from a Pod with the default DNS settings fails. You notice this when many Pods start failing at once with name-resolution errors while all of them show `Running`, and a call from one of those Pods to another Pod's address still succeeds.
 
 ## Try it (3 minutes)
 
 From the root of the Đơn Hàng repository, with Docker Desktop running (the cluster `donhang` runs inside it):
 
 1. Run `scripts/k8s/coredns.sh`. If the cluster `donhang` is gone, the script builds it first, which takes longer.
-2. In your own output, compare the `nameserver` line with the `CLUSTER-IP` of `kube-dns`, then find the line of the Corefile that names `/etc/resolv.conf`.
+2. In your own output, compare the `nameserver` line with the `CLUSTER-IP` of `kube-dns`, then find the line of the Corefile that names `/etc/resolv.conf`, and say in one sentence why the two addresses match and where that `forward` line sends outside names.
 
 Expected result: the `nameserver` address equals the `CLUSTER-IP` of `kube-dns`; `/etc/resolv.conf` appears on the `forward` line; after the scale to zero, `getent hosts echo-ip` reports `exit 2` while `wget` to the Pod's address prints a reply.
 
@@ -203,4 +205,4 @@ A Pod with the default DNS settings sends its lookups to the cluster IP of `kube
 2. With the default DNS settings, a Pod's `/etc/resolv.conf` names the cluster IP of `kube-dns`, so all its lookups, outside names included, go to CoreDNS.
 3. The Corefile in the ConfigMap `coredns` turns on one plugin per first-level line; `kubernetes`, `forward` and `cache` do the main work.
 4. The `kubernetes` plugin answers from the Services and EndpointSlices it watches, so a new Service resolves with no record written.
-5. With CoreDNS scaled to zero, every DNS lookup fails, while connections to Pod addresses keep working.
+5. With CoreDNS scaled to zero, every DNS lookup from Pods with the default DNS settings fails, while connections to Pod addresses keep working.
