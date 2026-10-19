@@ -1,0 +1,141 @@
+{
+  "id": "backend.l3.tenant-isolation-models",
+  "technical": {
+    "reviewed_at": "2026-10-19T16:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "shared-schema.sql lines 1-3: \"donhang_tenancy, layout 1: shared tables ... Đơn Hàng's own database stays single-shop.\" tenancy-db.sh creates donhang_tenancy, donhang_shop_1, donhang_shop_2 and loads shared-schema.sql + schema-per-shop.sql into donhang_tenancy, database-per-shop.sql into each shop db (same 5 orders, filtered by :shop). Grep for shop_id over the repo hits only db/tenancy/*, the two tenancy scripts and their outputs.",
+        "source": "examples/don-hang db/tenancy/*.sql, scripts/backend/tenancy-db.sh"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "\"A database contains one or more named schemas, which in turn contain tables.\" \"both schema1 and myschema can contain tables named mytable.\" 5.10.2: \"By default such tables (and other objects) are automatically put into a schema named public. Every new database contains such a schema.\" 5.10.3: \"The first schema in the search path that exists is the default location for creating new objects.\"",
+        "source": "https://www.postgresql.org/docs/17/ddl-schemas.html"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "\"The system determines which table is meant by following a search path, which is a list of schemas to look in.\" SET: \"SET only affects the value used by the current session.\" (one session per client connection). Captured output: after \"SET search_path TO shop_2\" the plain SELECT ... FROM orders returns 1 paid, 2 new (shop_2.orders).",
+        "source": "https://www.postgresql.org/docs/17/ddl-schemas.html; https://www.postgresql.org/docs/17/sql-set.html; outputs/stage-3/scripts/backend/tenancy-models.txt"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Qualified form schema.table \"works anywhere a table name is expected\"; the path is traversed only for references \"without schema qualification\". Default SHOW search_path is \"$user\", public; \"If no such schema exists, the entry is ignored.\" donhang_tenancy has no schema named donhang (only public, shop_1, shop_2), so an unset session resolves orders to public.orders.",
+        "source": "https://www.postgresql.org/docs/17/ddl-schemas.html; db/tenancy/schema-per-shop.sql"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "\"A client connection to the server can only access data in a single database, the one specified in the connection request.\" On database.schema.table: \"If you write a database name, it must be the same as the database you are connected to.\" Captured: ERROR:  cross-database references are not implemented: \"donhang_shop_2.public.orders\". Lesson now says \"cannot read\" and \"a query sent to another shop's database\" (round 2).",
+        "source": "https://www.postgresql.org/docs/17/ddl-schemas.html; https://www.postgresql.org/docs/17/manage-ag-overview.html; outputs/stage-3/scripts/backend/tenancy-models.txt line 26"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "db/tenancy/shared-schema.sql: line 17 PRIMARY KEY (shop_id, id) (customers), line 26 PRIMARY KEY (shop_id, id) (orders), line 27 FOREIGN KEY (shop_id, customer_id) REFERENCES customers (shop_id, id), line 29 CREATE INDEX orders_shop_id_customer_id ON orders (shop_id, customer_id). Lines 9-29 match the lesson block. Compared against the submodule working tree; git show stage-3:<file> was not permitted in this session.",
+        "source": "examples/don-hang db/tenancy/shared-schema.sql"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "\"A foreign key constraint specifies that the values in a column (or a group of columns) must match the values appearing in some row of another table.\" Multicolumn PK: \"the combination of values in the indicated columns is unique across the whole table, though any one of the columns need not be\". The seed data inserts (1,1) and (2,1) into both tables.",
+        "source": "https://www.postgresql.org/docs/17/ddl-constraints.html"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "\"equality constraints on leading columns ... will be used to limit the portion of the index that is scanned. Constraints on columns to the right of these columns ... do not reduce the portion of the index that has to be scanned.\" With no constraint on the leading column \"the entire index would have to be scanned\".",
+        "source": "https://www.postgresql.org/docs/17/indexes-multicolumn.html"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "schema-per-shop.sql: CREATE SCHEMA shop_1; CREATE TABLE shop_1.orders (id, customer_id, placed_at, status); CREATE SCHEMA shop_2; CREATE TABLE shop_2.orders (LIKE shop_1.orders INCLUDING ALL). No shop_id column.",
+        "source": "examples/don-hang db/tenancy/schema-per-shop.sql lines 5-14"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "tenancy-models.sh lines 11-13: sql() runs psql --host db --username donhang ... \"$@\". Lines 15-28 match the lesson block. Lines 33-49: alter() runs psql --command BEGIN, ALTER TABLE $table ADD COLUMN gift_note text, ROLLBACK; once for public.orders, twice for shop_N.orders, twice for the shop databases. Captured output shows rows 1|1|paid and 2|2|new three times and the five ALTER lines.",
+        "source": "examples/don-hang scripts/backend/tenancy-models.sh; outputs/stage-3/scripts/backend/tenancy-models.txt"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Opinion with condition in ledger; the factual part holds: \"pg_dump only dumps a single database.\" 22.1: unrelated projects \"should be ... into separate databases\"; interrelated ones \"in the same database but probably into separate schemas\".",
+        "source": "https://www.postgresql.org/docs/17/app-pgdump.html; https://www.postgresql.org/docs/17/manage-ag-overview.html"
+      },
+      {
+        "n": 12,
+        "verdict": "not-needed",
+        "evidence": "Design option stated as possibility (\"can be mixed\", \"can get its own database\"), not a product behaviour; outline item 6. No version-dependent fact to source."
+      },
+      {
+        "n": 13,
+        "verdict": "not-needed",
+        "evidence": "Round 2: lesson now reads \"that repetition is a common source of failures\" and gives the conditions (contract, few large shops) in the same bullet. Hedged judgement with stated conditions; no product behaviour to source."
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "\"It is not possible to access more than one database per connection.\" A transaction runs in one session, so one migration over N shop databases is N separate commits; the script's alter() likewise opens one psql connection per database. Partial success across databases follows directly.",
+        "source": "https://www.postgresql.org/docs/17/manage-ag-overview.html; scripts/backend/tenancy-models.sh lines 33-49"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "docker-compose.yml line 342 \"The Payments service, its migration job (database donhang_payments)\"; line 367 ConnectionStrings__Default: \"Host=db;Database=donhang_payments;...\" — same db service as the main api.",
+        "source": "examples/don-hang docker-compose.yml"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "up.sh @ stage-3 line 2: \"Start the Đơn Hàng lab: the static site, the database and the lab box.\" tenancy-models.sh line 7 calls tenancy-db.sh --if-missing from the host. tenancy-db.sh lines 12-17: with --if-missing, if SELECT count(*) FROM pg_database WHERE datname = 'donhang_tenancy' returns 1 it exits 0; otherwise it drops and recreates all three lab databases.",
+        "source": "examples/don-hang @ stage-3 scripts/up.sh, scripts/backend/tenancy-models.sh, scripts/backend/tenancy-db.sh"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-20T10:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (review-junior, prompt 05, round 2 targeted re-review)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "code",
+        "text": "Carried from round 1 (narrowed): `|| true` is now explained, but `USING (id)` in the cross-database JOIN is still new to me. I only know JOIN 'on a condition', so I guess it means 'rows with the same id' but the prose does not say.",
+        "quote": "\"SELECT count(*) FROM orders JOIN donhang_shop_2.public.orders AS other USING (id)\" || true",
+        "fix": "Add a clause after 'The last query joins shop 1's orders to shop 2's across two databases': '(`USING (id)` pairs rows with the same `id`)'."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "text": "q3 (new, in the reworded option c): c is now by far the longest option and the only one with two reasons, so I could pick it from its length without understanding.",
+        "quote": "False, because on a connection set to `shop_2`, a report that names `shop_1.orders` returns shop 1's rows, and a connection that never sets the path reads `public.orders`.",
+        "fix": "Keep one reason in option c (the `shop_1.orders` case) and move the unset-path case into the correct explanation, which already mentions it."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "USING (in JOIN)"
+      ],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

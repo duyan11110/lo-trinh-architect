@@ -1,0 +1,173 @@
+{
+  "id": "backend.l3.cross-shard-queries",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-10-20T12:00:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "A query that contains the shard key can be sent to exactly one shard; a query without it cannot rule out any shard, so it must ask all of them and merge the answers (scatter-gather).",
+      "kind": "fact",
+      "source_hint": "content/glossary.yaml scatter-gather, shard-key; ShardedOrders.cs @ stage-3 lines 11-14, 28-32",
+      "needs_verification": false,
+      "section": 4
+    },
+    {
+      "n": 2,
+      "text": "shard-split.sh lines 19-30 create donhang_shard_0/1, load shard-schema.sql into each, and COPY the orders with customer_id % 2 = shard out of donhang_perf into that shard; psql_in_db (lines 10-12) runs psql in the db container that scripts/up.sh starts, so both databases are on one server.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3 scripts/backend/shard-split.sh lines 10-30; db/sharding/shard-schema.sql; scripts/up.sh",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 3,
+      "text": "A PostgreSQL connection reaches one database, so a plain query run on donhang_shard_N cannot read donhang_perf's tables; the script moves the rows with COPY ... TO STDOUT (rows written to the command's output) piped into COPY ... FROM STDIN (rows read from its input into the table).",
+      "kind": "behavior",
+      "source_hint": "PostgreSQL 17 docs: 22.1 Managing Databases, Overview; SQL command COPY",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 4,
+      "text": "shard-split.sh builds donhang_perf first if it does not exist (perf-db.sh --if-missing, line 8), and runs the sharded-orders sample on the host with dotnet run (line 36), so it needs the .NET SDK on the machine; a first run that must build donhang_perf takes longer.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3 scripts/backend/shard-split.sh lines 2-3, 8, 36",
+      "needs_verification": true,
+      "section": 7
+    },
+    {
+      "n": 5,
+      "text": "Output @ stage-3: shard_0 20000, shard_1 180000 orders; customer 7 on shard 1 (orders 199986, 199886, 199786); 30 newest = orders 199971-200000, 10 from shard 0 and 20 from shard 1; with 15 from each, 5 of 30 are not among the newest.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3 outputs/stage-3/scripts/backend/shard-split.txt",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 6,
+      "text": "donhang_perf: 20 customers, 200,000 orders, customer 1 placed 81%, customers 2-20 1% each; so odd ids (shard 1) hold 162,000 + 9 x 2,000 = 180,000 orders (9 in 10), even ids 20,000.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3 db/perf/fill.sql; outputs/stage-3/scripts/backend/shard-split.txt; prereq backend.l3.sharding",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 7,
+      "text": "ShardFor returns customerId % shards.Count, and LatestForCustomerAsync queries only that shard (WHERE customer_id = @customer_id ORDER BY placed_at DESC, id DESC LIMIT @count); 7 % 2 = 1.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3 samples/DonHang.Samples/Samples/Data/Sharding/ShardedOrders.cs lines 14-26",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 8,
+      "text": "LatestOnShardAsync runs SELECT ... ORDER BY placed_at DESC, id DESC LIMIT @count on one shard, so each shard returns its own newest count orders.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3 ShardedOrders.cs lines 54-62",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 9,
+      "text": "For the N newest overall, each shard must return N rows: the true N newest may all be on one shard, so a shard returning fewer can omit some, and the merge cannot detect it. Demo: 15+15 misses 5 of 30.",
+      "kind": "fact",
+      "source_hint": "ShardedOrders.cs comment lines 30-31; ShardedOrdersDemo.cs; shard-split.txt line 11",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 10,
+      "text": "Calling an async method returns its Task without waiting for it to finish; collecting one Task per shard and then awaiting Task.WhenAll lets the shard queries be in progress at the same time.",
+      "kind": "behavior",
+      "source_hint": ".NET 10 docs: Asynchronous programming with async and await (start tasks, then await Task.WhenAll); Task.WhenAll API reference",
+      "version_key": "dotnet",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 11,
+      "text": "Task.WhenAll returns a task that completes when all supplied tasks have completed; if any supplied task faults, the returned task is faulted and awaiting it throws.",
+      "kind": "behavior",
+      "source_hint": ".NET 10 API reference: Task.WhenAll(IEnumerable<Task<TResult>>) Remarks",
+      "version_key": "dotnet",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 12,
+      "text": "Merge flattens the per-shard lists (SelectMany), sorts by PlacedAt descending then Id descending (ThenByDescending breaks ties between equal PlacedAt, so the order is fixed), and takes count (Take).",
+      "kind": "syntax",
+      "source_hint": "ShardedOrders.cs @ stage-3 lines 46-52; .NET 10 API reference: Enumerable.SelectMany, OrderByDescending, ThenByDescending, Take",
+      "version_key": "dotnet",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 13,
+      "text": "A scatter-gather result is ready only when the slowest shard answers, and needs every shard: a down shard means an error or a result silently missing that shard's rows.",
+      "kind": "fact",
+      "source_hint": "Follows from waiting on all shards (Task.WhenAll); ShardedOrders.cs comment line 32; outline item 5",
+      "needs_verification": false,
+      "section": 4
+    },
+    {
+      "n": 14,
+      "text": "When a query without the shard key runs often: if most reads lack the key, the key is wrong; if most use it and a few frequent ones do not, serve those from a read model in its own database, filled by messages from every shard, so eventually consistent.",
+      "kind": "opinion",
+      "source_hint": "Condition stated (frequent queries without the shard key); outline item 5; prereq design.l3.read-model; claim 15 (one transaction reaches one database)",
+      "needs_verification": false,
+      "section": 4
+    },
+    {
+      "n": 15,
+      "text": "An ordinary transaction runs on one connection, and a PostgreSQL connection reaches one database; rows on two shards change in two transactions, one of which can commit while the other fails.",
+      "kind": "behavior",
+      "source_hint": "PostgreSQL 17 docs: 22.1 Managing Databases, Overview; SQL command BEGIN; prereq backend.l3.sharding",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 16,
+      "text": "Keeping changes on two shards consistent needs the tools for a change across services, such as a saga with compensating actions.",
+      "kind": "opinion",
+      "source_hint": "Outline item 6; prereq backend.l3.saga",
+      "needs_verification": false,
+      "section": 4
+    },
+    {
+      "n": 17,
+      "text": "Two-phase commit could make two shards commit together, but a prepared transaction keeps holding its locks until the coordinator commits or rolls it back.",
+      "kind": "behavior",
+      "source_hint": "PostgreSQL 17 docs: SQL command PREPARE TRANSACTION (Notes); related backend.l3.two-phase-commit",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 8
+    },
+    {
+      "n": 18,
+      "text": "ANALYZE collects statistics about the contents of a table, which the query planner uses to choose query plans.",
+      "kind": "behavior",
+      "source_hint": "PostgreSQL 17 docs: SQL command ANALYZE (Description)",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 5
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [1, 2, 3, 4, 5, 6],
+    "outline_items_missing": [],
+    "beyond_scope": []
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1590,
+    "notes": "generate: lab shards from donhang_perf; blocks shard-split.sh 14-36 (+ output), ShardedOrders.cs 28-52. fix-validation: L12 summary 4-5 cut. apply-review: claim 3 rephrased; claim 16 split (17 2PC behavior, 18 ANALYZE); s4 key-vs-read-model rule + where the read model lives, 20 of 30 on shard 1; s5 psql_in_db, COPY pipe, ANALYZE, db container, ShardFor, tie-break; s7 first-run note. Cut s4 wording to stay in budget. Quiz q2/q4 left to /quiz."
+  },
+  "open_questions": [],
+  "repo_changes_needed": []
+}

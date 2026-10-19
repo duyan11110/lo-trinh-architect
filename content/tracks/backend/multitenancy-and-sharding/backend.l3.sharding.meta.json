@@ -1,0 +1,146 @@
+{
+  "id": "backend.l3.sharding",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-10-20T12:00:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "Sharding stores each row in exactly one of several databases, usually on separate servers, chosen from a value of the row (the shard key); each shard holds only its share of the rows.",
+      "kind": "fact",
+      "source_hint": "General database architecture definition; content/glossary.yaml terms sharding, database-shard, shard-key",
+      "needs_verification": false,
+      "section": 3
+    },
+    {
+      "n": 2,
+      "text": "In PostgreSQL, % on integers returns the remainder of the division (5 % 4 = 1); for the non-negative ids of donhang_perf it yields 0-3.",
+      "kind": "syntax",
+      "source_hint": "PostgreSQL 17 docs: 9.3 Mathematical Functions and Operators (% modulo)",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 3,
+      "text": "Partitions live inside one database and PostgreSQL itself skips the partitions a query cannot need (pruning at planning or execution); with shards in separate databases, the code sending a query must choose the database (connection) before sending it.",
+      "kind": "behavior",
+      "source_hint": "PostgreSQL 17 docs: 5.12.4 Partition Pruning; 22.1 Managing Databases, Overview (a connection is to one database); prereq backend.l3.table-partitioning",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 4,
+      "text": "Each shard brings its own CPU, disk and connections, so write capacity grows with the number of shards as long as writes spread over them.",
+      "kind": "opinion",
+      "source_hint": "General scaling principle; condition stated (writes must spread evenly)",
+      "needs_verification": false,
+      "section": 4
+    },
+    {
+      "n": 5,
+      "text": "A PostgreSQL query cannot reference tables in another database, and an ordinary (non-two-phase) transaction runs on one connection, i.e. one database; so a query or transaction reaches only one shard's rows.",
+      "kind": "behavior",
+      "source_hint": "PostgreSQL 17 docs: 22.1 Managing Databases, Overview (a connection accesses one database; cross-database references are not supported); SQL command BEGIN",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 6,
+      "text": "order_items at stage-3 has no customer_id column (order_id, product_id, quantity, unit_price_vnd), so sharding by customer_id places each item on its order's shard.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3 db/schema.sql lines 26-32",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 7,
+      "text": "Rows usually read together should share a shard key, and among such keys prefer one where no single value holds a large share: when one customer's history is the common read, sharding orders and order_items by customer_id keeps it on one shard, readable with one JOIN.",
+      "kind": "opinion",
+      "source_hint": "Condition stated (when the common read is per customer); outline item 5",
+      "needs_verification": false,
+      "section": 4
+    },
+    {
+      "n": 8,
+      "text": "With a shard key computed from a value (here value % N), every row with the same key value lands on the same shard regardless of the shard count, so one value holding a large share of rows makes a hot shard.",
+      "kind": "fact",
+      "source_hint": "Follows from a deterministic key-to-shard function; shard-skew.sql comment lines 6-7",
+      "needs_verification": false,
+      "section": 6
+    },
+    {
+      "n": 9,
+      "text": "A database per tenant is sharding with the tenant id as the shard key; a large shop can be a hot shard by itself.",
+      "kind": "opinion",
+      "source_hint": "Outline item 6; prereq backend.l3.tenant-isolation-models",
+      "needs_verification": false,
+      "section": 4
+    },
+    {
+      "n": 10,
+      "text": "At stage-3 Đơn Hàng is not sharded; shard-skew.sql only counts with GROUP BY where donhang_perf's orders would land with 4 shards, without copying or moving rows.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3 db/sharding/shard-skew.sql lines 1-3; STAGE.md",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 11,
+      "text": "sum(count(*)) OVER () is a window aggregate over all result rows of the grouped query, so it equals the total count; percent = each group's share, rounded to 1 decimal by round(x, 1).",
+      "kind": "syntax",
+      "source_hint": "PostgreSQL 17 docs: 3.5 Window Functions; 4.2.8 Window Function Calls; 9.3 round(numeric, integer)",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 12,
+      "text": "donhang_perf has 20 customers and 200,000 orders; customer 1 has 81% (g % 100 < 81), each of customers 2-20 has 1% (2,000 orders).",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3 db/perf/fill.sql; outputs/stage-3/scripts/backend/perf-db.txt",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 13,
+      "text": "shard-skew.sh @ stage-3: lines 6-9 run perf-db.sh --if-missing (build donhang_perf only if absent) then re-run inside a prepared container (lab-run.sh); lines 11-14 run shard-skew.sql with psql, PostgreSQL's command-line client, against host db (the compose service name).",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3 scripts/backend/shard-skew.sh; scripts/backend/perf-db.sh lines 12-17",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 14,
+      "text": "shard-skew.sh output @ stage-3: by customer_id % 4, shards 0-3 hold 10000/170000/10000/10000 orders (5.0/85.0/5.0/5.0%); by id % 4, 50000 each (25.0%).",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3 outputs/stage-3/scripts/backend/shard-skew.txt",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 15,
+      "text": "Shard 1 under customer_id % 4 holds customers 1, 5, 9, 13, 17: 81% + 4 x 1% = 85%; with any shard count, the shard holding customer 1 holds at least 81%.",
+      "kind": "fact",
+      "source_hint": "Arithmetic from db/perf/fill.sql and shard-skew.txt",
+      "needs_verification": true,
+      "section": 5
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [1, 2, 3, 4, 5, 6],
+    "outline_items_missing": [],
+    "beyond_scope": []
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1485,
+    "notes": "generate: hypothetical growth rehearsed on donhang_perf; items follow their order's shard. apply-review: s4 claim 3 rephrased (pruning); 'usually read together' in s4/s9 + claim 7; s5 psql explained, 'lab box' replaced by prepared container (claim 13); s5 adds a one-sentence key-choice rule, cut 'other three hold 5%'. Quiz: q1a/q2c reworded, q4 regex widened, q1b/q5 explanations synced."
+  },
+  "open_questions": [],
+  "repo_changes_needed": []
+}

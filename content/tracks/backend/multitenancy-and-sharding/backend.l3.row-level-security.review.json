@@ -1,0 +1,148 @@
+{
+  "id": "backend.l3.row-level-security",
+  "technical": {
+    "reviewed_at": "2026-10-20T18:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Docs: \"This expression will be evaluated for each row prior to any conditions or functions coming from the user's query.\" \"Rows for which the expression does not return true will not be processed.\" Round 2: section 4 now says \"checks the USING condition ... on every row a query on orders reads, before the query's own conditions, so a row that fails it is never seen\", matching the docs.",
+        "source": "https://www.postgresql.org/docs/17/ddl-rowsecurity.html"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Docs: \"If no policy exists for the table, a default-deny policy is used, meaning that no rows are visible or can be modified.\" Execution: outputs/stage-3/scripts/backend/row-level-security.txt, customers block: ALTER TABLE ... SET LOCAL ROLE shop_app ... count 0.",
+        "source": "https://www.postgresql.org/docs/17/ddl-rowsecurity.html"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "5.9: \"Superusers and roles with the BYPASSRLS attribute always bypass the row security system when accessing a table. Table owners normally bypass row security as well, though a table owner can choose to be subject to row security with ALTER TABLE ... FORCE ROW LEVEL SECURITY.\" 21.2 (round 2, new superuser sentence in section 3): \"A database superuser bypasses all permission checks, except the right to log in.\"",
+        "source": "https://www.postgresql.org/docs/17/ddl-rowsecurity.html; https://www.postgresql.org/docs/17/role-attributes.html"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "refs/docker-docs/content/guides/postgresql.md:385: \"POSTGRES_USER | No | Superuser name (default: postgres)\". examples/don-hang@stage-3 docker-compose.yml:70 \"POSTGRES_USER: donhang\"; scripts/backend/tenancy-db.sh runs shared-schema.sql via psql --username donhang, so donhang creates and owns the tables. Note: evidence comes from the docker docs root, not the postgresql version_key.",
+        "source": "refs/docker-docs/content/guides/postgresql.md; examples/don-hang@stage-3 docker-compose.yml, scripts/backend/tenancy-db.sh"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "SET ROLE docs: \"This command sets the current user identifier of the current SQL session to be role_name... (If the session user is a superuser, any role can be selected.)\" row-level-security.sql@stage-3 lines 9-16: CREATE ROLE shop_app NOLOGIN; GRANT SELECT, INSERT, UPDATE, DELETE ON orders, customers TO shop_app.",
+        "source": "https://www.postgresql.org/docs/17/sql-set-role.html; examples/don-hang@stage-3 db/tenancy/row-level-security.sql"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "19.16: \"PostgreSQL will accept a setting for any two-part parameter name. Such variables are treated as placeholders and have no function until the module that defines them is loaded.\" 9.28: current_setting \"throws an error unless missing_ok is supplied and is true (in which case NULL is returned).\"",
+        "source": "https://www.postgresql.org/docs/17/runtime-config-custom.html; https://www.postgresql.org/docs/17/functions-admin.html"
+      },
+      {
+        "n": 7,
+        "verdict": "unverified",
+        "evidence": "Part 1 ('' after SET LOCAL ends) is now only attributed to the file comment, which says so verbatim at stage-3 lines 20-21: true as a statement about the comment. Part 2 (''::integer raises an error) not found: datatype-numeric mentions only out-of-range errors; functions-info pg_input_is_valid examples cover '42000000000', not ''. Could not run (Docker engine not running, no local psql).",
+        "source": "https://www.postgresql.org/docs/17/datatype-numeric.html; https://www.postgresql.org/docs/17/functions-info.html; examples/don-hang@stage-3 db/tenancy/row-level-security.sql"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "9.2: \"Ordinary comparison operators yield null (signifying 'unknown'), not true or false, when either input is null.\" 9.18.3: \"The NULLIF function returns a null value if value1 equals value2; otherwise it returns value1.\" CREATE POLICY: \"Any rows for which the expression returns false or null will not be visible to the user.\"",
+        "source": "https://www.postgresql.org/docs/17/functions-comparison.html; https://www.postgresql.org/docs/17/functions-conditional.html"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "SET: \"The effects of SET LOCAL last only till the end of the current transaction, whether committed or not.\" \"If SET (or equivalently SET SESSION) is issued within a transaction that is later aborted, the effects of the SET command disappear when the transaction is rolled back. Once the surrounding transaction is committed, the effects will persist until the end of the session, unless overridden by another SET.\"",
+        "source": "https://www.postgresql.org/docs/17/sql-set.html"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Npgsql connection string parameters: Pooling \"Whether connection pooling should be used.\" default true. No Reset On Close: \"Improves performance in some cases by not resetting the connection state when it is returned to the pool\" ... \"at the cost of leaking state\", default false. Round 2: key now npgsql_efcore (driver 10.0.3 via the EF Core provider); section 6 'some pools clear a connection's settings when it is returned, and that can be switched off' matches.",
+        "source": "https://www.npgsql.org/doc/connection-string-parameters.html"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "CREATE POLICY: \"Using ALL for a policy means that it will apply to all commands\"; \"if no WITH CHECK expression is defined, then the USING expression will be used both to determine which rows are visible ... and which new rows will be allowed to be added.\" Error text from execution: outputs/stage-3/.../row-level-security.txt line 47 \"ERROR:  new row violates row-level security policy for table \\\"orders\\\"\".",
+        "source": "https://www.postgresql.org/docs/17/sql-createpolicy.html; examples/don-hang@stage-3 outputs/stage-3/scripts/backend/row-level-security.txt"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "docker-compose.yml@stage-3 line 158: ConnectionStrings__Default \"Host=db;Database=donhang;Username=donhang;...\". Grep of the example repo for ROW LEVEL SECURITY / CREATE POLICY finds only db/tenancy/row-level-security.sql and the demo script (donhang_tenancy); row-level-security.sql line 3: \"Đơn Hàng's own database has no policies.\"",
+        "source": "examples/don-hang@stage-3 docker-compose.yml, db/tenancy/row-level-security.sql"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "outputs/stage-3/scripts/backend/row-level-security.txt (identical at tag stage-3 and working tree, md5 0b7e2c8a...): donhang 1|3, 2|2; shop_app count 0; shop 1 rows ids 1,2,3 paid/new/shipped; shop_after_commit blank, count 0; ERROR new row violates...; customers count 0. Lesson output block matches with ... elisions.",
+        "source": "examples/don-hang@stage-3 outputs/stage-3/scripts/backend/row-level-security.txt"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "row-level-security.sh@stage-3: lines 16-19 sql() runs psql --username donhang ... --echo-queries; line 3 set -euo pipefail so line 45 '|| true' is what lets the script continue after psql exits non-zero; lines 47-54 BEGIN; ALTER TABLE customers ENABLE ROW LEVEL SECURITY; SET LOCAL ROLE shop_app; ... SELECT count(*) FROM customers; ROLLBACK.",
+        "source": "examples/don-hang@stage-3 scripts/backend/row-level-security.sh"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "row-level-security.sh@stage-3 line 7 calls tenancy-db.sh --if-missing; tenancy-db.sh exits 0 when pg_database already has donhang_tenancy, otherwise builds the three lab databases. scripts/up.sh exists at stage-3 (\"Start the Đơn Hàng lab: the static site, the database and the lab box.\").",
+        "source": "examples/don-hang@stage-3 scripts/backend/row-level-security.sh, scripts/backend/tenancy-db.sh, scripts/up.sh"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "Conditional statement, supported by execution: the script's own SQL (not api code) is filtered when run as shop_app (count 0 / shop 1 rows only) and not filtered as donhang (5 rows), per outputs/stage-3/scripts/backend/row-level-security.txt. Condition 'as long as it runs as the restricted role' is stated.",
+        "source": "examples/don-hang@stage-3 outputs/stage-3/scripts/backend/row-level-security.txt"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "current_setting returns whatever the session set (functions-admin: \"Returns the current value of the setting\"); 19.16: PostgreSQL accepts a setting for any two-part name, so nothing authenticates app.shop_id. Round 2: section 6 and q4 explanation.correct now say \"the session sets\" and \"PostgreSQL does not check where that value came from\"; the round-1 overstatement is gone.",
+        "source": "https://www.postgresql.org/docs/17/functions-admin.html; https://www.postgresql.org/docs/17/runtime-config-custom.html"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "Claim 7 part 2 is unverified: the docs pages opened do not state that ''::integer raises an error, and the demo never exercises it (no output shows the cast failing). Behavior claim, so not blocking, but the changed paragraph states it as fact.",
+        "quote": "`::integer` cannot turn `''` into a number and would raise an error",
+        "fix": "Either add evidence to claim 7 (run psql -c \"SELECT ''::integer\" in the lab box and record the error in source_hint), or soften to: \"`::integer` expects digits, so `NULLIF` turns `''` into null first, and the condition stays `shop_id = null`.\""
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-20T20:00:00+07:00",
+    "reviewer": "review-junior (claude-opus-5-5)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "term",
+        "text": "New in the reworded misconception 3 (also q4 explanation.correct): \"session\" is used for the database connection's state, but the only meaning I know is a server-stored logged-in state referenced by a cookie. Read that way, \"the session sets app.shop_id\" sounds like the login session supplies the shop, close to the opposite of the point. The next sentence (\"the request chooses it\") rescues it.",
+        "quote": "Actually the policy filters by whatever `app.shop_id` the session sets, and PostgreSQL does not check where that value came from.",
+        "fix": "Replace \"the session sets\" with \"the connection sets\" (the word Core concepts already uses for where app.shop_id is stored), in section 6 and in q4 explanation.correct."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

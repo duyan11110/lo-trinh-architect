@@ -1,0 +1,109 @@
+{
+  "id": "backend.l3.multi-tenancy",
+  "technical": {
+    "reviewed_at": "2026-10-19T17:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "No .cs file in examples/don-hang mentions shop/tenant; only db/tenancy/*.sql do. db/tenancy/shared-schema.sql line 1-3: \"-- donhang_tenancy, layout 1: shared tables ... scripts/backend/tenancy-db.sh runs this file; Đơn Hàng's own database stays single-shop.\" database-per-shop.sql: \"file in donhang_shop_1 with shop=1 and in donhang_shop_2 with shop=2\". DECISIONS.md §3 (2026-10-06): changes \"chỉ thêm ở phần lab (không đụng API/EF/migration)\". Lesson says \"a later stage\", consistent.",
+        "source": "examples/don-hang working tree: db/tenancy/shared-schema.sql, db/tenancy/database-per-shop.sql; DECISIONS.md line 294"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "git show stage-2:OrdersController.cs: line 104 `[Authorize]`, 110 `var customer = await CurrentCustomerAsync();`, 111 `if (customer is null) return Forbid();`, 113 `ListByCustomerAsync(customer.Id, after, limit)`, 122 `User.FindFirstValue(\"sub\")`; excerpt 104-124 matches the tag verbatim. EfOrderRepository.ListByCustomerAsync: `.Where(o => o.CustomerId == customerId && o.Id > afterId)`.",
+        "source": "examples/don-hang @ stage-2: DonHang.Api/Controllers/OrdersController.cs lines 104-124; DonHang.Infrastructure/EfOrderRepository.cs"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "git show stage-2:OrdersController.cs lines 22-24: \"customer_id comes from the token's `sub` claim, never from the request body ... A caller with no customer row, such as a staff member, gets 403.\" Lines 34-35 (Create) and 110-111 (List): `CurrentCustomerAsync()` then `if (customer is null) return Forbid();`. Learn: Forbid() \"Creates a ForbidResult (Status403Forbidden by default).\" Round 2: lesson no longer cites the comment's line numbers.",
+        "source": "examples/don-hang @ stage-2 OrdersController.cs lines 21-35, 104-111; https://learn.microsoft.com/dotnet/api/microsoft.aspnetcore.mvc.controllerbase.forbid?view=aspnetcore-10.0"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "\"JWT bearer tokens should be fully validated in an API. The following should be validated: Signature, for trust and integrity. This ensures the token was created by the designated secure token service and has not been tampered with.\" and \"The public key is available in the well known endpoints and the API clients can validate the signature of the access token using the public key.\" 401 list: \"Invalid signature: The token's signature doesn't match, suggesting potential tampering.\"",
+        "source": "https://learn.microsoft.com/aspnet/core/security/authentication/configure-jwt-bearer-authentication (aspnetcore-10.0)"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "git show stage-2:OrderOwnerHandler.cs lines 16-35 match the excerpt verbatim; line 22 `if (context.User.IsInRole(\"staff\"))` → `context.Succeed(requirement); return;` before `caller.Id == order.CustomerId` (line 30). Get and Cancel both call `authorization.AuthorizeAsync(User, order/existing, \"OrderOwner\")`; Cancel then calls `orderService.CancelOrderAsync(id)`.",
+        "source": "examples/don-hang @ stage-2 DonHang.Api/Authorization/OrderOwnerHandler.cs lines 16-35; OrdersController.cs Get, Cancel"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "git show stage-2:OrdersController.cs: `[Authorize(Policy = \"StaffOnly\")]` line 91 above `Ship` (93); endpoints Create (30), Get (57), Cancel (74), Ship (93), List (106): five. Program.cs: `options.AddPolicy(\"StaffOnly\", policy => policy.RequireRole(\"staff\"));`. Lesson (round 2) now says only \"`Ship`, outside these excerpts ... asks for the `StaffOnly` policy\", no line number.",
+        "source": "examples/don-hang @ stage-2 DonHang.Api/Controllers/OrdersController.cs; DonHang.Api/Program.cs"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "RFC 9110 §10.1.2 (From): \"A server SHOULD NOT use the From header field for access control or authentication\" — the same reasoning the lesson applies to any client-chosen header. Learn (JWT bearer): the signature \"ensures the token was created by the designated secure token service and has not been tampered with\"; a plain header carries no such guarantee.",
+        "source": "https://www.rfc-editor.org/rfc/rfc9110 §10.1.2; https://learn.microsoft.com/aspnet/core/security/authentication/configure-jwt-bearer-authentication"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Opinion with its condition stated (isolation \"whatever the caller sends\", §3). Supported by the repo's own rule (OrdersController comment: customer_id \"comes from the token's `sub` claim, never from the request body\") and by Learn: the JwtBearerHandler \"validates the token and extracts the user's identity from its claims.\"",
+        "source": "OrdersController.cs Create comment; https://learn.microsoft.com/aspnet/core/security/authentication/configure-jwt-bearer-authentication"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Lesson (round 2) section 4: \"Limiting each request to its own tenant's rows does nothing about it.\" Matches the round-1 suggested text and the ledger. Program.cs `options.AddConcurrencyLimiter(\"catalog-reads\", ...)` (PermitLimit 20, QueueLimit 5) is one limiter for all callers; a row filter does not change it.",
+        "source": "DonHang.Api/Program.cs lines 143-148, 162-166"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "git show stage-3: Program.cs line 152 `options.AddPolicy(\"orders\", context =>`, line 154 `context.User.FindFirst(\"sub\")?.Value`, line 209 \"only endpoints marked [EnableRateLimiting] are limited\"; OrdersController.cs line 34 `[EnableRateLimiting(\"orders\")]` (Create, only occurrence). Lesson section 8 now: \"a limit kept per customer on placing orders\"; claim section set to 8.",
+        "source": "examples/don-hang @ stage-3 DonHang.Api/Program.cs lines 152-154, 209; OrdersController.cs line 34"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Opinion with its condition in the ledger (\"Holds when copies are managed independently\"); the lesson's wording (\"each one more thing to deploy, update and watch\"; a fix ships \"once per shop for copies\") follows from the definition of one installation per tenant. No version-dependent behaviour.",
+        "source": "reasoning from the lesson's own definitions (§3)"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "\"If the WHERE clause is specified, all rows that do not satisfy the condition are eliminated from the output.\" and \"Any row that does not satisfy this condition will be eliminated from the output.\" — without the tenant condition, rows of every tenant that match the rest of the query are returned, and the statement itself raises no error.",
+        "source": "https://www.postgresql.org/docs/17/sql-select.html (Description step 3; WHERE Clause)"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "accuracy",
+        "text": "New in round 2 (changed RLS pointer), not in the ledger. \"every query\" is absolute: PostgreSQL 17 docs: \"Superusers and roles with the BYPASSRLS attribute always bypass the row security system ... Table owners normally bypass row security as well\". The policy is evaluated \"for each row prior to any conditions or functions coming from the user's query\". Acceptable as a forward pointer; the exceptions belong to backend.l3.row-level-security.",
+        "quote": "has PostgreSQL add the shop condition to every query on its own",
+        "fix": "Soften to \"has PostgreSQL add the shop condition to queries on its own, for the accounts it applies to\", or keep it and make sure backend.l3.row-level-security states the owner/superuser/BYPASSRLS exception."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-19T18:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (review-junior)",
+    "issues": [],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

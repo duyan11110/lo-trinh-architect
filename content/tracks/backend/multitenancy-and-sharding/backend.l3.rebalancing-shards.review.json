@@ -1,0 +1,129 @@
+{
+  "id": "backend.l3.rebalancing-shards",
+  "technical": {
+    "reviewed_at": "2026-10-20T17:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "not-needed",
+        "evidence": "Definition of the term 'rebalancing' as used in this module (outline item 1); not a statement about any product's behaviour, number or syntax."
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Round 2: section 4 now states the 20-id cycle, ids 0-3 / 20-23 matching, and the 4 vs 12 split. x mod 4 = x mod 5 iff x mod 20 in {0,1,2,3} (lcm 20); ids with id%5=4 always differ (id%4<=3), so 4 of 20 go to the new shard, 12 between old. fill.sql: 'FROM generate_series(1, 200000) AS g'. Captured output: '160000 | 200000 |    80.0'.",
+        "source": "examples/don-hang db/perf/fill.sql lines 10-22; outputs/stage-3/scripts/backend/rebalance-shards.txt lines 5-7"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "rebalance.sql: 'CREATE TEMP TABLE shard_map (bucket integer PRIMARY KEY, shard integer NOT NULL)', 'UPDATE shard_map SET shard = 4 WHERE bucket < 12;', join 'shard_map.bucket = orders.id % 64'. Output 37500 = 12 x 3125, exactly the reassigned buckets. Read from the working tree; git show at the tag was not permitted in this session.",
+        "source": "examples/don-hang db/sharding/rebalance.sql lines 13-32; outputs/stage-3/scripts/backend/rebalance-shards.txt"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "77 - 64 = 13; 13 % 4 = 1 (INSERT ... SELECT bucket, bucket % 4); 13 is not < 12, so bucket 13 stays on shard 1 after the UPDATE. Section 4 now names 'buckets 0 to 11', consistent with the diagram.",
+        "source": "examples/don-hang db/sharding/rebalance.sql lines 19-20, 26"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Round 2: lesson now reads 'if no copy of it can be read, no request knows where to go', matching the ledger and consistent with section 8's cached copy. In the file the shard is obtainable only through the JOIN on shard_map, so the dependency holds as a design consequence.",
+        "source": "examples/don-hang db/sharding/rebalance.sql lines 28-32; lesson sections 4 and 8"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Round 2: section 4 now states both halves ('every write the old shard took after the copy must also reach the new one before the switch'), matching the ledger; section 6 and quiz q3 now point back to this rule instead of contradicting it. No procedure is given (depth_notes respected). Reasoning claim, consistent with the lesson's own copy-then-switch failure case.",
+        "source": "lesson sections 4 and 6; quiz q3"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "'bucket integer PRIMARY KEY' gives each bucket exactly one shard value; the bucket is computed as 'orders.id % 64', so changing 64 changes many keys' bucket (the lesson's new wording 'moves many keys to another bucket' is accurate, not overstated). Hence at most 64 non-empty shards.",
+        "source": "examples/don-hang db/sharding/rebalance.sql lines 15-18, 32"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "rebalance.sql lines 1-4: 'Nothing is moved: each query only counts.' (outside the excerpt 8-32, as the lesson now says). STAGE.md: 'lab databases for tenancy, partitioning and sharding live under `db/`'. Queries use 'id % 4', 'orders.id % 64'.",
+        "source": "examples/don-hang db/sharding/rebalance.sql lines 1-4; STAGE.md line 39"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "4.2.7: 'If FILTER is specified, then only the input rows for which the filter_clause evaluates to true are fed to the aggregate function; other rows are discarded.' Table 9.4: '% ... Modulo (remainder); available for smallint, integer, bigint, and numeric'. Table 9.5 round(v numeric, s integer): 'Rounds v to s decimal places. Ties are broken by rounding away from zero.' (18.75 -> 18.8 in the output).",
+        "source": "https://www.postgresql.org/docs/17/sql-expressions.html ; https://www.postgresql.org/docs/17/functions-math.html"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "CREATE TABLE: 'If specified, the table is created as a temporary table. Temporary tables are automatically dropped at the end of a session'. generate_series: 'Generates a series of values from start to stop, with a step size of step. step defaults to 1.' Captured output: 'INSERT 0 64', 'UPDATE 12'. Buckets 0-11 hit each remainder of % 4 three times.",
+        "source": "https://www.postgresql.org/docs/17/sql-createtable.html ; https://www.postgresql.org/docs/17/functions-srf.html ; outputs/stage-3/scripts/backend/rebalance-shards.txt"
+      },
+      {
+        "n": 11,
+        "verdict": "rephrased",
+        "evidence": "psql docs: -e 'Copy all SQL commands sent to the server to standard output as well.' ON_ERROR_STOP: 'By default, command processing continues after an error. When this variable is set to on, processing will instead stop immediately.' footer: 'enable or disable display of the table footer (the (n rows) count)'. But -X/--no-psqlrc: 'Do not read the start-up file (neither the system-wide psqlrc file nor the user's ~/.psqlrc file)' - wider than 'personal settings' / '~/.psqlrc'.",
+        "source": "https://www.postgresql.org/docs/17/app-psql.html",
+        "suggested_text": "--echo-queries prints each query before its result; the other options skip the psqlrc start-up files, stop at the first error and drop the row-count footer:"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Capture: '160000 | 200000 |    80.0', '37500 | 200000 |    18.8', shards 0-3 '13 |  40625', shard 4 '12 |  37500'. The third table comes from rebalance.sql lines 34-41 ('-- Where everything is after the change.' SELECT shard_map.shard, count(DISTINCT shard_map.bucket) AS buckets, count(*) AS orders ... GROUP BY shard_map.shard), matching the lesson's new 'one more query after the excerpt'. psql not run (command execution not permitted).",
+        "source": "examples/don-hang outputs/stage-3/scripts/backend/rebalance-shards.txt; db/sharding/rebalance.sql lines 34-41"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "fill.sql inserts orders 'FROM generate_series(1, 200000) AS g' and 'setval(... 200000)'; 200000 / 64 = 3125 exactly, so every remainder 0-63 holds 3125 ids. 13 x 3125 = 40625, 12 x 3125 = 37500, 10 x 3125 = 31250.",
+        "source": "examples/don-hang db/perf/fill.sql lines 10-25"
+      },
+      {
+        "n": 14,
+        "verdict": "not-needed",
+        "evidence": "Conditional design option ('if that copy is refreshed when a bucket moves'); the condition is stated in the lesson, no product behaviour is asserted."
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "New in round 2 (changed sentence). --no-psqlrc skips both the system-wide psqlrc and the user's ~/.psqlrc; 'personal settings' covers only the second. Ledger claim 11 has the same narrowing ('skips ~/.psqlrc').",
+        "quote": "the other options skip personal settings, stop at the first error and drop the row-count footer",
+        "fix": "Change 'skip personal settings' to 'skip the psqlrc start-up files'; update claim 11 to '--no-psqlrc skips the system-wide and user psqlrc files'."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-20T18:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (prompt 05, junior reader, round 2 targeted re-review)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "text": "Carried from round 1 (narrowed: q2 is fixed and now needs reasoning). q1 b restates 'most of them move between old shards', and q3 c restates the second misconception almost word for word, so both can be matched to lesson sentences without understanding.",
+        "quote": "False, because an order of bucket 13 written to shard 1 after its rows were copied is missing on shard 4.",
+        "fix": "Reword q3 c to the cause in the reader's own terms, e.g. 'False, because orders placed on shard 1 during the copy are not on shard 4 when the map switches.'"
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

@@ -1,0 +1,161 @@
+{
+  "id": "backend.l3.read-replicas",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-10-20T12:00:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "A PostgreSQL standby (PostgreSQL's name for a server following a primary; here the read replica) receives the primary's changes as a stream and applies them; with hot standby it answers read-only queries.",
+      "kind": "behavior",
+      "source_hint": "PostgreSQL 17 docs: 26.2.5 Streaming Replication; 26.4 Hot Standby",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 2,
+      "text": "A hot standby refuses every write: data-modifying statements fail with 'cannot execute UPDATE in a read-only transaction', since all its transactions are read-only.",
+      "kind": "behavior",
+      "source_hint": "PostgreSQL 17 docs: 26.4.1 User's Overview (Hot Standby); outputs/stage-3/scripts/backend/replica-lag.txt",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 3,
+      "text": "Streaming replication is asynchronous by default (synchronous_standby_names empty): the primary commits without waiting for any standby to receive or apply the change.",
+      "kind": "behavior",
+      "source_hint": "PostgreSQL 17 docs: 26.2.5 Streaming Replication ('asynchronous by default'); 26.2.8 Synchronous Replication; 19.6.2 synchronous_standby_names",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 4,
+      "text": "With async replication a change becomes visible on the standby after a delay, typically under a second while it keeps up with the load; no limit is promised, and a standby that cannot keep up falls further behind. Commit visibility on one server does not cover a second server.",
+      "kind": "behavior",
+      "source_hint": "PostgreSQL 17 docs: 26.2.5 Streaming Replication (delay typically under one second); 26.4.1 Hot Standby User's Overview (measurable delay; differing results)",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 5,
+      "text": "A standby built with pg_basebackup starts as a copy of the whole primary server (all databases, tables and rows), as db/replica/start.sh does; the compose comment says it copies db once, then streams db's changes.",
+      "kind": "behavior",
+      "source_hint": "PostgreSQL 17 docs: pg_basebackup reference; 26.2.4 Setting Up a Standby Server; examples/don-hang @ stage-3 docker-compose.yml lines 581-585, db/replica/start.sh",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 6,
+      "text": "All writes go to the single primary; each standby replays the same changes. Replicas add read capacity only; write capacity stays that of one server.",
+      "kind": "behavior",
+      "source_hint": "PostgreSQL 17 docs: 26.1 Comparison of Different Solutions (primary/standby, only the primary accepts writes); 26.4 Hot Standby",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 7,
+      "text": "Reads that follow the caller's own write (e.g. the order just placed) cannot go to a lagging replica; sending them to the primary is one simple way to keep read-your-writes. Reads that tolerate data a few seconds old (e.g. product list) may go to a replica.",
+      "kind": "opinion",
+      "source_hint": "Condition stated in text (whether the read follows its own write and tolerates stale data); general replication design guidance",
+      "needs_verification": false,
+      "section": 4
+    },
+    {
+      "n": 8,
+      "text": "pg_is_in_recovery() returns true while the server is in recovery, which is the case on a standby replaying changes from the primary.",
+      "kind": "behavior",
+      "source_hint": "PostgreSQL 17 docs: 9.28.4 Recovery Control Functions (pg_is_in_recovery)",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 9,
+      "text": "docker-compose.yml @ stage-3 lines 581-605: db-replica uses postgres:17.6-alpine, profiles: [replica], command sh /start.sh mounting db/replica/start.sh; comment: nothing in Đơn Hàng reads from it, the api uses db for everything.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3 docker-compose.yml lines 581-605",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 10,
+      "text": "A service with profiles: [...] is not started by a plain docker compose up; it starts only when one of its profiles is enabled (--profile replica).",
+      "kind": "behavior",
+      "source_hint": "Docker docs: Compose 'Using profiles with Compose'; replica-lag.sh line 10",
+      "version_key": "docker",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 11,
+      "text": "replica-lag.sh @ stage-3: lines 6-11 recreate db-replica from a fresh volume; on() (lines 14-20) runs psql, PostgreSQL's command-line client, with --echo-queries; the price=/trap lines (28-31) save product 1's price and restore it on EXIT; || true continues past the error.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3 scripts/backend/replica-lag.sh lines 1-43; psql docs (--echo-queries); bash manual (trap, || list)",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 12,
+      "text": "The lab replica runs with recovery_min_apply_delay=5s, so it applies each committed change 5 s late (the # lesson: comment above the price change, lines 33-35); real replicas have no such fixed wait.",
+      "kind": "behavior",
+      "source_hint": "examples/don-hang @ stage-3 db/replica/start.sh line 18; scripts/backend/replica-lag.sh lines 33-35; PostgreSQL 17 docs: 19.6.3 recovery_min_apply_delay",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 13,
+      "text": "replica-lag.sh @ stage-3 output: replica t, 8 products; UPDATE on db-replica errors read-only; after UPDATE 1 on db, db returns 1300000 and db-replica 1250000; 6 s later db-replica returns 1300000.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3 outputs/stage-3/scripts/backend/replica-lag.txt",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 14,
+      "text": "If the API read GET /api/v1/orders/{id} from a lagging replica right after creating the order, the row would not be there yet and the endpoint would answer 404 (the API returns 404 for a missing order).",
+      "kind": "behavior",
+      "source_hint": "Follows from claims 3-4; DonHang.Api/Controllers/OrdersController.cs @ stage-3 (NotFound for missing order); hypothetical: the API does not read from a replica at stage-3",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 15,
+      "text": "In k8s.l1.deploying-don-hang, PostgreSQL runs as a Deployment with one replica (Pod) using an emptyDir volume; a second Pod would start its own database from the init scripts, with no replication between them.",
+      "kind": "fact",
+      "source_hint": "content/tracks/k8s/track.yaml k8s.l1.deploying-don-hang outline; examples/don-hang @ stage-2 deploy/k8s/db.yaml",
+      "needs_verification": true,
+      "section": 8
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "outline_items_missing": [],
+    "beyond_scope": [
+      "'primary' and 'asynchronous replication' defined in plain words as non-vocab concepts",
+      "k8s replica vs read replica contrast in Connections"
+    ]
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1400,
+    "notes": "apply-review: lag sentence and summary 3 use reviewer text (no limit promised, under a second); read-your-writes now one way; misconception 1 says change shows after replica applies it; defined standby and psql in plain words; one-server vs second-server sentence; diagram narration names replica-lag.sh and the end; line numbers named by content; Connections names the word replica. Cut: plain-term repeats in How it works."
+  },
+  "open_questions": [],
+  "repo_changes_needed": []
+}

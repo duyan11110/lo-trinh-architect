@@ -1,0 +1,139 @@
+{
+  "id": "backend.l3.table-partitioning",
+  "technical": {
+    "reviewed_at": "2026-10-20T18:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "\"The partitioned table itself is a \\\"virtual\\\" table having no storage of its own.\" \"All rows inserted into a partitioned table will be routed to the appropriate one of the partitions based on the values of the partition key column(s).\" Captured output: tableoid::regclass lists only the five partitions, never orders_by_month.",
+        "source": "https://www.postgresql.org/docs/17/ddl-partitioning.html (5.12.1/5.12.2); examples/don-hang@stage-3 outputs/stage-3/scripts/backend/partition-pruning.txt"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "\"Each range's bounds are understood as being inclusive at the lower end and exclusive at the upper end.\" \"if one partition's range is from 1 to 10, and the next one's range is from 10 to 20, then value 10 belongs to the second partition not the first.\"",
+        "source": "https://www.postgresql.org/docs/17/ddl-partitioning.html (5.12.2)"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "\"SET enable_partition_pruning = on; -- the default\". \"With partition pruning enabled, the planner will examine the definition of each partition and prove that the partition need not be scanned because it could not contain any rows meeting the query's WHERE clause. When the planner can prove this, it excludes (prunes) the partition from the query plan.\" Output: March plan = Aggregate -> Seq Scan on orders_2026_03 only.",
+        "source": "https://www.postgresql.org/docs/17/ddl-partitioning.html (5.12.4); outputs/stage-3/scripts/backend/partition-pruning.txt"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "\"Note that partition pruning is driven only by the constraints defined implicitly by the partition keys, not by the presence of indexes.\" Output for WHERE customer_id = 7: Aggregate -> Append -> Index Only Scan using orders_2026_0N_customer_id_idx on each of the five partitions.",
+        "source": "https://www.postgresql.org/docs/17/ddl-partitioning.html (5.12.4); outputs/stage-3/scripts/backend/partition-pruning.txt"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "\"the constraint's columns must include all of the partition key columns. This limitation exists because the individual indexes making up the constraint can only directly enforce uniqueness within their own partitions\". Output: \"ERROR:  unique constraint on partitioned table must include all partitioning columns\". Round 2: the new inline definition in s4 matches ddl-constraints (unique constraints ensure the data in a column or group of columns is unique among all rows).",
+        "source": "https://www.postgresql.org/docs/17/ddl-partitioning.html (5.12.2.3); ddl-constraints.html; outputs/stage-3/scripts/backend/partition-pruning.txt"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "\"The simplest option for removing old data is to drop the partition that is no longer necessary\". \"Another option that is often preferable is to remove the partition from the partitioned table but retain access to it as a table in its own right.\" \"Dropping an individual partition using DROP TABLE, or doing ALTER TABLE DETACH PARTITION, is far faster than a bulk operation. These commands also entirely avoid the VACUUM overhead caused by a bulk DELETE.\" Round 2 text now matches.",
+        "source": "https://www.postgresql.org/docs/17/ddl-partitioning.html (5.12.1, 5.12.2.2)"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Round 2 text restricted to orders_by_month. Docs: \"Partitions thus created are in every way normal PostgreSQL tables (or, possibly, foreign tables).\" orders-by-month.sql@stage-3 lines 19-28 create all five partitions with CREATE TABLE ... PARTITION OF, none foreign.",
+        "source": "https://www.postgresql.org/docs/17/ddl-partitioning.html (5.12.2); examples/don-hang@stage-3 db/partitioning/orders-by-month.sql"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "\"This automatically creates a matching index on each partition, and any partitions you create or attach later will also have such an index.\" orders-by-month.sql@stage-3 line 33: CREATE INDEX orders_by_month_customer_id ON orders_by_month (customer_id); output shows orders_2026_01_customer_id_idx ... orders_2026_05_customer_id_idx.",
+        "source": "https://www.postgresql.org/docs/17/ddl-partitioning.html (5.12.2); examples/don-hang@stage-3 db/partitioning/orders-by-month.sql"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "tools/extract-code db/partitioning/orders-by-month.sql --tag stage-3: line 5 DROP TABLE IF EXISTS orders_by_month; lines 11-17 parent with PRIMARY KEY (id, placed_at) ... PARTITION BY RANGE (placed_at); lines 19-28 five monthly partitions; lines 30-31 INSERT ... SELECT ... FROM orders; line 33 CREATE INDEX on (customer_id).",
+        "source": "examples/don-hang@stage-3 db/partitioning/orders-by-month.sql"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Round 2 text matches fill.sql@stage-3: placed_at = timestamptz '2026-01-01 00:00:00+07' + g * interval '1 minute' FROM generate_series(1, 200000), so the first order is at 00:01 (January = 44639) and the last in May 2026. Grep of DonHang.Api and migrations finds no PARTITION BY.",
+        "source": "examples/don-hang@stage-3 db/perf/fill.sql; STAGE.md"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "tableoid: \"The OID of the table containing this row. This column is particularly handy for queries that select from partitioned tables\". regclass: \"casting a table's OID to regclass is handy for symbolic display of a numeric OID.\" EXPLAIN COSTS: \"Include information on the estimated startup and total cost of each plan node ... This parameter defaults to TRUE.\"",
+        "source": "https://www.postgresql.org/docs/17/ddl-system-columns.html; datatype-oid.html; sql-explain.html"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Captured output at stage-3 matches every figure: 44639/40320/44640/43200/27201 (sum 200,000); March plan only Seq Scan on orders_2026_03; customer plan Append of five Index Only Scans; the id-only key error; after DETACH+DROP: 2026-02-01 00:00:00+07 | 155361 (= 200000 - 44639). Not re-run: Docker engine not running on the review host.",
+        "source": "examples/don-hang@stage-3 outputs/stage-3/scripts/backend/partition-pruning.txt"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "partition-pruning.sh@stage-3: line 7 runs perf-db.sh --if-missing; lines 11-13 psql --file /repo/db/partitioning/orders-by-month.sql; lines 15-18 sql() runs psql --echo-queries; line 32 \"|| true\". psql docs: \"psql is a terminal-based front-end to PostgreSQL\"; --echo-queries \"Copy all SQL commands sent to the server to standard output as well.\"",
+        "source": "examples/don-hang@stage-3 scripts/backend/partition-pruning.sh; https://www.postgresql.org/docs/17/app-psql.html"
+      },
+      {
+        "n": 14,
+        "verdict": "rephrased",
+        "evidence": "\"timestamptz is accepted as an abbreviation for timestamp with time zone\". \"an input string that includes an explicit time zone will be converted to UTC ... the value is stored internally as UTC, and the originally stated or assumed time zone is not retained.\" \"positive sign used for zones east of Greenwich.\" Output \"is always converted from UTC to the current timezone zone\". So +07 is a UTC+7 offset and the value carries no zone. Vietnam = UTC+7 is not in PG docs.",
+        "source": "https://www.postgresql.org/docs/17/datatype-datetime.html (8.5)",
+        "suggested_text": "timestamptz (timestamp with time zone) stores a moment in time; '+07' in a literal is the offset seven hours ahead of UTC, the offset used in Vietnam, and output is shown in the session's time zone."
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "Round 2 lesson s4 is now hedged (\"the key is usually chosen from the queries the table answers most\"), matching docs: \"Often the best choice will be to partition by the column or set of columns which most commonly appear in WHERE clauses of queries being executed on the partitioned table.\"",
+        "source": "https://www.postgresql.org/docs/17/ddl-partitioning.html (5.12.6)"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "New sentence (round 2) implies the value keeps a time zone. PG17 8.5: input with an explicit zone \"will be converted to UTC ... the originally stated or assumed time zone is not retained\"; output is converted to the session's timezone. \"+07\" is a UTC offset, not a named zone.",
+        "quote": "`placed_at` is a `timestamptz`, a date and time with a time zone; `+07` in each bound means Vietnam time.",
+        "fix": "Replace with: \"`placed_at` is a `timestamptz`, a moment in time; `+07` in each bound means seven hours ahead of UTC, Vietnam's offset.\" Update claim 14 to the suggested_text."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-20T19:00:00+07:00",
+    "reviewer": "review-junior (prompt 05), round 2 targeted re-review",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "text": "New in round 2 (rewritten sentence). I follow that each index checks only its own partition, but not why including placed_at fixes that. I had to work out myself that two rows with the same key values share a placed_at, so they land in the same partition and one index sees both. \"without the key\" also made me stop: the primary key or the partition key?",
+        "quote": "and each index sees only its own partition, so without the key two partitions could hold the same value.",
+        "fix": "Replace \"without the key\" with \"without the partition key\", then add: \"With it, two rows with the same key values have the same placed_at, so they land in the same partition, whose index catches them.\""
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [
+        "so without the key two partitions could hold the same value. (why including the partition key lets per-partition indexes catch duplicates)"
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}
