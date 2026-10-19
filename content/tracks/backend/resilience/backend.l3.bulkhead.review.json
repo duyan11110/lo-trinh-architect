@@ -1,0 +1,134 @@
+{
+  "id": "backend.l3.bulkhead",
+  "technical": {
+    "reviewed_at": "2026-10-19T21:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "API ref ConcurrencyLimiterOptions: PermitLimit \"Maximum number of permits that can be leased concurrently.\" QueueLimit \"Maximum number of permits that can be queued concurrently.\" QueueProcessingOrder \"OldestFirst by default.\" Run (dotnet 10.0.13, PermitLimit 1, QueueLimit 1): a acquired=True; b completed immediately=False (queued); c completed immediately=True, acquired=False; b acquired after a disposed=True.",
+        "source": "learn.microsoft.com/dotnet/api/system.threading.ratelimiting.concurrencylimiteroptions (net-10.0); scratchpad dotnet run"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "\"The concurrency limiter limits the number of concurrent requests. Each request reduces the concurrency limit by one. When a request completes, the limit is increased by one. ... the concurrency limiter limits only the number of concurrent requests and doesn't cap the number of requests in a time period.\"",
+        "source": "refs/aspnetcore-docs/aspnetcore/performance/rate-limit.md, 'Concurrency limiter' (line 276)"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "\"Registers a new ConcurrencyLimiter with the given ConcurrencyLimiterOptions to the application. The limiter can be added to an endpoint via RequireRateLimiting<TBuilder>(TBuilder, String), or via the EnableRateLimitingAttribute.\" One limiter per policy name; Program.cs @ stage-3 registers it with no partition key.",
+        "source": "learn.microsoft.com/dotnet/api/microsoft.aspnetcore.ratelimiting.ratelimiteroptionsextensions.addconcurrencylimiter (aspnetcore-10.0)"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "\"The default rejected status is 503 Service Unavailable.\" \"retryAfter can be used with the TokenBucketRateLimiter, Fixed Window Limiter, and Sliding Window Limiter ... The ConcurrencyLimiter has no way of calculating when permits are available.\" Run: rejected ConcurrencyLimiter lease hasRetryAfter=False. Program.cs @ stage-3 lines 173-181 = OnRejected, sets 429 only inside TryGetMetadata(RetryAfter).",
+        "source": "refs/aspnetcore-docs/aspnetcore/performance/rate-limit-samples.md lines 19, 41; tools/extract-code Program.cs --tag stage-3 --lines 166-182"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "tools/extract-code Program.cs --tag stage-3 --lines 143-166 matches the block (re-checked round 2); line 147 `PermitLimit = 20, QueueLimit = 5`, line 148 Bind(\"RateLimiting:CatalogReads\"). docker-compose.yml @ stage-3 api environment (149-200) has only RateLimiting__Orders__Window; DonHang.Api/appsettings.json has no RateLimiting section.",
+        "source": "examples/don-hang @ stage-3: DonHang.Api/Program.cs, docker-compose.yml, DonHang.Api/appsettings.json"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "ProductsController.cs @ stage-3: line 24 and line 42 carry [EnableRateLimiting(\"catalog-reads\")]; OrdersController.Create carries only \"orders\". CatalogProductPrices.cs @ stage-3 line 15: `var product = await catalog.FindAsync(productId);` -> CatalogService.FindAsync -> products.FindAsync (ProductCache); no rate limiting policy on that path. bulkhead.sh orders productId 8 (round 1 read of the script).",
+        "source": "examples/don-hang @ stage-3: ProductsController.cs, OrdersController.cs, DonHang.Infrastructure/CatalogProductPrices.cs, DonHang.Catalog/CatalogService.cs, scripts/backend/bulkhead.sh"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Program.cs @ stage-3 line 37 `builder.Services.AddCatalogModule(connectionString, redisConfiguration);`, line 38 `builder.Services.AddDonHangInfrastructure(connectionString);`; both call UseNpgsql(connectionString) (CatalogModule.cs, ServiceCollectionExtensions.cs).",
+        "source": "examples/don-hang @ stage-3: DonHang.Api/Program.cs 33-38; DonHang.Catalog/CatalogModule.cs"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Npgsql Connection String Parameters: Pooling \"Whether connection pooling should be used.\" default \"true\"; Maximum Pool Size \"The maximum connection pool size.\" default \"100 since 3.1, 20 previously\". docker-compose.yml @ stage-3 api connection string sets no Maximum Pool Size (round 1). Program.cs lines 37-38 pass the same connectionString to both modules. Round 3: section 4 wording ('the library the api uses to talk to PostgreSQL') does not change the claim.",
+        "source": "npgsql.org/doc/connection-string-parameters.html (fetched round 2); examples/don-hang @ stage-3 docker-compose.yml, DonHang.Api/Program.cs"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "ProductCache.GetAsync @ stage-3 catches RedisException/RedisTimeoutException/TaskCanceledException and returns null (\"any Redis error counts as a miss\"); CatalogModule BacklogPolicy.FailFast; compose abortConnect=false. CatalogService.cs @ stage-3: \"A page of products is a query to shape, so it reads CatalogDbContext directly\"; ListAsync builds db.Products ... ToListAsync() with no cache.",
+        "source": "examples/don-hang @ stage-3: DonHang.Catalog/ProductCache.cs, CatalogService.cs, CatalogModule.cs, docker-compose.yml"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "docker-compose.yml @ stage-3: services notifications (container donhang-notifications, Database=donhang_notifications, Smtp__Host \"mailpit\", Smtp__Port \"1025\") and payments (donhang-payments, Database=donhang_payments). Program.cs line 42: \"From stage-3 the api sends no email itself (DonHang.Notifications does).\"",
+        "source": "examples/don-hang @ stage-3: docker-compose.yml 293-404; DonHang.Api/Program.cs 41-42"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Round 3: claim and section 6 now read \"it waits in the limiter's queue until a permit comes free, and its caller has no answer yet\"; the undocumented 'client is still connected' is gone. rate-limit.md: \"The request waits in the queue until a permit becomes available or a timeout occurs.\"",
+        "source": "refs/aspnetcore-docs/aspnetcore/performance/rate-limit.md line 479"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "prometheus-net README, ASP.NET Core HTTP request metrics: \"Total number of received HTTP requests.\" \"By default, metrics are collected separately for each response status code (200, 201, 202, 203, ...).\" Program.cs @ stage-3: app.UseHttpMetrics() is first in the pipeline, before app.UseRateLimiter(), so refusals are counted.",
+        "source": "github.com/prometheus-net/prometheus-net README; DonHang.Api/Program.cs @ stage-3"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "outputs/stage-3/scripts/backend/bulkhead.txt @ stage-3: \"redis is stopped: every product read now queries PostgreSQL\" / \"answered 200 or 503, nothing else: yes\" / \"some answered 503: yes\" / \"some answered 200: yes\" / \"-> 201\". Script stops redis, posts one order (productId 8) in background, sends 100 parallel GET /api/v1/products/3, restarts redis in trap.",
+        "source": "examples/don-hang @ stage-3: scripts/backend/bulkhead.sh; outputs/stage-3/scripts/backend/bulkhead.txt"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "\"When you specify a resource limit for a container, the kubelet enforces those limits so that the running container is not allowed to use more of that resource than the limit you set.\" The most common resources are \"CPU and memory (RAM)\".",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/configuration/manage-resources-containers.md lines 14-21"
+      },
+      {
+        "n": 15,
+        "verdict": "not-needed",
+        "evidence": "Opinion, stated in §6 with its condition (\"for this reason alone\"); the facts it rests on (separate process = network call, extra deployable) are definitional for this repo's stage-3 topology."
+      },
+      {
+        "n": 16,
+        "verdict": "not-needed",
+        "evidence": "Opinion with condition (short queue for brief bursts). The supporting sentence in §6 now reads \"A `503` at once ends the request before `ProductsController` runs, with no query and no wait\", which follows from claims 2 and 4."
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "Follows from claims 1, 2, 5, 6 (20 permits, each held for the whole request). ProductCache.cs @ stage-3 FindAsync: \"Only one request per key goes on to PostgreSQL; the others wait here.\" Locks.GetOrAdd(key, _ => new SemaphoreSlim(1, 1)); await keyLock.WaitAsync(); with Redis down SetAsync fails, so each holder queries in turn. bulkhead.sh reads only product 3.",
+        "source": "examples/don-hang @ stage-3: DonHang.Catalog/ProductCache.cs lines 20-48"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "rate-limit-samples.md: \"retryAfter can be used with the TokenBucketRateLimiter, Fixed Window Limiter, and Sliding Window Limiter ... The ConcurrencyLimiter has no way of calculating when permits are available.\" Round 1 run: rejected lease hasRetryAfter=False. Program.cs @ stage-3 OnRejected sets 429 only inside TryGetMetadata(RetryAfter). Zero issues round 3; docs opened across rounds: rate-limit.md, rate-limit-samples.md, ConcurrencyLimiterOptions API, Npgsql connection-string-parameters, k8s manage-resources-containers.",
+        "source": "refs/aspnetcore-docs/aspnetcore/performance/rate-limit-samples.md line 41; DonHang.Api/Program.cs @ stage-3 lines 166-182"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-19T22:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (review-junior, prompt 05, round 3)",
+    "issues": [],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

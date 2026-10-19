@@ -15,9 +15,9 @@ vocab: [rate-limiting]
 example_tag: stage-3
 versions_used: [dotnet, aspnetcore, prometheus_net, caddy, docker]
 content_version: 1
-status: draft
-approved_by: null
-reviewed_at: null
+status: approved
+approved_by: auto
+reviewed_at: "2026-10-19T20:04:00+07:00"
 ---
 
 ## Before you start
@@ -39,7 +39,7 @@ How can the api refuse one customer's extra orders before they cost anything, wh
 - fixed window — a way of counting in which time is cut into windows of one length; each request takes a permit, and when the window ends the count starts again at zero.
 - permit limit — how many requests one window lets through; in Đơn Hàng, 10 orders per customer per minute.
 - rejection status code — the status code the rate limiting middleware answers a refused request with.
-- `Retry-After` — a response header telling the client how many seconds to wait before it tries again.
+- `Retry-After` — a response header telling the client how long to wait before it tries again, as a number of seconds (what Đơn Hàng sends) or a date.
 
 ## How it works
 
@@ -58,15 +58,15 @@ sequenceDiagram
   L-->>A: 429 Too Many Requests, Retry-After
 ```
 
-In the situation above, the rate limiting middleware sits between authentication and the controller. `POST /api/v1/orders` is marked with the `orders` policy, so each request to it asks the policy for a permit first. The policy reads the caller's `sub` from the access token and keeps one fixed window for each `sub` it has seen. Customer 5's first ten orders in a window each take a permit and reach `OrdersController.Create`, which answers `201`.
+In the situation above, the rate limiting middleware sits between authentication and the controller. `POST /api/v1/orders` is marked with the `orders` policy, so each request to it asks the policy for a permit first. The policy reads the caller's `sub`, the field in the access token that names who signed in, and keeps one fixed window for each `sub` it has seen. Customer 5's first ten orders in a window each take a permit and reach `OrdersController.Create`, which answers `201`.
 
-The eleventh finds no permit left. No queue is configured, so the middleware refuses it at once and short-circuits the pipeline: the controller never runs, and no price is read and no row written. Left alone, the middleware would answer `503 Service Unavailable`, its default rejection status code. Đơn Hàng answers `429 Too Many Requests` with a `Retry-After` header instead.
+The eleventh finds no permit left. `Program.cs` sets no queue for the limiter (a queue would hold the request until the next window), and the eleventh is refused at once. The middleware short-circuits the pipeline: no controller, no price read, no row written. Left alone, it would answer `503 Service Unavailable`, its default rejection status code. Đơn Hàng answers `429 Too Many Requests` with a `Retry-After` header instead.
 
-Customer 2 has a window of their own, with all ten permits, so their order at the same moment goes through. When customer 5's window ends, their count starts again at zero.
+Customer 2 has a window of their own, so their order at the same moment goes through. When customer 5's window ends, their count starts again at zero.
 
-The count is kept per customer, not per IP address. Every request reaches the api over a connection from Caddy, so the address the api sees is Caddy's, for every customer. A limit by address would put all customers in one window.
+The count is kept per customer, not per IP address. In the lab, every request reaches the api over a connection from Caddy, so the address the api sees is Caddy's, for every customer. A limit by address would put all customers in one window.
 
-The windows live in the memory of the api process that counts them. On the cluster, `deploy/k8s/api.yaml` runs two copies of the api, and each counts on its own. A customer whose requests reach both copies can place up to twice the limit in a window.
+The windows live in the memory of the api process that counts them. When the api runs as more than one copy, as it will on a cluster with `replicas: 2`, each copy counts on its own. A customer whose requests reach both can place up to twice the limit in a window.
 
 ## In the Đơn Hàng system
 
@@ -87,7 +87,9 @@ builder.Services.AddRateLimiter(options =>
     });
 ```
 
-Line 152 names the policy `orders`, the name that `[EnableRateLimiting("orders")]` on `OrdersController.Create` refers to (line 34 of `OrdersController.cs`, outside this excerpt). Line 154 reads `sub`, and line 156 gives each customer a fixed-window limiter of their own, kept under that value. Line 155 gives a caller without `sub` no limit: that request is signed out, and `[Authorize]` refuses it later in the pipeline. `ordersLimit`, declared on line 140, holds 10 permits per minute; in the lab, `docker-compose.yml` shortens the window to 10 seconds so that the script in "Try it" waits seconds, not a minute.
+Line 152 names the policy `orders`, the name that `[EnableRateLimiting("orders")]` on `OrdersController.Create` refers to (line 34 of `OrdersController.cs`, outside this excerpt). Line 154 reads `sub`, and line 156 gives each customer a fixed-window limiter of their own, kept under that value. Line 155 gives a caller without `sub` no limit: that request is signed out, and `[Authorize]` refuses it later in the pipeline.
+
+`ordersLimit`, declared on line 140, holds 10 permits per minute; in the lab, `docker-compose.yml` shortens the window to 10 seconds so that the script in "Try it" waits seconds, not a minute.
 
 What a refused request gets, a few lines further down:
 
@@ -108,13 +110,13 @@ What a refused request gets, a few lines further down:
     };
 ```
 
-The middleware sets the rejection status code before it calls `OnRejected`. Đơn Hàng never changes `RejectionStatusCode`, so the status is still `503` when line 173 starts. A fixed-window limiter's refusal carries how long to wait, and line 175 reads it from the lease, the limiter's answer for this request. Lines 177–178 then set `429` and write that wait as `Retry-After`, rounded up to whole seconds. Outside this excerpt, line 210 adds `UseRateLimiter` after `UseAuthentication`, so that the policy can read `sub`, and line 133 lets `DonHang.App` in a browser read `Retry-After`.
+The middleware sets the rejection status code before it calls `OnRejected`, and Đơn Hàng never changes `RejectionStatusCode`, so the status is still `503` when line 173 starts. A fixed-window limiter's refusal carries how long to wait, and line 175 reads it from the lease, the limiter's answer for this request. Lines 177–178 then set `429` and write that wait as `Retry-After`, rounded up to whole seconds. The comment's last line is about a different limiter, the subject of the next lesson; this one, the fixed window, carries the wait. Outside this excerpt, line 210 adds `UseRateLimiter` after `UseAuthentication`, so that the policy can read `sub`. Line 133 lets `DonHang.App` in a browser read `Retry-After`: by default a browser hides most response headers from a page's script when the api is on another address.
 
 ## Seniors often assume…
 
 - **"Limiting by IP address is the simplest fair rule, and it works the same behind a proxy."** → Actually behind a reverse proxy, ASP.NET Core reports the proxy's address as the caller's, unless the app is set up to read the client's address from headers the proxy adds. Đơn Hàng's api is not set up that way. A limit by address would give every customer one shared window: one busy customer would use it up, and everyone else would get `429` too. You notice this when customers who placed a single order are refused in the same minute as one customer who placed many.
-- **"The limit holds across the whole system, however many copies of the API run."** → Actually each api process keeps its windows in its own memory, and no copy knows what another counted. With two copies, one customer can place up to 20 orders a minute instead of 10, and a restarted process starts every count at zero. That is acceptable when the limit only has to stop one customer from flooding the api, not count exactly. You notice this when a test against the cluster gets more `201` answers for one customer than the limit allows.
-- **"A limited request should get `503`, since the server is too busy."** → Actually `503` says the server cannot handle the request right now, while here the api is fine and only this customer sent too many. `429 Too Many Requests` says exactly that, and `Retry-After` tells the client when its next order can succeed. `UseHttpMetrics` records the status code of every answer, so refusals answered `503` would be counted with the server errors. You notice this when the graph of `5xx` answers rises while every other customer orders normally.
+- **"The limit holds across the whole system, however many copies of the API run."** → Actually each api process keeps its windows in its own memory, and no copy knows what another counted. With two copies, one customer can place up to 20 orders in one window instead of 10, and a restarted process starts every count at zero. That is acceptable when the limit only has to stop one customer from flooding the api, not count exactly. You notice this when a test against the cluster gets more `201` answers for one customer than the limit allows.
+- **"A limited request should get `503`, since the server is too busy."** → Actually `503` says the server cannot handle the request right now, while here the api is fine and only this customer sent too many. Đơn Hàng answers `429 Too Many Requests`, the status the ASP.NET Core docs use for rate-limited requests, and `Retry-After` tells the client when its next order can succeed. `UseHttpMetrics` records the status code of every answer, so refusals answered `503` would be counted with the server errors. You notice this when the graph of `5xx` answers rises while every other customer orders normally.
 
 ## Try it (3 minutes)
 
@@ -128,7 +130,7 @@ Expected result: customer 5 gets `201 Created` 10 times, then `429` with `Retry-
 ## Connections
 
 - [[backend.l3.bulkhead]] — the next lesson: it caps how many requests run at once for all callers, where this one caps how often one customer may order.
-- [[foundation.l1.http-status-codes]] — the `4xx`/`5xx` split behind choosing `429` over `503`: the client sent too many, the server is not failing.
+- [[foundation.l1.http-status-codes]] — the `4xx`/`5xx` split behind choosing `429` over `503`: a `4xx` points at the request, a `5xx` at the server.
 - [[backend.l2.idempotent-endpoints]] — the other half of retrying safely: `Retry-After` says when to try again, and the `Idempotency-Key` makes trying again place one order.
 - [[backend.l2.cache-stampede]] — a burst a per-customer limit does not stop, because it comes from many callers at once, each under their own limit.
 - [[backend.l1.middleware-pipeline]] — the short-circuit this middleware uses: a refused order stops before the controller runs.
@@ -140,4 +142,4 @@ Expected result: customer 5 gets `201 Created` 10 times, then `429` with `Retry-
 2. At stage-3 `POST /api/v1/orders` uses the `orders` policy: one fixed window per customer, kept under the access token's `sub`.
 3. A refused request never reaches the controller; Đơn Hàng answers `429` with `Retry-After` instead of the middleware's default `503`.
 4. The limit is per customer, not per IP address, because behind Caddy every request reaches the api from Caddy's address.
-5. Each api process keeps its counts in memory, so with two copies of the api one customer can place up to twice the limit.
+5. Each api process keeps its counts in memory, so with two copies one customer can place up to twice the limit in a window.

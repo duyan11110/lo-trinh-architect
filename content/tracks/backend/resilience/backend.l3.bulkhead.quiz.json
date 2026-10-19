@@ -1,0 +1,192 @@
+{
+  "lesson": "backend.l3.bulkhead",
+  "stage": 3,
+  "questions": [
+    {
+      "id": "backend.l3.bulkhead.q1",
+      "type": "order",
+      "bloom": "understand",
+      "difficulty": 2,
+      "skills": ["backend.resilience.load-limits"],
+      "section_ref": 4,
+      "question": {
+        "en": "Redis is down. A `GET /api/v1/products/3` arrives while 20 product reads are running and 2 are waiting. Put what happens to it in order.",
+        "vi": "Redis đang sập. Một `GET /api/v1/products/3` tới khi 20 lượt đọc sản phẩm đang chạy và 2 lượt đang chờ. Sắp xếp những gì xảy ra với nó theo đúng thứ tự."
+      },
+      "options": [
+        { "id": "a", "en": "`ProductsController.Get` runs and queries PostgreSQL.", "vi": "`ProductsController.Get` chạy và truy vấn PostgreSQL." },
+        { "id": "b", "en": "It asks the `catalog-reads` limiter for a permit and finds none free.", "vi": "Nó xin `catalog-reads` một permit và thấy không còn permit nào trống." },
+        { "id": "c", "en": "It gives its permit back when its answer is done.", "vi": "Nó trả permit lại khi câu trả lời của nó xong." },
+        { "id": "d", "en": "It waits, since fewer than 5 reads are waiting.", "vi": "Nó chờ, vì đang có ít hơn 5 lượt đọc chờ." },
+        { "id": "e", "en": "Running reads end and give permits back, and it takes one.", "vi": "Các lượt đọc đang chạy kết thúc và trả permit, và nó lấy một permit." }
+      ],
+      "answer": ["b", "d", "e", "a", "c"],
+      "explanation": {
+        "en": {
+          "correct": "A read asks for a permit before `ProductsController` runs. With 20 running and only 2 waiting there is room in the queue, so it waits until a running read ends and gives a permit back. It then runs its query and returns the permit when it ends."
+        },
+        "vi": {
+          "correct": "Một lượt đọc xin permit trước khi `ProductsController` chạy. Với 20 lượt đang chạy và chỉ 2 lượt chờ thì hàng chờ còn chỗ, nên nó chờ tới khi một lượt đang chạy kết thúc và trả permit. Sau đó nó chạy truy vấn và trả permit khi xong."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.bulkhead.q2",
+      "type": "single",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["backend.resilience.load-limits"],
+      "section_ref": 4,
+      "question": {
+        "en": "During a sale with Redis down, 20 product reads are running and 5 are waiting. At that moment one more product read and one `POST /api/v1/orders` arrive. What happens to each?",
+        "vi": "Trong một đợt sale khi Redis sập, 20 lượt đọc sản phẩm đang chạy và 5 lượt đang chờ. Đúng lúc đó có thêm một lượt đọc sản phẩm và một `POST /api/v1/orders` tới. Mỗi request gặp chuyện gì?"
+      },
+      "options": [
+        { "id": "a", "en": "The read gets `503` at once; the order runs without asking `catalog-reads` for a permit.", "vi": "Lượt đọc nhận `503` ngay; đơn chạy mà không xin `catalog-reads` permit nào." },
+        { "id": "b", "en": "Both wait for a permit, since reads and orders use the same database connections.", "vi": "Cả hai chờ permit, vì lượt đọc và đơn dùng chung các kết nối database." },
+        { "id": "c", "en": "The read waits behind the other 5 and is answered in the end; the order runs at once.", "vi": "Lượt đọc chờ sau 5 lượt kia và cuối cùng được trả lời; đơn chạy ngay.", "misconception": "Rejecting a request at once is worse than letting it wait, because a waiting request succeeds in the end." },
+        { "id": "d", "en": "The read gets `429` with a wait to retry after; the order runs at once.", "vi": "Lượt đọc nhận `429` kèm thời gian chờ để thử lại; đơn chạy ngay." }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "With 20 running and 5 waiting, `catalog-reads` refuses the next read at once, and the middleware's default answer is `503`. `OrdersController.Create` names only the `orders` policy, so the order never asks this limiter.",
+          "b": "Reads and orders do share the api's database connections, so a shared wait sounds natural. But only product reads ask `catalog-reads`; orders are outside this compartment, which is the whole point of it.",
+          "c": "There is a queue, so it is easy to picture one more place in it. But the queue limit is 5 and it is full, so the read is refused instead of waiting.",
+          "d": "`429` is what Đơn Hàng's refused orders get, so it looks like the answer for any refusal. But `OnRejected` sets `429` only when the refusal says how long to wait, and a concurrency limiter's refusal cannot, so the read stays `503`."
+        },
+        "vi": {
+          "correct": "Với 20 lượt chạy và 5 lượt chờ, `catalog-reads` từ chối lượt đọc tiếp theo ngay, và câu trả lời mặc định của middleware là `503`. `OrdersController.Create` chỉ ghi policy `orders`, nên đơn không bao giờ xin limiter này.",
+          "b": "Lượt đọc và đơn đúng là dùng chung các kết nối database của api, nên chờ chung nghe tự nhiên. Nhưng chỉ lượt đọc sản phẩm mới xin `catalog-reads`; đơn nằm ngoài ngăn này, và đó chính là mục đích của nó.",
+          "c": "Có hàng chờ, nên dễ hình dung thêm một chỗ nữa trong đó. Nhưng queue limit là 5 và hàng chờ đã đầy, nên lượt đọc bị từ chối thay vì chờ.",
+          "d": "`429` là status mà các đơn bị từ chối của Đơn Hàng nhận, nên trông như câu trả lời cho mọi lần từ chối. Nhưng `OnRejected` chỉ đặt `429` khi lần từ chối cho biết phải chờ bao lâu, mà lần từ chối của concurrency limiter thì không, nên lượt đọc vẫn là `503`."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.bulkhead.q3",
+      "type": "single",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["backend.resilience.load-limits"],
+      "section_ref": 3,
+      "question": {
+        "en": "Redis is up, so each product read ends within a few milliseconds. In one second 1,000 product reads arrive, but never more than 10 run at the same time. How many does `catalog-reads` refuse?",
+        "vi": "Redis đang chạy, nên mỗi lượt đọc sản phẩm kết thúc trong vài mili giây. Trong một giây có 1.000 lượt đọc sản phẩm tới, nhưng không bao giờ có quá 10 lượt chạy cùng lúc. `catalog-reads` từ chối bao nhiêu lượt?"
+      },
+      "options": [
+        { "id": "a", "en": "None, because it counts the reads running right now, and that never passes 20.", "vi": "Không lượt nào, vì nó đếm các lượt đọc đang chạy lúc này, và con số đó không bao giờ vượt 20." },
+        { "id": "b", "en": "975, because only 20 may run and 5 may wait in each second.", "vi": "975, vì mỗi giây chỉ 20 lượt được chạy và 5 lượt được chờ." },
+        { "id": "c", "en": "None, because the limit is in force only while Redis is down.", "vi": "Không lượt nào, vì giới hạn chỉ có hiệu lực khi Redis sập." },
+        { "id": "d", "en": "Only reads past 25 from any one customer, since each customer is counted apart.", "vi": "Chỉ những lượt vượt 25 của từng khách, vì mỗi khách được đếm riêng." }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "A concurrency limiter counts requests in progress, not arrivals in a period: each read takes a permit when it starts and gives it back when it ends. With at most 10 running at once, a permit is always free.",
+          "b": "The `orders` policy from the rate limiting lesson does count arrivals in a window, so reading 20 and 5 as a per-second budget is a natural carry-over. But `catalog-reads` has no window at all; it only counts what is running now.",
+          "c": "The answer none is right, but not for this reason. The limit is there all the time; with Redis up, reads end so quickly that the count stays low.",
+          "d": "The `orders` policy keeps one window per customer, so a key per caller sounds likely. But `catalog-reads` has no key: one limiter counts every product read, whoever sends it."
+        },
+        "vi": {
+          "correct": "Concurrency limiter đếm các request đang xử lý, không đếm số lượt tới trong một khoảng thời gian: mỗi lượt đọc lấy permit khi bắt đầu và trả lại khi kết thúc. Với tối đa 10 lượt chạy cùng lúc, lúc nào cũng còn permit trống.",
+          "b": "Policy `orders` ở bài rate limiting đúng là đếm số lượt tới trong một window, nên hiểu 20 và 5 là hạn mức mỗi giây là chuyện dễ mang sang. Nhưng `catalog-reads` không có window nào; nó chỉ đếm những gì đang chạy lúc này.",
+          "c": "Đáp số không lượt nào là đúng, nhưng không phải vì lý do này. Giới hạn luôn có mặt; khi Redis chạy, các lượt đọc kết thúc nhanh tới mức con số đếm luôn thấp.",
+          "d": "Policy `orders` giữ một window cho mỗi khách, nên một khóa cho mỗi bên gọi nghe có lý. Nhưng `catalog-reads` không có khóa: một limiter đếm mọi lượt đọc sản phẩm, bất kể ai gửi."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.bulkhead.q4",
+      "type": "fill",
+      "bloom": "understand",
+      "difficulty": 2,
+      "skills": ["backend.resilience.load-limits"],
+      "section_ref": 5,
+      "question": {
+        "en": "In `DonHang.Api/Controllers/ProductsController.cs`, the single-product read must share the same 20 permits as the product list, and orders must not count. Complete its attribute: `[EnableRateLimiting(\"___\")]`",
+        "vi": "Trong `DonHang.Api/Controllers/ProductsController.cs`, lượt đọc một sản phẩm phải dùng chung 20 permit với danh sách sản phẩm, và đơn không được tính vào. Điền vào attribute của nó: `[EnableRateLimiting(\"___\")]`"
+      },
+      "answer": ["catalog-reads"],
+      "answer_regex": "^\\s*\"?catalog-reads\"?\\s*$",
+      "explanation": {
+        "en": {
+          "correct": "`catalog-reads` is the concurrency limiter registered in `Program.cs`, and both product reads name it, so they share one count. `OrdersController.Create` names only `orders`, so an order never waits for a product read's permit."
+        },
+        "vi": {
+          "correct": "`catalog-reads` là concurrency limiter được đăng ký trong `Program.cs`, và cả hai lượt đọc sản phẩm đều ghi tên nó, nên chúng dùng chung một bộ đếm. `OrdersController.Create` chỉ ghi `orders`, nên đơn không bao giờ chờ permit của lượt đọc sản phẩm."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.bulkhead.q5",
+      "type": "truefalse",
+      "bloom": "analyze",
+      "difficulty": 4,
+      "skills": ["backend.resilience.load-limits"],
+      "section_ref": 6,
+      "question": {
+        "en": "Statement: during a Redis outage, `catalog-reads` makes product reads more reliable.",
+        "vi": "Nhận định: trong lúc Redis sập, `catalog-reads` làm cho các lượt đọc sản phẩm đáng tin cậy hơn."
+      },
+      "options": [
+        { "id": "a", "en": "True, because with at most 20 reads querying PostgreSQL, every read is answered faster.", "vi": "Đúng, vì khi tối đa 20 lượt đọc truy vấn PostgreSQL, mọi lượt đọc đều được trả lời nhanh hơn.", "misconception": "A bulkhead makes product reads more reliable.", "polarity": "true" },
+        { "id": "b", "en": "True, because a read that cannot run yet waits in the queue until a permit comes free.", "vi": "Đúng, vì một lượt đọc chưa chạy được sẽ chờ trong hàng chờ tới khi có permit trống.", "polarity": "true" },
+        { "id": "c", "en": "False, because reads past the limit fail fast; orders and PostgreSQL gain.", "vi": "Sai, vì các lượt đọc vượt giới hạn thất bại ngay; đơn và PostgreSQL được lợi.", "polarity": "false" },
+        { "id": "d", "en": "False, because the limit is switched on only once Redis is back up.", "vi": "Sai, vì giới hạn chỉ được bật khi Redis chạy lại.", "polarity": "false" }
+      ],
+      "answer": ["c"],
+      "explanation": {
+        "en": {
+          "correct": "Once 20 reads run and 5 wait, the next read is refused at once, so some product reads fail sooner than they would without the limit. The gain is elsewhere: orders keep their database connections and PostgreSQL carries a bounded load.",
+          "a": "Fewer queries at once does sound like faster queries for all. But the reads beyond 20 running and 5 waiting are not answered at all; they get `503`, which is less reliable for them, not more.",
+          "b": "There is a queue, so waiting sounds like the fate of every extra read. But it holds only 5; any read beyond that is refused at once.",
+          "d": "The verdict is right, but the reason is not. The limit is there all the time, whether Redis is up or down."
+        },
+        "vi": {
+          "correct": "Khi 20 lượt đọc chạy và 5 lượt chờ, lượt đọc tiếp theo bị từ chối ngay, nên một số lượt đọc sản phẩm thất bại sớm hơn so với khi không có giới hạn. Cái lợi nằm ở chỗ khác: đơn giữ được kết nối database và PostgreSQL chỉ chịu một mức tải có giới hạn.",
+          "a": "Ít truy vấn cùng lúc hơn nghe như mọi truy vấn đều nhanh hơn. Nhưng các lượt đọc vượt quá 20 lượt chạy và 5 lượt chờ thì không được trả lời; chúng nhận `503`, tức là kém tin cậy hơn với chúng, không phải hơn.",
+          "b": "Có hàng chờ, nên chờ nghe như số phận của mọi lượt đọc dư. Nhưng hàng chờ chỉ chứa 5; mọi lượt đọc vượt quá đó bị từ chối ngay.",
+          "d": "Kết luận đúng nhưng lý do thì sai. Giới hạn luôn có mặt, dù Redis đang chạy hay đang sập."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.bulkhead.q6",
+      "type": "scenario",
+      "bloom": "evaluate",
+      "difficulty": 4,
+      "skills": ["backend.resilience.load-limits"],
+      "section_ref": 6,
+      "context": {
+        "en": "A team runs an ordering api built like Đơn Hàng's at stage-3, but with no limit on product reads. Its catalog code and ordering code run in the one api process and share its database connections. During a sale, the cache went down, every product read hit the database, and checkout timed out for ten minutes while product pages loaded slowly. The team is small, ships the api as one program, and wants checkout to keep working the next time the cache fails. Product pages may fail for some customers during such an outage.",
+        "vi": "Một nhóm chạy một api đặt hàng được xây giống api của Đơn Hàng ở stage-3, nhưng không giới hạn lượt đọc sản phẩm. Code catalog và code đặt hàng chạy trong cùng một tiến trình api và dùng chung các kết nối database của nó. Trong một đợt sale, cache sập, mọi lượt đọc sản phẩm đều vào database, và thanh toán bị timeout suốt mười phút trong khi trang sản phẩm tải chậm. Nhóm nhỏ, triển khai api như một chương trình duy nhất, và muốn thanh toán vẫn chạy ở lần cache sập tiếp theo. Trang sản phẩm được phép lỗi với một số khách trong lúc như vậy."
+      },
+      "question": {
+        "en": "Which change fits this situation best?",
+        "vi": "Thay đổi nào hợp với tình huống này nhất?"
+      },
+      "options": [
+        { "id": "a", "en": "Move the catalog code into a service of its own, since only a separate process keeps its failure apart.", "vi": "Tách code catalog thành một service riêng, vì chỉ một tiến trình riêng mới giữ được lỗi của nó tách biệt.", "misconception": "Splitting the system into services is the only way to keep one failure from spreading." },
+        { "id": "b", "en": "Put product reads under a concurrency limit with a short queue, refusing the rest at once.", "vi": "Đặt lượt đọc sản phẩm dưới một concurrency limit với hàng chờ ngắn, từ chối phần còn lại ngay." },
+        { "id": "c", "en": "Let every product read wait as long as it needs, since a read that waits is answered in the end.", "vi": "Để mọi lượt đọc sản phẩm chờ bao lâu cũng được, vì lượt đọc nào chờ thì cuối cùng cũng được trả lời.", "misconception": "Rejecting a request at once is worse than letting it wait, because a waiting request succeeds in the end." },
+        { "id": "d", "en": "Put a per-customer limit on product reads, so that no one customer can send too many.", "vi": "Đặt giới hạn theo từng khách cho lượt đọc sản phẩm, để không khách nào gửi được quá nhiều." }
+      ],
+      "answer": ["b"],
+      "explanation": {
+        "en": {
+          "correct": "A cap on how many product reads run at once is a bulkhead inside the process: reads can take only their own share of the database connections, and the rest stay free for checkout. It keeps the api one program to ship, and the refused reads are the cost the team accepts.",
+          "a": "A separate process is indeed a bulkhead, the kind Payments and Notifications get. But it is not the only one, and for this reason alone it adds a network call and one more thing to deploy and watch. It is the better choice when there are other reasons to run the catalog on its own.",
+          "c": "Waiting does avoid an error for that one reader. But each waiting read is still in progress and its caller has no answer yet, later reads wait longer, and everything slows together, which is what this team saw. Waiting is the right choice only when a burst is short, which is what a small queue allows.",
+          "d": "A per-customer limit stops one caller from flooding the api, as the `orders` policy does. But a sale floods it with many customers each sending a few reads, so every one stays under its own limit. It is the right choice when a single caller is the problem."
+        },
+        "vi": {
+          "correct": "Giới hạn số lượt đọc sản phẩm chạy cùng lúc là một bulkhead bên trong tiến trình: lượt đọc chỉ lấy được phần kết nối database của riêng chúng, phần còn lại để dành cho thanh toán. Api vẫn là một chương trình để triển khai, và các lượt đọc bị từ chối là cái giá nhóm chấp nhận.",
+          "a": "Một tiến trình riêng đúng là một bulkhead, loại mà Payments và Notifications có. Nhưng nó không phải loại duy nhất, và nếu chỉ vì lý do này thì nó thêm một lời gọi qua mạng và thêm một thứ phải triển khai và theo dõi. Nó là lựa chọn tốt hơn khi có những lý do khác để chạy catalog riêng.",
+          "c": "Chờ đúng là tránh được lỗi cho lượt đọc đó. Nhưng mỗi lượt đọc đang chờ vẫn đang được xử lý và bên gọi vẫn chưa có câu trả lời, các lượt đến sau chờ lâu hơn, và mọi thứ cùng chậm lại, đúng như nhóm đã thấy. Chờ chỉ là lựa chọn đúng khi một đợt dồn ngắn, và đó là thứ một hàng chờ nhỏ cho phép.",
+          "d": "Giới hạn theo từng khách chặn được một bên gọi làm ngập api, như policy `orders` làm. Nhưng đợt sale làm ngập api bằng rất nhiều khách, mỗi người gửi vài lượt đọc, nên ai cũng nằm dưới giới hạn của mình. Đây là lựa chọn đúng khi vấn đề nằm ở một bên gọi duy nhất."
+        }
+      }
+    }
+  ]
+}
