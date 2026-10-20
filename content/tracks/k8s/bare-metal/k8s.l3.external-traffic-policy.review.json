@@ -1,0 +1,115 @@
+{
+  "id": "k8s.l3.external-traffic-policy",
+  "technical": {
+    "reviewed_at": "2026-10-20T18:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "API reference v1.34 (ServiceSpec.externalTrafficPolicy): \"The default value, \"Cluster\", uses the standard behavior of routing to all endpoints evenly\"; \"Possible enum values: - \"Cluster\" routes traffic to all endpoints. - \"Local\" routes traffic only to endpoints on the same node as ...\". Code: echo-loadbalancer.yaml sets no field and the capture shows POLICY Cluster.",
+        "source": "refs/kubernetes-website/static/docs/reference/generated/kubernetes-api/v1.34/index.html; refs/.../content/en/docs/reference/kubernetes-api/core/service-v1.md"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "API reference v1.34: \"externalTrafficPolicy describes how nodes distribute service traffic they receive on one of the Service's \"externally-facing\" addresses (NodePorts, ExternalIPs, and LoadBalancer IPs).\" Virtual IPs: \"control how traffic from external sources is routed\". The lesson's definition (node port or LoadBalancer address) is a correct subset; ExternalIPs are not taught.",
+        "source": "refs/kubernetes-website/static/docs/reference/generated/kubernetes-api/v1.34/index.html; refs/.../en/docs/reference/networking/virtual-ips.md#external-traffic-policy"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Round 2. Using Source IP: \"Packets sent to Services with Type=LoadBalancer are source NAT'd by default\". Virtual IPs (iptables): traffic \"through a type: NodePort Service, or through a load-balancer ... the client IP address does get altered\" - no condition on which Pod is picked, supporting \"whichever Pod it picks\". Capture: Cluster answer \"saw 172.22.0.4\" = donhang-worker2 (outputs/stage-3/scripts/k8s/cni.txt).",
+        "source": "refs/kubernetes-website/content/en/docs/tutorials/services/source-ip.md; refs/kubernetes-website/content/en/docs/reference/networking/virtual-ips.md (Example, iptables); outputs/stage-3/scripts/k8s/external-traffic-policy.txt"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Round 2: claim and section 4 now use the round-1 suggested_text. Using Source IP: \"node2 replaces the source IP address (SNAT) in the packet with its own IP address ... the pod's reply is routed back to node2 ... the pod's reply is sent back to the client\". SNAT is stated as the default for LoadBalancer traffic, and the reply path through the receiving node is as documented.",
+        "source": "refs/kubernetes-website/content/en/docs/tutorials/services/source-ip.md (Type=NodePort, lines 202-209)"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Using Source IP: \"If you set service.spec.externalTrafficPolicy to the value Local, kube-proxy only proxies proxy requests to local endpoints, and does not forward traffic to other nodes. This approach preserves the original source IP address. If there are no local endpoints, packets sent to the node are dropped\". Virtual IPs: \"Local to only route to ready node-local endpoints\". Capture: Local answer \"saw 172.22.0.6\" = client address.",
+        "source": "refs/kubernetes-website/content/en/docs/tutorials/services/source-ip.md; refs/.../en/docs/reference/networking/virtual-ips.md"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "metallb.io Concepts > Layer 2 (WebFetch summary): candidate list built \"taking into account active speakers, external traffic policy, active endpoints\"; \"In layer 2 mode, all traffic for a service IP goes to one node.\" Usage page states the endpoint-node rule explicitly only for BGP. Execution: capture shows Local announced by donhang-worker2, then after scaling to one replica on donhang-worker: \"echo-loadbalancer-local is announced by donhang-worker\".",
+        "source": "https://metallb.io/concepts/layer2/; https://metallb.io/usage/; examples/don-hang/outputs/stage-3/scripts/k8s/external-traffic-policy.txt line 19"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Round 2. metallb.io Usage, layer 2 (WebFetch summary, round 1): Local: \"Pods that aren't on the current leader node receive no traffic\". New clause: virtual-ips.md iptables mode \"select a backend Pod at random\"; \"A backend is chosen (either based on session affinity or randomly)\"; echo-loadbalancer.yaml@stage-3 sets no sessionAffinity, so ten calls can all land on one Pod. Capture: 2 vs 1.",
+        "source": "https://metallb.io/usage/; refs/kubernetes-website/content/en/docs/reference/networking/virtual-ips.md; examples/don-hang deploy/k8s/lessons/echo-loadbalancer.yaml@stage-3"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Conditional recommendation, supported: MetalLB Usage layer 2: Cluster traffic \"spreads evenly\" but hides the source IP; Local lets \"your pods ... see the real source IP\" while other Pods are \"just there as replicas in case a failover is needed\". API reference: Cluster \"routing to all endpoints evenly\".",
+        "source": "https://metallb.io/usage/; refs/kubernetes-website/content/en/docs/reference/kubernetes-api/core/service-v1.md"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Round 2: section 5 now reads \"apart from its name, its only change is line 11, externalTrafficPolicy: Local\". git show stage-3:deploy/k8s/lessons/echo-loadbalancer-local.yaml line 11 = \"  externalTrafficPolicy: Local\"; echo-loadbalancer.yaml@stage-3 has the same type/selector/ports, a different name and comments, and no externalTrafficPolicy.",
+        "source": "examples/don-hang (git show stage-3) deploy/k8s/lessons/echo-loadbalancer-local.yaml; deploy/k8s/lessons/echo-loadbalancer.yaml"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "external-traffic-policy.sh lines 23-26 call each Service once via lb_get; lines 32-36 make ten calls, `awk '{ print $1 }' | sort -u | wc -l`, and print lb_node. network-lessons.sh: lb_node_ip reads the client's /proc/net/arp MAC for the address and matches it to a kind node's MAC, matching the lesson's \"hardware address the client learned\".",
+        "source": "examples/don-hang/scripts/k8s/external-traffic-policy.sh; examples/don-hang/scripts/lib/network-lessons.sh"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Script: line 9 metallb_up (runs metallb-pool.sh if lab-pool or donhang-lb-client is missing); line 11 `trap 'kubectl scale deployment echo-ip ... --replicas=2 ...' EXIT`; lines 13-16 produce capture lines 1-7; lines 42 and 50 produce capture lines 17-19. Matches \"first seven lines ... last three\".",
+        "source": "examples/don-hang/scripts/k8s/external-traffic-policy.sh; examples/don-hang/outputs/stage-3/scripts/k8s/external-traffic-policy.txt"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Lesson output block matches outputs/stage-3/scripts/k8s/external-traffic-policy.txt line for line (19 lines): client 172.22.0.6, saw 172.22.0.4 / 172.22.0.6, both announced by donhang-worker2, 2 vs 1, final line names donhang-worker twice. 172.22.0.4 = donhang-worker2 per outputs/stage-3/scripts/k8s/cni.txt.",
+        "source": "examples/don-hang/outputs/stage-3/scripts/k8s/external-traffic-policy.txt; examples/don-hang/outputs/stage-3/scripts/k8s/cni.txt"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "echo-ip.yaml: `replicas: 2`, topologySpreadConstraints maxSkew 1 on kubernetes.io/hostname, whenUnsatisfiable DoNotSchedule, nodeTaintsPolicy Honor; Caddyfile `respond \"{system.hostname} saw {remote_host}`.",
+        "source": "examples/don-hang/deploy/k8s/lessons/echo-ip.yaml"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-20T19:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "example",
+        "text": "Carried from round 1. The second misconception says Local 'only makes traffic faster'. Nothing earlier made me think Local is about speed; the lesson only says no connection crosses to another node. I would not have held this belief. (Wording kept by the writer per the outline contract.)",
+        "quote": "\"`Local` only makes traffic faster, with no downside.\"",
+        "fix": "If the outline allows, tie it to what the reader has seen, e.g. '\"`Local` only stops traffic crossing to another node; the Pods still share the calls as before.\"'"
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

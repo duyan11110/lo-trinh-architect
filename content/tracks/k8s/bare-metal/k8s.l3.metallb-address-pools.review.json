@@ -1,0 +1,156 @@
+{
+  "id": "k8s.l3.metallb-address-pools",
+  "technical": {
+    "reviewed_at": "2026-10-20T16:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "metallb.io Installation: \"This will deploy MetalLB to your cluster, under the metallb-system namespace\"; lists \"The metallb-system/controller deployment\" and \"The metallb-system/speaker daemonset\". Pinned deploy/metallb/metallb-native.yaml @ stage-3: Deployment controller has no replicas field (default 1), DaemonSet speaker. Capture metallb-install.txt: one controller-... Pod, three speaker-... Pods.",
+        "source": "https://metallb.io/installation/; examples/don-hang deploy/metallb/metallb-native.yaml @ stage-3; outputs/stage-3/scripts/k8s/metallb-install.txt"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "metallb.io Troubleshooting: \"The controller is in charge of assigning IPs to the services\". Concepts: \"it will only ever hand out IPs that are part of its configured pools\". refs kubernetes service.md: \"information about the provisioned balancer is published in the Service's .status.loadBalancer field\". metallb-pool.sh waits on {.status.loadBalancer.ingress[0].ip}; capture shows EXTERNAL-IP 172.22.255.202.",
+        "source": "https://metallb.io/troubleshooting/; https://metallb.io/concepts/; refs/kubernetes-website/content/en/docs/concepts/services-networking/service.md"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Round 2. Configuration: \"Setting no IPAddressPool selector in an L2Advertisement instance is interpreted as that instance being associated to all the IPAddressPools available.\" Pinned CRD: \"If no IPAddressPool is selected by this or by the list, the advertisement is applied to all the IPAddressPools.\" Concepts > Layer 2: \"all traffic for a service IP goes to one node\". Lesson now says 'covers its pool' (sections 3, 4), the round-1 suggestion.",
+        "source": "https://metallb.io/configuration/; https://metallb.io/concepts/layer2/; metallb-native.yaml @ stage-3 (l2advertisements.metallb.io CRD)"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "metallb.io Troubleshooting: \"Make sure your nodes are not labeled with the node.kubernetes.io/exclude-from-external-load-balancers label\" ... \"MetalLB honors that label and won't announce any service from such nodes.\" Capture metallb-install.txt: speaker on donhang-control-plane READY true; label query returns only node/donhang-control-plane.",
+        "source": "https://metallb.io/troubleshooting/; outputs/stage-3/scripts/k8s/metallb-install.txt"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "metallb.io Concepts > Layer 2: \"In layer 2 mode, all traffic for a service IP goes to one node. From there, kube-proxy spreads the traffic to all the service's pods.\" ... \"In that sense, layer 2 does not implement a load balancer.\" echo-loadbalancer.yaml @ stage-3 sets no externalTrafficPolicy (comment: \"so it is Cluster\").",
+        "source": "https://metallb.io/concepts/layer2/; examples/don-hang deploy/k8s/lessons/echo-loadbalancer.yaml @ stage-3"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "refs kubernetes service.md: \"By default, spec.allocateLoadBalancerNodePorts is true and type LoadBalancer Services will continue to allocate node ports.\" echo-loadbalancer.yaml does not set it. Capture metallb-pool.txt shows CLUSTER-IP and PORT(S) 80:.../TCP present (masked).",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/services-networking/service.md; outputs/stage-3/scripts/k8s/metallb-pool.txt"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Round 2. Concepts: \"it will only ever hand out IPs that are part of its configured pools.\" Configuration: layer 2 mode \"responds to ARP requests on the local network\". Section 4 now conditions the requirement on the announcements an L2Advertisement asks for, as suggested in round 1.",
+        "source": "https://metallb.io/concepts/; https://metallb.io/configuration/"
+      },
+      {
+        "n": 8,
+        "verdict": "not-needed",
+        "evidence": "Conditioned recommendation (\"on a real network\"), follows directly from claim 7 (MetalLB cannot see other machines' addresses). Not a behaviour/number/syntax claim.",
+        "source": "lesson section 4; outline item 3"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "metallb-install.sh @ stage-3 header: \"Install MetalLB 0.15.3 on donhang from the pinned copy of the manifest its project publishes\"; runs kubectl apply -f deploy/metallb/metallb-native.yaml, then kubectl rollout status for deployment/controller and daemonset/speaker. Manifest contains CRDs ipaddresspools.metallb.io, l2advertisements.metallb.io and images quay.io/metallb/{controller,speaker}:v0.15.3.",
+        "source": "examples/don-hang scripts/k8s/metallb-install.sh, deploy/metallb/metallb-native.yaml @ stage-3"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "outputs/stage-3/scripts/k8s/metallb-install.txt: controller-...-... true donhang-worker...; speaker-... true donhang-control-plane; two more speaker-... true donhang-worker...; then node/donhang-control-plane alone. kind-config.yaml @ stage-3: one control-plane, two workers.",
+        "source": "examples/don-hang outputs/stage-3/scripts/k8s/metallb-install.txt; deploy/k8s/kind-config.yaml @ stage-3"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "tools/extract-code deploy/k8s/lessons/metallb-pool.yaml --tag stage-3, lines 7-26: IPAddressPool lab-pool / metallb-system / addresses x.y.255.200-x.y.255.250; L2Advertisement lab-pool / ipAddressPools: [lab-pool]. 200..250 inclusive = 51.",
+        "source": "examples/don-hang deploy/k8s/lessons/metallb-pool.yaml @ stage-3"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Pinned CRD ipaddresspools.metallb.io (v0.15.3): \"Each range can be either a CIDR prefix, or an explicit start-end range of IPs.\" metallb.io Configuration: addresses \"can be defined by CIDR, by range\". Capture: apply of the range form succeeded, ADDRESSES [\"172.22.255.200-172.22.255.250\"].",
+        "source": "metallb-native.yaml @ stage-3; https://metallb.io/configuration/; outputs/stage-3/scripts/k8s/metallb-pool.txt"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Round 2. Claim now limited to the lab run. outputs/stage-3/scripts/k8s/metallb-pool.txt: reply 'echo-ip-...-... saw 172.22.0.3'; pool 172.22.255.200-172.22.255.250 assigned and reachable. No general statement about Docker's allocation remains in section 5 or in quiz q1.d, q3.e, q5.c.",
+        "source": "examples/don-hang outputs/stage-3/scripts/k8s/metallb-pool.txt"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "metallb-pool.sh @ stage-3 line 14: docker network inspect kind ... | grep -m1 '^[0-9.]*/16$'; line 18 sed \"s/x\\.y\\./$prefix./g\" ... | kubectl apply -f -; then for _ in $(seq 60) reading jsonpath .status.loadBalancer.ingress[0].ip, break when non-empty, sleep 1: once a second, up to 60 times, as section 5 now says.",
+        "source": "examples/don-hang scripts/k8s/metallb-pool.sh @ stage-3"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "Output block in lesson is identical to outputs/stage-3/scripts/k8s/metallb-pool.txt (subnet 172.22.0.0/16, lab-pool true false [\"172.22.255.200-172.22.255.250\"], EXTERNAL-IP 172.22.255.202, reply 'echo-ip-...-... saw 172.22.0.3'). echo-ip.yaml responds \"{system.hostname} saw {remote_host}\".",
+        "source": "examples/don-hang outputs/stage-3/scripts/k8s/metallb-pool.txt; deploy/k8s/lessons/echo-ip.yaml @ stage-3"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "refs docker-docs desktop networking-how-tos.md, \"I cannot ping my containers\": \"Docker Desktop can't route traffic to Linux containers.\" Also \"There is no docker0 bridge on the host\". metallb-pool.sh lines 35-42 call the address from donhang-lb-client on --network kind; capture shows the reply.",
+        "source": "refs/docker-docs/content/manuals/desktop/features/networking/networking-how-tos.md"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "metallb-pool.sh line 9: kubectl get namespace metallb-system >/dev/null 2>&1 || scripts/k8s/metallb-install.sh >/dev/null. refs kubernetes basic-stateful-set.md shows kubectl apply output for an existing unchanged object: \"service/nginx unchanged\". install script greps only namespace/deployment/daemonset lines, none of which are mutated by MetalLB.",
+        "source": "examples/don-hang scripts/k8s/metallb-pool.sh @ stage-3; refs/kubernetes-website/content/en/docs/tutorials/stateful-application/basic-stateful-set.md"
+      },
+      {
+        "n": 18,
+        "verdict": "unverified",
+        "evidence": "Round 2, unchanged: metallb.io Concepts, Concepts > Layer 2, Configuration, Troubleshooting do not describe a pool address also used by another machine; not run in the lab. Section 6 now hedges ('may reach the other machine'). Behavior claim, so no blocker. Opened in round 2: lesson sections 3-7, quiz q1-q6, meta claims, metallb-pool.txt.",
+        "source": "https://metallb.io/concepts/layer2/; https://metallb.io/troubleshooting/"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-20T17:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (prompt 05, round 2 targeted)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "term",
+        "text": "Carried from round 1, narrowed. wget is now explained ('a program that sends an HTTP request and prints the reply'), but I still don't know what caddy:2.10.0 is or why that image is used just to run wget.",
+        "quote": "The last lines start a `caddy:2.10.0` container on the `kind` network, since Docker Desktop does not connect your machine to that network.",
+        "fix": "Add half a sentence: 'caddy:2.10.0 is used only because the image already contains wget.'"
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "term",
+        "text": "New in the changed sentences: 'packets' is not in known_vocab or Core concepts. I have only met the word inside the eBPF definition, so I read it as 'pieces of data sent over the network' and can follow, but I am guessing. It also appears in section 6 and q5.d.",
+        "quote": "To other machines it looks as if that node also has the address, so they send packets for it there.",
+        "fix": "Replace 'send packets for it there' with 'send what they address to it to that node', and 'their packets can reach it' with 'what they send can reach it' (section 6, q5.d)."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "caddy",
+        "packet"
+      ],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

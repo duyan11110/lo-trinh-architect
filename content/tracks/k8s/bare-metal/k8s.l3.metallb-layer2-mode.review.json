@@ -1,0 +1,157 @@
+{
+  "id": "k8s.l3.metallb-layer2-mode",
+  "technical": {
+    "reviewed_at": "2026-10-20T17:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "unverified",
+        "evidence": "Round 2: source_hint now points to metallb.io/configuration, which supports only the reply half ('responding to ARP requests on your local network directly, to give the machine's MAC address to clients'). Concepts > Layer 2 (fetched again) says only that MetalLB 'responds to ARP requests for IPv4 services'; no allowed doc root states the request is asked of every machine (RFC 826 not in versions.yaml, not in refs/rfc).",
+        "source": "https://metallb.io/configuration/ ; https://metallb.io/concepts/layer2/ ; outputs/stage-3/scripts/k8s/metallb-l2.txt"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Concepts > Layer 2: 'one node assumes the responsibility of advertising a service to the local network'; 'The election of the \"leader\" (the node which is going to advertise the IP) of a given loadbalancer IP is stateless'. Configuration: 'In order to advertise the IP coming from an IPAddressPool, an L2Advertisement instance must be associated to the IPAddressPool.'",
+        "source": "https://metallb.io/concepts/layer2/ ; https://metallb.io/configuration/"
+      },
+      {
+        "n": 3,
+        "verdict": "unverified",
+        "evidence": "Round 2: Concepts > Layer 2 (fetched again): 'it simply looks like that machine has multiple IP addresses assigned to its network interface'; the page does not say how the address is configured (summary). Configuration only paraphrases that IPs need not be bound to node interfaces. Neither settles 'set on no network card'. The repo change in repo_changes_needed (ip -4 addr capture) is not in examples/don-hang @ stage-3.",
+        "source": "https://metallb.io/configuration/ ; https://metallb.io/concepts/layer2/"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Services, ipMode: 'The default value is \"VIP\" meaning that traffic is delivered to the node with the destination set to the load-balancer's IP and port.' Virtual IPs: 'This same basic flow executes when traffic comes in through a type: NodePort Service, or through a load-balancer'; 'Set the field to Cluster to route external traffic to all ready endpoints'. echo-loadbalancer.yaml @ stage-3 sets no externalTrafficPolicy. Default not quoted, but the lesson text does not state it.",
+        "source": "https://kubernetes.io/docs/concepts/services-networking/service/ ; https://kubernetes.io/docs/reference/networking/virtual-ips/"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Concepts > Layer 2: 'In layer 2 mode, all traffic for a service IP goes to one node'; 'your service's ingress bandwidth is limited to the bandwidth of a single node'; kube-proxy then distributes traffic from that node to the service's pods (summary), which supports 'other nodes receive only the connections it forwards'. Per-VIP leader: 'sorted list of a hash of \"node+VIP\" elements'.",
+        "source": "https://metallb.io/concepts/layer2/"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Concepts > Layer 2: 'If the leader node fails for some reason, failover is automatic: the failed node is detected using memberlist', after which other nodes take over its IP addresses. Capture: after docker pause donhang-worker the client's ARP entry holds donhang-worker2's MAC.",
+        "source": "https://metallb.io/concepts/layer2/ ; outputs/stage-3/scripts/k8s/metallb-l2.txt"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Concepts > Layer 2: 'MetalLB sends a number of gratuitous layer 2 packets' (the page calls them really unsolicited) to notify clients that the MAC for the service IP changed; 'During an unplanned failover, the service IPs will be unreachable until the buggy clients refresh their cache entries'; 'failover happens within a few seconds'.",
+        "source": "https://metallb.io/concepts/layer2/"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Concepts > Layer 2: 'layer 2 does not implement a load balancer. Rather, it implements a failover mechanism so that a different node can take over should the current leader node fail' (wording seen via summary; key phrase 'layer 2 does not implement a load balancer' exact).",
+        "source": "https://metallb.io/concepts/layer2/"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "API reference: 'ServiceL2Status reveals the actual traffic status of loadbalancer services in layer2 mode.' status.node: 'Node indicates the node that receives the directed traffic'; status.serviceName: 'ServiceName indicates the service this status represents'. Capture: `kubectl get servicel2statuses -n metallb-system -o custom-columns=SERVICE:.status.serviceName,NODE:.status.node` returns three rows. Page labelled 'latest', not 0.15 specifically.",
+        "source": "https://metallb.io/apis/ ; outputs/stage-3/scripts/k8s/metallb-l2.txt"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Docker networking page states only 'the container gets an IP address for every Docker network it attaches to' (no MAC sentence). Settled by execution: in the capture, lb_node matched the client's ARP MAC against `docker inspect -f '{{(index .NetworkSettings.Networks \"kind\").MacAddress}}'` and resolved exactly one node (donhang-worker, then donhang-worker2), so each node container has its own MAC on kind.",
+        "source": "https://docs.docker.com/engine/network/ ; scripts/lib/network-lessons.sh line 45 ; outputs/stage-3/scripts/k8s/metallb-l2.txt"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "network-lessons.sh lines 42-55: lb_get = docker exec donhang-lb-client wget -T \"${2:-5}\"; mac_of = docker inspect ... Networks \"kind\" .MacAddress; arp_of = cat /proc/net/arp | awk on $1 == ip print $4; lb_node_ip loops kind get nodes and echoes the node whose MAC equals the ARP MAC. Matches the claim.",
+        "source": "examples/don-hang scripts/lib/network-lessons.sh (working tree; git show at tag not runnable in this session)"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "metallb-l2.sh lines 20-26: lb_get \"$lb\"; node=$(lb_node echo-loadbalancer); echo announced by; show kubectl get servicel2statuses ... SERVICE/NODE columns; echo MAC of; echo the client's ARP entry. Matches.",
+        "source": "examples/don-hang scripts/k8s/metallb-l2.sh lines 16-26"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Round 2: lesson now says 'The loop calls the address, allowing each call one second, waits one second, and repeats', matching lines 38-43 (lb_get \"$lb\" 1; sleep 1), the 120 s exit at line 41 and the final echo at line 46.",
+        "source": "examples/don-hang scripts/k8s/metallb-l2.sh lines 28-47"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "Line 14: trap 'if [ -n \"$paused\" ]; then docker unpause \"$paused\" >/dev/null; fi' EXIT. Lines 49-52: echo \"\\$ docker unpause $node\"; docker unpause; paused=; kubectl wait --for=condition=Ready \"node/$node\" --timeout=180s.",
+        "source": "examples/don-hang scripts/k8s/metallb-l2.sh lines 12-14, 49-52"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "docker container pause reference: 'The docker pause command suspends all processes in the specified containers.'",
+        "source": "https://docs.docker.com/reference/cli/docker/container/pause/"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "Round 2: lesson now says 'hardware addresses, the seconds and the call counts, and the end of the node names in the table', matching unstable.regex line 40 (node-name ending masked only between table column spaces) and lines 136-137; capture lines 1 and 11 keep full names.",
+        "source": "examples/don-hang outputs/unstable.regex lines 40, 136-137 ; outputs/stage-3/scripts/k8s/metallb-l2.txt"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "Capture rows echo-loadbalancer-local and traefik-ha; deploy/k8s/lessons/echo-loadbalancer-local.yaml line 7 `name: echo-loadbalancer-local`, deploy/k8s/lessons/traefik-ha-values.yaml line 29 `name: traefik-ha` — both lesson manifests of this repo.",
+        "source": "examples/don-hang outputs/stage-3/scripts/k8s/metallb-l2.txt ; deploy/k8s/lessons/"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "MetalLB troubleshooting: 'MetalLB honors that label and won't announce any service from such nodes' (node.kubernetes.io/exclude-from-external-load-balancers). metallb-install.txt: `kubectl get nodes -l node.kubernetes.io/exclude-from-external-load-balancers -o name` → node/donhang-control-plane. Round 2: the lesson's new sentence ('carries the label ..., which the speakers honor') matches.",
+        "source": "https://metallb.io/troubleshooting/ ; outputs/stage-3/scripts/k8s/metallb-install.txt"
+      },
+      {
+        "n": 19,
+        "verdict": "verified",
+        "evidence": "Concepts > BGP: 'Assuming your routers are configured to support multipath'; 'the routers will use all nexthops together, and load balance between them.' Lesson says a router 'can' spread traffic, which carries the condition.",
+        "source": "https://metallb.io/concepts/bgp/"
+      },
+      {
+        "n": 20,
+        "verdict": "verified",
+        "evidence": "metallb-l2.sh line 9 `metallb_up`; network-lessons.sh lines 58-63: if ! kubectl get ipaddresspool lab-pool -n metallb-system || ! docker inspect donhang-lb-client; then scripts/k8s/metallb-pool.sh.",
+        "source": "examples/don-hang scripts/k8s/metallb-l2.sh line 9 ; scripts/lib/network-lessons.sh lines 58-63"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 3,
+        "kind": "accuracy",
+        "text": "Carried from round 1. Claims 1 and 3 were re-sourced but are still unverified from the allowed doc roots: no allowed page says the ARP request is asked of every machine, and none says the address is set on no network card. Behavior claims, so not blocking; they carry outline items 1-2.",
+        "quote": "it asks every machine there, and the holder answers with its hardware address",
+        "fix": "Apply repo_changes_needed (capture `docker exec <node> ip -4 addr` in metallb-l2.sh via prompt 08) to settle claim 3; for claim 1 either capture the ARP request on kind (prompt 08) or soften to 'it asks the machines on that network'."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-20T18:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior reader, prompt 05, round 2 targeted re-review)",
+    "issues": [],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}
