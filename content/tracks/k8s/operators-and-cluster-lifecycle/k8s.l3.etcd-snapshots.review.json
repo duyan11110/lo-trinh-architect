@@ -1,0 +1,141 @@
+{
+  "id": "k8s.l3.etcd-snapshots",
+  "technical": {
+    "reviewed_at": "2026-10-20T23:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "v1.34 page: \"All Kubernetes objects are stored in etcd.\" refs mirror (same section): \"The snapshot file contains all the Kubernetes state and critical information.\" The rewind to the snapshot moment is also shown by the captured run (outputs/stage-3/scripts/k8s/etcd-snapshot.txt): `after`, created after the snapshot, is NotFound after the restore.",
+        "source": "https://v1-34.docs.kubernetes.io/docs/tasks/administer-cluster/configure-upgrade-etcd/ ('Backing up an etcd cluster'); refs/kubernetes-website/content/en/docs/tasks/administer-cluster/configure-upgrade-etcd.md L285-289"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "etcd v3.6 FAQ (WebFetch summary, quoted): \"Cluster data must be replicated across all peers, so there will be bandwidth cost as well.\" and \"Raft enforces cluster consistency.\" A committed write (including a delete) is therefore present on every member, so adding members does not protect against a wrong change.",
+        "source": "https://etcd.io/docs/v3.6/faq/"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "v1.34 page: etcdctl \"is the primary command-line client for interacting with etcd over a network\"; etcdutl \"is an administration utility designed to operate directly on etcd data files\". refs mirror L65-67 adds: \"...restoring snapshots, and validating data consistency\". etcd v3.6 recovery guide: from v3.6 use \"etcdutl to restore data from a snapshot\".",
+        "source": "https://v1-34.docs.kubernetes.io/docs/tasks/administer-cluster/configure-upgrade-etcd/ ('Understanding etcdctl and etcdutl'); https://etcd.io/docs/v3.6/op-guide/recovery/"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "v1.34 page, 'Snapshot using etcdctl options': `ETCDCTL_API=3 etcdctl --endpoints=https://127.0.0.1:2379 --cacert=<trusted-ca-file> --cert=<cert-file> --key=<key-file> snapshot save <backup-file-location>`. etcd v3.6 recovery: a snapshot may be \"taken from a live member with the etcdctl snapshot save command\". Run output at stage-3: \"Snapshot saved at /var/lib/etcd/snapshot.db\".",
+        "source": "https://v1-34.docs.kubernetes.io/docs/tasks/administer-cluster/configure-upgrade-etcd/; examples/don-hang/outputs/stage-3/scripts/k8s/etcd-snapshot.txt L8-10"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "certificates.md: etcd-ca `etcd/ca.crt` is etcd's `--trusted-ca-file,--peer-trusted-ca-file`. ports-and-protocols.md: TCP 2379-2380 for etcd; setup-ha-etcd-with-kubeadm.md: peer URLs on :2380. Round 2: the lesson now says etcd \"trusts\" client certificates signed by the etcd CA, which is what --trusted-ca-file means. lifecycle.sh L31-34 (working tree): etcd_tls (--cacert/--cert/--key under /etc/kubernetes/pki/etcd) is passed only to etcdctl, not etcdutl.",
+        "source": "refs/kubernetes-website/content/en/docs/setup/best-practices/certificates.md L173-176; reference/networking/ports-and-protocols.md L17; examples/don-hang/scripts/lib/lifecycle.sh L28-34"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "create-cluster-kubeadm.md L580: \"etcd data directory configured by kubeadm is at `/var/lib/etcd` on the control-plane node.\" kubeadm-config.v1beta4: dataDir \"Defaults to \\\"/var/lib/etcd\\\"\". implementation-details.md L397: \"make a `hostPath` mount out from the `dataDir` to the host's filesystem\". kind-lifecycle-config.yaml @ stage-3 comment: \"its data in /var/lib/etcd\".",
+        "source": "refs/kubernetes-website/content/en/docs/setup/production-environment/tools/kubeadm/create-cluster-kubeadm.md L580; reference/setup-tools/kubeadm/implementation-details.md L391-397"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "v1.34 page: \"When restoring the cluster using etcdutl, use the --data-dir option to specify to which folder the cluster should be restored\"; refs L432: \"a directory that will be created during the restore process\". etcd v3.6 recovery: \"A cluster restore with etcdutl snapshot restore creates new etcd data directories\", then \"start etcd with the new data directories\".",
+        "source": "https://v1-34.docs.kubernetes.io/docs/tasks/administer-cluster/configure-upgrade-etcd/ ('Restoring an etcd cluster'); https://etcd.io/docs/v3.6/op-guide/recovery/"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "refs configure-upgrade-etcd.md L401-413: \"stop all API server instances; restore state in all etcd instances; restart all API server instances\" and \"The Kubernetes project also recommends restarting Kubernetes components (`kube-scheduler`, `kube-controller-manager`, `kubelet`) to ensure that they don't rely on some stale data.\" Round 3 appositive \"which runs the built-in control loops\": controller.md L147-148 \"built-in controllers that run inside the kube-controller-manager\"; reference/_index.md L56 \"Daemon that embeds the core control loops\".",
+        "source": "refs/kubernetes-website/content/en/docs/tasks/administer-cluster/configure-upgrade-etcd.md L401-413; concepts/architecture/controller.md L147-148; reference/_index.md L56"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "static-pod.md 'Dynamic addition and removal of static pods': \"The running kubelet periodically scans the configured directory (`/etc/kubernetes/manifests` in our example) for changes and adds/removes Pods as files appear/disappear in this directory.\" The example moves the manifest out to /tmp and back.",
+        "source": "refs/kubernetes-website/content/en/docs/tasks/configure-pod-container/static-pod.md L235-250"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "kind design/initial (WebFetch): \"Each \\\"node\\\" runs as a docker container.\" and \"...before running kubeadm to initialize the node.\" Script facts as in round 1: etcd-snapshot.sh creates the cluster with --new, ConfigMap before, snapshot save, docker cp to backups/etcd/donhang-lifecycle.db, ConfigMap after, restore --data-dir /var/lib/etcd/restored, member -> member.before-restore. Captured output: VERSION v1.34.11.",
+        "source": "https://kind.sigs.k8s.io/docs/design/initial/; examples/don-hang @ stage-3: scripts/k8s/etcd-snapshot.sh, deploy/k8s/kind-lifecycle-config.yaml, outputs/stage-3/scripts/k8s/etcd-snapshot.txt"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "outputs/stage-3/scripts/k8s/etcd-snapshot.txt L27-30: \"$ kubectl get configmaps before after / NAME DATA AGE / before 1 ... / Error from server (NotFound): configmaps \\\"after\\\" not found\". The lesson's output block matches this file line for line.",
+        "source": "examples/don-hang/outputs/stage-3/scripts/k8s/etcd-snapshot.txt"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "configure-upgrade-etcd: \"All Kubernetes objects are stored in etcd.\" persistent-volumes.md: a PV is an API object that \"captures the details of the implementation of the storage, be that NFS, iSCSI, or a cloud-provider-specific storage system\". So etcd holds the object that describes the storage, while the data stays in that external storage.",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/storage/persistent-volumes.md L42-43; tasks/administer-cluster/configure-upgrade-etcd.md L285"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "secret.md: \"Kubernetes Secrets are, by default, stored unencrypted in the API server's underlying data store (etcd). Anyone with API access can retrieve or modify a Secret, and so can anyone with access to etcd.\" v1.34 configure-upgrade-etcd: \"In order to keep the sensitive Kubernetes data safe, encrypt the snapshot files.\"",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/configuration/secret.md L36-37; https://v1-34.docs.kubernetes.io/docs/tasks/administer-cluster/configure-upgrade-etcd/"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "configure-upgrade-etcd L285-287: \"Periodically backing up the etcd cluster data is important to recover Kubernetes clusters under disaster scenarios, such as losing all control plane nodes.\" A copy kept only on a lost node cannot serve that purpose. The script does this at L22-26 (docker cp off the node).",
+        "source": "refs/kubernetes-website/content/en/docs/tasks/administer-cluster/configure-upgrade-etcd.md L285-287"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "Argo CD core concepts (WebFetch): Sync is \"The process of making an application move to its target state. E.g. by applying changes to a Kubernetes cluster.\" Target state is \"The desired state of an application, as represented by files in a Git repository.\" A sync applies one application's Git state and does not rewind other objects, while a restore does (claim 1). The comparison is conditioned on the objects being in the repository; round 1's \"touches only those objects\" is gone.",
+        "source": "https://argo-cd.readthedocs.io/en/stable/core_concepts/"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "refs configure-upgrade-etcd.md L409-411: \"The Kubernetes project also recommends restarting Kubernetes components (`kube-scheduler`, `kube-controller-manager`, `kubelet`) to ensure that they don't rely on some stale data.\" Round 3 §8 now names exactly these three components; round 2's \"them\" (controllers in general, read as operators) is gone. controller.md L147-148: built-in controllers \"run inside the kube-controller-manager\".",
+        "source": "refs/kubernetes-website/content/en/docs/tasks/administer-cluster/configure-upgrade-etcd.md L409-411; refs/.../concepts/architecture/controller.md L147-148"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-20T23:30:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "example",
+        "quote": "It deletes and recreates `donhang-lifecycle`, which can take longer than this exercise; it has finished when it prints the `NotFound` line.",
+        "text": "Carried from round 2 (step unchanged in round 3). I know when the run has finished, so I can check the result. But 'longer than this exercise' gives no upper bound, so I do not know after how long to treat the run as stuck.",
+        "fix": "Replace 'can take longer than this exercise' with a rough duration, e.g. 'usually takes N minutes', using a measured run time."
+      },
+      {
+        "severity": "minor",
+        "section": 8,
+        "kind": "style",
+        "quote": "controllers compare objects with what exists, so after a restore they work from the rewound objects",
+        "text": "New in round 3 (changed bullet). The only 'controller' I know is the HTTP layer of an API, so 'controllers' here makes me pause. Section 4 now tells me kube-controller-manager runs the built-in control loops, and I know a control loop compares desired state with what exists, so I can guess the link, but only by guessing.",
+        "fix": "Replace 'controllers compare objects with what exists' with 'control loops compare objects with what exists', the wording section 4 already uses."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

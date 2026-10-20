@@ -1,0 +1,148 @@
+{
+  "id": "k8s.l3.encryption-at-rest",
+  "technical": {
+    "reviewed_at": "2026-10-20T22:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "\"By default, the API server stores plain-text representations of resources into etcd, with no at-rest encryption.\" Execution: outputs/stage-3/scripts/k8s/encryption-at-rest.txt, first read of lab-before: \"(written-before is readable in it)\".",
+        "source": "refs/kubernetes-website/content/en/docs/tasks/administer-cluster/encrypt-data.md lines 55-56"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "\"The kube-apiserver process accepts an argument --encryption-provider-config that specifies a path to a configuration file.\" \"whether the API server should load the file you specify for --encryption-provider-config only once at startup, or automatically whenever you change that file.\" \"To allow automatic reloading, configure the API server to run with: --encryption-provider-config-automatic-reload=true\" (so the default is load-once). Key only in that file; etcd receives encrypted bytes.",
+        "source": "encrypt-data.md lines 58-60, 713-722; kube-apiserver.md lines 573-580"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "\"The first provider in the list is used to encrypt resources written into the storage. When reading resources from storage, each provider that matches the stored data attempts in order to decrypt the data.\"",
+        "source": "encrypt-data.md lines 151-153"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "identity row: \"Resources written as-is without encryption.\" Example config comment: \"- identity: {} # this fallback allows reading unencrypted secrets; for example, during initial migration\". Execution: lab-before still readable via API after the flag.",
+        "source": "encrypt-data.md lines 234, 441-442"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "secretbox row: \"XSalsa20 and Poly1305 | Strong | Faster | 32-byte\". \"Generate a 32-byte random key and base64 encode it.\" Repo: scripts/dev-secrets.sh line 102 `secret: $(openssl rand -base64 32)` under `keys: - name: key1`.",
+        "source": "encrypt-data.md lines 298-303, 373; examples/don-hang/scripts/dev-secrets.sh lines 99-102"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Docs show the pattern for aescbc: \"Verify the stored Secret is prefixed with k8s:enc:aescbc:v1: ... the encryption key named key1 is used in etcd\". Captured run: lab-after read from etcd shows `k8s:enc:secretbox:v1:key1:` (line 17), lab-before after replace the same (line 28).",
+        "source": "encrypt-data.md lines 574-577; examples/don-hang/outputs/stage-3/scripts/k8s/encryption-at-rest.txt"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "\"A four byte magic number prefix: Bytes 0-3: \\\"k8s\\\\x00\\\" [0x6b, 0x38, 0x73, 0x00]\". Script line 15 `tr -c '[:print:]\\n' '.'` turns non-printables into '.'; captured output line 5 `k8s.` then \"(written-before is readable in it)\".",
+        "source": "reference/using-api/api-concepts.md lines 307-308; scripts/k8s/encryption-at-rest.sh line 15; outputs/stage-3/scripts/k8s/encryption-at-rest.txt"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "\"The snapshot file contains all the Kubernetes state\"; \"A snapshot may either be created from a live member with the etcdctl snapshot save command or by copying the member/snap/db file\". etcd's stored value for a Secret written after the flag is the encrypted bytes (captured output line 17), so the copy holds those bytes. Round 2: §8 now says \"later snapshots\", resolving the superseded-revision caveat.",
+        "source": "tasks/administer-cluster/configure-upgrade-etcd.md lines 287-298"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "\"Any custom resources that existed in etcd prior ... will be unencrypted until they are next written to storage. This is the same behavior as built-in resources.\" \"kubectl get secrets --all-namespaces -o json | kubectl replace -f -\" ... \"reads all Secrets and then updates them with the same data, in order to apply server side encryption.\"",
+        "source": "encrypt-data.md lines 141-142, 603-607"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "\"Verify the Secret is correctly decrypted when retrieved via the API: kubectl get secret secret1 -n default -o yaml\". Captured run: `kubectl get secret lab-before -o jsonpath='{.data.password}' | base64 -d` prints `written-before` after etcd shows k8s:enc:secretbox:v1:key1:.",
+        "source": "encrypt-data.md lines 579-583; outputs/stage-3/scripts/k8s/encryption-at-rest.txt lines 26-32"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Round 2: script line 7 `scripts/dev-secrets.sh >/dev/null` runs before lifecycle_cluster. Lines 36-40 sed-insert the flag, a volumeMount `mountPath: /etc/kubernetes/enc` (readOnly) and a hostPath volume `path: /etc/kubernetes/enc`; lines 44-46 wait for the Pod command to contain the flag. Docs: \"The running kubelet periodically scans the configured directory (/etc/kubernetes/manifests ...) for changes\".",
+        "source": "examples/don-hang/scripts/k8s/encryption-at-rest.sh lines 7, 29-47; tasks/configure-pod-container/static-pod.md lines 237-239"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "\"Encrypting secret data with a locally managed key protects against an etcd compromise, but it fails to protect against a host compromise. Since the encryption keys are stored on the host in the EncryptionConfiguration YAML file, a skilled attacker can access that file and extract the encryption keys.\" kubeadm: \"etcd data directory configured by kubeadm is at /var/lib/etcd on the control-plane node.\"",
+        "source": "encrypt-data.md lines 317-320; setup/production-environment/tools/kubeadm/create-cluster-kubeadm.md line 580"
+      },
+      {
+        "n": 13,
+        "verdict": "rephrased",
+        "evidence": "\"Kubernetes encrypts resources using a data key, and then encrypts that data key using the managed encryption service.\" \"dependence on the key encryption key, which is not stored in Kubernetes\"; attacker \"would need to compromise etcd and the third-party KMS provider.\" The service encrypts/decrypts data keys, not the Secret; \"encrypts or decrypts on request\" leaves the object unstated and invites reading it as the Secret.",
+        "source": "encrypt-data.md lines 324-335, 359-360",
+        "suggested_text": "`kms` asks a key service outside the cluster, a separate server that holds the key the API server's encryption depends on and uses it only on request, so that key is not on the node's disk."
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "Conditioned opinion, supported: kms v2 rated \"Strongest\" vs secretbox \"Strong\"; \"For additional secrecy, consider using the kms provider as this relies on keys held outside your Kubernetes cluster.\" Local key \"protects against an etcd compromise, but it fails to protect against a host compromise\"; wiping a disk that leaves follows from that.",
+        "source": "encrypt-data.md lines 262, 280, 298-303, 317-320, 359-360"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "Captured output: \"Secrets replaced: 3\", then lab-before \"k8s:enc:secretbox:v1:key1:\". Script line 9 deletes only lab-before/lab-after and lines 25, 52 create only those two, so the third pre-existed. `-f -`: \"cat pod.json | kubectl replace -f -  # Replace a pod based on the JSON passed into stdin\". Not re-run by reviewer.",
+        "source": "outputs/stage-3/scripts/k8s/encryption-at-rest.txt lines 24-29; encryption-at-rest.sh lines 9, 25, 52, 61; reference/kubectl/quick-reference.md line 284"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 3,
+        "kind": "accuracy",
+        "text": "New in changed text (round 2). Docs: \"Kubernetes encrypts resources using a data key, and then encrypts that data key using the managed encryption service.\" The added clause says the key service \"encrypts or decrypts on request\" without saying what, so a reader takes it as the Secret itself; the service handles only data keys.",
+        "quote": "a separate server that holds its key and encrypts or decrypts on request, so that key is not on the node's disk",
+        "fix": "Replace with: \"a separate server that holds the key the API server's encryption depends on and uses it only on request, so that key is not on the node's disk.\" Update claim 13 text to match. Do not introduce data keys (envelope encryption is beyond scope)."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-20T23:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (prompt 05, junior reader, round 2 targeted)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "text": "Carried from round 1. The prefix `k8s:enc:secretbox:v1:key1:` is said to name 'the provider and the key', but 'v1' is not explained. I can't tell whether it is the key's version or something else.",
+        "quote": "stores the result behind a prefix naming the provider and the key: `k8s:enc:secretbox:v1:key1:`",
+        "fix": "Add a few words saying what `v1` is in the prefix, or say that it is a format version that the reader can ignore."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "text": "New in changed text (round 2). The read rule now says only providers that 'match the stored value' try to decrypt, but nothing says how a provider matches a value. I guess the prefix decides (secretbox for `k8s:enc:secretbox:...`, identity for a plain value), but I have to guess. Summary line 3 repeats 'match'.",
+        "quote": "When the API server reads, the listed providers that match the stored value try, in order, to decrypt it.",
+        "fix": "Add half a sentence: 'a provider matches when the stored value starts with its prefix, such as `k8s:enc:secretbox:`; `identity` reads values with no such prefix'."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [
+        "What `v1` in the stored prefix means (section 4)",
+        "How a provider 'matches' a stored value (section 4, summary line 3)"
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}
