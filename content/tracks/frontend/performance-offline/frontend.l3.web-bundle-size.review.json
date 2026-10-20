@@ -1,0 +1,287 @@
+{
+  "id": "frontend.l3.web-bundle-size",
+  "technical": {
+    "reviewed_at": "2026-10-20T12:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "deployment/web.md: \"This generates the app, including the assets, and places the files into the `/build/web` directory of the project.\" The stage-3 build (DonHang.App/build/web) holds main.dart.js; its flutter_bootstrap.js buildConfig reads \"builds\":[{\"compileTarget\":\"dart2js\",\"renderer\":\"canvaskit\",\"mainJsPath\":\"main.dart.js\"}].",
+        "source": "refs/flutter-website/sites/docs/src/content/deployment/web.md:36-38; examples/don-hang/DonHang.App/build/web/flutter_bootstrap.js"
+      },
+      {
+        "n": 2,
+        "verdict": "wrong",
+        "evidence": "The browser fetches none of build/web/canvaskit from app-web. The build's flutter_bootstrap.js: `n.canvasKitBaseUrl?n.canvasKitBaseUrl:e.engineRevision&&!e.useLocalCanvasKit?W(\"https://www.gstatic.com/flutter-canvaskit\",e.engineRevision):\"canvaskit\"`; buildConfig has engineRevision, no useLocalCanvasKit. flutter_tools 3.47.2: `web-resources-cdn` defaultsTo: true; useLocalCanvasKit = !useCdn. up.sh runs plain `flutter build web`. The variant choice and the .symbols part are right.",
+        "source": "DonHang.App/build/web/flutter_bootstrap.js; C:/Flutter/flutter/packages/flutter_tools/lib/src/runner/flutter_command.dart:813-815,1496 (3.47.2); refs release-notes-3.10.0.md:762",
+        "suggested_text": "`build/web/canvaskit/` holds several builds of Flutter's engine; the browser downloads only the one it needs, and never the `.symbols` files, which are for debugging. (True as written only once scripts/up.sh builds with `--no-web-resources-cdn`; see issue on section 3.)"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Inspection of the stage-3 build: the only compiled Dart output is main.dart.js (no part files; the other .js are flutter.js, flutter_bootstrap.js, flutter_service_worker.js and canvaskit/*.js engine loaders), and buildConfig names one build with mainJsPath main.dart.js. faq.md: \"If you import a huge Dart library but only use a self-contained two-line method, then you only pay the cost of the two-line method\".",
+        "source": "examples/don-hang/DonHang.App/build/web (listing); refs/flutter-website/sites/docs/src/content/resources/faq.md:712-718"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "build-modes.md, release for web: \"The build is minified and tree shaking has been performed.\" deployment/web.md: \"the compiler reduces the size of the compiled code by removing unused code (known as _tree shaking_)\"; table row release: Yes / Yes. faq.md: \"you only pay the cost of the two-line method\".",
+        "source": "refs/flutter-website/.../testing/build-modes.md:78-82; deployment/web.md:168-179; resources/faq.md:712-718"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "flutter_tools 3.47.2 build_web.dart:26 `addTreeShakeIconsFlag();`, flag 'tree-shake-icons' defaultsTo kIconTreeShakerEnabledDefault (= true, build_info.dart:24), help \"Tree shake icon fonts so that only glyphs used by the application remain.\"; applied when buildMode.isPrecompiled. Build output: assets/fonts/MaterialIcons-Regular.otf is 8396 bytes. Release notes 3.10: \"tree shake icons from web builds\".",
+        "source": "C:/Flutter/flutter/packages/flutter_tools/lib/src/runner/flutter_command.dart:976-981,1476-1479; build/web/assets/fonts; refs release-notes-3.10.0.md:67"
+      },
+      {
+        "n": 6,
+        "verdict": "unverified",
+        "evidence": "The captured output (outputs/stage-3/scripts/frontend/web-bundle.txt) masks every number as `...`, and running gzip on build/web/main.dart.js (3,032,853 bytes raw) was not permitted in this session, so the gzip/raw ratio could not be observed. The script itself (lines 19-23) does compute `gzip -c -9 | wc -c` next to the raw size, as stated.",
+        "source": "examples/don-hang/outputs/stage-3/scripts/frontend/web-bundle.txt; scripts/frontend/web-bundle.sh:19-23 @ stage-3"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "RFC 9110 §12.5.3: \"When sent by a user agent in a request, Accept-Encoding indicates the content codings acceptable in a response.\" §8.4: \"The \\\"Content-Encoding\\\" header field indicates what content codings have been applied to the representation ... and thus what decoding mechanisms have to be applied in order to obtain data in the media type referenced by the Content-Type header field.\"",
+        "source": "refs/rfc/rfc9110.txt:3045-3050, 5527-5531"
+      },
+      {
+        "n": 8,
+        "verdict": "rephrased",
+        "evidence": "Round 2, page reached. encode: \"If omitted, `zstd` (preferred) and `gzip` are enabled by default.\" \"the encoding is chosen based the request's Accept-Encoding header.\" minimum_length \"(default: 512)\"; default match lists Content-Type text/*, JavaScript, JSON, fonts, SVG, so not every response is packed. The page says nothing about a request with no Accept-Encoding; RFC 9110 §12.5.3 says absence means any coding is acceptable, so that part stays unsupported.",
+        "source": "https://caddyserver.com/docs/caddyfile/directives/encode; refs/rfc/rfc9110.txt:5560-5561",
+        "suggested_text": "`encode` with no options turns on zstd and gzip; Caddy picks one from the formats the browser lists in `Accept-Encoding`, for text-like responses such as `main.dart.js`. The files on disk stay as they are."
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "deploy/app-web/Caddyfile @ stage-3 lines 20-21: `encode` then `file_server`; @ stage-2 the same block has only `try_files {path} /index.html` and `file_server`. Captured output of web-bundle.sh @ stage-3: \"GET http://localhost:8081/main.dart.js with Accept-Encoding: gzip\" / \"Content-Encoding: gzip\".",
+        "source": "tools/extract-code deploy/app-web/Caddyfile --tag stage-3 / --tag stage-2; examples/don-hang/outputs/stage-3/scripts/frontend/web-bundle.txt"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Captured output lists 6 canvaskit/*.wasm, main.dart.js, canvaskit/wimp.js.symbols. ls -lS of build/web confirms the order (canvaskit.wasm 7284602 > chromium 5428806 > skwasm_heavy 5216217 > webparagraph 3729129 > skwasm 3593715 > wimp.wasm 3581677 > main.dart.js 3032853 > wimp.js.symbols 1813030). Script line 24 sums every file. There are six .symbols files, not one.",
+        "source": "examples/don-hang/outputs/stage-3/scripts/frontend/web-bundle.txt; DonHang.App/build/web listing; web-bundle.sh:24 @ stage-3"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "scripts/up.sh @ stage-3 line 12: `(cd DonHang.App && flutter build web >/dev/null)`; line 22 prints `app (web)   http://localhost:8081/`. docker-compose.yml @ stage-3, service app-web: image caddy:2.10.0, volume ./DonHang.App/build/web:/srv/app:ro, ports \"8081:8081\".",
+        "source": "tools/extract-code scripts/up.sh --tag stage-3; docker-compose.yml --tag stage-3 (app-web)"
+      },
+      {
+        "n": 12,
+        "verdict": "rephrased",
+        "evidence": "Opinion; supportable only with its condition. faq.md: tree shaking means \"you only pay the cost\" of the code used, so a package may add little or a lot; the measurement is what decides. Section 5 already states it conditionally; summary line 5 drops the condition.",
+        "source": "refs/flutter-website/sites/docs/src/content/resources/faq.md:712-718",
+        "suggested_text": "Every package in `pubspec.yaml` can add code to `main.dart.js`; running `web-bundle.sh` before and after adding one shows how much it added."
+      },
+      {
+        "n": 13,
+        "verdict": "rephrased",
+        "evidence": "No docs sentence states it. The build's flutter_bootstrap.js loads the renderer (`l.renderer===\"canvaskit\"?d.canvasKit=I(d,r,f,h)`) and the entrypoint before the app runs, so main.dart.js and one engine build must arrive before any frame. \"Every file the app needs\" is too broad: initialization.md says fallback fonts are downloaded \"when bundled fonts lack required glyphs\", i.e. on demand.",
+        "source": "DonHang.App/build/web/flutter_bootstrap.js; refs/flutter-website/.../platform-integration/web/initialization.md:127",
+        "suggested_text": "`main.dart.js` and the engine build must arrive before the first frame on any connection; a fast link shortens that wait, it does not remove it, and a first visit has no saved copy to start from."
+      }
+    ],
+    "issues": [
+      {
+        "severity": "blocker",
+        "section": 3,
+        "kind": "accuracy",
+        "quote": "the set of files the browser downloads before a web app can draw: for DonHang.App, the compiled app in `main.dart.js`, Flutter's engine files, fonts and assets, all under `build/web`.",
+        "text": "Carried from round 2 (lesson unchanged; apply-review blocked again; up.sh:12@stage-3 is still a plain `flutter build web`, rechecked with tools/extract-code). Wrong for this build (claim 2): web-resources-cdn defaults to true, so the bootstrap fetches CanvasKit from www.gstatic.com, not build/web/canvaskit via app-web. Same error in outline item 1, web-bundle.sh:16-17, §4, §6 item 1, §9 line 1, quiz q1/q3/q4 explanations (q1 option c stays wrong either way).",
+        "fix": "Propose via prompt 08: scripts/up.sh line 12 → `flutter build web --no-web-resources-cdn` (sets useLocalCanvasKit; 3.47 also bundles a local Roboto fallback for no-CDN builds), recapture web-bundle.txt, rerun 04 on claims 2, 9, 13. That makes the lesson, outline and script comment true without teaching CDN (depth_notes forbid it). If refused, the outline must change first; do not patch prose alone."
+      },
+      {
+        "severity": "major",
+        "section": 3,
+        "kind": "accuracy",
+        "quote": "Flutter's engine files, fonts and assets, all under `build/web`",
+        "text": "Carried from round 2. Unlisted claim: that all fonts the app draws with come from build/web. FontManifest.json in the stage-3 build lists only MaterialIcons and CupertinoIcons; DonHang bundles no text font. initialization.md: `fontFallbackBaseUrl` \"Base URL for downloading fallback fonts when bundled fonts lack required glyphs. Defaults to \\\"https://fonts.gstatic.com/s/\\\"\". So text glyphs are fetched from outside build/web, on demand.",
+        "fix": "Resolved by the same --no-web-resources-cdn repo change (verify after rebuild that a Roboto fallback appears under build/web). Then add a claim for it to .meta.json. If the repo change is refused, write \"the icon fonts and assets\" instead of \"fonts and assets\" and drop \"all under build/web\"."
+      },
+      {
+        "severity": "major",
+        "section": 7,
+        "kind": "accuracy",
+        "quote": "of which a browser downloads only the one it needs, and the `.symbols` files, which are for debugging and never downloaded. It also counts raw sizes, while `app-web` sends text files compressed.",
+        "text": "Carried from round 2. The question asks what a browser downloads \"on its first visit to `:8081`\". With the current build it downloads no canvaskit/ file from :8081 at all (engine comes from www.gstatic.com), so the suggested answer is wrong as worded.",
+        "fix": "After the up.sh repo change the first sentence becomes true; keep it. Change the last sentence to: \"It also counts raw sizes, while `app-web` sends `main.dart.js` compressed.\" (the only file the script shows compressed)."
+      },
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "diagram",
+        "quote": "W --> C[\"app-web: encode\"]",
+        "text": "Carried from round 2. The diagram routes all of build/web (main.dart.js, canvaskit/, fonts, assets) through app-web and encode. With the stage-3 build, the engine and fallback fonts bypass app-web entirely (gstatic CDN), so the diagram shows a path that does not exist.",
+        "fix": "No change needed once up.sh builds with --no-web-resources-cdn (issue on section 3). Without that change, the diagram cannot be made true without showing a CDN, which depth_notes forbid: escalate to the outline instead."
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "accuracy",
+        "quote": "A browser that sends no `Accept-Encoding` still gets the plain file.",
+        "text": "Carried from round 2, narrowed: quiz q2 option-b explanation now uses the suggested text (Caddy picks from the browser's Accept-Encoding) and is closed; q2 a and q6 explanations no longer repeat the claim. Lesson text unchanged: no Caddy page documents 'no Accept-Encoding → plain file' and RFC 9110 §12.5.3 says no header means any coding is acceptable; §4 'Caddy packs each response' ignores the page's 512-byte minimum_length and Content-Type match list.",
+        "fix": "§5: replace the two sentences after the Caddyfile block with claim 8 suggested_text. §4: \"Caddy compresses text-like responses for a browser that says it can unpack them\". Or, via prompt 08, capture a curl without Accept-Encoding and keep the sentence."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "quote": "The `all files together` line counts every engine build and the `.symbols` file",
+        "text": "Carried from round 2. The build holds six .symbols files (canvaskit.js, chromium/canvaskit.js, webparagraph/canvaskit.js, skwasm.js, skwasm_heavy.js, wimp.js), not one; §7 already says \"files\".",
+        "fix": "Write \"counts every engine build and every `.symbols` file\"."
+      },
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "accuracy",
+        "quote": "Actually every needed file must arrive before the first frame on any connection",
+        "text": "Carried from round 2. Too broad (claim 13): fallback fonts and assets such as images are fetched when used, not all before the first frame. What must arrive first is main.dart.js and one engine build.",
+        "fix": "Write \"Actually `main.dart.js` and the engine build must arrive before the first frame on any connection; a fast link shortens that wait, it does not remove it, and a first visit has no saved copy to start from.\""
+      },
+      {
+        "severity": "minor",
+        "section": 9,
+        "kind": "opinion-as-fact",
+        "quote": "so check the bundle size whenever you add a dependency",
+        "text": "Carried from round 2. Unconditional recommendation in the summary; the body (section 5) gives the supportable form: measure before and after, decide on the number.",
+        "fix": "Line 5: \"Every package in `pubspec.yaml` can add code to `main.dart.js`; running `web-bundle.sh` before and after adding one shows how much it added.\""
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "rewrite"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-20T23:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (prompt 05, junior, round 3 targeted)",
+    "issues": [
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "term",
+        "quote": "The eight largest files of the release build, with their size in bytes as stored and after gzip",
+        "text": "Carried from round 2 (text unchanged in round 3). gzip is not in known_vocab and never defined. Core concepts defines compression and says the browser lists 'formats', but never says gzip is one of those formats. The script, its output, the Try it and four quiz questions all read raw vs gzip numbers.",
+        "fix": "Add one clause to the 'compression' entry in Core concepts: \"gzip and zstd are two such formats; `Accept-Encoding: gzip` means the browser can unpack gzip.\""
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "term",
+        "quote": "`encode` with no options lets Caddy pick zstd or gzip from what the browser accepts.",
+        "text": "Carried from round 2 (text unchanged in round 3). zstd is not in known_vocab and not defined; I can only guess from 'zstd or gzip' that it is another compression format.",
+        "fix": "Covered by the same Core concepts clause naming gzip and zstd as two compression formats."
+      },
+      {
+        "severity": "major",
+        "section": 1,
+        "kind": "term",
+        "quote": "you know `app-web` answers a path that is not a file with `index.html`; this lesson adds one more line to the same Caddyfile.",
+        "text": "Carried from round 2 (text unchanged in round 3). Caddy and Caddyfile are not in known_vocab, and the deep-links five-line summary mentions only 'an index.html fallback', not Caddy. 'Before you start' assumes I know Caddyfile; section 4 then says 'Caddy packs each response'. Half the main idea (compression) is carried by this server I have not met.",
+        "fix": "In 'Before you start' add: \"`app-web` is the Caddy web server that sends the files of `build/web` on `:8081`; its settings live in `deploy/app-web/Caddyfile`.\""
+      },
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "term",
+        "quote": "From stage-3 the `app-web` Caddyfile turns compression on",
+        "text": "Carried from round 2 (text unchanged in round 3). app-web is a name in the example system that the lesson never introduces: I have to guess it is the server that sends build/web to the browser on :8081. It is also a diagram node ('app-web: encode').",
+        "fix": "Same sentence as the Caddy fix, placed in 'Before you start', saying app-web is the server that sends `build/web` to the browser at `:8081`."
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "term",
+        "quote": "canvaskit/canvaskit.wasm               raw ...   gzip ...",
+        "text": "Carried from round 2 (text unchanged in round 3). Six of the eight listed files end in .wasm, and quiz q2 (option d) and q4 (option e) talk about '.wasm files', but the lesson never says what a .wasm file is. I can only link them to 'engine builds' because they sit under canvaskit/.",
+        "fix": "After 'Look at the names instead.' add: \"The `.wasm` files under `canvaskit/` are compiled builds of Flutter's engine.\""
+      },
+      {
+        "severity": "major",
+        "section": 3,
+        "kind": "term",
+        "quote": "the compiled app in `main.dart.js`, Flutter's engine files, fonts and assets, all under `build/web`.",
+        "text": "Carried from round 2 (text unchanged in round 3). 'assets' is not in known_vocab and not defined; it appears in the web bundle definition, the diagram, section 4 and quiz q1/q3. I do not know what counts as an asset in DonHang.App.",
+        "fix": "In the 'web bundle' entry, write 'assets (files such as images the app ships with)' or name what DonHang.App's assets are."
+      },
+      {
+        "severity": "major",
+        "section": 4,
+        "kind": "term",
+        "quote": "It also builds a smaller icon font that holds only the icons the app uses.",
+        "text": "Carried from round 2 (text unchanged in round 3). 'icon font' is new: I did not know icons are stored as a font, so 'removing icons' from a font is a step I cannot reconstruct. The tree shaking definition and summary line 3 rely on it.",
+        "fix": "Add before this sentence: \"Flutter's icons are drawn from a font file in which each icon is one character.\""
+      },
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "term",
+        "quote": "curl --silent --show-error --fail --output /dev/null --header 'Accept-Encoding: gzip' \\",
+        "text": "Carried from round 2 (text unchanged in round 3). curl is a tool name not in known_vocab, and quiz q6 asks me to fill in this exact command line. The comment says 'Asked as a browser asks' but not that curl is the program sending the request.",
+        "fix": "In the sentence before the code block, add: \"`curl` is a command-line program that sends an HTTP request and prints the response.\""
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "code",
+        "quote": "The second half of `scripts/frontend/web-bundle.sh` measures the bundle and asks `app-web` how it sends `main.dart.js`:",
+        "text": "Carried from round 2. The prose after the block walks through the output but never through the code. find, sort, head, awk and wc are not explained, so I cannot tell which line computes the gzip number and which the total.",
+        "fix": "Add one sentence: \"The `while` loop packs each of the eight files with `gzip` and counts the bytes; the `all files together` line adds up the size of every file; the `curl` line asks for `main.dart.js` like a browser.\""
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "code",
+        "quote": "encode\n\tfile_server",
+        "text": "Carried from round 2. file_server appears in the Caddyfile block and the prose never says what it does, while Connections mentions try_files, which is not in the block.",
+        "fix": "Add to the sentence after the block: \"`file_server`, already there before stage-3, sends the files of `build/web`.\""
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "diagram",
+        "quote": "C --> R[\"browser: unpack, start\"]",
+        "text": "Carried from round 2. Section 4's prose mentions that the browser unpacks, but never that it then starts the app before the first frame; 'start' is only in a code comment of section 5.",
+        "fix": "End the 'Then the files travel' paragraph with: \"The browser unpacks them, starts DonHang.App, and only then draws the first frame.\""
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "length",
+        "quote": "The sizes depend on your build, so the captured output shows `...` in their place. Look at the names instead.",
+        "text": "Carried from round 2. This paragraph packs five ideas (masked numbers, engine files on top, what the total counts, Content-Encoding, before/after measuring); I re-read it twice.",
+        "fix": "Split it after '... more than any one browser downloads.' and start a second paragraph with 'The last two lines show ...'."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "gzip",
+        "zstd",
+        "Caddy / Caddyfile",
+        "app-web",
+        ".wasm",
+        "assets",
+        "icon font",
+        "curl",
+        "find / sort / awk / wc (shell commands in the script)",
+        "file_server"
+      ],
+      "skipped_steps": [
+        "Section 4: 'It also builds a smaller icon font' — no step saying icons live in a font.",
+        "Section 4: browser 'start' step in the diagram is not in the prose.",
+        "Section 5: the script code is never mapped to the output lines it produces."
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "fix-required"
+  }
+}

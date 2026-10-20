@@ -1,0 +1,170 @@
+{
+  "id": "frontend.l3.syncing-the-queue",
+  "technical": {
+    "reviewed_at": "2026-10-20T21:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "offline.sh @ stage-3: down() runs `docker compose stop web` (\"web (Caddy) stopped\"); up() runs `docker compose start web` and polls :8080/api/v1/products for 200. Comment: \"`offline.sh down` leaves Caddy stopped: the app on :8081 still loads, but its requests to :8080 get no answer\". ApiClient.baseUrl = 'http://localhost:8080/api/v1'.",
+        "source": "examples/don-hang @ stage-3: scripts/frontend/offline.sh; DonHang.App/lib/api_client.dart"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "auth_controller.dart @ stage-3: \"Kept in memory only, as at stage-1: reloading the page signs the customer out.\" `String? build() => null;`",
+        "source": "examples/don-hang @ stage-3: DonHang.App/lib/auth/auth_controller.dart"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Round 2 (claim text changed): QueueSync.build: `ref.listen(authProvider, (previous, token) { if (token != null) sendNow(); })`, `ref.onDispose(listenForOnline(sendNow))`, `Future.microtask(sendNow)` - three triggers. Send now is the FAB in queued_orders_screen.dart calling `ref.read(queueSyncProvider.notifier).sendNow()`. No Timer in queue_sync.dart. Lesson section 5 now says the same.",
+        "source": "examples/don-hang (submodule working tree, line numbers match stage-3 refs of round 1): DonHang.App/lib/offline/queue_sync.dart:29-36; lib/screens/queued_orders_screen.dart:42-46"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Round 2: claim now states only what the code does. browser_web.dart: `web.window.addEventListener('online', listener);` where listener calls onOnline; queue_sync.dart passes sendNow. Comment: \"\\\"Online\\\" only means a network is there; whether the API answers is found out by sending.\" No HTTP call in listenForOnline. The lesson no longer states when the browser fires `online` (situation sentence removed).",
+        "source": "examples/don-hang (working tree): DonHang.App/lib/offline/browser_web.dart:20-27; lib/offline/queue_sync.dart:33"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Round 2: claim text is now the round-1 suggested_text. router.dart redirect: `if (!signedIn && state.matchedLocation.startsWith('/orders')) return '/login';` and Waiting orders is `orders/queued`, so with no token the screen is not reachable and a signInNeeded set then is not seen; the StatusBanner (round 1 inspection of queued_orders_screen.dart:24-68) shows the three pauses above the signed-in customer's orders.",
+        "source": "examples/don-hang (working tree): DonHang.App/lib/router.dart:26-31, 55; lib/screens/queued_orders_screen.dart:24-68"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Round 3: section 4 now adds the condition (\"when orders are waiting, records `signInNeeded`\"). queue_sync.dart:42-49: `if (state.sending || (resumeAt != null && DateTime.now().isBefore(resumeAt))) return;` ... `state = SyncState(pause: _hasWaiting() ? SyncPause.signInNeeded : SyncPause.none); return;`. Check and `state = const SyncState(sending: true)` run before the first await, so a second call in the same tab returns.",
+        "source": "examples/don-hang @ stage-3: DonHang.App/lib/offline/queue_sync.dart:41-50, 93"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "queue_sync.dart:51-61: `if (order.status == QueuedOrderStatus.waiting && order.subject == subject) order` then `for (final order in waiting) { final stop = await _send(order); if (stop != null) { state = stop; return; } }`. order_queue.dart: `void add(QueuedOrder order) => _save([...state, order]);`. Test 'sends the oldest order first...' passes: keysSent ['first','second'].",
+        "source": "examples/don-hang @ stage-3: DonHang.App/lib/offline/queue_sync.dart:51-61; lib/offline/order_queue.dart; flutter test run 2026-10-20"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "_send: `createOrder(order.items, idempotencyKey: order.idempotencyKey)`; `queue.markSent(order, result); return null;`; `case 400 || 409: queue.markRejected(order, problem.detail); return null;`. createOrder returns OrderResult only on 201 (`if (response.statusCode != 201) throw ApiProblem.fromResponse(response)`).",
+        "source": "examples/don-hang @ stage-3: DonHang.App/lib/offline/queue_sync.dart:69-81; lib/api_client.dart createOrder"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Round 2: createOrder: `on http.ClientException { throw ApiUnreachable(); }`, `if (const [502, 503, 504].contains(response.statusCode)) throw ApiUnreachable();`, `if (response.statusCode != 201) throw ApiProblem.fromResponse(response);`. _send: ApiUnreachable and `default` -> notSent; 429 -> rateLimited with resumeAt only when retryAfter != null; `case 401: return const SyncState(pause: SyncPause.signInNeeded);` (no resumeAt, so a later trigger is not blocked). No queue call on these paths.",
+        "source": "examples/don-hang (working tree): DonHang.App/lib/api_client.dart:65-79; lib/offline/queue_sync.dart:75-90"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Round 2: `retryAfter: _seconds(response.headers['retry-after'])`; `static Duration? _seconds(String? header) { final seconds = int.tryParse(header ?? ''); return seconds == null ? null : Duration(seconds: seconds); }` - null when missing or not an integer, as the claim and section 5 now say.",
+        "source": "examples/don-hang (working tree): DonHang.App/lib/api_client.dart:113, 117-120"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Round 3, by inspection: OrdersController.Create always ends `return CreatedAtAction(...)` (201, repeat key too); PlaceOrderAsync returns the earlier order for a known key. Middleware: unique-index violation -> 409 \"the same request is already being processed; retry it to get its result\", comment \"Two requests with the same Idempotency-Key arrived together\". Claim says \"e.g. one that got no answer\" - correct as worded. Not executed.",
+        "source": "examples/don-hang (working tree): DonHang.Api/Controllers/OrdersController.cs:57; DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs:53-59; DonHang.Domain/OrderService.cs:17-25"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "ASP.NET Core authentication overview, Challenge: \"An authentication challenge is invoked by Authorization when an unauthenticated user requests an endpoint that requires authentication.\" Example: \"A JWT bearer scheme returning a 401 result with a `www-authenticate: bearer` header.\" OrdersController.Create has [Authorize].",
+        "source": "refs/aspnetcore-docs/aspnetcore/security/authentication/index.md:111-116"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "token_subject.dart: `final parts = token.split('.'); if (parts.length != 3) return null;` ... `utf8.decode(base64Url.decode(base64Url.normalize(parts[1])))` ... `claims['sub'] as String?`. Comment: \"checking the signature stays the API's job\". No signature check in the function.",
+        "source": "examples/don-hang @ stage-3: DonHang.App/lib/auth/token_subject.dart"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "OrdersController @ stage-3: `var customer = await CurrentCustomerAsync();` ... `orderService.PlaceOrderAsync(customer.Id, requested, idempotencyKey)`; `CurrentCustomerAsync() { var subject = User.FindFirstValue(\"sub\"); return ... customers.FindByIdentitySubjectAsync(subject); }`. The request body carries only items; ApiClient sends the current authProvider token.",
+        "source": "examples/don-hang @ stage-3: DonHang.Api/Controllers/OrdersController.cs:37-50, 171-175"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "Ran `flutter test test/queue_sync_test.dart` (Flutter 3.47.2): 8 tests, \"00:02 +8: All tests passed!\". Step 2 not executed (edit of the submodule not permitted here); by inspection the Bob test uses `ScriptedApi([])`, so createOrder's `answers.removeAt(0)` runs on an empty list, uncaught by _send (only ApiUnreachable/ApiProblem); `dart run` of `[].removeAt(0)` prints \"RangeError (length): Invalid value: Valid value range is empty: 0\". Other 7 tests use only 'alice' orders.",
+        "source": "examples/don-hang @ stage-3: DonHang.App/test/queue_sync_test.dart:32-45, 139-147; local run 2026-10-20"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "The loop awaits each _send and returns at the first non-null SyncState (queue_sync.dart:55-61), so a 429/401 stops later sends; with concurrent requests nothing in the code could stop requests already issued. Round 2: the arrival-order clause is gone from the claim and from Seniors bullet 2.",
+        "source": "examples/don-hang @ stage-3: DonHang.App/lib/offline/queue_sync.dart:55-61"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "OrderService: a repeated key returns the earlier order (Created = false); a new key goes to `new Order(...) { IdempotencyKey = idempotencyKey }` + AddAsync, i.e. a second order. The app deletes only on customer action (`queue.remove` from Remove on a rejected entry or Open order on a sent one).",
+        "source": "examples/don-hang @ stage-3: DonHang.Domain/OrderService.cs:17-41; DonHang.App/lib/screens/queued_orders_screen.dart:84, 100"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "riverpod.dev Refs page (nav: \"What's new in Riverpod 3.0\"): \"Ref.listen is a more manual way of listening to providers... useful when you want to perform a side-effect when a provider's state changes\"; Notifier build may call `ref.onDispose(...)`; \"You can safely call Ref.read [in] button clicks\". Code compiles and its 8 tests pass against flutter_riverpod/riverpod 3.0.3 (pubspec.lock).",
+        "source": "https://riverpod.dev/docs/concepts2/refs; flutter test run 2026-10-20"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "New in round 3 (changed sentence): the lesson turns claim 11's example into the only case. The 409 comes from any two requests with the same key overlapping (middleware comment: \"Two requests with the same Idempotency-Key arrived together\"). `state.sending` guards only one tab; the queue is in localStorage, shared by the site's tabs, so two tabs signed in as the same customer can send one key together while both get answers.",
+        "quote": "answers `409` only when a resend arrives while an earlier attempt with that key, one that got no answer, is still being stored",
+        "fix": "Write: \"At stage-3 this endpoint answers `409` only when two requests with the same key overlap, for instance a resend that arrives while an earlier attempt that got no answer is still being stored.\""
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "New in round 3 (diagram node added): the node drops the condition the prose now has. With nobody signed in and no waiting order the code sets `SyncPause.none` (`_hasWaiting() ? SyncPause.signInNeeded : SyncPause.none`).",
+        "quote": "X[Return; signInNeeded if nobody signed in]",
+        "fix": "Change the node to `X[Return; signInNeeded if nobody signed in and orders wait]`."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-20T22:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (prompt 05, round 3 targeted)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "diagram",
+        "text": "New in round 3 (diagram changed). The new `no` node says nobody signed in records `signInNeeded`, but the prose under it now says this happens only \"when orders are waiting\". Reading the diagram first, I took it as always, then had to correct myself from the prose.",
+        "quote": "X[Return; signInNeeded if nobody signed in]",
+        "fix": "Change the node text to \"Return; signInNeeded if nobody signed in and orders wait\"."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "diagram",
+        "text": "New in round 3 (stop nodes merged). The prose says \"any status the code does not name\" also stops the sync with the order waiting, but the stop arrow lists only no answer, 429 and 401. From the diagram alone I could not place a `500`.",
+        "quote": "P -->|no answer, 429 or 401| L[Stop: notSent, rateLimited or signInNeeded]",
+        "fix": "Change the arrow label to \"no answer, other status, 429 or 401\"."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}
