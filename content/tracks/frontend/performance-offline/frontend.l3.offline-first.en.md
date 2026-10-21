@@ -17,7 +17,7 @@ versions_used: [flutter, riverpod]
 content_version: 1
 status: reviewed
 approved_by: null
-reviewed_at: "2026-10-20T14:00:58+07:00"
+reviewed_at: "2026-10-22T01:33:07+07:00"
 ---
 
 ## Before you start
@@ -33,7 +33,7 @@ At stage-2 a customer has the product list of DonHang.App open and is comparing 
 ## Core concepts
 
 - **offline-first** — designing an app to read a copy kept on the device first and to use the network to refresh that copy, so a screen still has something to show without a connection.
-- **localStorage** — the browser's store of string values by key for one web address (scheme, host and port); the values survive a page reload and closing the tab, and the browser limits how much one address may keep.
+- **localStorage** — the browser's store of string values by key for one web address (scheme, such as `http` or `https`, host and port); the values survive a page reload and closing the tab, and the browser limits how much one address may keep.
 - saved copy — the product list exactly as the API last returned it, written to `localStorage` under the key `donhang.products`.
 - `StreamProvider` — a Riverpod provider that can hand the screen several values one after another, each as AsyncValue data, where a `FutureProvider` hands over one result.
 - out of date — `LoadedProducts` is what the provider hands the screen: the product list plus an `outOfDate` flag, set when the screen shows the saved copy because a fresh load failed.
@@ -64,9 +64,9 @@ In the situation above, the stage-2 screen had one source: the API. When the API
 
 At stage-3 that second source is `localStorage`. Because it holds only strings, the app turns the product list into JSON text before writing it, and back into `Product` objects after reading it.
 
-Follow the diagram from the top. It shows a returning visit; on a first visit nothing is saved, so the first arrow back to the screen is skipped and the "no answer" branch ends in an error instead. When the screen first watches `productsProvider`, the provider reads the saved copy. If one exists, the screen gets it at once, without waiting for the API. Then the provider asks the API. A fresh list replaces the copy in two places: first in `localStorage` for the next visit, then on screen.
+Follow the diagram from the top; it shows a returning visit. When the screen first watches `productsProvider`, the provider reads the saved copy. If one exists, the screen gets it at once, without waiting for the API. Then the provider asks the API. A fresh list replaces the copy in two places: first in `localStorage` for the next visit, then on screen.
 
-If the request to the API fails, the provider hands the screen the saved copy again, now marked out of date. The customer keeps the list and sees a warning above it instead of a spinner or an error. Only when nothing was saved, as on a first visit, does the screen show its error.
+If the request to the API fails, the provider hands the screen the saved copy again, now marked out of date. The customer keeps the list and sees a warning above it instead of a spinner or an error. Only when nothing was saved, as on a first visit, does the screen show its error: the first arrow back to the screen is skipped, and the "no answer" branch ends in that error.
 
 The order is the answer to the situation: device first, network second. The copy is only as new as the last successful load, so the screen says so whenever it could not refresh it. This suits a list the customer browses; where acting on an old copy could cause harm, an error can be the safer answer.
 
@@ -98,9 +98,9 @@ final productsProvider = StreamProvider<LoadedProducts>((ref) async* {
 
 Each `yield` hands the screen one more value (`async*` marks a function that may `await` and also `yield` several values), so the diagram's three arrows back to the screen are three lines here. `readSavedProducts`, below the excerpt, reads the key `savedProductsKey` (the constant holding `donhang.products`) and decodes the JSON; it returns `null` when nothing is saved.
 
-The `store.write` line saves the fresh list only after `fetchProducts` succeeded, so a failed load never overwrites a good copy. `rethrow` keeps the old behaviour for a first visit: no copy, so the screen gets an error. The `retry` function returns `null`, which turns off Riverpod's automatic retries for this provider. Retries would only start when the provider itself fails, on the `rethrow` with nothing saved; without them the screen shows its error at once instead of after Riverpod's retries.
+The `store.write` line saves the fresh list only after `fetchProducts` succeeded, so a failed load never overwrites a good copy. `rethrow` (throws the caught exception again, like C#'s `throw;`) keeps the old behaviour for a first visit: no copy, so the screen gets an error. By default, when a provider fails, Riverpod runs it again a few times, with a wait between attempts; at stage-2 that is why the spinner turned for a while. The `retry` function returns `null`, which turns that off here. With a copy saved, a failed load is caught and the copy shown, so there is nothing to wait for; in the load, only the `rethrow` fails the provider, and retries would just delay its error.
 
-`localStoreProvider` comes from `lib/offline/local_store.dart`: in the browser it is the real `localStorage`, and in widget tests an in-memory map stands in. How the screen uses the flag:
+`apiClientProvider` hands over the client that calls the API, as at stage-2. `localStoreProvider` comes from `lib/offline/local_store.dart`: in the browser it is the real `localStorage`, and in widget tests an in-memory map stands in. How the screen uses the flag:
 
 ```dart file=DonHang.App/lib/screens/product_list_screen.dart tag=stage-3 lines=32-41
       body: products.when(
@@ -115,13 +115,13 @@ The `store.write` line saves the fresh list only after `fetchProducts` succeeded
       ),
 ```
 
-The three builders are the same three cases as at stage-2. What changed is how often each one runs. With a copy saved, the loading builder shows only until the copy is read, and the error builder runs only on a first visit with no answer. An out-of-date copy goes through the data builder like any other list, with a warning banner placed above the catalog. In English the banner reads `Showing the saved list: the API did not answer, so it may be out of date.`
+The three builders are the same three cases as at stage-2. What changed is how often each one runs. With a copy saved, the loading builder shows only until the copy is read, and when the API does not answer, the error builder no longer runs as long as a copy is saved; it still runs on a first visit with no answer. An out-of-date copy goes through the data builder like any other list, with a warning banner placed above the catalog. In English the banner reads `Showing the saved list: the API did not answer, so it may be out of date.`
 
 ## Seniors often assume…
 
 - **"Offline support is just a better error message when the request fails."** → Actually offline-first changes where the screen reads from: the saved copy, shown without waiting for the request. An error message, however friendly, still leaves the customer with nothing to choose from. You notice this when the stage-2 screen says `Could not load products.` while the list it showed a minute ago is gone.
 - **"Data saved in localStorage stays correct until the user is back online."** → Actually the copy is what the API said at the last successful load, and nothing tells the device when the server changes. A product removed or repriced on the server still appears in the saved list until a load succeeds. You notice this when the warning banner is on screen: that is the app admitting it cannot know.
-- **"Once the data is saved in the browser, the whole app works offline, a page reload included."** → Actually `localStorage` holds the product list, not the app. Before any Dart code can read the saved list, a reload must get the web bundle again, from the network or from whatever the browser's HTTP cache kept. Storing the app's own files in the browser on purpose is a separate step that this module leaves out. You notice this when a device with no network at all fails to open DonHang.App, though the product list is still saved.
+- **"Once the data is saved in the browser, the whole app works offline, a page reload included."** → Actually `localStorage` holds the product list, not the app. Before any Dart code can read the saved list, a reload must get the web bundle again, from the network or from the browser's HTTP cache, its own saved copies of earlier responses, kept as the server's headers allow. Storing the app's own files in the browser on purpose is a separate step that this module leaves out. You notice this when a device with no network at all fails to open DonHang.App, though the product list is still saved.
 
 ## Try it (3 minutes)
 

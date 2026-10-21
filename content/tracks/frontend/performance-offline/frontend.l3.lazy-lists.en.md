@@ -15,9 +15,9 @@ vocab: []
 example_tag: stage-3
 versions_used: [flutter]
 content_version: 1
-status: reviewed
-approved_by: null
-reviewed_at: "2026-10-20T10:49:50+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-10-22T00:15:54+07:00"
 ---
 
 ## Before you start
@@ -27,7 +27,7 @@ reviewed_at: "2026-10-20T10:49:50+07:00"
 
 ## The situation
 
-The shop owner wants to load a supplier's catalog of ten thousand products into Đơn Hàng. Before that happens, you are asked whether the product list in `DonHang.App` will cope. On a phone-width window, `ProductCatalog` shows a handful of tiles at a time. You picture ten thousand `ProductTile` widgets being created the moment the screen opens. A teammate suggests showing only fifty products per page, to be safe. Does the catalog build a tile for every product it is given, or only for the ones a customer can see?
+The shop owner wants to load a supplier's catalog of ten thousand products into Đơn Hàng. Before that happens, you are asked whether the product list in `DonHang.App` will cope. On a phone-width window, `ProductCatalog` shows a handful of tiles at a time. You picture ten thousand `ProductTile` widgets being created the moment the screen opens. A teammate suggests showing only fifty products per page, to be safe. Does the catalog create a tile for every product it is given, or only for the ones a customer can see?
 
 ## Core concepts
 
@@ -88,9 +88,9 @@ The stage-3 catalog, both branches:
   }
 ```
 
-Both branches pass `itemCount: products.length` and an `itemBuilder` that turns one index into one `ProductTile` through `_tile`, defined below the excerpt. `wideLayoutMinWidth` is the 600-pixel width from responsive-basics, and the code divides by `columnWidth` to pick the number of columns. Neither branch loops over `products` itself, so no code here creates a tile for every product.
+Both branches pass `itemCount: products.length` and an `itemBuilder` that turns one index into one `ProductTile` through `_tile`, defined below the excerpt. `wideLayoutMinWidth` is the 600-pixel width from responsive-basics, and the code divides by `columnWidth` to pick the number of columns; the `gridDelegate` takes that column count and a fixed row height, `Sizes.gridRow`. Neither branch loops over `products` itself, so no code here creates a tile for every product.
 
-The widget test that checks this:
+The widget test that checks the result:
 
 ```dart file=DonHang.App/test/product_catalog_test.dart tag=stage-3 lines=52-70
   // lesson: frontend.l3.lazy-lists
@@ -114,11 +114,11 @@ The widget test that checks this:
   });
 ```
 
-The test creates 10 000 `Product` objects, then places the catalog in a box 360 pixels wide and 400 high, narrow enough for the `ListView.builder` branch. The language lines in `MaterialApp` are only setup for the tiles' text. The first `expect` finds the tile for the first product, the second finds none for the last, and the third requires fewer than 30 tiles on screen. The finder skips the rows built just beyond the edge, because they are off screen, but those are only a few more, so the tiles that exist also stay far below 10 000. Meanwhile `many` holds every product: building only the rows near the screen limited the tiles, not the data.
+The test creates 10 000 `Product` objects, then places the catalog in a box 360 pixels wide and 400 high, narrow enough for the `ListView.builder` branch. The first `expect` finds the tile for the first product, the second finds none for the last, and the third requires fewer than 30 tiles on screen. All three look only at what is on screen: these finders skip rows outside the 400 pixels. So the test pins down what a customer sees with 10 000 products. That only a few tiles exist at all is not checked here; it follows from how `itemBuilder` is called, as "How it works" showed. Meanwhile `many` holds every product: building only the rows near the screen limits the tiles, not the data.
 
 ## Seniors often assume…
 
-- **"A list of a few thousand rows is slow in Flutter whatever you do, so long lists always need paging."** → Actually with a builder the tiles built depend on the rows near the screen, not on the length of the list, so length alone is no reason to page. Paging is worth it when fetching or holding the whole list costs too much, which is a question about the data. You notice this when the stage-3 test hands `ProductCatalog` 10 000 products and finds fewer than 30 tiles.
+- **"A list of a few thousand rows is slow in Flutter whatever you do, so long lists always need paging."** → Actually with a builder the tiles built depend on the rows near the screen, not on the length of the list, so length alone is no reason to page. Paging is worth it when fetching or holding the whole list costs too much, which is a question about the data. You notice this when a `print` in `ProductTile`'s `build` runs only for the first rows after the catalog receives 10 000 products.
 - **"ListView with a children list and ListView.builder do the same work; builder is only shorter to write."** → Actually `children` needs every row's widget created before the list exists, while `itemBuilder` is called only for rows near the screen. You notice this when a `print` in the code that creates each row runs once per product with `children`, but only for the first rows with `itemBuilder`.
 - **"Once a row has scrolled off screen, its widget stays built in case the user scrolls back."** → Actually rows that move well past the edge are removed, and `itemBuilder` builds them again when they return. You notice this when a `print` in `ProductTile`'s `build` shows the first products again after you scroll a long way down and back to the top.
 
@@ -136,7 +136,7 @@ The third `expect` checks `lessThan(30)`, not an exact number of tiles. Why is t
 
 <details><summary>Suggested answer</summary>
 
-How many tiles the test finds on screen depends on the height of the box and the height of each tile. None of these is what the lesson is about. The claim that matters is that the count stays far below 10 000, and `lessThan(30)` checks exactly that without breaking when a tile's height changes.
+How many tiles the test finds on screen depends on the height of the box and the height of each tile. None of these is what the lesson is about. The claim that matters is that only about a screenful of tiles is on screen, not thousands, and `lessThan(30)` says that without breaking when a tile's height changes.
 
 </details>
 
@@ -150,7 +150,7 @@ How many tiles the test finds on screen depends on the height of the box and the
 
 ## Five-line summary
 
-1. `ListView.builder` builds rows only in or near the visible area, so a long list costs about as much as the screen shows.
+1. `ListView.builder` builds rows only in or near the visible area, so a long list builds about as many tiles as the screen shows.
 2. `ListView(children: [...])` needs every row's widget created before the list exists, so its cost grows with the number of items.
 3. `ProductCatalog` uses `ListView.builder` when narrow and `GridView.builder` when wide; the space decides how many tiles exist.
 4. The stage-3 test gives the catalog 10 000 products and finds a tile for the first, none for the last, under 30 on screen.
