@@ -15,9 +15,9 @@ vocab: [context-map, upstream-context, downstream-context]
 example_tag: stage-2
 versions_used: [dotnet, aspnetcore, keycloak]
 content_version: 1
-status: reviewed
-approved_by: null
-reviewed_at: "2026-10-08T08:41:24+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-10-21T21:01:25+07:00"
 ---
 
 ## Before you start
@@ -28,14 +28,14 @@ reviewed_at: "2026-10-08T08:41:24+07:00"
 
 ## The situation
 
-Two pull requests arrive in the same week. One tidies Keycloak's settings for Đơn Hàng and renames the `roles` claim, the named field in each access token's payload that lists the user's roles. The other renames properties of `Customer` in `Entities.cs` to match the words in the meeting notes. Each author checked only their own side. Meanwhile, the refund design waits for answers from a payment gateway that nobody on the team controls.
+Two pull requests arrive in the same week. One tidies Keycloak's settings for Đơn Hàng and renames the `roles` claim (a claim is one named field in an access token's payload; `sub` is another), the one that lists the user's roles. The other renames properties of `Customer` in `Entities.cs` to match the words in the meeting notes. Each author checked only their own side. Meanwhile, the refund design waits for answers from a payment gateway that nobody on the team controls.
 
 Nobody has a picture of which part of Đơn Hàng leans on which. When one part changes its names or its rules, which other part has to change with it?
 
 ## Core concepts
 
 - **context map** — a picture of the bounded contexts and of how each pair depends on the other, drawn so the team sees where a change on one side reaches the other.
-- **upstream context** — in one relationship, the context whose model the other depends on; its changes reach the other side, not the reverse.
+- **upstream context** — in one relationship, the context whose model (the names, classes and formats it defines) the other depends on; its changes reach the other side, not the reverse.
 - **downstream context** — in the same relationship, the context that must adapt when the upstream context's model changes.
 
 ## How it works
@@ -49,17 +49,15 @@ flowchart LR
 
 This is part of the context map of stage-2: three relationships where a change on one side reaches the other. Each box is a bounded context. Each arrow points from the upstream context to the downstream one and names what the downstream side takes as given.
 
-Start with Keycloak, the first pull request in the situation above: the API keeps Keycloak's claim names as Keycloak wrote them and reads roles from the `roles` claim. Rename that claim in Keycloak's settings and Keycloak still works, but the API finds no roles, so staff are refused on staff-only endpoints. Nothing fails to compile: `"roles"` is only a string in the API's code, so the break shows when a staff member calls. Keycloak reads nothing of Đơn Hàng's model, so no rename inside Đơn Hàng can break Keycloak. Keycloak is upstream; Đơn Hàng is downstream. On the map, the arrow ends at ordering, the part that reads the claims and would call the gateway; the email job runs with no caller and reads no claims.
+Take the first pull request: the API keeps Keycloak's claim names as Keycloak wrote them and reads roles from the `roles` claim. Rename that claim in Keycloak's settings and Keycloak still works, but the API finds no roles, so staff are refused on staff-only endpoints. Nothing fails to compile: `"roles"` is only a string in the API's code, so the break shows when a staff member calls. Keycloak reads nothing of Đơn Hàng's model, so Keycloak is upstream and Đơn Hàng downstream. On the map the arrow ends at ordering, the part that reads the claims. Notifications, the email job, is a background job that no request starts, so it reads no token.
 
-The second pull request crosses a line inside Đơn Hàng's one API, which holds several contexts: ordering, the product catalogue and notifications, each with its own words, as `Order.Status` and `Notification.Status` show. Ordering owns `Order` and `Customer`; notifications reads them directly to address each email. Ordering is upstream, so a rename made for ordering's reasons reaches the email job, and notifications has to follow.
+The second pull request crosses a line inside Đơn Hàng's one API. In the reading from an earlier lesson, it holds three contexts: ordering, the product catalogue and notifications, each with its own words, as `Order.Status` (where an order is in its life) and `Notification.Status` (whether one email has gone out) show. Ordering owns `Order` and `Customer`; notifications reads them directly to address each email. Ordering is upstream, so a rename made for ordering's reasons reaches the email job, and notifications has to follow.
 
 The dashed arrow is a relationship that does not exist yet. The refund design plans a payment gateway, and Đơn Hàng would have to work with whatever its refund API accepts, which makes the gateway upstream too.
 
-Read any change on the map in one direction: it travels from upstream to downstream.
-
 ## In the Đơn Hàng system
 
-Đơn Hàng downstream of Keycloak: the API takes Keycloak's names as they are.
+Đơn Hàng downstream of Keycloak: the API takes the names that Keycloak's settings for Đơn Hàng, called the realm, put in its tokens.
 
 ```csharp file=DonHang.Api/Program.cs tag=stage-2 lines=52-55
         // Keep claim names as Keycloak wrote them ("sub", "roles"), and read
@@ -68,7 +66,7 @@ Read any change on the map in one direction: it travels from upstream to downstr
         options.TokenValidationParameters.RoleClaimType = "roles";
 ```
 
-`MapInboundClaims = false` turns off ASP.NET Core's renaming of incoming claims, so the API sees `sub` and `roles` exactly as Keycloak wrote them. `RoleClaimType = "roles"` makes every role check read that one claim, which the realm (Keycloak's settings for Đơn Hàng, the ones the first pull request edits) adds. Outside the excerpt, `OrderOwnerHandler`, the check that a customer sees only their own orders, reads the caller's `sub` with `FindFirstValue("sub")` to find the customer. None of these names is Đơn Hàng's choice; the API repeats Keycloak's.
+`MapInboundClaims = false` turns off ASP.NET Core's renaming of incoming claims, so the API sees `sub` and `roles` exactly as Keycloak wrote them. `RoleClaimType = "roles"` makes every role check read that one claim, which the realm adds and the first pull request renames. Outside the excerpt, `OrderOwnerHandler`, the check that a customer sees only their own orders, reads the caller's `sub` with `FindFirstValue("sub")` to find the customer. None of these names is Đơn Hàng's choice; the API repeats Keycloak's.
 
 Notifications downstream of ordering: the email job reads ordering's classes.
 
@@ -94,7 +92,7 @@ Notifications downstream of ordering: the email job reads ordering's classes.
 
 The first line inside `try`, `notification.Order!.Customer!`, walks from the notification, the job's record of one email to send, to its `Order` and on to that order's `Customer`. The next two lines read `customer.Email` and `customer.FullName`, two properties of ordering's `Customer`. Notifications has no class of its own for the person it writes to. Rename `FullName` and this file is among those that stop compiling: the second pull request breaks the email job, which it never touched.
 
-The third relationship lives only in `refund-design.md`. Its open questions name two answers the gateway has not given. If the gateway does not accept idempotency keys, a retry after a lost answer could refund twice. Step 4, the call that sends the key, would then have to ask for the refund's status before each new attempt. If the gateway reports results only later, by calling back into Đơn Hàng, step 6, where the job records the gateway's confirmation, must change. In both cases Đơn Hàng adapts and the gateway does not.
+The third relationship lives only in `refund-design.md`. Its open questions name two answers the gateway has not given. If the gateway ignores idempotency keys, a retry after a lost answer could refund twice, so step 4 (sending the key) must first ask for the refund's status. If it reports results only by calling back, step 6 (recording its confirmation) must change. In both cases Đơn Hàng adapts and the gateway does not.
 
 Across all three relationships, where a break shows first depends on how the downstream side holds the upstream model: as text checked at run time, as classes compiled against, or as a plan.
 
@@ -117,7 +115,7 @@ Expected result: three lines, each naming one upstream and one downstream contex
 <details><summary>Suggested answer</summary>
 
 1. Keycloak is upstream, Đơn Hàng (on the map, ordering) downstream. The build still passes; at run time, staff are refused on staff-only endpoints, because the API reads roles only from `roles`.
-2. Ordering is upstream, notifications downstream. `NotificationSender.cs` no longer compiles, because `SendOneAsync` reads `FullName`, so the build fails before anything ships.
+2. Ordering is upstream, notifications downstream. The build fails before anything ships, and `NotificationSender.cs` is among the files that no longer compile, because `SendOneAsync` reads `FullName`.
 3. The gateway is upstream, Đơn Hàng (on the map, ordering) downstream. No code exists yet; step 4 of `refund-design.md` must change to ask for the refund's status before each new attempt, as its open questions already say.
 
 </details>

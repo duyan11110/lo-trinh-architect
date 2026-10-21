@@ -15,9 +15,9 @@ vocab: []
 example_tag: stage-2
 versions_used: [dotnet, efcore, keycloak, git]
 content_version: 1
-status: reviewed
-approved_by: null
-reviewed_at: "2026-10-08T04:06:35+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-10-21T19:10:50+07:00"
 ---
 
 ## Before you start
@@ -61,13 +61,11 @@ flowchart LR
 
 In the situation above, the word `Status` belongs to two languages. On `Order` it says where an order is in its life, and `Cancel()` or `Ship()` refuses a change from the wrong status. On `Notification` it says where an email job is. A `failed` notification says nothing about its order. One shared type would hold seven values, each class accepting only three or four.
 
-A bounded context is drawn where a model's words and rules stop, not by projects, folders or databases; one database can hold several. Ordering and notifications share `Entities.cs`, `DonHangDbContext` and one database, yet their words differ. Their boundary exists only in words: nothing stops code on one side from reading the other's classes. The arrow from `Notification` to `Customer` is that reading: the email job walks through `Order` to `Customer` for an email address.
+A bounded context is drawn where a model's words and rules stop, not by projects, folders or databases; one database can hold several, even if each context is later given a store of its own. Ordering and notifications share `Entities.cs`, `DonHangDbContext` and one database, yet their words differ. Nothing stops code on one side from reading the other's classes: the diagram's one arrow from `Notification` to `Customer` is, in code, a walk through `Order`. The other arrows are `CustomerId` and Keycloak's `IdentitySubject`.
 
-The other two arrows: `Order` points to `Customer` by `CustomerId`; Keycloak's realm links to `Customer` by `IdentitySubject`.
+A `Product`, the third model, has a name and a price, no status and no methods; the one rule on its values, a price above zero, sits in `db/schema.sql` and `UpdateProductPriceRequest`. Unlike notifications, products have no rules of their own, so the case for a separate catalogue is weaker. It still holds: none of `Order`'s status methods reads or changes a `Product`, and `OrderItem` keeps only a `ProductId`.
 
-A `Product`, the third model, has a name and a price, no status and no methods; its one check, a price above zero, sits in `db/schema.sql` and the price-update request. This reading is weaker than the one for notifications: products have no rules in their class rather than different ones, and none of `Order`'s status methods reads or changes a `Product`.
-
-Where to draw the lines is a design choice. One reasonable reading of stage-2 is three contexts: ordering, the product catalogue and notifications, with Keycloak's realm outside. `Payment`, also in `Entities.cs`, is not used yet outside that file and `DonHangDbContext`, so it changes nothing. Another team could read notifications as part of ordering, because every notification belongs to one order. Either reading should follow a change in words and rules, not the file layout.
+Where to draw the lines is a design choice. One reasonable reading of stage-2 is three contexts: ordering, the product catalogue and notifications, with Keycloak's realm outside. `Payment` is not used yet outside `Entities.cs`, `DonHangDbContext` and its generated migrations, so it changes nothing. Another team could fold notifications into ordering, because every notification belongs to one order. Either reading should follow words and rules, not the file layout.
 
 ## In the Đơn Hàng system
 
@@ -116,9 +114,9 @@ The notifications model crossing into the ordering model:
     }
 ```
 
-Look at the first line inside `try`. To find an email address, the job walks from its `Notification` to ordering's `Order` and then to its `Customer`. Nothing in the compiler or the tests stops this walk. The line between notifications and ordering is something the team can say, not something the code checks.
+Look at the first line inside `try`. To find an email address, the job walks from its `Notification` to ordering's `Order` and then to its `Customer`. Nothing in the compiler or the tests stops this walk. The line between notifications and ordering is something the team can say, not something the code checks. `RecordFailure`, further down in the same file, sets `failed` once the attempts run out.
 
-The product catalogue needs no excerpt of its own. `ProductsController.List` starts from `db.Products` and shapes a page with `OrderBy`, `Skip`, `Take` and `Select`; its comment reads: "it has no rule to apply, only a query to shape."
+The product catalogue needs no excerpt of its own. `ProductsController.List` starts from `db.Products` and shapes a page with `OrderBy`, `Skip`, `Take` and `Select`; the comment above the controller reads: "it has no rule to apply, only a query to shape."
 
 ## Seniors often assume…
 
@@ -134,7 +132,7 @@ In the root folder of the example repository, in a terminal:
 2. For each printed line, note its class: `Order` starts at line 30, `Notification` at line 119.
 3. Write down which values each class's `Status` takes, and where those values are checked.
 
-Expected result: 14 lines. Thirteen fall between lines 35 and 95, inside `Order`. One, line 126, is the declaration of `Notification.Status`. One `Order` line sets an empty string in a private constructor; it is not a real status.
+Expected result: 14 lines. Thirteen fall between lines 35 and 95, inside `Order`. One, line 126, is the declaration of `Notification.Status`. One `Order` line sets an empty string in a private constructor; it is not a real status. For `Notification`, no line in this file sets or checks a value; that happens outside the class.
 
 <details><summary>Suggested answer</summary>
 

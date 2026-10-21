@@ -15,15 +15,15 @@ vocab: [ubiquitous-language]
 example_tag: stage-2
 versions_used: [dotnet, git]
 content_version: 1
-status: reviewed
-approved_by: null
-reviewed_at: "2026-10-08T00:09:53+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-10-21T17:20:01+07:00"
 ---
 
 ## Before you start
 
 - [[design.l2.status-changes-through-methods]] — you know that each allowed status change of an order is a method of `Order`, such as `Cancel()`, that checks the status it starts from.
-- [[design.l3.domain-events]] — you know that a domain event is named after something the business cares about, such as `OrderCancelled`, so its name is a business word.
+- [[design.l3.domain-events]] — you know that a domain event is named after something the business cares about, such as `OrderCancelled`, so its name is a business word. That lesson's `Cancel()` is the stage-3 one, which refuses a `paid` order; this lesson reads the older stage-2 code, before that check existed.
 - [[management.l2.design-doc]] — you have read the refund design in `docs/design/refund-design.md`, the team's plan for refunds at stage-2.
 
 ## The situation
@@ -52,7 +52,7 @@ In the situation above, the ubiquitous language is what let you check the produc
 
 Here it is not. The notes list a task to add that status check to the cancel API in the same sprint, yet at stage-2 `Cancel()` still accepts a `paid` order. The refund design notices the gap and lists it under its open questions for the product owner. At stage-2, the rule lives only in a document, which is why the diagram draws that arrow dashed.
 
-The second problem sits in the word itself. The refund design's last step, step 6, moves a refunded order to `cancelled`. Once refunds exist, one word would cover two business events: a customer changing their mind about an unpaid order, and a refund that has finished. A question such as "how many orders did customers cancel?" would then count refunds too.
+The second problem sits in the word itself. The refund design's step 6 moves a refunded order to `cancelled`. Once refunds exist, one word would cover two business events: a customer changing their mind about an unpaid order, and a refund that has finished. A question such as "how many orders did customers cancel?" would then count refunds too.
 
 Both are signs that the language needs work. A rule that exists only in a document needs a check in the code; for a rule about status changes, that is `Order`, where the other status checks already sit. A word with two meanings needs a sharper word, agreed with the business. In both cases the code changes together with the documents.
 
@@ -90,7 +90,7 @@ The status words, as the code holds them:
 
 All four status words of the story's acceptance criteria appear here unchanged, and each method is named after a business action. Now read `Cancel()` against the meeting notes: it has a check for `cancelled` and one for `shipped`, and none for `paid`. That missing line is the meeting's decision, which never reached the code.
 
-`PATCH /api/v1/orders/{id}/cancel` reaches this method through `OrderService.CancelOrderAsync`, so a `paid` order its owner sends there is cancelled. `OrderStatusException` is what each refused change throws, and `OrderTests` is the unit test class for `Order`. As the comment says, no endpoint takes payments at stage-2, and in code only `OrderTests` calls `MarkPaid()`; but the sample data loaded into the database already holds five `paid` orders, so the gap is live today.
+The gap is reachable today through the API, even though the app at stage-2 shows no cancel button. `PATCH /api/v1/orders/{id}/cancel` reaches `Cancel()` through `OrderService.CancelOrderAsync`, so a `paid` order its owner sends there is cancelled. No endpoint takes payments, yet the sample data loaded into the database already holds five `paid` orders. In code, `OrderTests`, the unit test class for `Order`, calls `MarkPaid()`; `OrderStatusException` is what each refused change throws.
 
 Step 6 of the refund design, which is written in Vietnamese; the paragraph after it says what the step does, and YC-5 is a numbered requirement in `docs/team/refund-requirements.md`:
 
@@ -100,13 +100,11 @@ Step 6 of the refund design, which is written in Vietnamese; the paragraph after
    `pending` được thêm; email đi theo đường của mọi thông báo khác (YC-5).
 ```
 
-When the payment gateway confirms a refund, one transaction marks the refund row `refunded` with its `paid_at`, moves the order to `cancelled`, and adds a `pending` row to `notifications`. The order's status is the same `cancelled` that the story's acceptance criteria set when a customer cancels a `new` order. In its section on risks and open questions, the design records the other gap: the cancel endpoint still cancels a `paid` order, because `Order.Cancel()` blocks only `cancelled` and `shipped`, and the product owner is to decide whether to block it now.
-
-This is the stage-2 snapshot: by stage-3, the `Cancel()` you read in [[design.l3.domain-events]] refuses a `paid` order, so the meeting's decision did reach `Order`.
+When the payment gateway confirms a refund, one transaction marks the refund's own row `refunded` and fills its `paid_at`, the moment the money went back; earlier steps, outside this excerpt, keep that row in `payments`. It also moves the order to `cancelled` and adds a `pending` row to `notifications`, which becomes an email to the customer. YC-5, the requirement it follows, asks for `cancelled` too. That is the same `cancelled` the story sets when a customer cancels a `new` order. Under risks and open questions, the design records the other gap: the cancel endpoint still cancels a `paid` order, and the product owner is to decide whether to block it now.
 
 ## Seniors often assume…
 
-- **"The ubiquitous language is a glossary document the team writes once at the start of a project and then files away."** → Actually it is the words people use in meetings, stories, designs and `Order` itself, and it changes as the business does. The refund design, added to the repository after the story, is about to give `cancelled` a second meaning. A list written at the start would not mention refunds at all. You notice this when the list says one thing and the newest design document uses the word differently.
+- **"The ubiquitous language is a glossary document the team writes once at the start of a project and then files away."** → Actually it is the words people use in meetings, stories, designs and `Order` itself, and it changes as the business does. The refund requirements and design, added to the repository after the story, are about to give `cancelled` a second meaning. A list written at the start would not mention refunds at all. You notice this when the list says one thing and the newest design document uses the word differently.
 - **"Code may use its own technical names, as long as the documents use the business's words."** → Actually the match is what made the check in the situation quick. If `Order` had one general method that set a status number instead of `Cancel()`, and stored a number instead of `cancelled`, nothing in the meeting notes would point at a line of code. You notice this when answering "can a paid order be cancelled?" means tracing numbers through several classes instead of reading one method.
 - **"When the code and the meeting notes disagree, the code is right, because the code is what runs."** → Actually the code shows what happens, not what the business decided. Here the code lets a paid order be cancelled without a refund, which the meeting notes reject because it leaves an order cancelled while the money stays taken, a state nobody handles. The disagreement is the defect, and the business decides which side changes. You notice this when a support request asks why a cancelled order was never refunded.
 

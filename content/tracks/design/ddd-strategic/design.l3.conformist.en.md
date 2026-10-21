@@ -15,9 +15,9 @@ vocab: [conformist]
 example_tag: stage-2
 versions_used: [aspnetcore, keycloak]
 content_version: 1
-status: reviewed
-approved_by: null
-reviewed_at: "2026-10-08T10:19:07+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-10-21T21:29:16+07:00"
 ---
 
 ## Before you start
@@ -35,7 +35,7 @@ Is taking Keycloak's names as they are a design decision, and when is it the rig
 
 - **conformist** — a downstream context that uses the upstream context's model as it is, with no translation of its own; the word also names that relationship on a context map.
 - translation — code on the downstream side that turns the upstream's names and values into words of its own, such as turning the `roles` claim into an `IsEmployee` flag; the first reviewer asks for one.
-- claim type — the name a claim goes by inside ASP.NET Core once a token has been read, which need not be the name written in the token.
+- claim type — a claim is one name and value a token carries, such as `sub` or `roles`; its claim type is the name it goes by inside ASP.NET Core once the token has been read, which need not be the name written in the token.
 - realm — Keycloak's settings for Đơn Hàng: its users, its roles and what goes into each token.
 
 ## How it works
@@ -54,11 +54,11 @@ Nowhere does Đơn Hàng put a word of its own between Keycloak and a rule. That
 
 Conforming does not let Keycloak in everywhere. The last arrow stops at `DonHang.Domain`, the project that holds business classes such as `Order` and `Customer`. `OrderOwnerHandler` passes it only the value of `sub`, a plain string the domain's customer lookup calls `identitySubject`. The domain never sees the claim name `sub`, the `roles` claim or a token.
 
-Conforming costs nothing to build: no conversion class, no mapping to test, and a `UserId` would only hold the value of `sub` under a new name. The bill comes later, if Keycloak's names change, because the lines that spell `sub`, `roles` or `staff` have to follow them. Conforming suits a generic subdomain such as sign-in when its model fits yours, and here it fits: Đơn Hàng's idea of staff is the realm role `staff`, nothing more. The realm's settings live in this repository, in `keycloak/donhang-realm.json`, which Keycloak imports when it first starts; as long as the team changes the realm only through that file, a rename arrives in a pull request beside the code it breaks.
+Conforming costs nothing to build: no conversion class, no mapping to test, and a `UserId` would only hold the value of `sub` under a new name. The bill comes later, if Keycloak's names change, because the lines that spell `sub`, `roles` or `staff` have to follow them. Conforming suits a generic subdomain such as sign-in when its model fits yours, and here it fits: Đơn Hàng's idea of staff is the realm role `staff`, nothing more. The realm's settings live in this repository, in `keycloak/donhang-realm.json`, which Keycloak imports when it first starts. As long as the team changes the realm only through that file, a rename arrives in a pull request beside the code it breaks.
 
 ## In the Đơn Hàng system
 
-The production side of the decision is three lines in `Program.cs`.
+The production side of the decision is three lines in `Program.cs`: `MapInboundClaims = false`, `RoleClaimType = "roles"` and `RequireRole("staff")`.
 
 ```csharp file=DonHang.Api/Program.cs tag=stage-2 lines=52-66
         // Keep claim names as Keycloak wrote them ("sub", "roles"), and read
@@ -78,7 +78,9 @@ builder.Services.AddAuthorization(options =>
 });
 ```
 
-The first lines are the end of the `AddJwtBearer` setup; `options` are its settings. `MapInboundClaims = false` turns off ASP.NET Core's renaming of incoming claims. Left on, it would give some well-known names, `sub` among them, longer claim types of its own. `RoleClaimType = "roles"` then makes every role check read the `roles` claim. Further down, `RequireRole("staff")` names the role exactly as the realm does; the comment above `AddAuthorization` and the `OrderOwner` line belong to earlier lessons. Outside the excerpt, `OrderOwnerHandler` repeats the pattern with `IsInRole("staff")`, which lets staff through to any order, and `FindFirstValue("sub")`, and both orders controllers, `OrdersController` and `OrdersV2Controller`, read `sub` the same way.
+The first lines are the end of the `AddJwtBearer` setup; `options` are its settings. `MapInboundClaims = false` turns off ASP.NET Core's renaming of incoming claims. Left on, it would give some well-known names, `sub` among them, longer claim types of its own, so a lookup of `"sub"` would find nothing and the API would have to spell the framework's name instead of Keycloak's. `RoleClaimType = "roles"` then makes every role check read the `roles` claim. Further down, `RequireRole("staff")` names the role exactly as the realm does; the comment above `AddAuthorization` and the `OrderOwner` line belong to earlier lessons.
+
+Outside the excerpt, `OrderOwnerHandler` repeats the pattern: `IsInRole("staff")` lets staff through to any order, and `FindFirstValue("sub")` reads the caller's id. Both orders controllers, `OrdersController` and `OrdersV2Controller`, read `sub` the same way.
 
 The tests make the same choice.
 
@@ -98,12 +100,12 @@ The tests make the same choice.
     }
 ```
 
-`TestAuthHandler` builds the caller from two headers, `X-Test-Subject` and `X-Test-Roles`, instead of from a token; with no `X-Test-Subject` header it reports no caller at all, like a request without a token. Look at the names it gives the claims: `sub` and `roles`, and the same pair as `nameType` and `roleType`, which tell ASP.NET Core which claim holds the caller's name and which holds roles, the test-side twin of `RoleClaimType` in `Program.cs`. The last three lines wrap these claims into the caller, the `User`, and report that sign-in succeeded. The tests conform too, so the code under test reads one shape of caller and needs no special case for tests. It also means the tests spell Keycloak's names, so a rename has to be copied into them too.
+`TestAuthHandler` builds the caller from two headers, `X-Test-Subject` and `X-Test-Roles`, instead of from a token; with no `X-Test-Subject` header it reports no caller at all. Look at the names it gives the claims: `sub` and `roles`. It passes the same pair as `nameType` and `roleType`, which tell the identity which claim holds the caller's name and which holds roles, the test-side twin of `RoleClaimType` in `Program.cs`. The last three lines wrap these claims into the caller, the `User`, and report that sign-in succeeded. The tests conform too, so the code under test reads one shape of caller and needs no special case for tests. It also means the tests spell Keycloak's names, so a rename has to be copied into them too.
 
 ## Seniors often assume…
 
 - **"A conformist downstream team simply did no design work."** → Actually conforming is a decision about whose words to use, and it comes with a boundary. The comment above `MapInboundClaims` states the choice, and the API switches off a framework default to make it. Authentication sits in `DonHang.Api`; the `DonHang.Domain` project references no ASP.NET Core package, and no class in it reads a token. You notice this when someone proposes to "add some design" by mapping roles to an enum, and the change touches every role check yet changes no answer the API gives.
-- **"Using Keycloak's role names directly is always wrong; every name that comes from outside must be translated."** → Actually translation pays when the outside model differs from yours or changes outside your control, and neither holds here. Đơn Hàng's idea of staff is exactly the realm role `staff`. The realm's settings live in the same repository, in `keycloak/donhang-realm.json`, which Keycloak imports when it first starts, and the team changes the realm only through that file, so a rename arrives in a pull request beside the code it breaks. You notice this when a mapping class grows one line per role, and each line turns a name into the same name.
+- **"Using Keycloak's role names directly is always wrong; every name that comes from outside must be translated."** → Actually translation pays when the outside model differs from yours or changes outside your control, and neither holds here. Đơn Hàng's idea of staff is exactly the realm role `staff`, and, as long as the realm changes only through its file in this repository, a rename arrives in a pull request, as "How it works" showed. You notice this when a mapping class grows one line per role, and each line turns a name into the same name.
 
 ## Try it (3 minutes)
 
@@ -114,7 +116,7 @@ Expected result: six files, each prefixed with `stage-2:`, four in `DonHang.Api`
 
 <details><summary>Suggested answer</summary>
 
-`DonHang.Api`: `Authorization/OrderOwnerHandler.cs`, `Controllers/OrdersController.cs`, `Controllers/V2/OrdersV2Controller.cs`, `Program.cs`. `DonHang.Tests`: `Integration/OrdersApiTests.cs`, `Integration/TestAuthHandler.cs`. `DonHang.Domain` is missing, because authentication stays in `DonHang.Api` and the domain never reads a token.
+`DonHang.Api`: `Authorization/OrderOwnerHandler.cs`, `Controllers/OrdersController.cs`, `Controllers/V2/OrdersV2Controller.cs`, `Program.cs`. `DonHang.Tests`: `Integration/TestAuthHandler.cs`, and `Integration/OrdersApiTests.cs`, whose ship test asks for a caller with the role `staff`. `DonHang.Domain` is missing, because authentication stays in `DonHang.Api` and the domain never reads a token.
 
 </details>
 
@@ -132,4 +134,4 @@ Expected result: six files, each prefixed with `stage-2:`, four in `DonHang.Api`
 2. At stage-2, `MapInboundClaims = false` and `RoleClaimType = "roles"` keep Keycloak's names, so `StaffOnly` checks the realm's own role `staff`.
 3. `TestAuthHandler` builds its test caller with the same claim types, `sub` and `roles`, so the tests conform too.
 4. Conforming costs nothing to build; the cost comes later, when Keycloak's names change and every file that spells them has to follow.
-5. Keycloak's words stay in `DonHang.Api`: no class in `DonHang.Domain` reads a token.
+5. Keycloak's words stay out of `DonHang.Domain`: only `DonHang.Api` and its tests spell them, and no class in the domain reads a token.

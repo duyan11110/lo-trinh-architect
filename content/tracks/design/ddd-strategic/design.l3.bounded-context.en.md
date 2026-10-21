@@ -15,9 +15,9 @@ vocab: [bounded-context]
 example_tag: stage-2
 versions_used: [keycloak, dotnet, git]
 content_version: 1
-status: reviewed
-approved_by: null
-reviewed_at: "2026-10-08T02:11:54+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-10-21T18:09:05+07:00"
 ---
 
 ## Before you start
@@ -28,13 +28,13 @@ reviewed_at: "2026-10-08T02:11:54+07:00"
 
 ## The situation
 
-A stakeholder asks how many customers Đơn Hàng has. You open `keycloak/donhang-realm.json`, the file that sets up Keycloak's realm for the lab, and count six users. A teammate counts the rows of `customers` in the lab database and gets five. The sixth user is `lan.do@example.com`, the staff account that ships orders.
+A stakeholder asks how many customers Đơn Hàng has. You open `keycloak/donhang-realm.json`, the file that sets up Keycloak's realm for the lab and that Keycloak, running in its own container, loads at start. You count six users. A teammate counts the rows of `customers` in the lab database and gets five. The sixth user is `lan.do@example.com`, the staff account that ships orders.
 
 Your teammate also notices that Keycloak keeps a first and a last name, while `customers` keeps one full name and a city. They suggest deleting one of the two records of the same people. Which of the two is the real customer?
 
 ## Core concepts
 
-- **bounded context** — a boundary inside which one model and its language apply; outside it, the same word may mean something else, and that is not an error.
+- **bounded context** — a boundary inside which one model and its language apply; outside it, the same word may mean something else, and that is not an error. A model here is what one part of the system keeps about the business: its things, their fields and the words for them; it need not be a domain model with methods.
 - the sign-in model — Keycloak's realm `donhang` (the set of users, passwords and roles Keycloak keeps for Đơn Hàng), where a person is a user with a username, a password, a first and a last name, and realm roles.
 - the ordering model — Đơn Hàng's own classes and tables, where a person who orders is a `Customer` with a full name, an email and a city.
 - the link value — Keycloak's id for a user, which Đơn Hàng stores in `customers.identity_subject` so that each model's record of a person can be matched to the other's.
@@ -55,13 +55,13 @@ flowchart LR
   O -->|"CustomerId"| C1
 ```
 
-In the situation above, two models describe the same people, and each applies inside its own boundary. Inside Keycloak's realm, the words are user, username, password and realm role. A person there is anyone who signs in, so the staff member Đỗ Ngọc Lan is a user too. Inside Đơn Hàng, a customer is someone orders belong to, and each `Order` points to its customer through `CustomerId`. Each model is a bounded context, and each count answers its own question correctly. Six people can sign in; five can place orders.
+In the situation above, two models describe the same people, and each applies inside its own boundary. Inside Keycloak's realm, the words are user, username, password and realm role. A person there is anyone who signs in, so the staff member Đỗ Ngọc Lan is a user too. Inside Đơn Hàng, a customer is someone orders belong to, and each `Order` points to its customer through `CustomerId`. Each model is a bounded context, and each count answers its own question. Six people can sign in; five can place orders.
 
 So who counts as a customer depends on which model you ask. Lan signs in successfully, but `customers` has no row for her. `GET /api/v1/orders` looks for the customer whose `identity_subject` matches her token, finds none, and answers `403` instead of listing anything.
 
-The two models are linked by one value, not by a shared class. The realm file gives each user a fixed `id`, and a migration copied the ids of the five customer users into `customers.identity_subject`. A token's `sub` carries that id, and the API looks the customer up by it. Each side keeps only the fields it needs, so the email address is stored twice.
+The two models are linked by one value, not by a shared class. The realm file gives each user a fixed `id`, and a migration copied the ids of the five customer users, such as Trần Minh Anh (`anh.tran`), into `customers.identity_subject`. A token's `sub` carries that id, and the API looks the customer up by it. Each side keeps only the fields it needs, so the email address is stored twice.
 
-Merging them into one class would put sign-in data next to ordering data. A change made for signing in, such as a new rule about passwords, would then touch the class that orders use, and a new ordering field would reach the sign-in code. Today a new password rule does not reach ordering code, because Đơn Hàng's own classes and tables hold no user passwords.
+Merging them into one class would put sign-in data next to ordering data. That would mean Đơn Hàng keeping usernames, passwords and roles in `Customer` itself, instead of leaving them to Keycloak. A change made for signing in, such as a new rule about passwords, would then touch the class that orders use. Today a new password rule does not reach ordering code, because Đơn Hàng's own classes and tables hold no user passwords.
 
 ## In the Đơn Hàng system
 
@@ -101,7 +101,7 @@ public sealed class Customer
 
 Here there is no username, password or role, but there is a `City` and a single `FullName`. `db/seed.sql`, the script that fills the lab database with sample rows when the database is first created, inserts her as `(1, 'Trần Minh Anh', 'anh.tran@example.com', 'Hà Nội')` and four other customers, none of them Lan.
 
-`IdentitySubject` is the link value; its type `string?` lets it be null, and the comment says when: until the customer has an account in Keycloak. `ICustomerRepository.FindByIdentitySubjectAsync` is how the API crosses from a token to this class. The migration `AddCustomerIdentitySubject`, outside these excerpts, adds the column and then runs an `UPDATE` for each of the five emails.
+`IdentitySubject` is the link value; its type `string?` lets it be null, and the comment says when: until the customer has an account in Keycloak. `ICustomerRepository.FindByIdentitySubjectAsync` is how the API crosses from a token to this class. The migration `AddCustomerIdentitySubject`, outside these excerpts, adds the column; then, for each of the five customers, it runs an `UPDATE` that finds the row by email and writes that user's Keycloak `id` into `identity_subject`.
 
 ## Seniors often assume…
 
@@ -121,7 +121,7 @@ Expected result: the first command prints two lines, both from `keycloak/donhang
 
 <details><summary>Suggested answer</summary>
 
-Only the sign-in model: `username`, the password credential, `emailVerified`, `enabled`, the split name and the realm role `customer`. Only the ordering model: `Customer.Id` 1, the single full name and the city `Hà Nội`. Both: the email address. Keycloak's `id` is the link value: in these files only the sign-in model has it, and `customers` gets it from the migration, not from `db/seed.sql`.
+Only the sign-in model: `username`, the password credential, `emailVerified`, the split name and the realm role `customer`. Only the ordering model: `Customer.Id` 1, the single full name and the city `Hà Nội`. Both: the email address. Keycloak's `id` is the link value: in these files only the sign-in model has it, and `customers` gets it from the migration, not from `db/seed.sql`.
 
 </details>
 
