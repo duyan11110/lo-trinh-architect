@@ -15,9 +15,9 @@ vocab: [argo-cd, argocd-application, config-repository]
 example_tag: stage-3
 versions_used: [argocd, kubernetes, kind, gitea]
 content_version: 1
-status: reviewed
-approved_by: null
-reviewed_at: "2026-10-08T02:02:21+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-10-21T19:03:59+07:00"
 ---
 
 ## Before you start
@@ -35,7 +35,7 @@ Two things are missing. Nothing runs inside `donhang-staging` that could pull. A
 ## Core concepts
 
 - **Argo CD** — a GitOps agent that runs as Pods inside a cluster, compares the manifests in a Git repository with the live objects, and applies them; Đơn Hàng runs version 3.1 in the namespace `argocd` of `donhang-staging`.
-- **Application (Argo CD)** — an object Argo CD adds to the API server that names a source (a repository URL, a revision such as the branch `main` or a commit, and a folder) and a destination (a cluster and a namespace).
+- **Application (Argo CD)** — an object of a kind Argo CD adds to the API server, which names a source (a repository URL, a revision such as the branch `main` or a commit, and a folder) and a destination (a cluster and a namespace).
 - **config repository** — a Git repository that holds only the manifests saying what each environment runs, kept apart from the application's source code; Đơn Hàng's is `donhang-config`.
 
 ## How it works
@@ -52,9 +52,9 @@ flowchart LR
 
 Start at `argocd-install.sh`. Argo CD cannot be the one that installs itself: before it runs, nothing in the cluster could apply it. So the script does that first step from your machine, the way `deploy.sh` did, with `kubectl apply` on `deploy/argocd/install.yaml`. That file is a copy of the install manifest the Argo CD project publishes, one YAML file holding all of Argo CD's objects, pinned at 3.1.16. To upgrade, you replace the copy and run the script again.
 
-The install manifest creates Argo CD's Pods in `argocd`, the node "Argo CD Pods" in the diagram. It also adds new kinds of objects to the API server: `Application` becomes a kind stored like `Deployment`, so you write one in YAML and `kubectl apply` it. How a new kind gets added belongs to a later module.
+The install manifest creates Argo CD's Pods in `argocd`. It also adds new kinds of objects to the API server: `Application` becomes a kind stored like `Deployment`, so you write one in YAML and `kubectl apply` it. How a new kind gets added belongs to a later module.
 
-Next, `gitops-repo.sh` starts a Git server in the namespace `git` and pushes the config repository to it, so the lab needs no account on an outside service.
+Next, `gitops-repo.sh` starts a Git server in the namespace `git` and pushes the contents of `deploy/gitops/config-repo` to it as a new repository, `donhang-config`, separate from the `don-hang` source code, so the lab needs no account on an outside service.
 
 In the situation above, "which folder goes where" is written in the Application `staging`, which you create with `kubectl apply` on `staging-manual.yaml`. Its source is `envs/staging` of `donhang-config` on branch `main`. Its destination is the cluster Argo CD runs in, namespace `donhang`. Argo CD's Pods read the Application from the API server, download a copy of the repository at `main` from the Git server, read the manifests in `envs/staging`, and compare them with the live objects in `donhang`.
 
@@ -113,9 +113,9 @@ applicationsets   appset,appsets     argoproj.io/v1alpha1   true         Applica
 appprojects       appproj,appprojs   argoproj.io/v1alpha1   true         AppProject
 ```
 
-Line 7, above the excerpt, makes every `kubectl` in the script add `--context kind-donhang-staging`, so it reaches `donhang-staging` whatever cluster kubectl currently points at; kind names each cluster's context `kind-` plus the cluster name. Line 14 creates the namespace `argocd` in a way that also succeeds when it already exists. Line 16 is the whole install: one `kubectl apply` of the pinned copy into `argocd`; lines 17–18 wait until its Pods are ready.
+A line before this excerpt (not shown) makes every `kubectl` in the script add `--context kind-donhang-staging`, so it reaches `donhang-staging` whatever cluster kubectl currently points at. kind, the tool OpenTofu used to create `donhang-staging` as a local cluster, names each cluster's context `kind-` plus the cluster name. The `kubectl create namespace` line creates `argocd` in a way that also succeeds when it already exists. The `kubectl apply -n argocd` line is the whole install: one apply of the pinned copy into `argocd`; the two `rollout status` lines wait until its Pods are ready.
 
-The middle of the output is what Argo CD is: six Deployments plus `argocd-application-controller`, which another kind of object (`statefulset`) keeps running the way a Deployment does. Among them, `argocd-repo-server` reads repositories and `argocd-application-controller` compares them with the live objects. The three `customresourcedefinition` objects add the three kinds at the bottom; how belongs to a later module, and this module uses only `Application`.
+The middle of the output is what Argo CD is: six Deployments plus `argocd-application-controller`, which another kind of object (`statefulset`) keeps running the way a Deployment does. Among them, `argocd-repo-server` reads repositories and `argocd-application-controller` compares them with the live objects. The three `customresourcedefinition` objects add the three kinds at the bottom; how belongs to a later module, and this module uses only `Application`. `argoproj.io` is the group name under which Argo CD's kinds are listed, which is why their `apiVersion` starts with it.
 
 The Application this lesson applies:
 
@@ -142,9 +142,11 @@ spec:
     namespace: donhang
 ```
 
-Lines 5–6 say no field here makes Argo CD apply the folder's manifests by itself: it only compares, and applies them when someone asks; how to ask comes in a later lesson. Lines 10–11: the Application itself lives in `argocd`, not in `donhang`, because by default Argo CD reads Applications only from its own namespace. Line 13 you leave at `default`, which Argo CD creates for you. Lines 15–17 are the source: the repository at `gitea.git.svc`, the Service `gitea` of the Git server in the namespace `git`, branch `main`, folder `envs/staging`. Lines 19–20 are the destination: `kubernetes.default.svc` is the API server's address seen from inside the cluster, so Argo CD deploys into the cluster it runs in, namespace `donhang`.
+Lines 5–6 say no field here makes Argo CD apply the folder's manifests by itself: it only compares, and applies them when someone asks (the comment calls that applying a sync); how to ask comes in a later lesson. Lines 10–11: the Application itself lives in `argocd`, not in `donhang`, because by default Argo CD reads Applications only from its own namespace. Line 13, `project`, names an Argo CD project, a group of rules for Applications covered later; you leave it at `default`, a project Argo CD creates for you, not the namespace `default`.
 
-Outside these excerpts, `deploy/gitops/git-server.yaml` runs one Git server Pod, whose repositories are deleted with the Pod. `gitops-repo.sh` applies it, then pushes `envs/` and `apps/staging.yaml` (used in a later lesson) from `deploy/gitops/config-repo` as the first commit of `donhang-config`. The repository is public, so Argo CD reads it without credentials. The file list the script prints shows only `.yaml` files: no `src/`, no Dockerfile.
+Lines 15–17 are the source: the repository at `gitea.git.svc`, the Service `gitea` of the Git server in the namespace `git`, branch `main`, folder `envs/staging`. Lines 19–20 are the destination: `kubernetes.default.svc` is the API server's address seen from inside the cluster, so Argo CD deploys into the cluster it runs in, namespace `donhang`.
+
+Outside these excerpts, `deploy/gitops/git-server.yaml` runs one Git server Pod, whose repositories are deleted with the Pod. `gitops-repo.sh` applies it, then pushes `envs/` and `apps/staging.yaml` (used in a later lesson) from `deploy/gitops/config-repo`, plus a few generated `sealed-*.yaml` files a later lesson explains, as the first commit of `donhang-config`. The repository is public, so Argo CD reads it without credentials. The file list the script prints shows only `.yaml` files: no `src/`, no Dockerfile.
 
 ## Seniors often assume…
 
@@ -154,7 +156,7 @@ Outside these excerpts, `deploy/gitops/git-server.yaml` runs one Git server Pod,
 
 ## Try it (3 minutes)
 
-In the `don-hang` repository folder, if you have not yet, run `scripts/devops/argocd-install.sh`, then `scripts/devops/gitops-repo.sh`; this setup can take longer than three minutes the first time. Both scripts target `donhang-staging` themselves, so you need not switch context first. Then:
+This needs the cluster `donhang-staging` that `tofu-environments.sh` created in the earlier lesson. In the `don-hang` repository folder, if you have not yet, run `scripts/devops/argocd-install.sh`, then `scripts/devops/gitops-repo.sh`; this setup can take longer than three minutes the first time. Both scripts target `donhang-staging` themselves, so you need not switch context first. Then:
 
 1. Run `kubectl --context kind-donhang-staging apply -f deploy/gitops/lessons/staging-manual.yaml -o name`.
 2. Run `kubectl --context kind-donhang-staging get applications -n argocd`, then `kubectl --context kind-donhang-staging get pods -n argocd`.

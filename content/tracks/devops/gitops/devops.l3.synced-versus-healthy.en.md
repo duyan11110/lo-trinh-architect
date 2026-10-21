@@ -15,14 +15,14 @@ vocab: [argocd-sync, sync-status, argocd-health-status]
 example_tag: stage-3
 versions_used: [argocd, kubernetes, kind]
 content_version: 1
-status: reviewed
-approved_by: null
-reviewed_at: "2026-10-08T03:54:34+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-10-21T20:26:36+07:00"
 ---
 
 ## Before you start
 
-- [[devops.l3.argo-cd-applications]] — you know the Application `staging` maps `envs/staging` of the config repository to the namespace `donhang`, and that without a sync policy Argo CD only compares.
+- [[devops.l3.argo-cd-applications]] — you know the Application `staging` maps `envs/staging` of the config repository, branch `main`, to the namespace `donhang`, and that you applied it with kubectl.
 - [[k8s.l1.readiness-probes]] — you know a Pod counts as ready only once its readiness probe passes, and that the api's probe calls `/health/ready`.
 - [[k8s.l1.rolling-updates]] — you know a Deployment's rollout is finished only when its new Pods are available, which `kubectl rollout status` waits for.
 
@@ -34,8 +34,8 @@ A colleague starts a sync, and when it finishes the first column reads `Synced`.
 
 ## Core concepts
 
-- **sync status (Argo CD)** — Argo CD's verdict after comparing the manifests at the Application's revision (for `staging`, the branch `main`) with the live objects: `Synced` when every object matches, `OutOfSync` when any object differs or is missing.
-- **sync (Argo CD)** — one run in which Argo CD applies the manifests at that revision to the cluster so the live objects match them. A sync policy is the part of an Application that lets Argo CD start syncs by itself; with none, as in `staging-manual.yaml`, a sync runs only when someone asks.
+- **sync status (Argo CD)** — Argo CD's verdict after comparing the manifests at the Application's revision (for `staging`, the branch `main`) with the live objects: `Synced` when every object matches, `OutOfSync` when any object differs or is missing. Argo CD compares again on an interval; a refresh asks it to compare now.
+- **sync (Argo CD)** — one run in which Argo CD applies the manifests at that revision to the cluster so the live objects match them. Argo CD starts syncs by itself only when the Application has a sync policy, a setting in the Application that tells Argo CD to sync on its own when it finds a difference; `staging-manual.yaml` has none, so a sync runs only when someone asks.
 - **health status (Argo CD)** — Argo CD's separate judgement of whether the objects actually work, such as `Missing` when an object does not exist in the cluster yet, `Progressing` while a Deployment's Pods are not yet ready and `Healthy` once they are.
 
 ## How it works
@@ -59,15 +59,15 @@ sequenceDiagram
   C->>A: Synced, Healthy
 ```
 
-Argo CD rereads the repository on an interval, not at the moment you look. A refresh asks it to read the repository and compare now. This lesson's script, `gitops-first-sync.sh` (the "You" in the diagram), asks for one: Argo CD reads `envs/staging` at `main` and compares each manifest with the live object of the same kind and name in `donhang`. None of them exists yet, so the sync status is `OutOfSync` and the health status is `Missing`.
+This lesson's script, `gitops-first-sync.sh` (the "You" in the diagram), asks for a refresh by writing the request into the Application. Argo CD reads `envs/staging` at `main` and compares each manifest with the live object of the same kind and name in `donhang`. None of them exists yet, so the sync status is `OutOfSync` and the health status is `Missing`.
 
-Here Argo CD stops. `staging-manual.yaml` has no sync policy, so Argo CD reports the difference and waits. The script then asks for a sync: Argo CD applies the folder's manifests, much as `kubectl apply` would. Once the live objects match Git, the sync status turns `Synced`.
+`staging-manual.yaml` has no sync policy, so Argo CD reports the difference and waits. The script then asks for a sync the same way. Argo CD applies the folder's manifests, much as `kubectl apply` would, and once the live objects match Git the sync status turns `Synced`.
 
-Matching Git says nothing about whether the api runs. The Deployment `api` now exists, but its Pods have not passed their readiness probe yet. Argo CD reports the Deployment, and with it the Application, as `Progressing`, and `Healthy` only once the Pods are ready.
+Matching Git says nothing about whether the api runs. The Deployment `api` now exists, but its Pods have not passed their readiness probe yet, so Argo CD reports it, and with it the Application, as `Progressing`. Argo CD learns when the Pods are ready by reading the Deployment's status, as in the diagram's last arrows, then reports `Healthy`.
 
-The Application's health is the worst health among the objects it manages: if any object is not `Healthy`, neither is the Application. One api Pod that never passes its readiness probe keeps it there while the sync status stays `Synced`.
+The Application's health is the worst health among the objects it manages: if any object reports a health worse than `Healthy`, such as `Progressing`, the Application reports it too. One api Pod that never passes its readiness probe keeps the Application from `Healthy` while the sync status stays `Synced`.
 
-Argo CD looks only at the objects whose manifests are in its folder and the live objects it has marked as its own: during a sync it writes a mark on each object it applies, so "its own" means created or updated by one of its syncs. The namespace `donhang` is neither: OpenTofu created it when it set up the cluster, so Argo CD neither reports it missing nor changes it.
+Why does Argo CD leave the namespace `donhang` alone? It looks at two sets of objects: the manifests in its folder, and the live objects that carry its mark. Argo CD writes this mark on each object when a sync applies it, so it still lists an object whose manifest was removed from the folder. The namespace has neither, because OpenTofu created it before anything was deployed. Argo CD neither reports it missing nor changes it.
 
 ## In the Đơn Hàng system
 
@@ -128,9 +128,9 @@ api    2/2     2            2           ...
 no
 ```
 
-Line 21 is the refresh: `app_refresh`, a helper from `scripts/lib/gitops.sh`, marks the Application with a request to compare now. Line 22 waits up to 120 seconds, at any commit (the empty `""`), until it shows `OutOfSync` and `Missing`, the health of objects that do not exist yet. Line 24 prints each object Argo CD manages with its sync status, and every row is `OutOfSync`.
+The first two output lines come from lines 15–16, before the excerpt, which apply `staging-manual.yaml`. Line 21 is the refresh: `app_refresh`, a helper from `scripts/lib/gitops.sh`, writes a request to compare now into the Application. Line 22 waits up to 120 seconds until the Application shows `OutOfSync` and `Missing`; the empty third argument means it does not matter which commit Argo CD compared. Line 24 prints each object Argo CD manages with its sync status, and every row is `OutOfSync`.
 
-Lines 31–32 ask for the sync without Argo CD's own command-line tool: `kubectl patch` writes a sync request for `main` into the Application, and Argo CD carries it out. Lines 33–37 wait until the Application records that this sync run has ended, and line 38 prints `sync: Succeeded`, yet lines 41–42 show `Synced` with `Progressing` and the api at `0/2`: the sync finished applying, and the Pods were still starting.
+Lines 31–32 ask for the sync without Argo CD's own command-line tool: `kubectl patch` writes a sync request for `main` into the Application, and Argo CD carries it out; `initiatedBy` only records who asked, here the script's name. Lines 33–37 wait until the Application records that this sync run has ended, and line 38 prints `sync: Succeeded`. Yet lines 41–42 show `Synced` with `Progressing` and the api at `0/2`: the sync finished applying, and the Pods were still starting.
 
 Outside the excerpt, line 44 waits for `Synced` and `Healthy`, and the api then shows `2/2`. Lines 53–55 check whether a `Namespace` is among the Application's objects; the answer is `no`.
 
@@ -156,17 +156,17 @@ Lines 61–64, not the liveness probe above them, are the readiness probe you me
 
 - **"`Synced` means the new version is up and serving requests."** → Actually `Synced` only says the live objects match Git; whether the api's Pods are ready is the health status. You notice this when `gitops-first-sync.sh` prints `Synced` and `Progressing` while the Deployment `api` shows `0/2` ready.
 - **"Argo CD deploys whatever it finds in the repository as soon as it is installed."** → Actually it compares only folders an Application names, and an Application with no sync policy only reports what differs. You notice this when, after applying `staging-manual.yaml`, the Application shows `OutOfSync` and `Missing` and nothing in `donhang` starts until the script asks for a sync.
-- **"Argo CD will delete the namespace `donhang` because it is not in Git."** → Actually Argo CD manages only objects whose manifests are in its folder; OpenTofu created the namespace when it set up the cluster, so it is neither reported missing nor changed. You notice this when the Application is `Synced` although `envs/staging` holds no namespace, and the script's last check prints `no`.
+- **"Argo CD will delete the namespace `donhang` because it is not in Git."** → Actually Argo CD manages only objects whose manifests are in its folder or that carry its mark; OpenTofu created the namespace, so it is neither reported missing nor changed. You notice this when the Application is `Synced` although `envs/staging` holds no namespace, and the script's last check prints `no`.
 
 ## Try it (3 minutes)
 
 If you have not done the previous lesson's Try it, do that first, so the Application `staging` exists. Then, in the `don-hang` repository folder:
 
 1. Run `kubectl --context kind-donhang-staging get application staging -n argocd`.
-2. Run `scripts/devops/gitops-first-sync.sh`; the first sync can take several minutes beyond the 3 in the heading while images download; the script prints a status line each time it reaches a point it waits for, and stays quiet in between.
+2. Run `scripts/devops/gitops-first-sync.sh`. The first sync can take several minutes beyond the 3 in the heading while images download; the script prints a status line each time it reaches a point it waits for, and stays quiet in between.
 3. Run the command from step 1 again.
 
-Expected result: step 1 shows `OutOfSync` under `SYNC STATUS` and `Missing` under `HEALTH STATUS`; if you have run the script before, it already shows `Synced` and `Healthy`. Step 2 prints `sync: Succeeded`, then `Synced` with `Progressing` and the api at `0/2`, then `Synced` with `Healthy` and `2/2`, and ends with `no`. Step 3 shows `Synced` and `Healthy`.
+Expected result: step 1 shows `OutOfSync` under `SYNC STATUS` and `Missing` under `HEALTH STATUS`. Step 2 prints `sync: Succeeded`, then `Synced` with `Progressing` and the api at `0/2`, then `Synced` with `Healthy` and `2/2`, and ends with `no`. Step 3 shows `Synced` and `Healthy`. If step 1 already shows `Synced` and `Healthy`, you have run the script before: step 2 then stops after about 120 seconds with `staging is still Synced, Healthy after 120 s`, because nothing is missing any more; go on to step 3.
 
 ## Connections
 
@@ -182,4 +182,4 @@ Expected result: step 1 shows `OutOfSync` under `SYNC STATUS` and `Missing` unde
 2. Argo CD compares the manifests at the Application's revision with the live objects; any difference or missing object makes it `OutOfSync`.
 3. A sync applies the folder's manifests; with no sync policy, Argo CD only reports `OutOfSync` and waits for someone to start one.
 4. Right after a sync the api is `Synced` but `Progressing` until its Pods pass the readiness probe; one unready object keeps the Application from `Healthy`.
-5. Argo CD rereads Git on an interval, compares at once on refresh, and leaves objects outside its folder, like the namespace `donhang`, alone.
+5. Argo CD rereads Git on an interval or on refresh, and leaves alone objects neither in its folder nor marked, like the namespace `donhang`.

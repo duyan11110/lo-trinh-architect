@@ -13,11 +13,11 @@ prereqs: [devops.l3.configuration-drift, k8s.l1.deploying-don-hang, k8s.l1.contr
 related: [k8s.l1.manifests-and-kubectl-apply, devops.l3.infrastructure-as-code]
 vocab: [gitops, pull-based-deployment]
 example_tag: stage-2
-versions_used: [kubernetes, kind, github_actions]
+versions_used: [kubernetes, kind, github_actions, opentofu]
 content_version: 1
-status: reviewed
-approved_by: null
-reviewed_at: "2026-10-08T00:05:21+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-10-21T17:59:15+07:00"
 ---
 
 ## Before you start
@@ -45,17 +45,19 @@ flowchart LR
   S[deploy.sh on your machine] -->|push: kubectl apply, once| A[API server]
   C[you or CI] -->|commit| G[Git repository]
   G -->|pull| AG[agent in the cluster]
-  AG -->|apply the difference| A
+  AG -->|apply Git's changes| A
   A -->|live objects| AG
 ```
 
-Follow the top edge. `deploy.sh` runs wherever you start it, and `kubectl` sends each manifest to the API server with the credentials in your kubeconfig. Whoever runs it, you or a CI job, must hold credentials that can create Secrets and delete Pods in `donhang`: it builds the Secrets from `.env` and deletes the old `migrate` Pod.
+On top, `kubectl` sends each manifest to the API server with the credentials in your kubeconfig. Whoever runs `deploy.sh` must hold credentials that can create Secrets and delete Pods in `donhang`: later in the script, it builds the Secrets from `.env` and deletes the old `migrate` Pod.
 
-`kubectl scale` changed the desired state the cluster keeps, so the Deployment now keeps one Pod; only `api.yaml` in Git still says two, and nothing in the cluster reads that file. Once the script ends, nothing is watching.
+`kubectl scale` changed the desired state the cluster keeps; only `api.yaml` in Git still says two, and nothing in the cluster reads it.
 
-The bottom path is GitOps as this course sets it up: the repository holds the desired state, and an agent inside the cluster reads it and applies it through its own API server. To deploy a new version, you, or a CI job, change `image:` in `api.yaml` and push the commit; nobody runs a command against the cluster. The agent is a control loop, like kube-scheduler: it compares the repository with the live objects it reads from the API server, again and again. That hand-made `kubectl scale` shows up as a difference without anyone running a plan, unlike OpenTofu drift. So the agent keeps finding where the cluster disagrees with Git; whether it also changes it back is a choice covered later.
+The bottom path is GitOps in its usual form: an agent inside the cluster reads the desired state from the repository and applies it. To deploy, you or a CI job change `image:` in `api.yaml` and push the commit; the agent picks the change up from Git. When it is set to apply what it finds on its own, nobody runs a command against the cluster; that setting is covered later. The agent is a control loop, like kube-scheduler: it compares the repository with the live objects, repeatedly. The hand-made `kubectl scale` shows up as a difference without anyone running a plan, unlike OpenTofu drift. At the least the agent reports it, which is already acting on it; changing it back is a second setting, separate from the one that applies new commits.
 
-Pull also moves the credentials. The agent opens the connection, from inside the cluster to the repository, so nothing outside has to reach the cluster. CI needs permission to write to the repository, not access to the cluster. The cost is one more component to install, upgrade and watch. For one small cluster that one person deploys, a push script run from CI can be enough. Once several people deploy, or CI cannot reach the cluster, pull starts to pay for that component.
+Pull moves the credentials to the agent: read access to the repository, and rights to change objects in its own cluster. It opens the connection, from inside the cluster to a repository outside it, so nothing outside has to reach the cluster. CI needs permission to write to the repository, not access to the cluster.
+
+The cost is one more component to install, upgrade and watch. For one small cluster that one person deploys, a push script run from CI can be enough. Once several people deploy, or CI cannot reach the cluster, pull pays for it.
 
 ## In the Đơn Hàng system
 
@@ -105,7 +107,7 @@ What CI holds today, in the job that publishes images:
         run: echo "$GITHUB_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
 ```
 
-`permissions: packages: write` is the only power this job asks for: it can put images in the registry. No job in `ci.yml` deploys to a cluster that stays up; another job in `ci.yml`, `k8s`, creates its own throwaway cluster on the runner and deletes it at the end.
+`permissions: packages: write` is the only power this job asks for: it can put images in the registry. No job in `ci.yml` deploys to a cluster that stays up; another job in `ci.yml`, `k8s`, creates its own throwaway cluster on the runner, which is gone when the job ends.
 
 A push deploy added after `publish` would need a kubeconfig with rights over the real cluster, kept as a GitHub secret. With pull, the extra step would be a commit that changes `image:` in `api.yaml` to the tag of the image `publish` just pushed. CI would need permission to write to the repository, and CI would no longer hold the cluster's credentials.
 
@@ -113,7 +115,7 @@ A push deploy added after `publish` would need a kubeconfig with rights over the
 
 - **"GitOps just means keeping the Kubernetes manifests in Git, which Đơn Hàng already does."** → Actually Git gives `deploy/k8s/` history and review, but only `deploy.sh` reads those files, and only while it runs. GitOps adds an agent in the cluster that keeps comparing them with the live objects. You notice this when `kubectl get deployment api -n donhang` shows a replica count that differs from `api.yaml`, and no tool ever reported it.
 - **"A CI job that runs `kubectl apply` after every merge is GitOps."** → Actually that is still push: it acts only when the pipeline runs, CI holds credentials for the cluster, and the cluster must be reachable from CI's runners. Between merges, nothing compares. You notice this when a hand-made change stays in the cluster until the next merge happens to apply over it.
-- **"'Pull' refers to the nodes pulling images from the registry."** → Actually the kubelet pulls images in both models: `deploy.sh` pushes manifests, and each node still pulls `ghcr.io/duyan11110/donhang-api:1.0.0` itself. "Pull" names who fetches the desired state: an agent in the cluster, from Git. You notice this when `kubectl describe pod`, run shortly after a deploy plainly pushed with `deploy.sh`, lists under `Events`, the Pod's record of what has happened to it, the image being pulled for an `api` Pod that was the first to run it on its node.
+- **"'Pull' refers to the nodes pulling images from the registry."** → Actually the kubelet pulls images in both models: `deploy.sh` pushes manifests, and each node still pulls `ghcr.io/duyan11110/donhang-api:1.0.0` itself. "Pull" names who fetches the desired state: an agent in the cluster, from Git. `Events` is the Pod's record of what has happened to it. You notice this when `kubectl describe pod`, run shortly after a `deploy.sh` deploy, shows under `Events` the image being pulled for an `api` Pod that was the first to run it on its node.
 
 ## Try it (3 minutes)
 
@@ -131,7 +133,7 @@ Expected result: in step 2 the `READY` column shows `1/1`, and `grep` prints `11
 - [[devops.l3.infrastructure-as-code]] — the same problem one layer down: a file in Git that nothing compares with what exists.
 - [[devops.l3.configuration-drift]] — the opposite timing: OpenTofu finds drift only when someone runs a plan, while a pull agent keeps looking.
 - [[k8s.l1.control-plane-components]] — the same kind of control loop the agent runs, there run by kube-scheduler.
-- [[devops.l3.argo-cd-applications]] — next: installing such an agent in staging and telling it which folder of which repository to read.
+- [[devops.l3.argo-cd-applications]] — next: installing such an agent in `donhang-staging`, a cluster OpenTofu creates at stage-3 that stays up, unlike the runner's throwaway copy, and telling it which folder of which repository to read.
 
 ## Five-line summary
 

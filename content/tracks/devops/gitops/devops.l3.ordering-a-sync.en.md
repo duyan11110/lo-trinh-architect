@@ -15,14 +15,14 @@ vocab: [sync-wave, argocd-hook]
 example_tag: stage-3
 versions_used: [argocd, kubernetes, efcore]
 content_version: 1
-status: reviewed
-approved_by: null
-reviewed_at: "2026-10-08T06:43:22+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-10-21T21:26:49+07:00"
 ---
 
 ## Before you start
 
-- [[devops.l3.synced-versus-healthy]] — you know a sync applies `envs/staging` to the namespace `donhang`, and that Argo CD calls a Deployment `Healthy` only once its Pods are ready.
+- [[devops.l3.synced-versus-healthy]] — you know a sync applies `envs/staging` to the namespace `donhang`, that `kubectl patch` can ask Argo CD for one, and that a Deployment is `Healthy` only once its Pods are ready.
 - [[devops.l2.migrations-in-the-pipeline]] — you know the migration bundle applies only the migrations a database lacks, and that `Program.cs` no longer migrates at startup.
 - [[k8s.l1.deploying-don-hang]] — you know `deploy.sh` runs a `migrate` Pod with `restartPolicy: Never` and applies the api only after that Pod succeeds.
 
@@ -37,7 +37,7 @@ In staging, no script runs. One sync applies the whole folder `envs/staging`, an
 An annotation is a key and value under an object's `metadata.annotations`; unlike a label, it selects nothing, and tools such as Argo CD read it as an instruction.
 
 - **sync wave (Argo CD)** — a number written on an object in the annotation `argocd.argoproj.io/sync-wave`; within a sync, Argo CD applies lower waves first and moves to the next wave only once the current one is healthy, and an object without the annotation is in wave 0.
-- **hook (Argo CD)** — an object carrying the annotation `argocd.argoproj.io/hook`, which Argo CD creates during a sync to run a task instead of keeping it in place like the other objects; it may be of any kind, and in Đơn Hàng it is the migration Pod.
+- **hook (Argo CD)** — an object carrying the annotation `argocd.argoproj.io/hook`, which Argo CD creates during a sync to run a task instead of keeping it in place like the other objects. The annotation's value is the hook's phase, which says whether it runs before, with or after the other objects; `Sync` means with them. A hook may be of any kind, and in Đơn Hàng it is the migration Pod.
 - Hook deletion policy — the annotation `argocd.argoproj.io/hook-delete-policy`, which says when Argo CD deletes a hook; `BeforeHookCreation` deletes the previous one just before the next sync creates it again.
 
 ## How it works
@@ -57,13 +57,15 @@ sequenceDiagram
   C->>A: apply
 ```
 
-A sync of `main` sorts every object by phase, then by sync wave, lowest first, then by kind, then by name; the file an object came from plays no part. A phase says when a hook runs, for example before, with or after the objects. Đơn Hàng's hook uses `Sync`, the phase in which every object without a hook annotation is applied too, so they all share one phase and the sync wave orders them.
+As in the previous lesson, `kubectl patch` asks Argo CD for a sync, and it syncs the branch `main` of the config repository. Argo CD sorts every object by phase, then by sync wave, lowest first, then by kind, then by name; the file an object came from plays no part.
 
-In `envs/staging`, the database, Redis, Keycloak, Mailpit, their Services, the ConfigMaps and every other object without the annotation are in wave 0, the migration hook in wave 1 and the Deployment `api` in wave 2. Inside one wave Argo CD does not wait between objects; it waits until every object is healthy only before starting the next wave. That is why the hook needs its own wave after the database, whose readiness probe must pass first.
+Đơn Hàng's hook uses `Sync`, the phase in which every object without a hook annotation is applied, so the sync wave orders them.
 
-In wave 1, Argo CD does not compare the hook with a live copy; it creates it new, after `BeforeHookCreation` deletes the previous `migrate` Pod, since two Pods in one namespace cannot share a name. Argo CD waits for the new Pod to end rather than to be ready. If it ends `Succeeded`, Argo CD applies wave 2, the api. If it ends `Failed`, the sync fails there and the Deployment `api` stays as it was.
+In `envs/staging`, the Deployment `db` is marked wave 0, and every object without the annotation, such as Redis, Keycloak, Mailpit, their Services and the ConfigMaps, is in wave 0 too. The migration hook is in wave 1 and the Deployment `api` in wave 2. Argo CD does not wait between objects of one wave; there, kind and name only decide the order it applies them in. It waits until all of them are healthy before it starts the next wave. So the hook needs its own wave after the database, whose readiness probe must pass first.
 
-Every sync of the whole Application runs the hook again, whatever changed. A sync whose only change is the api's replicas still creates a new `migrate` Pod. That is safe because the bundle skips migrations the database has recorded and ends `Succeeded`.
+In wave 1, Argo CD does not compare the hook with a live copy. `BeforeHookCreation` deletes the previous `migrate` Pod, since two Pods in one namespace cannot share a name, and Argo CD creates a new one. It waits for that Pod to end, not to be ready: for a hook, ending `Succeeded` is what completes its wave, and Argo CD then applies wave 2. Ending `Failed` fails the sync there, and the Deployment `api` stays as it was.
+
+Every sync of the whole folder runs the hook again, whatever changed; syncing only chosen objects is a case left out here. A sync whose only change is the api's replicas still creates a new `migrate` Pod. That is safe because the bundle skips migrations the database has recorded.
 
 ## In the Đơn Hàng system
 
@@ -88,7 +90,7 @@ spec:
       args: ["--connection", "$(ConnectionStrings__Default)"]
 ```
 
-Lines 12–15 hold the whole ordering. Line 13 makes the Pod a hook in the `Sync` phase, line 14 puts it in wave 1, and line 15 deletes the previous `migrate` Pod before a new one is created. Line 17 keeps a failed migration from restarting, so the Pod ends `Failed` and the sync stops.
+The three annotations hold the whole ordering. `argocd.argoproj.io/hook: Sync` makes the Pod a hook in the `Sync` phase, `sync-wave: "1"` puts it in wave 1, and `hook-delete-policy: BeforeHookCreation` deletes the previous `migrate` Pod before a new one is created. `restartPolicy: Never` keeps a failed migration from restarting, so the Pod ends `Failed` and the sync stops. The `args` line hands the bundle the database connection string from a variable set further down in the same file, outside the excerpt; it plays no part in the order.
 
 The end of the script that shows the order:
 
@@ -145,15 +147,15 @@ No migrations were applied. The database is already up to date.
 Done.
 ```
 
-Read the output top to bottom. Script lines 23–25, outside the excerpt, print every wave and hook annotation, with `api.yaml` first. Script lines 30–38, also outside, empty `donhang` and sync it from nothing. Script lines 43–50 read when each step happened and sort the times: the Deployment `api` comes last.
+Read the output top to bottom. Earlier script lines, outside the excerpt, print every wave and hook annotation, with `api.yaml` first, then empty `donhang` and sync it from nothing. The excerpt then reads when each step happened, sorts the lines by their time, then drops the time and numbers what is left. It reads only two wave 0 Deployments, `db` and `keycloak`, as examples; the rest of wave 0 is not printed. The Deployment `api` comes last.
 
-Script lines 57–62 sync once more with nothing changed. Line 59 calls `sync_now`, defined earlier in the script, and line 62 prints the Pod's log without the bundle's line starting with `Acquiring`. The Pod's identifier differs, so a new `migrate` Pod ran, and the bundle found no migration to apply.
+The last part syncs once more with nothing changed. `sync_now`, defined earlier in the script, asks Argo CD for a sync with `kubectl patch` and waits until the sync reports a result. The last line prints the Pod's log without the bundle's line starting with `Acquiring`. The Pod's identifier differs, so a new `migrate` Pod ran, and the bundle found no migration to apply.
 
 ## Seniors often assume…
 
 - **"Argo CD applies the files in the order they are listed in the folder."** → Actually it sorts the objects by phase, sync wave, kind and name, because it reads the folder as one set of manifests, not as a list of steps. You notice this when `gitops-order.sh` lists `api.yaml` first among the annotations, yet the Deployment `api` is created last.
-- **"A hook runs only when its own manifest changed."** → Actually Argo CD creates the hook again in every sync of the whole Application, because a hook is not kept in place and compared like the other objects. You notice this when the second sync in `gitops-order.sh`, with nothing changed, runs a new `migrate` Pod whose log says no migrations were applied.
-- **"Now that no script orders the steps, each api replica should migrate at startup."** → Actually the hook gives the order without a script. When more than one replica runs, one migration before the api is applied is safer than every replica migrating as it starts: EF Core's documentation prefers a separate migration step when the rollout must be coordinated or the app must stay up, since an app reading the database while another migrates it can break. For a single copy of an app in local development, migrating at startup remains a simple choice. You notice this in the script's output: the hook Pod ended before the Deployment `api` was created, so none of its Pods met an unmigrated database.
+- **"A hook runs only when its own manifest changed."** → Actually Argo CD creates the hook again in every sync of the whole folder, because a hook is not kept in place and compared like the other objects. You notice this when the second sync in `gitops-order.sh`, with nothing changed, runs a new `migrate` Pod whose log says no migrations were applied.
+- **"Now that no script orders the steps, each api replica should migrate at startup."** → Actually the hook gives the order without a script. When more than one replica runs, one migration before the api is applied is safer: EF Core's documentation prefers a separate migration step when the rollout must be coordinated, as here, where every new api Pod must start against an already migrated database, or when the app must stay up, since an app reading the database while another migrates it can break. For a single copy of an app in local development, migrating at startup remains a simple choice. You notice this in the script's output: the hook Pod ended before the Deployment `api` was created, so none of its Pods met an unmigrated database.
 
 ## Try it (3 minutes)
 
@@ -179,4 +181,4 @@ Expected result: the list starts with the two wave 0 lines for `db` and `keycloa
 2. A sync sorts objects by phase, then sync wave (lowest first, 0 by default), then kind and name, never by file order.
 3. Argo CD starts the next wave only once every object in the current one is healthy; a failed hook stops the sync.
 4. Đơn Hàng's staging puts the database and other services in wave 0, the migration hook Pod in wave 1 and the api in wave 2.
-5. The hook runs on every sync of the whole Application after `BeforeHookCreation` deletes the old Pod, so the bundle must skip migrations already recorded.
+5. The hook runs on every sync of the whole folder after `BeforeHookCreation` deletes the old Pod, so the bundle must skip migrations already recorded.
