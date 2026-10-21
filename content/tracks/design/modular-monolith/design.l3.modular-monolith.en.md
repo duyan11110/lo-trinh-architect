@@ -15,9 +15,9 @@ vocab: [monolith, modular-monolith]
 example_tag: stage-2
 versions_used: [dotnet, aspnetcore, efcore, postgresql, git]
 content_version: 1
-status: reviewed
-approved_by: null
-reviewed_at: "2026-10-08T12:26:50+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-10-21T16:16:30+07:00"
 ---
 
 ## Before you start

@@ -15,9 +15,9 @@ vocab: [environment-promotion]
 example_tag: stage-3
 versions_used: [argocd, docker, git, github_actions, kubernetes, opentofu]
 content_version: 1
-status: reviewed
-approved_by: null
-reviewed_at: "2026-10-08T13:31:52+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-10-21T16:16:30+07:00"
 ---
 
 ## Before you start
