@@ -230,6 +230,45 @@ skills:
   - backend.resilience.call-policies
   - backend.observability.tracing
   - management.decisions.records
+- id: k8s.platform.managed-clusters
+  title:
+    vi: "Kubernetes managed: phần nhà cung cấp lo và phần còn lại của đội"
+    en: "Managed Kubernetes: what the provider runs and what stays yours"
+  prereqs: [k8s.lifecycle.maintenance, k8s.lifecycle.etcd-data, management.sourcing.decisions]
+- id: k8s.scaling.autoscaling
+  title:
+    vi: "Tự co giãn số Pod và số node"
+    en: "Autoscaling Pods and nodes"
+  prereqs: [k8s.config.resources, k8s.workloads.replication, backend.capacity.planning]
+- id: k8s.platform.cost
+  title:
+    vi: "Chi phí cluster và chỉnh request cho vừa"
+    en: "Cluster cost and rightsizing"
+  prereqs: [k8s.scaling.autoscaling, management.sourcing.decisions]
+- id: k8s.platform.hosting-decision
+  title:
+    vi: "Chọn Kubernetes managed hay tự vận hành"
+    en: "Choosing managed or self-hosted Kubernetes"
+  prereqs:
+  - k8s.platform.managed-clusters
+  - k8s.platform.cost
+  - management.sourcing.vendors
+  - k8s.multicluster.boundaries
+- id: k8s.security.key-management
+  title:
+    vi: "Giữ khóa trong dịch vụ quản lý khóa"
+    en: "Keeping keys in a key management service"
+  prereqs: [k8s.lifecycle.etcd-data, backend.security.key-custody, k8s.platform.hosting-decision]
+- id: k8s.platform.cluster-migration
+  title:
+    vi: "Chuyển hệ thống sang cluster mới"
+    en: "Moving a system to a new cluster"
+  prereqs: [k8s.platform.hosting-decision, devops.dr.recovery, devops.secrets.sealing]
+- id: k8s.review.cluster-checklist
+  title:
+    vi: "Review thay đổi ở mức cluster bằng checklist"
+    en: "Reviewing cluster-level changes with a checklist"
+  prereqs: [k8s.platform.cluster-migration, backend.review.checklist, k8s.security.admission-policy]
 levels:
 - level: 1
   title:
@@ -2425,3 +2464,274 @@ levels:
       - "A service mesh is the only way to encrypt traffic between Pods."
       - "Without a mesh, services have no retries, timeouts or per-call metrics."
       depth_notes: "Không so sánh hay nêu tên sản phẩm mesh, không đo chi phí bằng số (chưa có metrics-server), không quyết lại ADR 0012, 0019. Không dạy lại mTLS, sidecar — k8s.l4.mutual-tls, k8s.l4.sidecar-proxies; cân nhắc phương án trong ADR — management.l3.weighing-options-in-an-adr."
+  - id: managed-vs-selfhosted
+    title:
+      vi: "Managed hay tự vận hành: autoscaling, chi phí, khóa và chuyển cluster"
+      en: "Managed or self-hosted: autoscaling, cost, keys and moving clusters"
+    stage: 4
+    summary:
+      vi: "Biết cluster managed lấy đi việc gì và để lại việc gì, cho số Pod và số node tự co giãn trong giới hạn của kế hoạch dung lượng, đọc chi phí cluster qua request, quyết managed hay tự vận hành (ADR 0022) và nơi giữ khóa (ADR 0023), lên kế hoạch chuyển sang cluster mới và review thay đổi ở mức cluster bằng checklist."
+      en: "Know what a managed cluster takes off the team and what it leaves, let Pods and nodes scale within the capacity plan, read a cluster's cost through its requests, decide managed or self-hosted (ADR 0022) and where keys live (ADR 0023), plan a move to a new cluster and review cluster-level changes with a checklist."
+    lessons:
+    - id: k8s.l4.managed-control-plane
+      title:
+        vi: "Cluster managed chạy hộ control plane, không chạy hộ ứng dụng của bạn"
+        en: "A managed cluster runs the control plane for you, not your workloads"
+      main_path: true
+      duration_min: 13
+      skills: [k8s.platform.managed-clusters]
+      prereqs:
+      - k8s.l3.cluster-upgrades
+      - k8s.l3.etcd-snapshots
+      - k8s.l3.clusters-without-a-cloud
+      - management.l3.self-hosting-costs
+      related:
+      - k8s.l3.kubeadm
+      - k8s.l3.control-plane-ha
+      - k8s.l4.why-more-than-one-cluster
+      - k8s.l2.database-in-the-cluster
+      vocab: [managed-kubernetes, shared-responsibility-model, node-pool]
+      example_tag: stage-3
+      example_files: [scripts/k8s/kubeadm.sh, docs/team/self-run-components.md, scripts/k8s/version-skew.sh]
+      outline:
+      - "A managed Kubernetes service runs the control plane on the provider's machines: the team gets an API server address and credentials, and no control-plane node to log in to."
+      - "The control-plane work of k8s/operators-and-cluster-lifecycle moves to the provider: building it, keeping a majority of etcd members, etcd snapshots, renewing its certificates and upgrading its components."
+      - "Worker nodes come from node pools, groups of nodes the provider creates from one template of machine size and Kubernetes version; a broken node is replaced from the template, not repaired."
+      - "A shared responsibility model states which parts each side runs: workloads, RBAC, NetworkPolicies, add-ons such as Argo CD and cert-manager, and backups of data on volumes stay the team's."
+      - "The provider offers new minor versions and ends support for old ones on its own schedule, so the team still upgrades one minor version at a time and checks manifests for removed APIs first."
+      - "The cloud parts a bare-metal cluster lacks come with it: LoadBalancer Services get outside addresses and claims get network disks, through the provider's own controllers and CSI driver."
+      misconceptions:
+      - "With managed Kubernetes, the provider keeps our applications running."
+      - "A managed cluster upgrades itself, so the team never has to plan an upgrade."
+      - "On a managed cluster, nothing that runs inside it needs a backup."
+      depth_notes: "Không nêu tên, so sánh hay giá nhà cung cấp; không dạy node do provider tự quản hoàn toàn, nhiều zone chi tiết, cấu hình node pool. Thêm node tự động — k8s.l4.node-autoscaling. Không dạy lại kubeadm, etcd snapshot, nâng cấp — các bài k8s.l3.*."
+    - id: k8s.l4.horizontal-pod-autoscaler
+      title:
+        vi: "HorizontalPodAutoscaler đặt số replica theo mức CPU đo được"
+        en: "A HorizontalPodAutoscaler sets the replica count from measured CPU"
+      main_path: true
+      duration_min: 15
+      skills: [k8s.scaling.autoscaling]
+      prereqs: [k8s.l1.requests-and-limits, k8s.l1.deployments, devops.l3.self-heal, backend.l4.load-testing]
+      related: [k8s.l1.control-plane-components, backend.l4.capacity-planning, k8s.l4.sharing-a-cluster]
+      vocab: [metrics-server, horizontal-pod-autoscaler]
+      example_tag: stage-4
+      example_files:
+      - scripts/k8s/metrics-server-install.sh
+      - deploy/k8s/lessons/cpu-echo-hpa.yaml
+      - scripts/k8s/autoscale.sh
+      outline:
+      - "metrics-server collects each Pod's current CPU and memory use from the kubelets and serves it through the API server, where `kubectl top` reads it; it keeps no history, so it is not monitoring."
+      - "A HorizontalPodAutoscaler (HPA) is an object whose controller keeps setting a Deployment's replica count between `minReplicas` and `maxReplicas` from metrics."
+      - "For CPU the target is a percentage of the request: the HPA divides measured use by the request, and the new count is the current one times measured over target, rounded up."
+      - "`autoscale.sh` sends load to `cpu-echo`: the HPA raises its replicas, and after the load stops lowers them once the scale-down window passes, 30 seconds in `cpu-echo-hpa.yaml` instead of the default 300."
+      - "If metrics-server is missing, or the containers set no CPU request, the HPA cannot compute utilization, shows its target as `<unknown>` and leaves the count as it is."
+      - "When Argo CD syncs a Deployment that an HPA scales, the manifest in Git leaves out `replicas`; otherwise Argo CD sets the count back to the value in Git."
+      misconceptions:
+      - "The HPA adds Pods when a Pod's CPU reaches its limit."
+      - "Once the load drops, the extra Pods are removed straight away."
+      - "`kubectl top` shows how a Pod's CPU use changed over the last day."
+      depth_notes: "Không dạy metric tùy biến hay từ Prometheus, scale theo memory chi tiết, VPA, scale về 0, tham số thuật toán (tolerance, chu kỳ). Thêm node — bài sau. Lab trên `donhang`, namespace `autoscale-lessons`; cờ TLS kubelet của metrics-server chỉ dành cho lab."
+    - id: k8s.l4.node-autoscaling
+      title:
+        vi: "Pod thêm cần chỗ: thêm node là việc của một autoscaler khác"
+        en: "Extra Pods need room: adding nodes is another autoscaler's job"
+      main_path: true
+      duration_min: 14
+      skills: [k8s.scaling.autoscaling]
+      prereqs:
+      - k8s.l4.horizontal-pod-autoscaler
+      - k8s.l4.managed-control-plane
+      - backend.l4.capacity-planning
+      - k8s.l3.draining-nodes
+      related: [k8s.l1.requests-and-limits, k8s.l3.clusters-without-a-cloud, k8s.l4.sharing-a-cluster]
+      vocab: [cluster-autoscaler]
+      example_tag: stage-4
+      example_files:
+      - scripts/k8s/node-capacity.sh
+      - deploy/k8s/lessons/cpu-echo-hpa.yaml
+      - docs/design/capacity-plan.md
+      outline:
+      - "An HPA only changes the replica count: each new Pod still needs a node whose unreserved capacity covers its requests, and stays `Pending` until one has room."
+      - "`node-capacity.sh` raises the HPA's `minReplicas` past what the two workers of `donhang` can hold: the HPA sets the count, and the extra Pods stay `Pending` with events saying no node has enough CPU."
+      - "A cluster autoscaler adds a node to a node pool when Pods cannot be scheduled for lack of resources, and removes a node whose Pods fit elsewhere; it reacts to requests that do not fit, not to CPU use."
+      - "A new node must start and join the cluster before Pods run on it, so the headroom in `capacity-plan.md` still has to carry the first part of a peak."
+      - "On your own machines nothing creates a node on demand: nodes are bought ahead for the planned peak, and `maxReplicas` is kept within what they hold."
+      - "`maxReplicas` is also bounded by shared resources: api Pods times connections per Pod must stay below PostgreSQL's `max_connections`, as `capacity-plan.md` says, however many nodes exist."
+      misconceptions:
+      - "The HPA adds nodes when the cluster runs out of room."
+      - "A cluster autoscaler adds a node as soon as CPU use gets high."
+      - "With autoscaling turned on, we no longer need a capacity plan."
+      depth_notes: "Không nêu tên sản phẩm autoscaler node, cấu hình node pool, Pod ưu tiên thấp giữ chỗ, chi tiết scale-down (PDB, Pod không dời được), spot node. kind không thêm node được. Chi phí — bài sau. Không dạy lại kế hoạch dung lượng — backend.l4.capacity-planning."
+    - id: k8s.l4.requests-drive-cluster-cost
+      title:
+        vi: "Chi phí cluster đi theo phần Pod xin, không theo phần Pod dùng"
+        en: "A cluster's cost follows what Pods request, not what they use"
+      main_path: true
+      duration_min: 14
+      skills: [k8s.platform.cost]
+      prereqs:
+      - k8s.l4.node-autoscaling
+      - management.l3.total-cost-of-ownership
+      - k8s.l4.why-more-than-one-cluster
+      - devops.l4.platform-engineering
+      related:
+      - k8s.l1.requests-and-limits
+      - backend.l4.capacity-planning
+      - backend.l3.trace-sampling
+      - k8s.l4.horizontal-pod-autoscaler
+      vocab: [rightsizing]
+      example_tag: stage-4
+      example_files:
+      - scripts/k8s/requests-vs-usage.sh
+      - docs/design/cluster-cost.md
+      - deploy/gitops/config-repo/apps/metrics-server.yaml
+      outline:
+      - "Nodes are filled by requests, so the number of nodes a cluster needs, and pays for, follows the sum of its Pods' requests, whether that capacity is used or not."
+      - "`requests-vs-usage.sh` prints, for each Pod on `donhang-staging`, its CPU and memory requests beside its current use from metrics-server, and for the node its capacity beside the sum of requests."
+      - "Rightsizing sets requests from use measured at peak plus headroom: too low and Pods are slowed down, killed for memory or crowd their neighbours; too high and nodes sit reserved but idle."
+      - "The platform runs in every cluster whatever the traffic: Argo CD, the Git server, Traefik, the Sealed Secrets controller and Prometheus are a fixed share each extra cluster or environment pays again."
+      - "`cluster-cost.md` counts cost in nodes and team hours with figures marked as assumed, and lists the levers: requests, HPA minimums, environments stopped outside working hours and how long telemetry is kept."
+      misconceptions:
+      - "We only pay for the CPU our Pods actually use."
+      - "Generous requests are free insurance against slowdowns."
+      - "A cluster with little traffic costs almost nothing to keep running."
+      depth_notes: "Không nêu giá thật, chương trình giảm giá hay tên nhà cung cấp, spot node, công cụ phân bổ chi phí, VPA. Chọn tỉ lệ sampling, thiết kế theo chi phí chi tiết — sysdesign/problems. Script chỉ đọc; `cluster-cost.md` đề xuất request, không đổi manifest staging."
+    - id: k8s.l4.choosing-managed-kubernetes
+      title:
+        vi: "Đơn Hàng chạy production trên Kubernetes managed và ghi rõ khi nào thôi"
+        en: "Đơn Hàng runs production on managed Kubernetes, and says when not to"
+      main_path: true
+      duration_min: 14
+      skills: [k8s.platform.hosting-decision]
+      prereqs:
+      - k8s.l4.requests-drive-cluster-cost
+      - k8s.l4.managed-control-plane
+      - management.l3.exit-plan
+      - design.l4.architectural-drivers
+      related:
+      - management.l3.vendor-lock-in
+      - management.l3.self-hosting-costs
+      - k8s.l3.clusters-without-a-cloud
+      - k8s.l4.data-decides-failover
+      - design.l4.over-abstraction
+      vocab: [multi-cloud]
+      example_tag: stage-4
+      example_files:
+      - docs/adr/0022-production-tren-kubernetes-managed.md
+      - docs/team/self-run-components.md
+      - deploy/tofu/envs/production/cluster/main.tf
+      outline:
+      - "Managed or self-hosted Kubernetes is a total cost question over years: the provider's fee against the team hours to run control planes, load balancing, replicated storage and upgrades, and to be on call for them."
+      - "ADR `0022` weighs Đơn Hàng's own machines, one provider's managed Kubernetes and two providers at once, with hours and fees marked as assumed figures, against the drivers of the multi-shop system."
+      - "It chooses managed Kubernetes: one team cannot keep a control plane and replicated storage running around the clock, and node pools can grow for peaks that own machines must be bought ahead for."
+      - "Multi-cloud, running on several providers at once, is rejected: it doubles the platform to run and limits the system to what every provider offers, while an exit plan already keeps leaving possible."
+      - "The ADR lists what would tie Đơn Hàng to the provider, such as StorageClass names, the Gateway's load balancer, the key service and the OpenTofu cluster code, while manifests and Argo CD move unchanged."
+      - "It is reopened when a customer's contract requires machines of its own or data kept in a given place, or when the fee passes the assumed cost of a team running the cluster itself."
+      misconceptions:
+      - "Self-hosting Kubernetes is cheaper because the software is free."
+      - "Running on two clouds at once is the safest way to avoid lock-in."
+      - "A managed cluster from one provider moves to another by just pointing kubectl at it."
+      depth_notes: "Không nêu tên/giá, không chọn nhà cung cấp cụ thể, không quyết lại managed cho từng thành phần (`self-run-components.md` giữ nguyên), không code cluster managed ở stage-4. Khóa và HSM — bài sau. Không dạy lại TCO, lock-in, exit plan — management.l3.*."
+    - id: k8s.l4.keys-stay-in-the-key-service
+      title:
+        vi: "Khóa quan trọng nằm yên trong dịch vụ quản lý khóa, các bên chỉ gửi yêu cầu"
+        en: "Keys that must not leak stay in a key service; others only ask"
+      main_path: true
+      duration_min: 15
+      skills: [k8s.security.key-management]
+      prereqs: [k8s.l4.choosing-managed-kubernetes, k8s.l3.encryption-at-rest, backend.l4.signing-key-custody]
+      related:
+      - devops.l3.secret-rotation
+      - management.l3.exit-plan
+      - backend.l4.pki-and-signing
+      - k8s.l3.etcd-snapshots
+      vocab: [key-management-service, envelope-encryption]
+      example_tag: stage-4
+      example_files:
+      - scripts/dev-secrets.sh
+      - docs/adr/0015-khoa-ky-hoa-don-trong-hsm.md
+      - docs/adr/0023-khoa-ky-hoa-don-trong-hsm-cua-nha-cung-cap.md
+      outline:
+      - "With envelope encryption, data is encrypted with a data key, and the data key is stored encrypted by a key that never leaves a key service; reading the data needs the key service to decrypt the data key."
+      - "A key management service (KMS) keeps such keys, often inside HSMs, and encrypts, decrypts or signs on request for the callers it permits, recording each use."
+      - "The `secretbox` key from `dev-secrets.sh` sits in a file on the control-plane node; with the `kms` provider, version v2 in Kubernetes 1.34, a KMS plugin has the key service encrypt the API server's data keys."
+      - "On a managed cluster, encrypting Secrets with a key from the provider's key service is usually a setting; disabling or deleting that key leaves every Secret in etcd unreadable, so it is guarded like the data."
+      - "ADR `0023` puts the invoice signing key of ADR `0015` in the provider's HSM service, since an HSM of Đơn Hàng's own needs hardware in two places and people to run it, as ADR `0022` declined for the cluster."
+      - "As the key cannot leave the HSM, leaving the provider means a new key and certificate; invoices signed before stay verifiable, because checking a signature needs only the public key."
+      misconceptions:
+      - "With a key service, every Secret is sent to the key service to be encrypted."
+      - "Disabling our key in the key service only stops new Secrets from being encrypted."
+      - "With the invoice key in the provider's HSM, we can take a copy of it when we leave."
+      depth_notes: "Không nêu tên sản phẩm KMS, HSM hay plugin; không dạy cấu hình KMS v2 chi tiết, xoay vòng khóa KMS, định danh workload với cloud, mức chứng nhận HSM. Không dựng KMS trong lab. Không dạy lại encryption at rest, HSM — k8s.l3.encryption-at-rest, backend.l4.signing-key-custody."
+    - id: k8s.l4.moving-to-a-new-cluster
+      title:
+        vi: "Sang cluster mới bằng cách dựng lại từ Git, chỉ dữ liệu phải chuyển"
+        en: "Move to a new cluster by rebuilding from Git; only the data moves"
+      main_path: true
+      duration_min: 14
+      skills: [k8s.platform.cluster-migration]
+      prereqs:
+      - k8s.l4.choosing-managed-kubernetes
+      - devops.l3.disaster-recovery-drill
+      - devops.l3.point-in-time-recovery
+      - k8s.l4.why-more-than-one-cluster
+      related:
+      - k8s.l3.etcd-snapshots
+      - devops.l3.sealed-secrets
+      - k8s.l2.storage-classes
+      - k8s.l4.failover-between-clusters
+      - k8s.l4.keys-stay-in-the-key-service
+      vocab: []
+      example_tag: stage-4
+      example_files:
+      - docs/design/cluster-migration-plan.md
+      - scripts/devops/dr-drill.sh
+      - deploy/gitops/config-repo/apps/staging.yaml
+      outline:
+      - "`cluster-migration-plan.md` moves Đơn Hàng to the managed cluster of ADR `0022` by building it beside the old one and then switching traffic, keeping the old cluster as the way back until the move is checked."
+      - "Objects come from the config repository through Argo CD, as in the DR drill; no etcd snapshot is carried over, since it would bring the old cluster's nodes, addresses and Secrets with it."
+      - "What differs per cluster is changed in the config repository first: secrets sealed again for the new cluster's sealing key, StorageClass names and the Gateway's address from the provider's load balancer."
+      - "Data moves on its own path: PostgreSQL is restored from a base backup and its WAL, writes stop for a short final catch-up and RabbitMQ's queues are drained, so no confirmed order is lost."
+      - "The move changes only the cluster: self-run components such as PostgreSQL and Keycloak move as they are and become managed services later, one per release, so a failure points to one change."
+      - "A rehearsal on staging times each step first, which sets how long writes stop and what the shops are told in advance."
+      misconceptions:
+      - "Moving clusters means copying the old cluster's etcd into the new one."
+      - "Since everything is in Git, the new cluster needs no changes before its first sync."
+      - "A cluster move is the right moment to also switch the database to a managed one."
+      depth_notes: "Không dạy công cụ chuyển cluster hay volume, logical replication giữa hai PostgreSQL, chi tiết đổi DNS, nâng cấp bằng cluster mới. Kế hoạch giả định, không chạy trong lab. Không dạy lại DR drill, PITR, sealed secret — devops.l3.*."
+    - id: k8s.l4.cluster-review-checklist
+      title:
+        vi: "Checklist review cluster trỏ mỗi câu hỏi tới một phép kiểm hay ADR"
+        en: "A cluster review checklist points each question at a check or ADR"
+      main_path: true
+      duration_min: 14
+      skills: [k8s.review.cluster-checklist]
+      prereqs:
+      - k8s.l4.moving-to-a-new-cluster
+      - backend.l4.backend-review-checklist
+      - k8s.l4.when-a-mesh-pays-off
+      - devops.l4.golden-path
+      related:
+      - k8s.l3.admission-policies
+      - k8s.l3.pod-security-admission
+      - design.l4.mapping-fitness-functions
+      - k8s.l4.horizontal-pod-autoscaler
+      - k8s.l4.sharing-a-cluster
+      vocab: []
+      example_tag: stage-4
+      example_files:
+      - docs/design/cluster-review-checklist.md
+      - deploy/gitops/config-repo/platform/policies/require-image-digest.yaml
+      - docs/design/capacity-plan.md
+      outline:
+      - "`cluster-review-checklist.md` groups its questions by concern: workloads and resources, isolation and access, data and backups, upgrades and add-ons, cost, and how changes reach the cluster."
+      - "Each question names the check or decision that answers it, such as the admission policy on image digests, Pod Security labels, kubeconform in CI or ADR `0022`."
+      - "Common cluster mistakes appear as questions: Pods with no requests, changes made with `kubectl` outside the config repository, operators added with nobody owning their upgrades, backups never restored."
+      - "A review runs when a change reaches past one service, such as a new CRD or operator, a namespace for a new team, a new cluster or a Kubernetes upgrade, not for every manifest edit."
+      - "Its worked example reviews letting an HPA scale the api on production: `replicas` leaves Git, `maxReplicas` respects `max_connections` from `capacity-plan.md`, and a PodDisruptionBudget covers node upgrades."
+      misconceptions:
+      - "A cluster that passed the checklist once stays reviewed for good."
+      - "Every manifest change needs a full cluster review."
+      - "If CI and the admission policy pass, a cluster change needs no review."
+      depth_notes: "Không thêm phép kiểm tự động mới, không dạy công cụ chấm điểm cluster hay bộ benchmark bảo mật. Checklist backend — backend.l4.backend-review-checklist. Không dạy lại các quyết định đã có — các bài k8s GĐ3–4 trước."
