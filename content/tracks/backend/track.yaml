@@ -311,6 +311,30 @@ skills:
     vi: "Thiết kế nhật ký kiểm toán mà người bị ghi không sửa được"
     en: "Designing an audit log that the people it records cannot rewrite"
   prereqs: [backend.security.threat-modeling, design.cqrs.read-models, devops.monitoring.logs]
+- id: backend.reliability.slo
+  title:
+    vi: "Đặt SLI, SLO và chính sách error budget cho một service"
+    en: "Setting SLIs, SLOs and an error budget policy for a service"
+  prereqs: [backend.observability.signals, devops.monitoring.metrics, management.sourcing.vendors]
+- id: backend.capacity.planning
+  title:
+    vi: "Đo giới hạn bằng kiểm thử tải và lập kế hoạch dung lượng cho đỉnh tải"
+    en: "Measuring limits with a load test and planning capacity for the peak"
+  prereqs: [backend.resilience.load-limits, backend.data.replication, backend.reliability.slo]
+- id: backend.tenancy.fair-share
+  title:
+    vi: "Không để một tenant dùng hết tài nguyên chung của các tenant khác"
+    en: "Keeping one tenant from using up the capacity others share"
+  prereqs: [backend.tenancy.data-layout, backend.resilience.load-limits, backend.capacity.planning]
+- id: backend.review.checklist
+  title:
+    vi: "Review một thay đổi backend theo checklist gắn với các quyết định đã ghi"
+    en: "Reviewing a backend change with a checklist tied to recorded decisions"
+  prereqs:
+  - backend.consistency.tradeoffs
+  - backend.security.threat-modeling
+  - backend.reliability.slo
+  - backend.capacity.planning
 levels:
 - level: 1
   title:
@@ -3409,3 +3433,250 @@ levels:
       - "To be complete, an audit log has to record every request the API receives."
       - "If the app can only append to the log, nobody can tamper with it."
       depth_notes: "Đơn Hàng chưa dựng nhật ký kiểm toán ở stage-4 (chỉ thiết kế). Không dạy audit log của API server Kubernetes, cấu hình event của Keycloak, SIEM, thời hạn lưu theo luật. Không dạy lại read model, transparency log — design.l3.read-model, devops.l3.signing-images."
+  - id: capacity-and-slo
+    title:
+      vi: "Capacity và SLO: hứa một mức dịch vụ và giữ được nó"
+      en: "Capacity and SLOs: promising a level of service and keeping it"
+    stage: 4
+    summary:
+      vi: "Đo mức dịch vụ của Đơn Hàng bằng SLI, đặt SLO và SLA cho cửa hàng, dùng error budget để quyết khi nào dừng phát hành tính năng, tìm giới hạn bằng kiểm thử tải, lập kế hoạch dung lượng cho 1.000 cửa hàng kèm điều kiện đọc từ replica, chốt giới hạn theo cửa hàng trong ADR 0016 và review thay đổi backend bằng một checklist."
+      en: "Measure Đơn Hàng's level of service with SLIs, set SLOs and an SLA for shops, use the error budget to decide when feature releases stop, find limits with a load test, plan capacity for 1,000 shops including when reads go to the replica, decide per-shop limits in ADR 0016 and review backend changes with a checklist."
+    lessons:
+    - id: backend.l4.service-level-indicators
+      title:
+        vi: "SLI đếm tỉ lệ request tốt trên tổng số, theo cách khách cảm nhận"
+        en: "An SLI counts good requests out of all, as customers feel them"
+      main_path: true
+      duration_min: 14
+      skills: [backend.reliability.slo]
+      prereqs:
+      - design.l4.mapping-fitness-functions
+      - devops.l2.histograms-and-percentiles
+      - devops.l2.counters-and-rate
+      - backend.l3.bulkhead
+      related: [devops.l2.grafana-dashboards, backend.l3.observability, design.l4.quality-attribute-scenarios]
+      vocab: [service-level-indicator]
+      example_tag: stage-4
+      example_files:
+      - docs/design/slo.md
+      - scripts/backend/slo-report.sh
+      - deploy/monitoring/grafana/dashboards/donhang-api.json
+      outline:
+      - "A service level indicator (SLI) is a measured ratio of good events to all valid events, such as the share of `POST /api/v1/orders` requests not answered with a `5xx`."
+      - "Which answers count as bad is a decision `slo.md` writes down: every `5xx`, including the `503` the `catalog-reads` limit gives, while `429` from the per-customer limit and other `4xx` are not counted bad."
+      - "A latency SLI counts the share of requests answered within a threshold, read from the histogram bucket at that bound, such as `le=\"0.512\"`, instead of from an estimated p95."
+      - "A threshold that is not a bucket bound cannot be counted exactly: YC-7's 2 seconds lies between the bounds 1.024 and 2.048, so `slo.md` measures the refund request against 2.048 and says so."
+      - "The API's metrics see only requests that reach it, so a request that fails at Caddy or the Gateway never appears in these SLIs; `slo.md` names this gap."
+      - "`slo-report.sh` asks Prometheus for each SLI of `slo.md` over the last hour and prints the good count, the total and their ratio."
+      misconceptions:
+      - "CPU and memory use are the best measures of whether customers are being served well."
+      - "The p95 response time on the dashboard already is the measure of service we need."
+      - "A request our own limit refused is not a failure, because the system did what it was built to do."
+      depth_notes: "Chưa dạy mục tiêu, cửa sổ thời gian — backend.l4.service-level-objectives; error budget — backend.l4.error-budget. Không đổi bucket của prometheus-net, không dạy recording rule hay alert — devops/incidents. Không dạy lại histogram, rate(), bulkhead — devops/monitoring-basics, backend.l3.bulkhead."
+    - id: backend.l4.service-level-objectives
+      title:
+        vi: "SLO đặt mục tiêu dưới 100% cho một SLI trong một khoảng thời gian"
+        en: "An SLO sets a target below 100% for an SLI over a time window"
+      main_path: true
+      duration_min: 13
+      skills: [backend.reliability.slo]
+      prereqs:
+      - backend.l4.service-level-indicators
+      - management.l3.service-level-agreement
+      - design.l4.quality-attribute-scenarios
+      - design.l4.a-thousand-shops
+      related: [management.l2.non-functional-requirements, design.l4.mapping-fitness-functions]
+      vocab: [service-level-objective]
+      example_tag: stage-4
+      example_files: [docs/design/slo.md, docs/team/multi-shop-requirements.md, docs/team/refund-requirements.md]
+      outline:
+      - "A service level objective (SLO) is a target for one SLI over a time window, such as 99.5% of order requests not answered with a `5xx` over a rolling 28 days."
+      - "A 100% target cannot be met by a system whose own dependencies fail now and then, and it would rule out every change that carries any risk, so `slo.md` sets every target below 100%."
+      - "Each target in `slo.md` comes from what customers and shops need, such as YC-7 for refund requests, not from whatever the dashboard happens to show today."
+      - "The SLA Đơn Hàng offers shops promises less than the SLO, 99% of order requests per calendar month in `slo.md`, so the team sees a problem before the contract is broken."
+      - "A percentage becomes concrete as an allowance: over 28 days, 99.5% leaves 0.5% of the order requests, or about 3 hours and 22 minutes if every request in that time failed."
+      misconceptions:
+      - "The higher the SLO the better, so we should aim for 100%."
+      - "Our SLO and the SLA we promise shops should be the same number."
+      - "The right SLO is whatever the system achieves today."
+      depth_notes: "Chưa dạy dùng phần còn lại để quyết phát hành — backend.l4.error-budget. Số SLA với cửa hàng là giả định, chưa có hợp đồng; không dạy điều khoản pháp lý. Không dạy lại SLA vendor, kịch bản thuộc tính chất lượng — management.l3.service-level-agreement, design.l4.quality-attribute-scenarios."
+    - id: backend.l4.error-budget
+      title:
+        vi: "Error budget quyết định khi nào độ tin cậy được ưu tiên hơn tính năng"
+        en: "The error budget decides when reliability comes before features"
+      main_path: true
+      duration_min: 13
+      skills: [backend.reliability.slo]
+      prereqs:
+      - backend.l4.service-level-objectives
+      - devops.l2.cutting-a-release
+      - devops.l3.rollback-by-revert
+      related: [management.l3.technical-debt-register, backend.l3.graceful-degradation]
+      vocab: [error-budget]
+      example_tag: stage-4
+      example_files: [docs/design/slo.md, scripts/backend/slo-report.sh]
+      outline:
+      - "The error budget is the share of events an SLO allows to be bad over its window, 1 minus the target: with 99.5% and 200,000 order requests in 28 days, 1,000 of them may fail."
+      - "While budget remains, the team may spend it on changes that carry risk, such as releases; a release that causes failures spends budget like any outage does."
+      - "`slo.md` holds the policy: once a service's budget is spent, its feature releases stop and only fixes and reliability work ship until the SLI over the window is back above the SLO."
+      - "The team and the product owner agreed the policy before any incident, so the choice between features and reliability is not argued again while customers are affected."
+      - "`slo-report.sh` places orders while `db` is stopped for a few seconds, and the remaining budget it prints afterwards is lower than before."
+      misconceptions:
+      - "An error budget means some errors are allowed, so we do not have to fix them."
+      - "Using up part of the error budget means the team failed."
+      - "Only outages count against the budget; a bad release that is rolled back quickly does not."
+      depth_notes: "Không dạy alert theo tốc độ tiêu budget, trực sự cố, postmortem — devops/incidents. Không dạy feature flag, canary — devops/platform-and-release-strategy. Số request là giả định. Không dạy lại phát hành, revert — devops.l2.cutting-a-release, devops.l3.rollback-by-revert."
+    - id: backend.l4.load-testing
+      title:
+        vi: "Kiểm thử tải tìm điểm mà tải thêm chỉ làm request chờ lâu hơn"
+        en: "A load test finds the point where more load only adds waiting"
+      main_path: true
+      duration_min: 15
+      skills: [backend.capacity.planning]
+      prereqs:
+      - backend.l4.error-budget
+      - backend.l3.bulkhead
+      - backend.l3.slow-dependencies
+      - devops.l2.histograms-and-percentiles
+      related: [backend.l3.rate-limiting, design.l4.trade-off-points, k8s.l1.requests-and-limits]
+      vocab: [load-test, throughput, littles-law]
+      example_tag: stage-4
+      example_files:
+      - scripts/backend/load-steps.sh
+      - DonHang.Api/Program.cs
+      - DonHang.Api/Controllers/ProductsController.cs
+      outline:
+      - "A load test sends a controlled load that rises in steps and records at each step the throughput, the number of answers per second, along with response times and errors."
+      - "`load-steps.sh` sends product list reads with 1, 5, 10, 20 and 40 requests in flight at a time and prints, per step, reads answered `200` per second, average time, p95 and `503` count."
+      - "Little's law says the requests in flight equal the throughput times the average time each one takes; at every step the script's throughput times its average time comes out close to the step's number."
+      - "So once a shared resource is full, throughput stops rising and each extra request in flight only adds waiting: from 1 to 40 at once, `200` answers per second rise far less than 40 times while p95 climbs."
+      - "The `catalog-reads` limit sets a deliberate ceiling: with 20 reads running and 5 queued per process, the step with 40 in flight gets some `503` answers, and steps up to 20 get none."
+      - "The lab runs every service on one machine, so its numbers show the shape of the curve, not the capacity of production; a load test for sizing needs an environment shaped like production."
+      misconceptions:
+      - "Twice as many users at once means twice as many answers per second, until the server crashes."
+      - "A load test means sending as many requests as possible and seeing when it breaks."
+      - "If the lab handles a load, production will handle it too."
+      depth_notes: "Không dùng công cụ kiểm thử tải riêng (versions.yaml chưa có), không dạy tải theo tốc độ đến cố định, soak test — ngoài module. Không đổi giới hạn trong `Program.cs`. Kế hoạch dung lượng — backend.l4.capacity-planning. Không dạy lại bulkhead, percentile."
+    - id: backend.l4.capacity-planning
+      title:
+        vi: "Kế hoạch dung lượng so đỉnh tải dự kiến với giới hạn đã đo"
+        en: "A capacity plan checks the expected peak against measured limits"
+      main_path: true
+      duration_min: 15
+      skills: [backend.capacity.planning]
+      prereqs:
+      - backend.l4.load-testing
+      - design.l4.a-thousand-shops
+      - k8s.l1.requests-and-limits
+      - backend.l3.sharding
+      related: [backend.l3.read-replicas, k8s.l1.rolling-updates, design.l4.one-deployment-for-all-shops]
+      vocab: [capacity-planning, headroom]
+      example_tag: stage-4
+      example_files:
+      - docs/design/capacity-plan.md
+      - docs/team/multi-shop-requirements.md
+      - deploy/gitops/config-repo-kustomize/base/api.yaml
+      - DonHang.Api/Program.cs
+      outline:
+      - "Capacity planning estimates the load a system must carry at its peak from business drivers, and checks it against the measured limit of each shared resource before that peak arrives."
+      - "`capacity-plan.md` derives peak orders and product reads per second for 1,000 shops from assumed figures, each marked as an assumption, and plans from the busiest hour, not the daily average."
+      - "Headroom is the margin kept between the planned peak and a measured limit; the plan keeps the peak under half the ceiling of the 2 api Pods, so one Pod can carry it if the other is lost."
+      - "Adding api Pods raises the `catalog-reads` ceiling but multiplies the database connections they may open, so Pods times connections per Pod must stay below PostgreSQL's `max_connections`."
+      - "The plan names the resource that runs out first and the step taken before it does, and lists the drivers that trigger a new plan, such as the number of shops or orders per shop."
+      misconceptions:
+      - "Capacity planning means buying the biggest server we can afford."
+      - "The average load over a day is enough to size the system."
+      - "Kubernetes can always start more Pods, so we do not need a capacity plan."
+      depth_notes: "Không dạy autoscaling, chi phí hạ tầng — k8s/managed-vs-selfhosted; đọc từ replica — backend.l4.read-routing. Số tải và thời gian là giả định, không đo trên production. Không dạy lại request/limit, sharding — k8s.l1.requests-and-limits, backend.l3.sharding."
+    - id: backend.l4.read-routing
+      title:
+        vi: "Chỉ chuyển một truy vấn đọc sang replica khi nó chịu được độ trễ của bản sao"
+        en: "A read moves to the replica only when it can tolerate the lag"
+      main_path: true
+      duration_min: 13
+      skills: [backend.capacity.planning, backend.data.replication]
+      prereqs: [backend.l4.capacity-planning, backend.l4.pacelc, backend.l3.read-replicas]
+      related: [backend.l4.data-ownership, backend.l2.cache-aside, backend.l4.cap-theorem]
+      vocab: []
+      example_tag: stage-4
+      example_files:
+      - docs/design/capacity-plan.md
+      - docs/design/consistency-per-operation.md
+      - scripts/backend/replica-lag.sh
+      - DonHang.Api/Program.cs
+      outline:
+      - "Routing reads means the code chooses, query by query, whether to use the primary or a replica; at stage-4 the API has one connection string, `Default`, so every read goes to the primary."
+      - "A read may move to a replica only if `consistency-per-operation.md` lets its operation answer with data a little old; the product list qualifies, the customer's own orders do not."
+      - "A read that follows the caller's own write, such as showing the order just placed or its history, stays on the primary, because the replica may not have the write yet."
+      - "A replica relieves the primary only of the reads moved to it; every write and every read that must stay still lands on the primary."
+      - "`capacity-plan.md` keeps all reads on the primary at stage-4 and names the trigger for moving the product list: its planned peak crossing the primary's headroom."
+      - "Routed reads need a way back to the primary when the replica falls further behind than the operation allows, or is down, so routing adds a check to every routed query."
+      misconceptions:
+      - "Adding a replica means pointing every `GET` at it."
+      - "A replica is free extra capacity, so we should add one as early as possible."
+      - "Once reads go to a replica, the primary only has to handle writes."
+      depth_notes: "API không đọc từ replica ở stage-4 (chỉ kế hoạch); không dạy code chọn kết nối, pool riêng hay failover — devops/k8s GĐ4. Không dạy lại replication lag, read-your-writes, PACELC — backend.l3.read-replicas, backend.l4.pacelc."
+    - id: backend.l4.per-shop-limits
+      title:
+        vi: "Giới hạn theo cửa hàng không để một cửa hàng đông làm chậm các cửa hàng khác"
+        en: "A per-shop limit keeps one busy shop from slowing the others"
+      main_path: true
+      duration_min: 15
+      skills: [backend.tenancy.fair-share]
+      prereqs:
+      - backend.l4.read-routing
+      - backend.l4.shop-id-rollout
+      - design.l4.architecture-review-findings
+      - backend.l3.rate-limiting
+      related:
+      - backend.l3.multi-tenancy
+      - backend.l4.shop-data-layout
+      - management.l3.weighing-options-in-an-adr
+      vocab: []
+      example_tag: stage-4
+      example_files:
+      - docs/adr/0016-gioi-han-tai-theo-cua-hang.md
+      - docs/design/multi-shop-architecture-review.md
+      - DonHang.Api/Program.cs
+      outline:
+      - "ADR `0013` left the noisy-neighbor problem open, and the architecture review recorded the risk: `catalog-reads` counts all callers of a process together, and `orders` counts per customer, never per shop."
+      - "ADR `0016` weighs three options: keep the shared limits, add limits counted per shop inside the API, or move a large shop to a database or deployment of its own."
+      - "It chooses per-shop limits on top of the shared ones: each shop may use at most a set share of the reads a process runs at once, while the shared limit still protects the database."
+      - "A cap per shop limits what one shop takes without reserving capacity for each, so capacity one shop leaves unused stays available to the rest of the 1,000."
+      - "An SLI over all shops can stay above its SLO while one shop is refused most of the time, so the ADR adds a request count labelled by shop and keeps the shop off the histogram to limit the series."
+      - "The limits need the shop from the caller's access token, which arrives with release 2 of the rollout, so `Program.cs` keeps its stage-3 limits at stage-4."
+      misconceptions:
+      - "The existing per-customer rate limit already stops one shop from hurting the others."
+      - "Giving each shop a fixed reserved share is the fairest way to split capacity."
+      - "If the SLO is met overall, every shop is being served well."
+      depth_notes: "Không viết code giới hạn theo cửa hàng ở stage-4; không dạy limiter phân tán, quota theo gói trả phí. Không quyết lại ADR 0012, 0013. Không dạy lại noisy neighbor, rate limiting — backend.l3.multi-tenancy, backend.l3.rate-limiting."
+    - id: backend.l4.backend-review-checklist
+      title:
+        vi: "Checklist review backend gắn mỗi câu hỏi với một quyết định đã ghi"
+        en: "A backend review checklist ties each question to a recorded decision"
+      main_path: true
+      duration_min: 14
+      skills: [backend.review.checklist]
+      prereqs:
+      - backend.l4.per-shop-limits
+      - backend.l4.audit-log
+      - backend.l4.message-schema-evolution
+      - design.l4.mapping-fitness-functions
+      related:
+      - backend.l4.threat-modeling
+      - design.l4.architecture-review-findings
+      - management.l1.reviewing-for-layers
+      vocab: []
+      example_tag: stage-4
+      example_files: [docs/design/backend-review-checklist.md, docs/design/capacity-plan.md, docs/design/slo.md]
+      outline:
+      - "`backend-review-checklist.md` groups its questions by concern: data ownership and consistency, schema and message changes, security, resilience, SLOs and capacity, and isolation between shops."
+      - "Each question names the document or ADR that holds the expected answer, such as `consistency-per-operation.md` or ADR `0016`, so a reviewer checks a change against a decision instead of a taste."
+      - "Questions that a test or CI step already answers point to that check instead, so the checklist covers what no automated check can see, such as a new copy of data with no stated owner."
+      - "A change is reviewed against the groups it touches, not against every question, so a small change gets a short review and a change to a trust boundary or a limit gets a long one."
+      - "The document ends with a worked example: the proposal to read the product list from `db-replica`, reviewed against the consistency, capacity, SLO and data ownership questions."
+      misconceptions:
+      - "With a good checklist, a reviewer no longer needs experience of the system."
+      - "Every pull request has to answer every question on the checklist."
+      - "A checklist that passes once can be kept unchanged for good."
+      depth_notes: "Không dạy review code từng dòng — management/code-review; checklist kiến trúc cluster — k8s GĐ4. Không thêm phép kiểm tự động mới. Không dạy lại các quyết định đã có — các bài backend GĐ4 trước."
