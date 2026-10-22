@@ -262,6 +262,30 @@ skills:
     vi: "Chọn shard key, truy vấn xuyên shard và thêm shard"
     en: "Choosing a shard key, querying across shards and adding shards"
   prereqs: [backend.data.partitioning, backend.data.replication, backend.tenancy.isolation]
+- id: backend.consistency.tradeoffs
+  title:
+    vi: "Chọn cho từng thao tác nghiệp vụ: trả lời hay nhất quán khi mạng đứt, nhanh hay mới nhất khi bình thường"
+    en: "Choosing per business operation: answer or stay consistent under a partition, fast or fresh otherwise"
+  prereqs: [backend.consistency.distributed, backend.data.replication, backend.resilience.failure-modes]
+- id: backend.data.ownership
+  title:
+    vi: "Giao mỗi loại dữ liệu cho đúng một chủ và quản lý các bản sao của nó"
+    en: "Giving each kind of data exactly one owner and managing its copies"
+  prereqs: [backend.consistency.distributed, design.modular.modules]
+- id: backend.data.schema-evolution
+  title:
+    vi: "Đổi schema database và hình dạng message trong lúc hệ thống vẫn chạy"
+    en: "Changing database schemas and message shapes while the system keeps running"
+  prereqs:
+  - devops.cd.db-migrations
+  - k8s.workloads.rollouts
+  - backend.messaging.consumers
+  - backend.data.ownership
+- id: backend.tenancy.data-layout
+  title:
+    vi: "Chọn và đưa dần bố cục dữ liệu đa tenant vào một hệ thống đang chạy"
+    en: "Choosing a multi-tenant data layout and rolling it into a running system"
+  prereqs: [backend.tenancy.isolation, design.architecture.context-change, backend.data.schema-evolution]
 levels:
 - level: 1
   title:
@@ -2832,3 +2856,264 @@ levels:
       - "Rebalancing is a one-off copy that can run at night while the system works as usual."
       - "A shard map with 64 buckets lets me grow to any number of shards later."
       depth_notes: "Không dạy consistent hashing, chia đôi một shard, chuyển dữ liệu trực tuyến từng bước hay công cụ rebalancing — ngoài module. Không dạy lại chọn shard key — backend.l3.sharding."
+- level: 4
+  title:
+    vi: "Level 4"
+    en: "Level 4"
+  modules:
+  - id: consistency-and-ownership
+    title:
+      vi: "Nhất quán, quyền sở hữu dữ liệu và thay đổi schema không gián đoạn"
+      en: "Consistency, data ownership and changing schemas without downtime"
+    stage: 4
+    summary:
+      vi: "Chọn cho từng thao tác của Đơn Hàng giữa trả lời và nhất quán, giữa nhanh và mới nhất, giao mỗi loại dữ liệu cho một chủ, đổi schema và message trong lúc hệ thống vẫn chạy, rồi chốt bố cục dữ liệu đa cửa hàng trong ADR 0013 và kế hoạch đưa nó vào từng bước."
+      en: "Choose for each Đơn Hàng operation between answering and staying consistent and between fast and fresh, give each kind of data one owner, change schemas and messages while the system runs, then decide the multi-shop data layout in ADR 0013 and plan its rollout in steps."
+    lessons:
+    - id: backend.l4.cap-theorem
+      title:
+        vi: "Khi mạng đứt, mỗi thao tác phải chọn: vẫn trả lời hay giữ nhất quán"
+        en: "During a partition, each operation either answers or stays consistent"
+      main_path: true
+      duration_min: 14
+      skills: [backend.consistency.tradeoffs]
+      prereqs: [backend.l3.eventual-consistency, backend.l3.read-replicas, backend.l3.graceful-degradation]
+      related: [design.l4.trade-off-points, backend.l3.slow-dependencies, backend.l2.cache-aside]
+      vocab: [network-partition, cap-theorem]
+      example_tag: stage-4
+      example_files:
+      - scripts/backend/db-unreachable.sh
+      - docs/design/consistency-per-operation.md
+      - DonHang.Catalog/ProductCache.cs
+      - DonHang.Domain/OrderService.cs
+      outline:
+      - "A network partition is a fault that splits a system into parts that keep running but cannot reach each other, so each part sees the others as unreachable."
+      - "The CAP theorem says that during a partition, a system holding copies of data cannot both answer every request and give only the latest value (strong consistency); it gives up one of the two."
+      - "A networked system cannot rule partitions out, so the real choice is what each operation does while one lasts: answer with the copy it has, or refuse."
+      - "`db-unreachable.sh` stops PostgreSQL while Redis still holds product 3: reading product 3 is still answered from the copy, while listing products and placing an order fail."
+      - "A write that must be saved in the owner's database can only refuse while that database is unreachable; a read served from a copy can choose to answer, with data that may be old."
+      - "`consistency-per-operation.md` records each operation's choice and its business reason, such as a product page that may show a price a few minutes old, while a refund is never shown as done before the gateway confirms it."
+      misconceptions:
+      - "A well-built system can keep consistency, availability and partition tolerance all at once."
+      - "The consistency in CAP is the same thing a database transaction keeps inside one database."
+      - "CAP is chosen once for the whole system, by picking the right database."
+      depth_notes: "Không dạy PACELC, độ trễ — backend.l4.pacelc; không bàn readiness probe loại Pod khi DB mất, đồng thuận, quorum. Dừng `db` không giống hệt đứt mạng (lỗi nhanh, không treo). Không dạy lại eventual consistency, cache-aside — backend.l3.eventual-consistency, backend.l2.cache-aside."
+    - id: backend.l4.pacelc
+      title:
+        vi: "Kể cả khi không có sự cố, dữ liệu mới hơn phải trả bằng câu trả lời chậm hơn"
+        en: "Even without failures, fresher data costs a slower answer"
+      main_path: true
+      duration_min: 13
+      skills: [backend.consistency.tradeoffs]
+      prereqs: [backend.l4.cap-theorem, backend.l2.cache-invalidation, backend.l3.read-replicas]
+      related: [backend.l3.eventual-consistency, design.l4.quality-attribute-scenarios]
+      vocab: [latency, pacelc]
+      example_tag: stage-4
+      example_files:
+      - docs/design/consistency-per-operation.md
+      - DonHang.Catalog/ProductCache.cs
+      - scripts/backend/replica-lag.sh
+      outline:
+      - "Latency is the time from sending a request to receiving its answer; PACELC extends CAP: if there is a partition, choose availability or consistency, else choose lower latency or consistency."
+      - "Without any failure, keeping copies in step still costs time: a read from a nearby copy is fast but may be old, and a write that waits until every copy has it answers later."
+      - "`ProductCache` chooses latency for reading one product: the Redis copy answers without a query, and if the delete after a price change is missed it stays old until its 5-minute TTL ends."
+      - "PostgreSQL replication is asynchronous by default, so a commit does not wait for the replica; synchronous replication makes each commit wait for it, trading slower writes for a replica that holds every committed change."
+      - "One system makes different choices per operation: product reads choose latency, while the API reads a customer's orders from the database it wrote them to, so a new order is always seen (read-your-writes)."
+      - "`consistency-per-operation.md` gives each operation both choices, under a partition and in normal running, so a later change, such as reading from `db-replica`, is judged against the stated choice."
+      misconceptions:
+      - "Without failures there is no trade-off, so every read can be both fast and current."
+      - "A cache only makes reads faster; it has nothing to do with consistency."
+      - "Synchronous replication is always better, because no copy can ever fall behind."
+      depth_notes: "Không dạy chi tiết `synchronous_commit` (`remote_apply`…), failover, multi-region — devops/k8s GĐ4. API không đọc từ replica ở stage-4; định tuyến đọc — backend/capacity-and-slo. Không dạy lại replication lag, cache invalidation — backend.l3.read-replicas, backend.l2.cache-invalidation."
+    - id: backend.l4.data-ownership
+      title:
+        vi: "Mỗi loại dữ liệu có một chủ, mọi nơi khác chỉ giữ bản sao"
+        en: "Each kind of data has one owner; everywhere else holds a copy"
+      main_path: true
+      duration_min: 14
+      skills: [backend.data.ownership]
+      prereqs:
+      - backend.l4.pacelc
+      - design.l3.module-owns-its-tables
+      - backend.l3.payments-service
+      - backend.l2.validating-provider-tokens
+      related: [management.l3.proposing-an-adr, design.l4.distributed-monolith, design.l3.read-model]
+      vocab: [data-ownership]
+      example_tag: stage-4
+      example_files:
+      - docs/design/data-ownership.md
+      - docs/adr/0008-xoa-bang-cu-trong-donhang.md
+      - DonHang.Domain/Entities.cs
+      - keycloak/donhang-realm.json
+      outline:
+      - "Data ownership means each kind of data has exactly one owner, the service or module that writes it and whose value counts when copies disagree; every other place holds a copy."
+      - "`data-ownership.md` lists Đơn Hàng's data with its owner and its copies: Catalog owns products, Ordering owns orders and customers, Payments owns payments, Notifications owns emails, and Keycloak owns sign-in accounts."
+      - "Each copy needs a stated way to stay current or a stated reason not to: the Redis copy of a product lives at most 5 minutes, while each order item keeps the price paid on purpose, because that price is a fact of the order."
+      - "The old `payments` table in `donhang` is a copy nobody updates; accounting reconciles against the owner's database, `donhang_payments`, which is why ADR `0008` drops the old table only after they confirm."
+      - "The list also shows a gap: a customer's email is kept by both Keycloak and `customers`, nothing keeps the two equal, and order emails use the `customers` value; the document records this as an open question."
+      - "When two services both need to change the same data, the fix is to give it one owner and have the other ask that owner, by a message or a call, instead of letting both write."
+      misconceptions:
+      - "When two copies disagree, the one changed most recently is the correct one."
+      - "Data that several services need should sit in one table that all of them write."
+      - "`order_items` repeating the product's price is duplication that should be removed."
+      depth_notes: "Không quyết ai giữ email khách (chỉ ghi câu hỏi mở), không đồng bộ Keycloak với `customers`. Không dạy lại module sở hữu bảng, read model — design.l3.module-owns-its-tables, design.l3.read-model. Chủ dữ liệu cửa hàng — backend.l4.shop-data-layout."
+    - id: backend.l4.expand-and-contract
+      title:
+        vi: "Code cũ và mới dùng chung một schema, nên schema phải đổi qua các bước tương thích"
+        en: "Old and new code share one schema, so change it in compatible steps"
+      main_path: true
+      duration_min: 15
+      skills: [backend.data.schema-evolution]
+      prereqs:
+      - backend.l4.data-ownership
+      - devops.l3.rollback-by-revert
+      - devops.l3.ordering-a-sync
+      - k8s.l1.rolling-updates
+      related:
+      - devops.l2.migrations-in-the-pipeline
+      - backend.l1.migrations
+      - design.l4.evolutionary-architecture
+      vocab: [zero-downtime-migration, expand-contract]
+      example_tag: stage-4
+      example_files:
+      - deploy/gitops/config-repo-kustomize/base/migrate-hook.yaml
+      - DonHang.Infrastructure/Migrations/20261005231652_PaymentsAndNotificationsLeaveOrdering.cs
+      - DonHang.Infrastructure/Migrations/20261101090000_DropOldNotificationsTable.cs
+      - docs/adr/0008-xoa-bang-cu-trong-donhang.md
+      outline:
+      - "Argo CD runs the migration hook in wave 1, before the api Deployment in wave 2 is updated, and the rolling update then replaces the 2 api Pods a few at a time, so old Pods serve against the new schema for a while."
+      - "A zero-downtime migration is a schema change made while the system keeps serving, which requires each migration to work with both the code before it and the code after it."
+      - "Expand and contract splits an incompatible change into compatible steps: expand adds the new shape next to the old, the code moves to the new shape, and contract removes the old shape once no running version uses it."
+      - "Moving emails out of `donhang` followed these steps: at stage-3 Notifications got a table of its own, `DonHangDbContext` stopped mapping the old one, and the scaffolded `DropTable` was deleted by hand, so the old table stayed."
+      - "At stage-4 the migration `DropOldNotificationsTable` drops it, after the dump ADR `0008` asks for, in a release whose previous version no longer reads it, so an old Pod still running cannot fail on a missing table."
+      misconceptions:
+      - "The migration runs first and then every new Pod starts at once, so old code never meets the new schema."
+      - "Renaming a column in one migration is fine as long as the code of the same release uses the new name."
+      - "Expand and contract can go into one release, as long as the migrations run in the right order."
+      depth_notes: "Không dạy khóa của lệnh DDL — backend.l4.migration-locks; message — backend.l4.message-schema-evolution. Không xóa bảng `payments` cũ (chờ kế toán, ADR 0008). Không dạy lại hook, sync wave, git revert — devops.l3.ordering-a-sync, devops.l3.rollback-by-revert."
+    - id: backend.l4.migration-locks
+      title:
+        vi: "Khóa mà migration giữ, không phải thời gian chạy, quyết định ai phải chờ"
+        en: "A migration's locks, not its length, decide who has to wait"
+      main_path: true
+      duration_min: 15
+      skills: [backend.data.schema-evolution]
+      prereqs:
+      - backend.l4.expand-and-contract
+      - backend.l2.skip-locked-claiming
+      - backend.l2.indexes-and-plans
+      - backend.l2.transactions-in-practice
+      related: [backend.l2.composite-indexes, backend.l3.slow-dependencies]
+      vocab: []
+      example_tag: stage-4
+      example_files: [scripts/backend/migration-locks.sh, scripts/backend/perf-db.sh]
+      outline:
+      - "Each schema change takes a lock on its table; plain `CREATE INDEX` takes one that lets reads continue but makes every `INSERT`, `UPDATE` and `DELETE` on the table wait until the index is built."
+      - "`migration-locks.sh` holds a plain `CREATE INDEX` on the 200,000 orders of `donhang_perf` inside an open transaction: a `SELECT` still answers while an `INSERT` waits until its `lock_timeout` ends it."
+      - "`CREATE INDEX CONCURRENTLY` lets writes continue while it builds, at the cost of a slower build; it cannot run inside a transaction block, and a failed build leaves an invalid index to drop."
+      - "EF Core runs a migration's statements in a transaction unless the SQL is passed with `suppressTransaction: true`, which a concurrent index build needs."
+      - "Even a quick `ALTER TABLE ... ADD COLUMN` needs the strongest lock for a moment; behind a long transaction that has read the table it waits, and every later query on the table waits behind it."
+      - "Setting `lock_timeout` for a migration makes it fail fast instead of stalling the queries queued behind it, so it can be run again at a quieter moment."
+      misconceptions:
+      - "A migration that finishes in a second cannot block anyone."
+      - "Adding an index only changes how reads work, so it is safe on a busy table."
+      - "`CONCURRENTLY` makes an index build faster."
+      depth_notes: "Không dạy bảng đầy đủ các chế độ khóa, pg_locks chi tiết, `NOT VALID` cho khóa ngoại — backend.l4.shop-id-rollout, hay công cụ migration trực tuyến. Không dạy lại row lock, index, transaction — backend.l2.skip-locked-claiming, backend.l2.indexes-and-plans."
+    - id: backend.l4.message-schema-evolution
+      title:
+        vi: "Message chỉ được đổi theo cách mọi bên đọc vẫn đọc được"
+        en: "A message may change only in ways every reader can still read"
+      main_path: true
+      duration_min: 15
+      skills: [backend.data.schema-evolution]
+      prereqs:
+      - backend.l4.expand-and-contract
+      - backend.l3.dead-letter-queue
+      - backend.l2.breaking-changes
+      - design.l4.distributed-monolith
+      related: [design.l4.fitness-functions, backend.l3.outbox-relay, backend.l2.api-versioning]
+      vocab: [schema-evolution]
+      example_tag: stage-4
+      example_files:
+      - DonHang.Notifications/OrderEventsConsumer.cs
+      - DonHang.Domain/OrderMessage.cs
+      - scripts/backend/message-shapes.sh
+      - DonHang.Tests/Messaging/OrderMessageContractTests.cs
+      outline:
+      - "Schema evolution is changing the shape of data that other programs read, such as a message body, while those programs keep running."
+      - "Notifications and Payments read `OrderMessage` with `JsonSerializerOptions.Web`: a property they do not know is skipped, and one missing from the JSON is left at its default value."
+      - "So adding a property breaks no reader, while renaming `customerEmail` makes Notifications reject every message as poison; `message-shapes.sh` publishes both and shows only the renamed one in the dead-letter queue."
+      - "A deploy does not empty the outbox, the queue or the dead-letter queue, so old-shaped messages still arrive after it; a property a reader starts to need stays optional until no old message is left."
+      - "When a shape has to break, the producer can publish the new shape under a new routing key beside the old one until every reader has moved: expand and contract applied to messages."
+      - "`OrderMessageContractTests` serialises the API's `OrderMessage` and reads it with the copies in Notifications and Payments, so a change that breaks a reader fails in the pull request that makes it."
+      misconceptions:
+      - "Each service has its own copy of `OrderMessage`, so the API can rename its fields freely."
+      - "Once every service runs the new version, no message of the old shape can arrive."
+      - "Adding a field to a message forces every consumer to be updated before the producer."
+      depth_notes: "Không dùng schema registry, Avro hay Protobuf; không dạy version trong header message — ngoài module. Không dạy lại breaking change của REST, dead-letter queue — backend.l2.breaking-changes, backend.l3.dead-letter-queue."
+    - id: backend.l4.shop-data-layout
+      title:
+        vi: "Dữ liệu mọi cửa hàng nằm chung bảng, có row-level security canh giữ"
+        en: "All shops' data shares tables, guarded by row-level security"
+      main_path: true
+      duration_min: 15
+      skills: [backend.tenancy.data-layout]
+      prereqs:
+      - backend.l4.message-schema-evolution
+      - design.l4.architecture-review-findings
+      - design.l4.one-deployment-for-all-shops
+      - backend.l3.row-level-security
+      related:
+      - backend.l3.tenant-isolation-models
+      - backend.l4.data-ownership
+      - backend.l3.multi-tenancy
+      - design.l4.a-thousand-shops
+      vocab: []
+      example_tag: stage-4
+      example_files:
+      - docs/adr/0013-du-lieu-cua-hang-trong-bang-chung.md
+      - docs/adr/0012-phuc-vu-moi-cua-hang-tu-mot-ban-trien-khai.md
+      - docs/team/multi-shop-requirements.md
+      - db/tenancy/row-level-security.sql
+      outline:
+      - "ADR `0013` decides how shops' data is laid out inside the one shared deployment ADR `0012` chose, weighing shared tables, a schema per shop and a database per shop."
+      - "A schema or a database per shop repeats every migration once per shop, as `tenancy-models.sh` showed; at 1,000 shops each release of a service would run its migrations 1,000 times."
+      - "The ADR chooses shared tables with `shop_id` in every table that holds one shop's data, and row-level security as a second guard behind the shop filter in code, so a query that forgets its filter still sees one shop only."
+      - "Opening a shop becomes adding a row to `shops`, with no new schema, database or deploy, which meets the requirement that a new shop needs no deploy."
+      - "The ADR names what shared tables leave open: a busy shop still shares connections and limits with the others, and restoring one shop alone means extracting its rows instead of restoring a database."
+      - "It names what would reopen the decision: a shop that outgrows the shared tables, or must be restored on its own, can move to a database of its own while the others stay shared."
+      misconceptions:
+      - "A database per shop is the only way to be sure shops never see each other's data."
+      - "With row-level security on, the code no longer needs to filter by shop."
+      - "Choosing shared tables means no shop can ever get a database of its own."
+      depth_notes: "Không quyết lại ADR 0012; không sửa limiter theo cửa hàng — backend/capacity-and-slo. Đưa shop_id vào từng bước — backend.l4.shop-id-rollout. Không dạy lại các layout, row-level security — backend.l3.tenant-isolation-models, backend.l3.row-level-security."
+    - id: backend.l4.shop-id-rollout
+      title:
+        vi: "Thêm cột cửa hàng vào bảng đang chạy cần ba lần phát hành, không phải một migration"
+        en: "Adding a shop column to live tables takes three releases, not one"
+      main_path: true
+      duration_min: 15
+      skills: [backend.tenancy.data-layout, backend.data.schema-evolution]
+      prereqs: [backend.l4.shop-data-layout, backend.l4.migration-locks, backend.l4.message-schema-evolution]
+      related:
+      - backend.l4.expand-and-contract
+      - backend.l3.row-level-security
+      - design.l4.evolutionary-architecture
+      vocab: []
+      example_tag: stage-4
+      example_files:
+      - docs/design/multi-shop-data-rollout.md
+      - docs/adr/0013-du-lieu-cua-hang-trong-bang-chung.md
+      - db/tenancy/shared-schema.sql
+      outline:
+      - "`multi-shop-data-rollout.md` puts `shop_id` into every table that holds one shop's data, in each service's own database, over three releases instead of one migration."
+      - "Release 1 creates `shops` with today's shop as shop 1 and adds `shop_id` as `NOT NULL DEFAULT 1`; in PostgreSQL 17 a constant default does not rewrite the table, so existing rows get the value without a long lock."
+      - "In release 1 the foreign keys to `shops` are added `NOT VALID` and validated in a separate step, and the indexes that start with `shop_id` are built concurrently, so no step blocks writes for longer than a moment."
+      - "Release 2 makes the code take the shop from the caller's access token and carry `shopId` in every message as a new optional property; only then is the default dropped, so no new row gets a shop by accident."
+      - "Release 3 turns on row-level security on `shop_id` and moves the services to a role without `BYPASSRLS`, once every request sets its shop with `SET LOCAL`."
+      - "Each release leaves a schema the previous release's code still works with, so any one of them can be rolled back by deploying the version before it."
+      misconceptions:
+      - "Adding `shop_id` is one migration: add the column, fill it and make it required at once."
+      - "Giving every existing row a `shop_id` means rewriting the whole table under a lock."
+      - "Row-level security can be turned on in the same release that adds the column."
+      depth_notes: "Đơn Hàng chưa chạy ba bước ở stage-4 (chỉ kế hoạch). Không chuyển shop sang database riêng, không backup theo shop — sysdesign/problems. Không dạy lại khóa, expand/contract, row-level security — backend.l4.migration-locks, backend.l4.expand-and-contract."
