@@ -1,0 +1,424 @@
+skills:
+  - id: backend.security.threat-modeling
+    title:
+      vi: "Tìm mối đe dọa ở từng ranh giới tin cậy của luồng dữ liệu và ghi quyết định cho mỗi cái"
+      en: "Finding threats at each trust boundary of a data flow and recording a decision for each"
+    prereqs: [backend.auth.access-models, k8s.security.network-policy, backend.data.ownership]
+  - id: backend.security.layered-controls
+    title:
+      vi: "Đặt biện pháp bảo mật thành nhiều lớp: cổng vào, từng service, thông tin đăng nhập riêng"
+      en: "Layering security controls: the entry point, each service, separate credentials"
+    prereqs: [backend.security.threat-modeling, backend.auth.oidc, k8s.security.access]
+  - id: backend.security.signing
+    title:
+      vi: "Ký tài liệu và kiểm chữ ký qua chuỗi chứng chỉ"
+      en: "Signing documents and checking signatures through a certificate chain"
+    prereqs: [backend.auth.oidc, foundation.net.tls, devops.supply-chain.trust]
+  - id: backend.security.key-custody
+    title:
+      vi: "Giữ khóa ký sao cho không ai sao chép được nó"
+      en: "Keeping a signing key where nobody can copy it"
+    prereqs: [backend.security.signing, devops.secrets.sealing, devops.secrets.rotation]
+  - id: backend.security.audit
+    title:
+      vi: "Thiết kế nhật ký kiểm toán mà người bị ghi không sửa được"
+      en: "Designing an audit log that the people it records cannot rewrite"
+    prereqs: [backend.security.threat-modeling, design.cqrs.read-models, devops.monitoring.logs]
+
+module:
+  id: security-architecture
+  title:
+    vi: "Kiến trúc bảo mật: mô hình mối đe dọa, ký số và nhật ký kiểm toán"
+    en: "Security architecture: threat models, signatures and audit logs"
+  stage: 4
+  summary:
+    vi: "Lập mô hình mối đe dọa cho Đơn Hàng theo từng ranh giới tin cậy, xếp biện pháp bảo mật thành nhiều lớp quanh cổng vào và thông tin đăng nhập của từng service, quyết ai giữ email khách trong ADR 0014, ký hóa đơn bằng khóa riêng có chứng chỉ, giữ khóa đó trong HSM theo ADR 0015 và thiết kế nhật ký kiểm toán không sửa lén được."
+    en: "Build a threat model of Đơn Hàng boundary by boundary, layer its controls around the entry point and each service's credentials, decide who owns a customer's email in ADR 0014, sign invoices with a certified private key kept in an HSM under ADR 0015, and design an audit log that cannot be quietly rewritten."
+  lessons:
+    - id: backend.l4.threat-modeling
+      title:
+        vi: "Mô hình mối đe dọa hỏi điều gì có thể hỏng ở mỗi ranh giới tin cậy"
+        en: "A threat model asks what can go wrong at each trust boundary"
+      main_path: true
+      duration_min: 15
+      skills: [backend.security.threat-modeling]
+      prereqs:
+        - backend.l4.data-ownership
+        - design.l4.architecture-review-findings
+        - k8s.l3.network-policies
+        - backend.l3.payments-service
+      related: [backend.l4.shop-data-layout, management.l3.architecture-decision-record, devops.l3.software-supply-chain]
+      vocab: [threat-model, trust-boundary, stride]
+      example_tag: stage-4
+      example_files:
+        - docs/design/threat-model.md
+        - docker-compose.yml
+        - deploy/gitops/config-repo-kustomize/base/network-policies.yaml
+      outline:
+        - "A threat model is a written list of what could go wrong with a system's security, where it could happen and what is done about each case, made from the system's data flow before an attacker finds the gaps."
+        - "A trust boundary is a place in the data flow where data passes between parts that trust each other to different degrees, such as browser to Gateway, service to database, or Payments to the payment gateway."
+        - "STRIDE, a canonical checklist, names six kinds of threat to ask about at each boundary: spoofing, tampering, repudiation, information disclosure, denial of service and elevation of privilege."
+        - "`threat-model.md` walks Đơn Hàng's stage-3 data flow boundary by boundary and gives each threat either the control that already answers it or a finding with a decision: fix, accept with a reason, or defer to a named plan."
+        - "Its findings include every service signing in to PostgreSQL and RabbitMQ as the same user `donhang`, and refund requests recorded in a row that Payments itself can rewrite."
+        - "The model is reviewed whenever the data flow changes; the multi-shop rollout adds the threat of one shop reading another's data, which ADR `0013` answers with row-level security behind the shop filter."
+      misconceptions:
+        - "Security gets checked by a penetration test at the end; it is not something you design."
+        - "Since every request uses HTTPS, there is nothing left to model inside the system."
+        - "A finished threat model lists every possible attack, so after it the system is safe."
+      depth_notes: "Không dạy công cụ vẽ threat model, chấm điểm rủi ro theo thang số, pen test hay danh sách lỗ hổng ứng dụng (injection, XSS) — ngoài module. Từng phát hiện được làm tiếp ở các bài sau của module. Không dạy lại NetworkPolicy, row-level security — k8s.l3.network-policies, backend.l3.row-level-security."
+    - id: backend.l4.api-gateway
+      title:
+        vi: "API gateway là một cửa vào chung, nhưng mỗi service vẫn tự kiểm token"
+        en: "An API gateway is one way in, yet each service still checks its token"
+      main_path: true
+      duration_min: 14
+      skills: [backend.security.layered-controls]
+      prereqs:
+        - backend.l4.threat-modeling
+        - k8s.l2.gateway-api
+        - backend.l2.validating-provider-tokens
+        - k8s.l3.network-policies
+      related: [devops.l1.reverse-proxy-and-tls, k8s.l2.tls-at-the-gateway, backend.l3.rate-limiting]
+      vocab: [api-gateway, defense-in-depth]
+      example_tag: stage-3
+      example_files:
+        - Caddyfile
+        - deploy/gitops/config-repo/platform/edge/httproutes.yaml
+        - DonHang.Payments/Program.cs
+        - deploy/gitops/config-repo-kustomize/base/network-policies.yaml
+      outline:
+        - "An API gateway is the single entry point that receives every client request and routes it to the service that answers it, the one place for concerns all requests share, such as TLS and routing."
+        - "In Đơn Hàng, Caddy in Compose and the Traefik Gateway on staging play this part: they route `/api/v1/refunds` to Payments and the rest of `/api/v1` to the API, and neither checks tokens."
+        - "The API and Payments each check every token's signature, issuer, audience and expiry themselves with `AddJwtBearer`, so trusting a request never depends on which path it took to reach them."
+        - "Defense in depth means stacking independent controls so that one failing or being bypassed does not open the system: the NetworkPolicy `from-the-gateway` lets only Traefik reach the two services, which still check every token."
+        - "The per-customer limit on placing orders stays in the API's `Program.cs`, because it counts by the token's `sub`, which only a component that has checked the token can trust."
+        - "Checking tokens only at the gateway would remove the repeated configuration, but every service would then trust whatever reaches it, and one gateway mistake would expose all of them."
+      misconceptions:
+        - "Once the gateway has checked the token, the services behind it can trust every request they get."
+        - "Rules such as 'only the owner may read this order' belong in the API gateway, so services stay simple."
+        - "Checking the same token in two places is wasted work that only slows requests down."
+      depth_notes: "Không dạy BFF — frontend/stack-and-boundaries; mã hóa giữa Pod, mTLS — k8s/multi-cluster-and-mesh; client credentials, token exchange, sản phẩm API gateway. Không sửa giới hạn trong `Program.cs`. Không dạy lại Gateway API, kiểm token — k8s.l2.gateway-api, backend.l2.validating-provider-tokens."
+    - id: backend.l4.shared-credentials
+      title:
+        vi: "Một mật khẩu chung cho mọi service trao cho mỗi service quyền của tất cả"
+        en: "One password shared by every service gives each the power of all"
+      main_path: true
+      duration_min: 14
+      skills: [backend.security.layered-controls]
+      prereqs:
+        - backend.l4.api-gateway
+        - k8s.l3.roles-and-role-bindings
+        - backend.l4.shop-id-rollout
+        - backend.l3.message-broker
+      related: [devops.l1.secrets-vs-config, backend.l3.row-level-security, k8s.l3.service-accounts]
+      vocab: [blast-radius]
+      example_tag: stage-4
+      example_files:
+        - docker-compose.yml
+        - scripts/backend/shared-credentials.sh
+        - docs/design/threat-model.md
+      outline:
+        - "The blast radius of a compromise is everything an attacker can reach with what one compromised part holds; least privilege is how you keep it small."
+        - "In Compose the API, Notifications and Payments connect to PostgreSQL as `donhang`, the superuser the `db` image creates from `POSTGRES_USER`, and to RabbitMQ as `donhang`, the broker's default user."
+        - "`shared-credentials.sh` signs in with the user and password Notifications is given and reads `payments` in `donhang_payments` and the users table of `keycloak`, then shows the RabbitMQ user may configure, write and read everything."
+        - "So a flaw in Notifications, which only sends emails, would let an attacker read payments and publish as Payments; a database role and RabbitMQ user per service, limited to its own data, would shrink that."
+        - "A NetworkPolicy decides which Pods may open a connection, not what that connection may do once open; credentials and their permissions are the layer that limits it."
+        - "`threat-model.md` plans per-service roles and users together with release 3 of the multi-shop rollout, which already moves the services to a role without `BYPASSRLS`."
+      misconceptions:
+        - "Services inside our own network trust each other anyway, so one shared password is fine."
+        - "The NetworkPolicies already stop Notifications from touching the payments data."
+        - "A superuser for the app is harmless because the app's own code never runs dangerous queries."
+      depth_notes: "Đơn Hàng chưa tách role và user ở stage-4 (chỉ kế hoạch). Không dạy cú pháp GRANT, regex quyền của RabbitMQ, vault cấp mật khẩu động — ngoài module. Không dạy lại RBAC, quyền tối thiểu — k8s.l3.roles-and-role-bindings; BYPASSRLS — backend.l4.shop-id-rollout."
+    - id: backend.l4.verified-email-owner
+      title:
+        vi: "Keycloak xác minh email của khách, nên Keycloak là chủ của nó"
+        en: "Keycloak verifies a customer's email, so Keycloak should own it"
+      main_path: true
+      duration_min: 13
+      skills: [backend.security.layered-controls, backend.data.ownership]
+      prereqs:
+        - backend.l4.shared-credentials
+        - backend.l4.data-ownership
+        - backend.l2.openid-connect-id-token
+        - management.l3.weighing-options-in-an-adr
+      related: [backend.l2.validating-provider-tokens, management.l3.proposing-an-adr, backend.l4.message-schema-evolution]
+      vocab: []
+      example_tag: stage-4
+      example_files:
+        - docs/adr/0014-keycloak-giu-email-khach-hang.md
+        - docs/design/data-ownership.md
+        - keycloak/donhang-realm.json
+        - DonHang.Domain/Entities.cs
+      outline:
+        - "`data-ownership.md` leaves one question open: a customer's email is kept by Keycloak and by `customers`, nothing keeps the two equal, and order emails go to the `customers` copy."
+        - "Keycloak records for each account whether its email is verified (`emailVerified` in the realm file), while `customers` keeps no such mark, so order details can go to an address nobody has confirmed lately."
+        - "ADR `0014` weighs three options: keep both copies with a sync job, make Keycloak the owner and refresh the copy from the customer's token, or drop the copy and have Notifications ask Keycloak for every email."
+        - "It chooses the second: the API refreshes `customers.email` from the `email` claim of the access token when the customer places an order, taking it only when `email_verified` is true."
+        - "The third option was rejected because Notifications would need a credential that can read every account at Keycloak, widening its blast radius for a service that only sends emails."
+        - "The ADR is accepted but not built at stage-4: `OrderMessage` keeps `customerEmail` unchanged, and the ADR names what would reopen it, such as emails sent to customers who have not signed in for a long time."
+      misconceptions:
+        - "The copy in our own database is the more reliable one, because our team controls it."
+        - "Letting Notifications query Keycloak directly is the simplest fix and costs nothing in security."
+        - "Once an ADR is accepted, the code has to change in the same release."
+      depth_notes: "Không viết code làm mới email ở stage-4; không dạy admin API của Keycloak, cấu hình gửi email xác minh hay protocol mapper. Không dạy lại chủ dữ liệu, ID token — backend.l4.data-ownership, backend.l2.openid-connect-id-token. Không đổi hình dạng `OrderMessage`."
+    - id: backend.l4.signing-documents
+      title:
+        vi: "Hóa đơn có chữ ký số thì ai giữ public key cũng tự kiểm được"
+        en: "A signed invoice can be checked by anyone who has the public key"
+      main_path: true
+      duration_min: 15
+      skills: [backend.security.signing]
+      prereqs:
+        - backend.l4.threat-modeling
+        - backend.l2.validating-provider-tokens
+        - devops.l3.signing-images
+        - backend.l1.issuing-a-jwt
+      related: [devops.l3.build-provenance, backend.l1.hashing-passwords]
+      vocab: [digital-signature, non-repudiation]
+      example_tag: stage-4
+      example_files:
+        - samples/DonHang.Samples/Samples/Security/InvoiceSigning.cs
+        - samples/DonHang.Samples.Tests/InvoiceSigningTests.cs
+      outline:
+        - "A digital signature is a value computed from a hash of a document with a private key; anyone with the matching public key can check that the document is unchanged and was signed with that key."
+        - "At stage-1 the API signed tokens with one HMAC key that both makes and checks signatures, so only the API could check them; a private-key signature can be checked by a customer or an auditor holding just the public key."
+        - "Non-repudiation means the signer cannot credibly deny having signed, and it holds only while the private key is held by the signer alone."
+        - "`InvoiceSigning` signs an invoice's bytes with `ECDsa` over SHA-256 and verifies them with the public key alone; its test changes one amount in the signed bytes and the check fails."
+        - "A signature covers exact bytes, so the sample keeps the bytes it signed and verifies those, instead of signing an object and serialising it again later, which may produce different bytes."
+        - "A signature does not hide the invoice: anyone can read it, and the signature only shows it has not changed since it was signed."
+      misconceptions:
+        - "Signing a document encrypts it, so only the receiver can read it."
+        - "A valid signature proves that what the invoice says is true."
+        - "Sending the invoice over HTTPS already proves later who issued it."
+      depth_notes: "Không dạy định dạng chữ ký XML/PDF, quy định pháp lý về hóa đơn điện tử, toán học của ECDSA/RSA, mã hóa tài liệu. Ai sở hữu public key — backend.l4.pki-and-signing; nơi giữ khóa — backend.l4.signing-key-custody. Đơn Hàng chưa phát hành hóa đơn ở stage-4; chỉ có sample."
+    - id: backend.l4.pki-and-signing
+      title:
+        vi: "Chữ ký chỉ chứng minh ai ký khi có chứng chỉ gắn khóa với một cái tên"
+        en: "A signature proves who signed only once a certificate ties key to name"
+      main_path: true
+      duration_min: 15
+      skills: [backend.security.signing]
+      prereqs:
+        - backend.l4.signing-documents
+        - k8s.l3.cert-manager
+        - k8s.l2.tls-at-the-gateway
+        - foundation.l1.tls-and-https
+      related: [devops.l3.signing-images, backend.l2.validating-provider-tokens]
+      vocab: [certificate-authority, certificate-chain, pki]
+      example_tag: stage-4
+      example_files:
+        - samples/DonHang.Samples/Samples/Security/InvoiceCertificates.cs
+        - samples/DonHang.Samples.Tests/InvoiceSigningTests.cs
+        - scripts/dev-secrets.sh
+      outline:
+        - "Checking a signature proves which key made it, not whose key it is; a certificate is a statement, signed by a certificate authority, that binds a name to a public key."
+        - "A verifier accepts a certificate by following its chain of signatures up to a root certificate it already trusts; PKI is the whole arrangement of authorities, certificates and the roots each verifier trusts."
+        - "`InvoiceCertificates` creates a root for Đơn Hàng and, signed by it, an invoice certificate whose key may only make digital signatures; `X509Chain` with that root as its only trusted root accepts it."
+        - "The same check rejects a certificate signed by a different root even when its name is identical, because its chain does not reach a root the verifier trusts."
+        - "`dev-secrets.sh` shows the same split at stage-3: the lab CA is marked `CA:TRUE` with `keyCertSign`, while the Gateway's certificate is only for authenticating a server (`serverAuth`)."
+        - "Whoever holds a certificate authority's private key can issue certificates for any name its verifiers accept, so that key needs more protection than any key it certifies."
+      misconceptions:
+        - "If the signature checks out with the key in the certificate, the invoice comes from the name in it, whoever signed the certificate."
+        - "A certificate has to be kept secret, like the private key."
+        - "The Gateway's certificate can sign our invoices too, since both belong to Đơn Hàng."
+      depth_notes: "Không dạy thu hồi chứng chỉ (CRL, OCSP), dấu thời gian cho kiểm chữ ký sau khi chứng chỉ hết hạn — sysdesign/problems; CA trung gian, từng trường X.509, quy định CA công cộng. Không dạy lại cert-manager, TLS ở Gateway — k8s.l3.cert-manager, k8s.l2.tls-at-the-gateway."
+    - id: backend.l4.signing-key-custody
+      title:
+        vi: "Khóa ký hóa đơn không bao giờ rời khỏi thiết bị ký bằng nó"
+        en: "The invoice signing key never leaves the device that signs with it"
+      main_path: true
+      duration_min: 14
+      skills: [backend.security.key-custody]
+      prereqs:
+        - backend.l4.pki-and-signing
+        - backend.l4.shared-credentials
+        - devops.l3.sealed-secrets
+        - devops.l3.secret-rotation
+      related: [k8s.l3.encryption-at-rest, management.l3.weighing-options-in-an-adr, backend.l3.payments-service]
+      vocab: [hsm]
+      example_tag: stage-4
+      example_files:
+        - docs/adr/0015-khoa-ky-hoa-don-trong-hsm.md
+        - samples/DonHang.Samples/Samples/Security/InvoiceSigning.cs
+        - DonHang.Payments/Program.cs
+      outline:
+        - "A private key kept in a file or a Secret can be copied by anyone who can read it, and a copy signs as well as the original, leaving no sign of who used it."
+        - "An HSM (hardware security module) is a device that creates private keys inside itself and signs on request, and can keep a key from ever leaving it, so callers get signatures, never the key."
+        - "ADR `0015` weighs keeping the invoice key in a sealed Secret that Payments reads against keeping it in an HSM that only Payments may call, and chooses the HSM."
+        - "With the HSM, a compromised Payments can request signatures only while the compromise lasts, instead of carrying off a key that keeps signing after the flaw is fixed."
+        - "An HSM signs whatever a permitted caller sends it, so Payments asks for a signature only for an invoice of an order it holds as paid, and records each request."
+        - "The ADR leaves where the HSM runs, own hardware or the hosting provider's service, to the hosting decision, and names the software key in the sample as lab-only."
+      misconceptions:
+        - "A key file protected by a password is as safe as an HSM."
+        - "With the key in an HSM, nobody can ever get a fake invoice signed."
+        - "An HSM is just hardware that makes cryptography faster."
+      depth_notes: "Không nêu tên/sản phẩm HSM hay KMS, PKCS#11, mức chứng nhận, nghi thức tạo khóa, mã hóa dữ liệu bằng KMS — k8s/managed-vs-selfhosted. Không dựng HSM trong lab. Không dạy lại xoay vòng khóa, SealedSecret — devops.l3.secret-rotation, devops.l3.sealed-secrets."
+    - id: backend.l4.audit-log
+      title:
+        vi: "Nhật ký kiểm toán chỉ là bằng chứng khi người bị ghi không sửa được nó"
+        en: "An audit log is evidence only if those it records cannot change it"
+      main_path: true
+      duration_min: 14
+      skills: [backend.security.audit]
+      prereqs:
+        - backend.l4.signing-key-custody
+        - design.l3.read-model
+        - devops.l3.signing-images
+        - devops.l2.centralized-logs
+      related: [backend.l3.safe-to-repeat-saga-steps, backend.l4.shared-credentials, k8s.l3.api-request-checks]
+      vocab: [audit-log, tamper-evident]
+      example_tag: stage-4
+      example_files:
+        - docs/design/audit-log.md
+        - DonHang.Payments/Payment.cs
+        - DonHang.Infrastructure/RecordOrderStatusHistory.cs
+      outline:
+        - "An audit log records who did what to which resource, when and with what outcome, so that the record can serve later as evidence, such as of who asked for a refund."
+        - "Payments' `RequestedBy` and `order_status_history` hold part of this, but in tables their own service and the shared user `donhang` can update, so a change to them leaves no trace."
+        - "Application logs in Loki serve debugging: any service can write any line to its output, so they cannot prove who acted."
+        - "`audit-log.md` lists the actions Đơn Hàng audits, such as shipping an order, requesting a refund, granting a role at Keycloak and signing an invoice, and each entry's fields: caller's `sub`, action, resource, time, outcome."
+        - "A log is tamper-evident when each entry carries a hash over the entry before it, so changing or removing one breaks every hash after it, the same idea a transparency log uses."
+        - "The design sends entries to a store the services may append to but not change or delete, and keeps tokens and secrets out of every entry."
+      misconceptions:
+        - "Our application logs in Loki already are the audit log."
+        - "To be complete, an audit log has to record every request the API receives."
+        - "If the app can only append to the log, nobody can tamper with it."
+      depth_notes: "Đơn Hàng chưa dựng nhật ký kiểm toán ở stage-4 (chỉ thiết kế). Không dạy audit log của API server Kubernetes, cấu hình event của Keycloak, SIEM, thời hạn lưu theo luật. Không dạy lại read model, transparency log — design.l3.read-model, devops.l3.signing-images."
+
+glossary_additions:
+  - term: threat-model
+    en: "threat model"
+    vi_keep: false
+    vi: "mô hình mối đe dọa"
+    short_vi: "Danh sách viết ra: điều gì có thể hỏng về bảo mật, ở đâu trong luồng dữ liệu, và làm gì với từng điều"
+    short_en: "A written list of what could go wrong with security, where in the data flow, and what is done about each"
+    introduced_in: backend.l4.threat-modeling
+  - term: trust-boundary
+    en: "trust boundary"
+    vi_keep: false
+    vi: "ranh giới tin cậy"
+    short_vi: "Chỗ dữ liệu đi qua giữa hai phần tin nhau ở mức khác nhau, vd trình duyệt và Gateway"
+    short_en: "A place where data passes between parts that trust each other to different degrees, such as browser and Gateway"
+    introduced_in: backend.l4.threat-modeling
+  - term: stride
+    en: STRIDE
+    vi_keep: true
+    vi: STRIDE
+    short_vi: "Danh mục sáu loại mối đe dọa: giả mạo, sửa đổi, chối bỏ, lộ thông tin, từ chối dịch vụ, leo thang quyền"
+    short_en: "Six threat kinds: spoofing, tampering, repudiation, information disclosure, denial of service, elevation of privilege"
+    introduced_in: backend.l4.threat-modeling
+  - term: api-gateway
+    en: "API gateway"
+    vi_keep: true
+    vi: "API gateway"
+    short_vi: "Cửa vào chung nhận mọi request của client và chuyển tới service trả lời nó, nơi đặt việc mọi request cần"
+    short_en: "The single entry point that receives every client request and routes it to the service that answers it"
+    introduced_in: backend.l4.api-gateway
+  - term: defense-in-depth
+    en: "defense in depth"
+    vi_keep: false
+    vi: "phòng thủ nhiều lớp"
+    short_vi: "Xếp nhiều biện pháp độc lập chồng lên nhau để một lớp hỏng hay bị vượt qua không mở toang hệ thống"
+    short_en: "Stacking independent controls so that one failing or being bypassed does not open the system"
+    introduced_in: backend.l4.api-gateway
+  - term: blast-radius
+    en: "blast radius"
+    vi_keep: false
+    vi: "phạm vi ảnh hưởng"
+    short_vi: "Mọi thứ kẻ tấn công với tới được bằng những gì một phần bị chiếm đang giữ"
+    short_en: "Everything an attacker can reach with what one compromised part holds"
+    introduced_in: backend.l4.shared-credentials
+  - term: digital-signature
+    en: "digital signature"
+    vi_keep: false
+    vi: "chữ ký số"
+    short_vi: "Giá trị tính từ hash của tài liệu bằng private key; public key tương ứng kiểm được tài liệu chưa đổi"
+    short_en: "A value computed from a document's hash with a private key; the matching public key checks it is unchanged"
+    introduced_in: backend.l4.signing-documents
+  - term: non-repudiation
+    en: "non-repudiation"
+    vi_keep: false
+    vi: "chống chối bỏ"
+    short_vi: "Tính chất người ký không chối được là đã ký, chỉ đúng khi private key chỉ mình họ giữ"
+    short_en: "The property that a signer cannot credibly deny signing, true only while they alone hold the private key"
+    introduced_in: backend.l4.signing-documents
+  - term: certificate-authority
+    en: "certificate authority (CA)"
+    vi_keep: false
+    vi: "tổ chức cấp chứng chỉ (CA)"
+    short_vi: "Bên ký chứng chỉ để xác nhận một public key thuộc về một cái tên"
+    short_en: "The party that signs certificates to vouch that a public key belongs to a name"
+    introduced_in: backend.l4.pki-and-signing
+    aliases: [CA]
+  - term: certificate-chain
+    en: "certificate chain"
+    vi_keep: false
+    vi: "chuỗi chứng chỉ"
+    short_vi: "Dãy chứng chỉ, mỗi cái được ký bởi cái sau, kết thúc ở một root certificate mà bên kiểm đã tin"
+    short_en: "A sequence of certificates, each signed by the next, ending at a root certificate the verifier trusts"
+    introduced_in: backend.l4.pki-and-signing
+  - term: pki
+    en: "PKI (public key infrastructure)"
+    vi_keep: true
+    vi: PKI
+    short_vi: "Toàn bộ hệ thống CA, chứng chỉ và các root mà mỗi bên kiểm tin, giúp biết public key thuộc về ai"
+    short_en: "The whole arrangement of CAs, certificates and trusted roots that tells whose a public key is"
+    introduced_in: backend.l4.pki-and-signing
+  - term: hsm
+    en: "HSM (hardware security module)"
+    vi_keep: true
+    vi: HSM
+    short_vi: "Thiết bị tạo và giữ private key bên trong, ký theo yêu cầu, có thể không cho khóa ra ngoài"
+    short_en: "A device that creates and keeps private keys inside, signs on request and can keep keys from leaving"
+    introduced_in: backend.l4.signing-key-custody
+  - term: audit-log
+    en: "audit log"
+    vi_keep: false
+    vi: "nhật ký kiểm toán"
+    short_vi: "Bản ghi ai làm gì với tài nguyên nào, lúc nào, kết quả ra sao, giữ để làm bằng chứng về sau"
+    short_en: "A record of who did what to which resource, when and with what outcome, kept as later evidence"
+    introduced_in: backend.l4.audit-log
+  - term: tamper-evident
+    en: "tamper-evident"
+    vi_keep: false
+    vi: "lộ dấu sửa đổi"
+    short_vi: "Được thiết kế sao cho mọi lần sửa hay xóa đều để lại dấu kiểm ra được, vd chuỗi hash nối các mục"
+    short_en: "Built so that any change or deletion leaves a detectable mark, such as a chain of hashes linking entries"
+    introduced_in: backend.l4.audit-log
+
+repo_changes_needed:
+  - lesson: backend.l4.threat-modeling
+    need: "Tài liệu tiếng Việt (mục `### `, không `## `/`**`): phạm vi = luồng dữ liệu stage-3 trong STAGE.md; bảng theo từng ranh giới tin cậy (trình duyệt→Caddy/Gateway, Gateway→API/Payments, service→PostgreSQL, service→RabbitMQ, Payments→cổng thanh toán, Notifications→SMTP, API/Payments→Keycloak) với mối đe dọa theo STRIDE, biện pháp hiện có hoặc phát hiện + quyết định (sửa / chấp nhận có lý do / hoãn theo kế hoạch nêu tên) + người phụ trách theo vai trò. Phát hiện bắt buộc: P1 mọi service vào PostgreSQL bằng superuser `donhang` (cả database `keycloak`); P2 mọi service vào RabbitMQ bằng user mặc định `donhang`; P3 email trong `customers` không có dấu xác minh → ADR 0014; P4 `RequestedBy`/`order_status_history` sửa được bởi chính service → `audit-log.md`; P5 Gateway→Pod là HTTP thường trong cluster → chấp nhận (NetworkPolicy), mTLS để module k8s GĐ4; P6 khóa ký hóa đơn (kế hoạch) → ADR 0015. DoS: giới hạn `orders` và `catalog-reads` có sẵn, giữ nguyên trong `Program.cs`. Mục 'Khi nào xem lại': khi luồng dữ liệu đổi, vd đưa `shop_id` vào (ADR 0013). P1/P2 sửa bằng role/user riêng mỗi service, gộp vào release 3 của `multi-shop-data-rollout.md`."
+    suggested_path: "docs/design/threat-model.md"
+  - lesson: backend.l4.shared-credentials
+    need: "Script chỉ đọc, không đổi dữ liệu: lấy user/mật khẩu từ cấu hình của notifications (cùng `donhang`/`POSTGRES_PASSWORD`), đếm dòng `payments` trong `donhang_payments` và bảng user của database `keycloak` bằng psql trong container `db`, rồi in quyền của user RabbitMQ `donhang` trên vhost `/` (`rabbitmqctl list_user_permissions donhang`: configure/write/read đều `.*`); output ổn định, chạy trong `--all`. Capture khác outline (vd quyền không phải `.*`) thì DỪNG, sửa outline, không sửa Compose."
+    suggested_path: "scripts/backend/shared-credentials.sh"
+  - lesson: backend.l4.verified-email-owner
+    need: "ADR tiếng Việt `Đã chấp nhận` (mục `### `): bối cảnh = câu hỏi mở của `data-ownership.md`; 3 phương án (giữ hai bản + job đồng bộ / Keycloak là chủ, API làm mới `customers.email` từ claim `email` của access token khi khách đặt đơn, chỉ khi `email_verified` true / bỏ bản sao, Notifications hỏi Keycloak — bị từ chối vì cần credential đọc mọi tài khoản); hệ quả: chưa làm ở stage-4, `OrderMessage` không đổi hình dạng; nếu access token chưa có `email`/`email_verified` thì ghi rõ bước thêm mapper vào client scope; điều kiện mở lại (email gửi cho khách lâu không đăng nhập). Thêm dòng 0014 vào `docs/adr/README.md`; trong `docs/design/data-ownership.md` mục câu hỏi mở giữ nguyên và thêm một dòng 'đã quyết ở ADR 0014, chưa làm'."
+    suggested_path: "docs/adr/0014-keycloak-giu-email-khach-hang.md"
+  - lesson: backend.l4.signing-documents
+    need: "Sample C# chỉ dùng `System.Security.Cryptography`: tạo hóa đơn JSON cho một đơn đã thanh toán (dữ liệu seed), giữ nguyên mảng byte đã ký, ký bằng `ECDsa` (P-256) với `HashAlgorithmName.SHA256`, kiểm bằng một `ECDsa` chỉ nạp public key; test: chữ ký đúng → true, đổi một số tiền trong byte đã ký → false, kiểm bằng public key khác → false. Comment ghi khóa tạo trong bộ nhớ chỉ cho lab (ADR 0015)."
+    suggested_path: "samples/DonHang.Samples/Samples/Security/InvoiceSigning.cs"
+  - lesson: backend.l4.pki-and-signing
+    need: "Sample C# bằng `CertificateRequest`: root của Đơn Hàng (basic constraints CA, key usage `KeyCertSign`) ký chứng chỉ hóa đơn có key usage chỉ `DigitalSignature` (critical); hàm kiểm dùng `X509Chain` với `TrustMode = CustomRootTrust`, `CustomTrustStore` chỉ chứa root đó, `RevocationMode = NoCheck` (comment: lab không có CRL/OCSP). Test trong `InvoiceSigningTests.cs`: chuỗi tới root → hợp lệ; chứng chỉ cùng subject do root khác ký → không hợp lệ; chữ ký hóa đơn kiểm bằng public key lấy từ chứng chỉ."
+    suggested_path: "samples/DonHang.Samples/Samples/Security/InvoiceCertificates.cs"
+  - lesson: backend.l4.signing-key-custody
+    need: "ADR tiếng Việt `Đã chấp nhận` (mục `### `): bối cảnh gồm yêu cầu hóa đơn (mỗi đơn đã thanh toán có hóa đơn ký số; khách hoặc kiểm toán kiểm được mà không cần hỏi Đơn Hàng; giữ nhiều năm, số năm ghi 'giả định'); 2 phương án (khóa trong SealedSecret Payments đọc / khóa trong HSM chỉ Payments được gọi); chọn HSM; hệ quả: Payments chỉ xin ký hóa đơn của đơn nó ghi là đã thanh toán, ghi mỗi lần xin ký vào nhật ký kiểm toán (`audit-log.md`), khóa không xuất ra được nên mất HSM = cấp chứng chỉ mới; HSM ở đâu để quyết định hosting (k8s/managed-vs-selfhosted); khóa phần mềm trong sample chỉ cho lab; không tên sản phẩm. Thêm dòng 0015 vào `docs/adr/README.md`."
+    suggested_path: "docs/adr/0015-khoa-ky-hoa-don-trong-hsm.md"
+  - lesson: backend.l4.audit-log
+    need: "Tài liệu thiết kế tiếng Việt (mục `### `), chỉ kế hoạch: vì sao `RequestedBy`, `order_status_history` và log Loki chưa là nhật ký kiểm toán; danh sách hành động kiểm toán (giao đơn, xin hoàn tiền, cấp/bỏ role ở Keycloak, ký hóa đơn) và trường mỗi mục (`sub` người gọi, hành động, tài nguyên, thời điểm, kết quả, hash của mục trước); nơi lưu chỉ cho ghi thêm, service không sửa/xóa được, tách khỏi database của service; không ghi token/secret; thời hạn lưu thỏa thuận với nghiệp vụ (ghi 'giả định'); chưa dựng ở stage-4."
+    suggested_path: "docs/design/audit-log.md"
+
+open_questions:
+  - "known_vocab: `tools/known-vocab --before-module backend/security-architecture` trả `[]` (module chưa có trong track.yaml) → dùng toàn bộ glossary như các module GĐ4 trước. Đề xuất: giữ cách này."
+  - "Id `backend.l4.pki-and-signing` đã được hứa ở `related` của `foundation.l1.tls-and-https` ('chữ ký chứng minh ai đã ký bằng cách nào'); giữ đúng id, tiêu đề chỉ một ý (chứng chỉ gắn khóa với tên), không chứa 'and'. Đề xuất: giữ."
+  - "ADR 0014 (email khách): đề xuất quyết ở module này — Keycloak là chủ, API làm mới `customers.email` từ claim đã xác minh khi khách đặt đơn; `Đã chấp nhận` nhưng không viết code ở stage-4. `data-ownership.md` giữ mục câu hỏi mở và thêm một dòng trỏ ADR 0014, nên outline của `backend.l4.data-ownership` ('ghi là câu hỏi mở', 'không gì giữ hai bản bằng nhau') vẫn đúng ở stage-4."
+  - "ADR 0015 (khóa ký hóa đơn trong HSM) dùng số tiếp theo; ADR GĐ4 sau đánh từ 0016. `sysdesign/problems` 'Ký số tài liệu cho ngân hàng' là hệ thống khác, dùng lại khái niệm (chữ ký số, PKI, HSM, nhật ký kiểm toán) mà không quyết lại ADR 0015. Đề xuất: đồng ý."
+  - "Ký hóa đơn điện tử (chương trình mục 2, GĐ4) chỉ có sample + ADR ở stage-4, không có entity/endpoint hóa đơn, không nói quy định pháp lý. Đề xuất: đồng ý, giống cách ADR 0012/0013 chỉ là quyết định + kế hoạch."
+  - "versions.yaml không có khóa cho HSM/KMS, openssl hay chuẩn X.509 (RFC 5280). Thiết kế đã tránh: không tên sản phẩm HSM, sample dùng API .NET (khóa `dotnet`); `dev-secrets.sh` chỉ được trích để chỉ `CA:TRUE`/`keyCertSign`/`serverAuth`. Đề xuất: không thêm khóa; claim về trường chứng chỉ đối chiếu docs .NET (`X509BasicConstraintsExtension`, `X509KeyUsageFlags`, `X509Chain`). Nếu chủ muốn kiểm cả lệnh openssl thì thêm `standards.x509` (RFC 5280) — việc của chủ."
+  - "Role PostgreSQL và user RabbitMQ riêng cho mỗi service: chỉ kế hoạch trong `threat-model.md`, gộp vào release 3 của kế hoạch đa cửa hàng (vốn chuyển service sang role không `BYPASSRLS`); không đổi Compose/manifest ở stage-4. Đề xuất: đồng ý."
+  - "Giới hạn trong `Program.cs` giữ nguyên ở stage-4 (DECISIONS); bài `api-gateway` giải thích vì sao giới hạn theo `sub` ở lại API. Đề xuất: đồng ý."
+  - "Lỗ hổng chương trình: OWASP Top 10, injection, XSS/CSP (backend L3 'OWASP, secrets, mã hóa' và frontend L3 'Bảo mật frontend') chưa có module nào dạy. Module này ở mức kiến trúc nên không dạy. Đề xuất: chủ quyết thêm một module tùy chọn sau (vd `backend/application-security`, `main_path: false`) hoặc chấp nhận khoảng trống; mặc định: ghi khoảng trống, không thêm bài ở đây."
+  - "Mục 'API gateway, BFF, contract' của chương trình: gateway ở đây; BFF → `frontend/stack-and-boundaries`; contract đã có (`OrderMessageContractTests` ở consistency-and-ownership, OpenAPI ở GĐ2). Đề xuất: không thêm bài contract."
+  - "Định tuyến lại depth_notes hẹn GĐ4: `backend.l2.validating-provider-tokens` — PKI → `backend.l4.pki-and-signing`, xoay vòng khóa đã dạy ở `devops.l3.secret-rotation` (`rotate-signing-key.sh`), toán RSA không dạy; `foundation.l1.tls-and-https` — HSM → `backend.l4.signing-key-custody`, mTLS → `k8s/multi-cluster-and-mesh`, cipher suite không dạy; `devops.l3.signing-images` (khóa tự quản lý/KMS) → nguyên tắc ở `signing-key-custody`; `k8s.l3.encryption-at-rest` (KMS v2) → `k8s/managed-vs-selfhosted`; `backend.l2.resource-based-authorization` (404 thay 403, policy engine) không dạy, phân quyền theo cửa hàng → `backend.l4.shop-id-rollout`; `k8s.l3.api-request-checks` (audit log API server) → track k8s, không phải `backend.l4.audit-log`. Đề xuất: đồng ý."
+  - "Tên file docs/ADR/sample/script là đề xuất; `/repo-stage 4` đổi tên thì sửa `example_files` trước khi sinh bài. Capture `shared-credentials.sh` khác outline thì dừng và sửa outline. Đề xuất: đồng ý."

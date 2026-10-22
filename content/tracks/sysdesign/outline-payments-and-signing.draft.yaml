@@ -1,0 +1,397 @@
+skills:
+  - id: sysdesign.problem.payments
+    title:
+      vi: "Thiết kế đối soát thanh toán với cổng thanh toán"
+      en: "Designing payment reconciliation with a gateway"
+    prereqs:
+      - sysdesign.review.design-review
+      - backend.sagas.steps
+      - management.sourcing.vendors
+      - backend.security.audit
+  - id: sysdesign.problem.bank-signing
+    title:
+      vi: "Thiết kế ký số tài liệu cho ngân hàng"
+      en: "Designing document signing for a bank"
+    prereqs:
+      - sysdesign.review.design-review
+      - backend.security.signing
+      - backend.security.key-custody
+      - management.governance.compliance
+
+module:
+  id: payments-and-signing
+  title:
+    vi: "Bài toán: thanh toán và đối soát, ký số tài liệu cho ngân hàng"
+    en: "Problems: payment reconciliation and document signing for a bank"
+  stage: 4
+  summary:
+    vi: "Dùng khung thiết kế hệ thống cho hai bài toán của Đơn Hàng — đối soát hoàn tiền của Payments với báo cáo của cổng thanh toán, rồi ký bảng kê cho một ngân hàng sao cho ngân hàng kiểm được nhiều năm sau, kể cả khi chứng chỉ đã hết hạn hay bị thu hồi — đi từ yêu cầu, thiết kế, đánh đổi tới trả lời câu phản biện bằng ADR đã có."
+    en: "Apply the system design framework to two Đơn Hàng problems, reconciling Payments' refunds with the gateway's report, then signing statements for a bank so it can verify them years later, after the certificate has ended or been revoked, from requirements through design and trade-offs to answering challenges from recorded ADRs."
+  lessons:
+    - id: sysdesign.l4.payment-reconciliation-requirements
+      title:
+        vi: "Đối soát kiểm tra cổng thanh toán và Payments khớp nhau ở từng khoản hoàn tiền"
+        en: "Reconciliation checks the gateway and Payments agree on every refund"
+      main_path: true
+      duration_min: 14
+      skills: [sysdesign.problem.payments]
+      prereqs:
+        - sysdesign.l4.notification-challenges
+        - backend.l3.safe-to-repeat-saga-steps
+        - backend.l3.compensating-action
+        - management.l3.exit-plan
+      related:
+        - sysdesign.l4.clarifying-requirements
+        - management.l3.evaluating-a-vendor
+        - backend.l4.data-ownership
+        - backend.l3.timeouts
+      vocab: [reconciliation, settlement-report]
+      example_tag: stage-4
+      example_files:
+        - docs/team/reconciliation-requirements.md
+        - docs/team/refund-requirements.md
+        - docs/team/payment-gateway-evaluation.md
+        - docs/adr/0010-cong-thanh-toan-ben-ngoai.md
+      outline:
+        - "The payments problem starts from the stage-3 refund saga, which keeps Đơn Hàng's own records consistent but never checks them against what the gateway actually did."
+        - "Reconciliation compares two independent records of the same money, here Payments' refund rows and the gateway's records, and explains every line on which they differ."
+        - "A settlement report is the gateway's own list of the money it moved for a merchant in a period; Gateway A exports its refund history as CSV at any time, and the lab's `GET /v1/refunds` stands in for it."
+        - "`refund-requirements.md` made reconciliation goal 2 but left open what list accounting needs and how often; `reconciliation-requirements.md` answers with assumed figures: one run a day, results by the next working morning."
+        - "Clarifying questions find the cases that matter: a refund the gateway made while Payments marked the row `failed`, a gateway refund with no row, such as one made by hand, and an amount that differs."
+        - "The estimate finds a day's refunds a small batch (assumed), so load does not shape the design; the ranked drivers are every difference explained, each found within a day, and money corrected only by people."
+      misconceptions:
+        - "With an idempotency key on every call, the gateway and our records can never disagree."
+        - "Reconciliation is accounting's job; the system only has to record the refunds."
+        - "If a refund row says `refunded`, the customer has the money, so there is nothing to check."
+      depth_notes: "Không làm luồng thu tiền (charge) — stage-3 chỉ hoàn tiền qua cổng; không tên cổng thật, phí, quy định kế toán. Không dạy lại saga, idempotency key, exit plan — backend.l3.saga, backend.l2.idempotent-endpoints, management.l3.exit-plan. Thiết kế — sysdesign.l4.payment-reconciliation-design."
+    - id: sysdesign.l4.payment-reconciliation-design
+      title:
+        vi: "Một job hằng ngày ghép từng dòng của cổng với dòng hoàn tiền theo khóa của nó"
+        en: "A daily job matches each gateway line to a refund row by its key"
+      main_path: true
+      duration_min: 15
+      skills: [sysdesign.problem.payments]
+      prereqs:
+        - sysdesign.l4.payment-reconciliation-requirements
+        - sysdesign.l4.deep-dive
+        - backend.l4.data-ownership
+        - backend.l4.audit-log
+      related:
+        - sysdesign.l4.high-level-design
+        - backend.l3.dead-letter-queue
+        - backend.l3.saga-in-progress-status
+        - design.l3.anti-corruption-layer
+      vocab: []
+      example_tag: stage-4
+      example_files:
+        - docs/design/reconciliation-design-review.md
+        - docs/adr/0028-doi-soat-hoan-tien-hang-ngay-voi-bao-cao-cua-cong.md
+        - fake-gateway/Program.cs
+        - DonHang.Payments/Payment.cs
+      outline:
+        - "ADR `0028` puts reconciliation in Payments, the owner of the refund rows and of the gateway's key: once a day a job fetches the previous day's report and saves its lines in Payments' own database."
+        - "Each report line is matched to a row by the idempotency key `refund-<id>`, since `payments` keeps no refund id of the gateway's; the lab's `GET /v1/refunds` lists the key, and the design assumes Gateway A's report does too."
+        - "Every comparison ends in one category: matched, refunded by the gateway but `failed` in Payments, a gateway refund with no row, a `refunded` row the report lacks, or a different amount."
+        - "A refund made near the end of a day may appear only in the next day's report, so a row missing from the report counts as a difference only after one more run (assumed)."
+        - "The job never changes a refund row: each difference goes to a list for staff, and a correction is a new change made by a person and written to the audit log, as the saga's compensation keeps its history."
+        - "The deep dive is a `failed` row the gateway refunded: its order is back at `paid`, and a late `payment.refunded` cannot fix it, because `CompleteRefund()` accepts only a `refunding` order, so the review records a new correction step."
+      misconceptions:
+        - "Reconciliation can match the two records by order and amount, so no key is needed."
+        - "A row missing from today's report is always a refund that never happened."
+        - "When the job finds a difference, it should simply overwrite our row with the gateway's value."
+      depth_notes: "Không có code đối soát ở stage-4 (chỉ ADR 0028 và tài liệu). Không dạy định dạng file của cổng, kế toán kép. Không dạy lại chủ dữ liệu, audit log, ACL, dead-letter queue — backend.l4.data-ownership, backend.l4.audit-log, design.l3.anti-corruption-layer, backend.l3.dead-letter-queue."
+    - id: sysdesign.l4.payment-reconciliation-trade-offs
+      title:
+        vi: "Đối soát mỗi ngày một lần đổi một ngày chậm lấy một job đơn giản"
+        en: "Reconciling once a day trades a day's delay for one simple job"
+      main_path: true
+      duration_min: 14
+      skills: [sysdesign.problem.payments]
+      prereqs:
+        - sysdesign.l4.payment-reconciliation-design
+        - design.l4.trade-off-points
+        - backend.l3.eventual-consistency
+        - management.l4.compliance-controls
+      related:
+        - sysdesign.l4.finding-bottlenecks
+        - management.l3.weighing-options-in-an-adr
+        - backend.l3.safe-to-repeat-saga-steps
+      vocab: []
+      example_tag: stage-4
+      example_files:
+        - docs/design/reconciliation-design-review.md
+        - docs/adr/0028-doi-soat-hoan-tien-hang-ngay-voi-bao-cao-cua-cong.md
+        - DonHang.Payments/RefundSender.cs
+      outline:
+        - "The review records the run's frequency as a trade-off point: one run a day is one simple job and one report fetched, but a difference can stay unnoticed for up to a day."
+        - "Asking the gateway about each refund right after it is sent would find a lost answer sooner, but adds a call per refund and still misses refunds made outside Đơn Hàng, so it cannot replace the report."
+        - "The 24-hour retry window of YC-10 is another trade-off point: a longer window leaves fewer `failed` rows the gateway in fact refunded, but keeps orders `refunding` and staff waiting longer."
+        - "Corrections made by hand are slower than letting the job fix rows, but staff propose and accounting approves (assumed roles), so no one person both makes and approves a change to money records."
+        - "The saved report lines and each run's result are evidence for accounting and auditors, so they are kept as long as the refund rows (assumed), at the cost of storage."
+      misconceptions:
+        - "Checking every refund the moment it happens is always better than a daily run."
+        - "Retrying the gateway for longer would remove the need to reconcile."
+        - "Letting the job correct differences itself is safer, because a program makes no mistakes."
+      depth_notes: "Số là giả định; không giá, không tên nhà cung cấp. Không đổi `RefundSettings` hay YC-10. Không dạy lại điểm đánh đổi, eventual consistency, tách nhiệm vụ — design.l4.trade-off-points, backend.l3.eventual-consistency, management.l4.compliance-controls."
+    - id: sysdesign.l4.payment-reconciliation-challenges
+      title:
+        vi: "Câu phản biện về đối soát được trả lời từ giới hạn của chính saga hoàn tiền"
+        en: "Reconciliation challenges are answered from the refund saga's limits"
+      main_path: true
+      duration_min: 13
+      skills: [sysdesign.problem.payments]
+      prereqs:
+        - sysdesign.l4.payment-reconciliation-trade-offs
+        - sysdesign.l4.answering-challenges
+      related:
+        - management.l3.exit-plan
+        - management.l3.superseding-an-adr
+        - sysdesign.l4.notification-challenges
+      vocab: []
+      example_tag: stage-4
+      example_files:
+        - docs/design/reconciliation-design-review.md
+        - docs/adr/0010-cong-thanh-toan-ben-ngoai.md
+        - docs/adr/0028-doi-soat-hoan-tien-hang-ngay-voi-bao-cao-cua-cong.md
+        - DonHang.Payments/GatewayRefundClient.cs
+      outline:
+        - "Asked why reconcile when every call carries an idempotency key, the answer is that the key stops a second refund, not a lost answer or a refund made by hand, cases YC-9 does not cover."
+        - "Asked why the gateway's report alone is not enough, the answer is that only the two records together show a refund the gateway made for a row Payments marked `failed`."
+        - "Asked what happens when the report is late or the gateway is down at run time, the answer names ADR `0028`'s rule: the run is tried again, and a missed day is reported to accounting (assumed)."
+        - "Asked what changes with a second gateway under ADR `0010`'s exit plan, the review records a risk: refund rows do not record their gateway, a need step 4 of that plan already names."
+        - "`reconciliation-design-review.md` keeps every challenge with its answer, the driver or ADR it traces to, and an owner by role when it stays open."
+      misconceptions:
+        - "The gateway moved the money, so its report is the only record worth trusting."
+        - "If a reviewer asks about a second gateway, reconciliation must support it before it is built."
+        - "An open question left in the review means reconciliation is not ready to build."
+      depth_notes: "Không dựng code chuyển cổng ở stage-4. Không quyết lại ADR 0003, 0010. Không dạy lại trả lời phản biện, exit plan, thay thế ADR — sysdesign.l4.answering-challenges, management.l3.exit-plan, management.l3.superseding-an-adr."
+    - id: sysdesign.l4.bank-signing-requirements
+      title:
+        vi: "Ngân hàng phải kiểm được tài liệu đã ký rất lâu sau khi chứng chỉ hết hạn"
+        en: "A bank must verify a signed document long after its certificate ends"
+      main_path: true
+      duration_min: 14
+      skills: [sysdesign.problem.bank-signing]
+      prereqs:
+        - sysdesign.l4.payment-reconciliation-challenges
+        - backend.l4.pki-and-signing
+        - management.l4.compliance-controls
+        - k8s.l4.keys-stay-in-the-key-service
+      related:
+        - sysdesign.l4.clarifying-requirements
+        - backend.l4.signing-key-custody
+        - backend.l4.audit-log
+        - k8s.l4.choosing-managed-kubernetes
+      vocab: [certificate-revocation]
+      example_tag: stage-4
+      example_files:
+        - docs/team/bank-signing-requirements.md
+        - docs/team/compliance-controls.md
+        - docs/adr/0015-khoa-ky-hoa-don-trong-hsm.md
+        - docs/adr/0023-khoa-ky-hoa-don-trong-hsm-cua-nha-cung-cap.md
+      outline:
+        - "The signing problem starts from decisions already taken: ADR `0015` keeps the invoice key in an HSM only Payments may call, and ADR `0023` puts that HSM in the provider's service."
+        - "`bank-signing-requirements.md` adds what a bank that owns a chain of shops asks: Payments signs a monthly statement of those shops' payments and refunds, and the bank checks it with public keys and certificates alone."
+        - "A certificate is valid only between two dates, and certificate revocation is its CA declaring it invalid before the end date, for example because its private key may have leaked."
+        - "So the hardest requirement is time, not load: the bank must verify a statement years later (assumed ten), after the certificate has ended, and tell statements signed before a revocation from later ones."
+        - "The estimate finds statements in the hundreds a month at most (assumed), so signing load is trivial and a statement may wait hours to be signed without breaking any driver."
+        - "The bank's rules reuse the controls of `compliance-controls.md`, such as the audit log and separation of duties; the ranked drivers are: verifiable for years, a leaked key's damage limited in time, no key outside an HSM."
+      misconceptions:
+        - "Once a certificate has expired, nothing signed with it can be trusted any more."
+        - "A bank as a customer means ADRs 0015 and 0023 must be decided again from the start."
+        - "A signature that checks today will check the same way in ten years, so nothing else needs keeping."
+      depth_notes: "Không nêu luật, chuẩn, chứng nhận, số hiệu quy định (không khóa `standards`); không định dạng chữ ký PDF/XML. Không quyết lại ADR 0015, 0022, 0023. Không dạy lại chứng chỉ, chuỗi chứng chỉ, tuân thủ — backend.l4.pki-and-signing, management.l4.compliance-controls."
+    - id: sysdesign.l4.bank-signing-design
+      title:
+        vi: "Dấu thời gian và trạng thái thu hồi lưu kèm giữ chữ ký kiểm được lâu dài"
+        en: "A timestamp and saved revocation status keep a signature checkable"
+      main_path: true
+      duration_min: 15
+      skills: [sysdesign.problem.bank-signing]
+      prereqs:
+        - sysdesign.l4.bank-signing-requirements
+        - sysdesign.l4.deep-dive
+        - backend.l4.signing-key-custody
+        - backend.l4.audit-log
+      related:
+        - backend.l4.signing-documents
+        - sysdesign.l4.high-level-design
+        - k8s.l3.cert-manager
+        - backend.l4.data-ownership
+      vocab: [crl, ocsp, trusted-timestamp, timestamp-authority]
+      example_tag: stage-4
+      example_files:
+        - docs/design/bank-signing-design-review.md
+        - docs/adr/0029-ky-bang-ke-ngan-hang-kem-dau-thoi-gian.md
+        - samples/DonHang.Samples/Samples/Security/InvoiceSigning.cs
+        - samples/DonHang.Samples/Samples/Security/InvoiceCertificates.cs
+      outline:
+        - "A CRL is a list of revoked certificates that a CA signs and publishes at intervals; with OCSP a verifier asks the CA's responder about one certificate and gets a signed answer."
+        - "A trusted timestamp is a statement signed by a timestamp authority, a third party, that a given hash existed at a given time; the signer's clock cannot serve, since whoever holds a leaked key can set it back."
+        - "ADR `0029` has Payments sign each statement in the HSM, get a timestamp over the signature and fetch the certificate's revocation status, then store all three with the statement's exact bytes."
+        - "The bank checks such a package alone: the signature against the certificate, the chain up to a root it trusts, the time from the timestamp, and the saved status showing the certificate valid at that time."
+        - "The certificate comes from a CA the bank names (assumed), for a key created in the HSM; `InvoiceCertificates` trusts only Đơn Hàng's own root, which the bank does not, and checks no revocation."
+        - "Every signing request, timestamp and status fetch is written to the audit log of `audit-log.md`, so the record of what Payments signed is evidence kept outside Payments' own tables."
+      misconceptions:
+        - "The server's own clock is good enough to prove when a document was signed."
+        - "Revocation is checked once, when the bank receives the document, so nothing about it needs storing."
+        - "A timestamp authority must read the whole statement, so private documents cannot be timestamped."
+      depth_notes: "Không có code ký bảng kê ở stage-4 (chỉ ADR 0029, tài liệu và sample sẵn có). Không nêu tên CA, TSA, sản phẩm HSM; không định dạng CRL/OCSP, số RFC. Không dạy lại chữ ký số, HSM, audit log — backend.l4.signing-documents, backend.l4.signing-key-custody, backend.l4.audit-log."
+    - id: sysdesign.l4.bank-signing-trade-offs
+      title:
+        vi: "Mỗi bằng chứng kèm chữ ký thêm một dịch vụ mà việc ký phải chờ"
+        en: "Each piece of signing evidence adds a service that signing waits on"
+      main_path: true
+      duration_min: 14
+      skills: [sysdesign.problem.bank-signing]
+      prereqs:
+        - sysdesign.l4.bank-signing-design
+        - design.l4.trade-off-points
+        - sysdesign.l4.finding-bottlenecks
+        - k8s.l4.choosing-managed-kubernetes
+      related:
+        - backend.l3.graceful-degradation
+        - backend.l4.shared-credentials
+        - management.l3.total-cost-of-ownership
+        - sysdesign.l4.multi-shop-trade-offs
+      vocab: []
+      example_tag: stage-4
+      example_files:
+        - docs/design/bank-signing-design-review.md
+        - docs/adr/0029-ky-bang-ke-ngan-hang-kem-dau-thoi-gian.md
+        - docs/adr/0022-production-tren-kubernetes-managed.md
+        - docs/adr/0023-khoa-ky-hoa-don-trong-hsm-cua-nha-cung-cap.md
+      outline:
+        - "Signing now depends on the HSM, the timestamp authority and the CA's status service; each is a single point of failure for signing but not for taking orders, because a statement may wait hours (assumed)."
+        - "OCSP gives a fresh answer for one certificate but needs the responder up at every check; a CRL can be fetched ahead and kept, but may be as old as one publishing interval."
+        - "Saving the status at signing time makes each package larger, but the bank's check years later no longer needs the CA's services to be still running."
+        - "The timestamp authority's own certificate also ends, so statements kept longer are timestamped again before it does, a recurring job the review records as a cost."
+        - "ADR `0029` keeps ADR `0023`'s provider HSM, with a key used only for this bank's statements, so a revocation touches no invoice of other shops, at the cost of one more key and certificate to renew."
+        - "An HSM of Đơn Hàng's own stays rejected for ADR `0023`'s reason, hardware in two places and people to run it; a contract demanding own machines meets ADR `0022`'s reopen condition."
+      misconceptions:
+        - "OCSP is always better than a CRL, because its answer is fresh."
+        - "If the timestamp authority is down, taking orders must stop until signing works again."
+        - "Having a bank as a customer always means buying our own HSM."
+      depth_notes: "Số là giả định; không giá, không tên nhà cung cấp. Không quyết lại ADR 0022, 0023. Không dạy lại điểm đánh đổi, điểm hỏng đơn lẻ, blast radius, TCO — design.l4.trade-off-points, k8s.l3.highly-available-entry-point, backend.l4.shared-credentials, management.l3.total-cost-of-ownership."
+    - id: sysdesign.l4.bank-signing-challenges
+      title:
+        vi: "Câu phản biện về ký số cho ngân hàng được trả lời bằng ADR 0015, 0023 và 0029"
+        en: "Bank signing challenges are answered from ADRs 0015, 0023 and 0029"
+      main_path: true
+      duration_min: 13
+      skills: [sysdesign.problem.bank-signing]
+      prereqs:
+        - sysdesign.l4.bank-signing-trade-offs
+        - sysdesign.l4.answering-challenges
+        - management.l3.superseding-an-adr
+      related:
+        - backend.l4.threat-modeling
+        - sysdesign.l4.multi-shop-challenges
+        - management.l4.deciding-under-uncertainty
+      vocab: []
+      example_tag: stage-4
+      example_files:
+        - docs/design/bank-signing-design-review.md
+        - docs/adr/0015-khoa-ky-hoa-don-trong-hsm.md
+        - docs/adr/0022-production-tren-kubernetes-managed.md
+        - docs/adr/0029-ky-bang-ke-ngan-hang-kem-dau-thoi-gian.md
+      outline:
+        - "Asked why statements are not signed with the server's time and Đơn Hàng's own root, the answer is the drivers: the bank trusts only roots it names, and a leaked key could write any time the server shows."
+        - "Asked what happens to past statements if the key leaks, the answer is revocation: statements timestamped before it stay valid, later ones fail, and the audit log shows which earlier ones Payments really asked for."
+        - "Asked why a bank does not get an HSM of Đơn Hàng's own, the answer is ADR `0023`'s reason and ADR `0022`'s reopen condition; if the contract demands own machines, a new ADR supersedes `0023` for this key only."
+        - "Asked what happens if the timestamp authority is down at month end, the review records a risk with an owner: statements wait and are signed late, within the bank's deadline (assumed)."
+        - "`bank-signing-design-review.md` keeps every challenge with its answer, the driver or ADR it traces to, and an owner by role when it stays open."
+      misconceptions:
+        - "Revoking a leaked key makes every document it ever signed invalid."
+        - "A challenge about who owns the HSM can only be settled by buying one."
+        - "If the design cannot answer a challenge on the spot, it must be redesigned before the review ends."
+      depth_notes: "Không dựng HSM, CA hay TSA trong lab. Không quyết lại ADR 0015, 0022, 0023. Không dạy lại trả lời phản biện, thay thế ADR, threat model — sysdesign.l4.answering-challenges, management.l3.superseding-an-adr, backend.l4.threat-modeling. Bài kết — sysdesign/architect-daily."
+
+glossary_additions:
+  - term: reconciliation
+    en: "reconciliation"
+    vi_keep: false
+    vi: "đối soát"
+    short_vi: "So hai bản ghi độc lập của cùng một khoản tiền, như dòng hoàn tiền của mình và của cổng, rồi giải thích mọi chỗ lệch"
+    short_en: "Comparing two independent records of the same money, such as ours and the gateway's, and explaining every difference"
+    introduced_in: sysdesign.l4.payment-reconciliation-requirements
+  - term: settlement-report
+    en: "settlement report"
+    vi_keep: false
+    vi: "báo cáo quyết toán của cổng"
+    short_vi: "Danh sách do cổng thanh toán lập về các khoản tiền nó đã chuyển cho bên bán trong một kỳ"
+    short_en: "The payment gateway's own list of the money it moved for a merchant in a period"
+    introduced_in: sysdesign.l4.payment-reconciliation-requirements
+  - term: certificate-revocation
+    en: "certificate revocation"
+    vi_keep: false
+    vi: "thu hồi chứng chỉ"
+    short_vi: "CA tuyên bố một chứng chỉ hết hiệu lực trước ngày hết hạn, ví dụ vì private key có thể đã lộ"
+    short_en: "A CA declaring a certificate invalid before its end date, for example because its private key may have leaked"
+    introduced_in: sysdesign.l4.bank-signing-requirements
+  - term: crl
+    en: "CRL (certificate revocation list)"
+    vi_keep: true
+    vi: CRL
+    short_vi: "Danh sách các chứng chỉ đã bị thu hồi, do CA ký và công bố theo chu kỳ"
+    short_en: "A list of revoked certificates that a CA signs and publishes at intervals"
+    introduced_in: sysdesign.l4.bank-signing-design
+  - term: ocsp
+    en: "OCSP (Online Certificate Status Protocol)"
+    vi_keep: true
+    vi: OCSP
+    short_vi: "Cách bên kiểm hỏi responder của CA về trạng thái một chứng chỉ và nhận câu trả lời có chữ ký"
+    short_en: "A way for a verifier to ask a CA's responder about one certificate and get a signed answer"
+    introduced_in: sysdesign.l4.bank-signing-design
+  - term: trusted-timestamp
+    en: "trusted timestamp"
+    vi_keep: false
+    vi: "dấu thời gian tin cậy"
+    short_vi: "Lời xác nhận có chữ ký của timestamp authority rằng một hash đã tồn tại ở một thời điểm"
+    short_en: "A statement signed by a timestamp authority that a given hash existed at a given time"
+    introduced_in: sysdesign.l4.bank-signing-design
+  - term: timestamp-authority
+    en: "timestamp authority (TSA)"
+    vi_keep: true
+    vi: "timestamp authority (TSA)"
+    short_vi: "Bên thứ ba ký dấu thời gian tin cậy cho hash người khác gửi tới, không cần xem tài liệu"
+    short_en: "A third party that signs trusted timestamps over hashes sent to it, without seeing the document"
+    introduced_in: sysdesign.l4.bank-signing-design
+    aliases: [TSA]
+
+repo_changes_needed:
+  - lesson: sysdesign.l4.payment-reconciliation-requirements
+    need: "Tài liệu tiếng Việt (`### `, không `## `/`**`, mọi số ghi 'giả định'): phạm vi (chỉ hoàn tiền qua Cổng A; không thu tiền, không hoàn tay ngoài cổng của R4 — nêu là ngoài phạm vi), trả lời câu hỏi mở 'kế toán cần danh sách dạng nào, bao lâu một lần' của refund-requirements.md (mỗi ngày một lần, kết quả trước sáng ngày làm việc kế tiếp — giả định, kế toán xác nhận); ĐS-n dạng kịch bản có thước đo: dòng `failed` mà cổng đã hoàn, khoản hoàn ở cổng không có dòng, dòng `refunded` không có trong báo cáo, số tiền lệch; giả định báo cáo của Cổng A liệt kê idempotency key mỗi khoản (người xác nhận: lập trình viên làm tích hợp); ước lượng số khoản hoàn mỗi ngày theo tỉ lệ giả định của system-design-method.md → một lô nhỏ; driver xếp hạng (mọi chỗ lệch được giải thích, phát hiện trong một ngày, chỉ người sửa dòng tiền). Không sửa refund-requirements.md, payment-gateway-evaluation.md."
+    suggested_path: "docs/team/reconciliation-requirements.md"
+  - lesson: sysdesign.l4.payment-reconciliation-design
+    need: "ADR 0028 (Đã chấp nhận, chưa xây) + dòng README ADR + một dòng 'dòng báo cáo của cổng — chủ: Payments' trong data-ownership.md: job hằng ngày trong Payments lấy báo cáo ngày trước qua API của cổng, lưu dòng báo cáo vào database của Payments, ghép theo `refund-<id>`; 5 loại kết quả; dòng thiếu trong báo cáo chỉ thành chỗ lệch sau thêm một lần chạy (giả định); job không sửa dòng nào — chỗ lệch vào danh sách cho nhân viên, sửa là thay đổi mới do người làm, ghi audit log (theo audit-log.md), nhân viên đề xuất, kế toán duyệt (vai trò giả định); báo cáo trễ/cổng lỗi lúc chạy → chạy lại, ngày bị lỡ báo kế toán (giả định); lưu dòng báo cáo và kết quả mỗi lần chạy bằng thời gian giữ dòng hoàn tiền (giả định); ít nhất 3 phương án (hằng ngày theo báo cáo / hỏi cổng sau mỗi khoản hoàn / chỉ tin câu trả lời của cổng — bị loại); điều kiện mở lại (thêm cổng thứ hai theo bước 4 ADR 0010, khối lượng vượt lô nhỏ)."
+    suggested_path: "docs/adr/0028-doi-soat-hoan-tien-hang-ngay-voi-bao-cao-cua-cong.md"
+  - lesson: sysdesign.l4.payment-reconciliation-design
+    need: "Design review theo design-review-template.md: quyết định cần review + đề xuất, driver, ước lượng, một khối mermaid (cổng → job đối soát trong Payments → bảng dòng báo cáo + bảng hoàn tiền → danh sách chỗ lệch cho nhân viên → audit log), đi sâu 'dòng `failed` mà cổng đã hoàn' (trả lời lạc do timeout rồi cổng lỗi tới hết 24 giờ của YC-10; đơn đã về `paid`; `payment.refunded` gửi muộn không sửa được vì `Order.CompleteRefund()` chỉ nhận đơn `refunding`, message sẽ vào dead-letter queue → câu hỏi mở: bước sửa mới cho đơn, người phụ trách theo vai trò), điểm đánh đổi (tần suất chạy; cửa sổ 24 giờ của YC-10; sửa tay vs tự sửa), rủi ro (dòng hoàn tiền không ghi cổng nào — cần cho bước 4 ADR 0010), câu hỏi mở, mục 'Câu hỏi phản biện' 4–5 câu trỏ YC-9, ADR 0028, ADR 0010. Không code."
+    suggested_path: "docs/design/reconciliation-design-review.md"
+  - lesson: sysdesign.l4.bank-signing-requirements
+    need: "Tài liệu tiếng Việt (`### `, không `## `/`**`, số 'giả định'): xuất phát ADR 0015/0023 (không mở lại); ngân hàng sở hữu một chuỗi cửa hàng trên Đơn Hàng (như compliance-controls.md) nhận bảng kê hằng tháng các khoản thanh toán và hoàn tiền của các cửa hàng đó, do Payments ký; KS-n dạng kịch bản: ngân hàng tự kiểm chỉ bằng public key và chứng chỉ; kiểm được sau 10 năm (giả định), sau khi chứng chỉ hết hạn; phân biệt bảng kê ký trước/sau khi chứng chỉ bị thu hồi; khóa không rời HSM; mỗi lần ký ghi audit log; tách nhiệm vụ (trỏ các TT-n tương ứng của compliance-controls.md theo số, không chép lại); ước lượng bảng kê mỗi tháng nhiều nhất vài trăm (giả định), được chờ ký vài giờ; giả định + vai trò xác nhận (ngân hàng chỉ tin root do họ chỉ định; hợp đồng có đòi máy riêng không — người hỏi: product owner); driver xếp hạng. Không luật, chuẩn, chứng nhận, số hiệu quy định. Viết sau compliance-controls.md."
+    suggested_path: "docs/team/bank-signing-requirements.md"
+  - lesson: sysdesign.l4.bank-signing-design
+    need: "ADR 0029 (Đã chấp nhận, chưa xây) + dòng README ADR: Payments ký bảng kê trong HSM của nhà cung cấp (ADR 0023) bằng một khóa riêng cho ngân hàng này; chứng chỉ do CA ngân hàng chỉ định cấp cho khóa tạo trong HSM (giả định); xin dấu thời gian từ một timestamp authority (chỉ gửi hash) cho chữ ký; lấy trạng thái thu hồi (OCSP, CRL nếu responder không có) lúc ký; lưu gói: bytes đúng của bảng kê, chữ ký, chuỗi chứng chỉ, dấu thời gian, trạng thái thu hồi; mỗi yêu cầu ký/dấu thời gian/lấy trạng thái ghi audit log; bảng kê chờ được vài giờ khi HSM/TSA/CA lỗi (giả định), không ảnh hưởng nhận đơn; đóng dấu thời gian lại trước khi chứng chỉ của TSA hết hạn; phương án bị loại: giờ của server + root riêng của Đơn Hàng, HSM riêng (lý do ADR 0023; điều kiện mở lại của ADR 0022 khi hợp đồng đòi máy riêng), dùng chung khóa hóa đơn. Không tên CA/TSA/sản phẩm, không số RFC. Không đổi InvoiceSigning.cs/InvoiceCertificates.cs."
+    suggested_path: "docs/adr/0029-ky-bang-ke-ngan-hang-kem-dau-thoi-gian.md"
+  - lesson: sysdesign.l4.bank-signing-design
+    need: "Design review theo design-review-template.md: driver, ước lượng, một khối mermaid (Payments → HSM của nhà cung cấp → TSA → responder/CRL của CA → kho gói đã ký → ngân hàng kiểm; audit log), đi sâu 'kiểm sau 10 năm' (thứ tự kiểm của ngân hàng trên gói; vì sao giờ của server không dùng được; vì sao InvoiceCertificates — root riêng, RevocationMode = NoCheck — chỉ là sample lab), nút cổ chai/SPOF (HSM, TSA, CA là SPOF cho ký, không cho nhận đơn), điểm đánh đổi (OCSP vs CRL; lưu trạng thái lúc ký; khóa riêng cho ngân hàng; đóng dấu lại định kỳ), rủi ro (TSA lỗi cuối tháng — hạn của ngân hàng, giả định), câu hỏi mở với người phụ trách theo vai trò, mục 'Câu hỏi phản biện' 4–5 câu trỏ ADR 0015/0022/0023/0029 và driver. Không code."
+    suggested_path: "docs/design/bank-signing-design-review.md"
+  - lesson: sysdesign.l4.payment-reconciliation-requirements
+    need: "STAGE.md: thêm 6 file trên vào bảng file → bài. Thứ tự trong `/repo-stage 4`: sau ADR 0015/0022/0023, audit-log.md, compliance-controls.md, design-review-template.md, system-design-method.md và các tài liệu của multi-shop-and-notifications; trước fitness-functions.md."
+    suggested_path: "STAGE.md"
+
+open_questions:
+  - "Số ADR: 0028 = đối soát hoàn tiền hằng ngày với báo cáo của cổng; 0029 = ký bảng kê cho ngân hàng kèm dấu thời gian và trạng thái thu hồi; đều 'Đã chấp nhận', chưa xây. Đề xuất: chấp nhận; ADR GĐ4 tiếp theo từ 0030."
+  - "Stage-4 không có code đối soát hay ký bảng kê: chỉ 6 tài liệu (2 yêu cầu, 2 ADR, 2 design review), trích code stage-3 có sẵn (`fake-gateway/Program.cs`, `Payment.cs`, `RefundSender.cs`, `GatewayRefundClient.cs`) và hai sample ký đã hẹn (`InvoiceSigning.cs`, `InvoiceCertificates.cs`). Đề xuất: chấp nhận, như tiền lệ multi-shop-and-notifications."
+  - "'Báo cáo quyết toán' (settlement report): stage-3 không có file tên như vậy; Cổng A có xuất lịch sử hoàn tiền CSV mọi lúc (T7 của payment-gateway-evaluation.md, bước 3 ADR 0010), lab có `GET /v1/refunds` của fake-gateway. Đề xuất: coi đó là báo cáo của cổng; việc báo cáo của Cổng A có liệt kê idempotency key là giả định trong reconciliation-requirements.md với người xác nhận (lập trình viên làm tích hợp). Nếu chủ muốn bỏ term `settlement-report`, bài 1 nói bằng lời 'báo cáo của cổng' và bỏ mục 3 khỏi vocab."
+  - "Phạm vi đối soát chỉ gồm hoàn tiền: Đơn Hàng không có luồng thu tiền (refund-design.md, 'Không làm trong thiết kế này'); hoàn tay đơn chuyển khoản của R4 nằm ngoài cổng nên ngoài phạm vi. Đề xuất: chấp nhận, ghi ở mục phạm vi."
+  - "Sửa đơn khi cổng đã hoàn mà dòng `failed` (đơn đã về `paid`): `Order.CompleteRefund()` chỉ nhận đơn `refunding` (Entities.cs stage-3), nên gửi lại `payment.refunded` sẽ thành poison message. Đề xuất: không thiết kế bước sửa ở đây — câu hỏi mở trong reconciliation-design-review.md, người phụ trách theo vai trò (đội Đặt hàng của ADR 0025); không đổi code stage-4."
+  - "Vai trò sửa chỗ lệch: nhân viên đề xuất, kế toán duyệt (tách nhiệm vụ). Đề xuất: giả định dự án; đổi thì sửa outline bài 2 và 3."
+  - "Ký cho ngân hàng: chứng chỉ do CA ngân hàng chỉ định cấp (giả định), khóa riêng cho ngân hàng trong HSM của nhà cung cấp (giữ ADR 0023), HSM riêng bị từ chối theo lý do ADR 0023, mở lại qua điều kiện 'hợp đồng đòi máy riêng' của ADR 0022. Đề xuất: chấp nhận; không quyết lại 0015/0022/0023."
+  - "Tài liệu được ký là 'bảng kê hằng tháng các khoản thanh toán và hoàn tiền của các cửa hàng thuộc ngân hàng' do Payments ký (Payments là chủ dữ liệu tiền và người duy nhất gọi HSM theo ADR 0015). Đề xuất: chấp nhận; nếu chủ muốn tài liệu khác (hợp đồng, hóa đơn), chỉ đổi mục 2 bài 5 và tên ADR 0029."
+  - "Nội dung TT-1…TT-7 của compliance-controls.md chưa viết (tài liệu stage-4). Đề xuất: bank-signing-requirements.md trỏ TT-n theo số sau khi compliance-controls.md đã viết, không chép lại; outline chỉ nhắc audit log và separation of duties, hai control mà outline management.l4.compliance-controls đã nêu."
+  - "Số giả định của dự án: đối soát mỗi ngày, kết quả trước sáng ngày làm việc kế tiếp, chờ thêm một lần chạy trước khi coi dòng thiếu là lệch, giữ dòng báo cáo bằng thời gian giữ dòng hoàn tiền; bảng kê kiểm được 10 năm, nhiều nhất vài trăm bảng kê mỗi tháng, được chờ ký vài giờ, hạn của ngân hàng. Đề xuất: chấp nhận; `/repo-stage 4` đổi số thì sửa outline trước khi sinh bài."
+  - "Không nêu số RFC/chuẩn cho CRL, OCSP, dấu thời gian, đóng dấu lại (quyết định 'compliance chung chung, không chuẩn'); claim về cơ chế là `kind: behaviour` ở mức nguyên lý. Đề xuất: chấp nhận; reviewer 04 kiểm bằng tài liệu .NET về `X509Chain`/`X509RevocationMode` cho câu về sample, phần còn lại có thể `unverified` kind concept (không chặn D1)."
+  - "Glossary +7: `reconciliation`, `settlement-report`, `certificate-revocation`, `crl` (vi_keep), `ocsp` (vi_keep), `trusted-timestamp`, `timestamp-authority` (vi_keep, alias TSA). `backend.l3.*`/`backend.l4.data-ownership`/`management.l2.*` (học trước) đã dùng chữ 'reconcile/reconciliation' như lời thường → chấp nhận W L15 như tiền lệ `weighted-scoring-matrix`. Đề xuất: chấp nhận."
