@@ -15,7 +15,7 @@ vocab: [rabbitmq-exchange, rabbitmq-binding, routing-key, publish-subscribe]
 example_tag: stage-3
 versions_used: [rabbitmq, rabbitmq_client]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-14T05:23:12+07:00"
 ---

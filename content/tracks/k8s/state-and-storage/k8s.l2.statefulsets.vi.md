@@ -15,7 +15,7 @@ vocab: [statefulset]
 example_tag: stage-3
 versions_used: [kubernetes, kind, postgresql, argocd]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-15T09:50:14+07:00"
 ---

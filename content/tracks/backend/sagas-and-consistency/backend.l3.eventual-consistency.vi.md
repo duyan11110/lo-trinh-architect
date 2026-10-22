@@ -15,7 +15,7 @@ vocab: [strong-consistency, eventual-consistency]
 example_tag: stage-3
 versions_used: [postgresql, rabbitmq, aspnetcore, docker]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-14T17:49:29+07:00"
 ---

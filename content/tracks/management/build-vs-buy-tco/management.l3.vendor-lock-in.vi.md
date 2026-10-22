@@ -15,7 +15,7 @@ vocab: [vendor-lock-in]
 example_tag: stage-3
 versions_used: [aspnetcore, keycloak]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-21T11:20:21+07:00"
 ---

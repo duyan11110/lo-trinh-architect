@@ -15,7 +15,7 @@ vocab: [custom-resource-definition, custom-resource]
 example_tag: stage-3
 versions_used: [kubernetes, kind, metallb, helm, argocd, traefik]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-20T12:07:40+07:00"
 ---

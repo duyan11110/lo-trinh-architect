@@ -15,7 +15,7 @@ vocab: [sync-wave, argocd-hook]
 example_tag: stage-3
 versions_used: [argocd, kubernetes, efcore]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-21T21:26:49+07:00"
 ---

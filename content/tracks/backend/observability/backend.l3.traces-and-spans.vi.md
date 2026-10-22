@@ -15,7 +15,7 @@ vocab: [distributed-trace, trace-span, tempo]
 example_tag: stage-3
 versions_used: [tempo, grafana, alloy, rabbitmq]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-15T15:35:41+07:00"
 ---

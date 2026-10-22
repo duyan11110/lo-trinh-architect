@@ -15,7 +15,7 @@ vocab: [saga-choreography, saga-orchestration]
 example_tag: stage-3
 versions_used: [rabbitmq, rabbitmq_client]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-14T21:55:08+07:00"
 ---

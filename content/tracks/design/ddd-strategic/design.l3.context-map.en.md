@@ -15,7 +15,7 @@ vocab: [context-map, upstream-context, downstream-context]
 example_tag: stage-2
 versions_used: [dotnet, aspnetcore, keycloak]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-21T21:01:25+07:00"
 ---

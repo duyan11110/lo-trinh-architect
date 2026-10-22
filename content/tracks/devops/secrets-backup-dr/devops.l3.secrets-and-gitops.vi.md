@@ -15,7 +15,7 @@ vocab: []
 example_tag: stage-2
 versions_used: [kubernetes, argocd, git]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-13T20:06:06+07:00"
 ---

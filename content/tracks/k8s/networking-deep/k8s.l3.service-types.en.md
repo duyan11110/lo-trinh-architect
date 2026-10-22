@@ -15,7 +15,7 @@ vocab: [nodeport-service, loadbalancer-service]
 example_tag: stage-3
 versions_used: [kubernetes, kind, docker]
 content_version: 1
-status: approved
+status: published
 ---
 
 ## Before you start

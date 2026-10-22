@@ -15,7 +15,7 @@ vocab: [build-vs-buy]
 example_tag: stage-2
 versions_used: [keycloak, mailkit, docker]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-21T07:48:04+07:00"
 ---

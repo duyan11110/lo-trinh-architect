@@ -15,7 +15,7 @@ vocab: [managed-service]
 example_tag: stage-3
 versions_used: [keycloak, docker]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-21T10:15:55+07:00"
 ---

@@ -15,7 +15,7 @@ vocab: [cordon, node-drain, pod-disruption-budget]
 example_tag: stage-3
 versions_used: [kubernetes, kind, local_path_provisioner]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-20T19:54:02+07:00"
 ---

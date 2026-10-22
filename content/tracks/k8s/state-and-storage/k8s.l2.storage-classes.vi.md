@@ -15,7 +15,7 @@ vocab: [storage-class, dynamic-provisioning]
 example_tag: stage-3
 versions_used: [kubernetes, kind]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-22T00:15:38+07:00"
 ---

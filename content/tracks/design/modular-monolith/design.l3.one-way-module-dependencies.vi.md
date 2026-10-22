@@ -15,7 +15,7 @@ vocab: []
 example_tag: stage-3
 versions_used: [dotnet, git]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-13T23:34:57+07:00"
 ---

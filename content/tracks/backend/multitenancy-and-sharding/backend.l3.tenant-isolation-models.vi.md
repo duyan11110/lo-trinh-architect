@@ -15,7 +15,7 @@ vocab: [shared-table-tenancy, schema-per-tenant, database-per-tenant]
 example_tag: stage-3
 versions_used: [postgresql]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-20T00:06:25+07:00"
 ---

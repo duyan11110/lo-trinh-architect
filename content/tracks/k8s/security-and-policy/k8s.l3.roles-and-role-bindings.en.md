@@ -15,7 +15,7 @@ vocab: [k8s-role, role-binding, least-privilege]
 example_tag: stage-3
 versions_used: [kubernetes, kind]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-15T17:23:19+07:00"
 ---

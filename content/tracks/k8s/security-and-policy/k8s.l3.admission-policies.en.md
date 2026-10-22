@@ -15,7 +15,7 @@ vocab: [validating-admission-policy, cel, admission-webhook]
 example_tag: stage-3
 versions_used: [kubernetes, argocd]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-16T00:38:55+07:00"
 ---

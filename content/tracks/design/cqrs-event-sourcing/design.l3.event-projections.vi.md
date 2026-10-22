@@ -15,7 +15,7 @@ vocab: [event-projection]
 example_tag: stage-3
 versions_used: [dotnet, efcore]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-15T10:11:27+07:00"
 ---

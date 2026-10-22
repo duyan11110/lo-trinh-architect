@@ -15,7 +15,7 @@ vocab: [lock-file, transitive-dependency]
 example_tag: stage-3
 versions_used: [dotnet, flutter, docker, github_actions, git]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-14T07:11:21+07:00"
 ---

@@ -15,7 +15,7 @@ vocab: [web-bundle, tree-shaking]
 example_tag: stage-3
 versions_used: [flutter, caddy]
 content_version: 1
-status: reviewed
+status: draft
 approved_by: null
 reviewed_at: "2026-10-20T12:25:38+07:00"
 ---

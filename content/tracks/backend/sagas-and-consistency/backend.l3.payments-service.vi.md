@@ -15,7 +15,7 @@ vocab: []
 example_tag: stage-3
 versions_used: [docker, aspnetcore, efcore, postgresql, rabbitmq]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-14T13:54:40+07:00"
 ---

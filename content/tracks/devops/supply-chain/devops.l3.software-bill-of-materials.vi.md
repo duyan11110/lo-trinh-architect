@@ -15,7 +15,7 @@ vocab: [sbom]
 example_tag: stage-3
 versions_used: [syft, docker, dotnet, github_actions]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-14T09:22:26+07:00"
 ---

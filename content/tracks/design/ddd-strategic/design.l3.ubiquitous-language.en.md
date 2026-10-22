@@ -15,7 +15,7 @@ vocab: [ubiquitous-language]
 example_tag: stage-2
 versions_used: [dotnet, git]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-21T17:20:01+07:00"
 ---

@@ -15,7 +15,7 @@ vocab: []
 example_tag: stage-2
 versions_used: [dotnet, aspnetcore, mailkit, stackexchange_redis, npgsql_efcore, mailpit]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-16T01:05:52+07:00"
 ---

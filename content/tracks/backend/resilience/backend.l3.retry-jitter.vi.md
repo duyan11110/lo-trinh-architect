@@ -15,7 +15,7 @@ vocab: [jitter]
 example_tag: stage-3
 versions_used: [dotnet, postgresql, docker, xunit]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-16T04:08:03+07:00"
 ---

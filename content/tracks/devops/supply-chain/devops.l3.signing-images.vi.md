@@ -15,7 +15,7 @@ vocab: [image-signature, cosign, keyless-signing, transparency-log]
 example_tag: stage-3
 versions_used: [cosign, github_actions, ghcr, docker]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-14T11:53:31+07:00"
 ---

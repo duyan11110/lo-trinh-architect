@@ -15,7 +15,7 @@ vocab: [service-account]
 example_tag: stage-3
 versions_used: [kubernetes, kind]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-15T18:19:49+07:00"
 ---

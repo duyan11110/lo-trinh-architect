@@ -15,7 +15,7 @@ vocab: [rate-limiting]
 example_tag: stage-3
 versions_used: [dotnet, aspnetcore, prometheus_net, caddy, docker]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-19T20:04:00+07:00"
 ---

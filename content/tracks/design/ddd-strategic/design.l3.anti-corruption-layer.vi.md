@@ -15,7 +15,7 @@ vocab: [anti-corruption-layer]
 example_tag: stage-2
 versions_used: [aspnetcore, keycloak, mailkit]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-21T22:22:33+07:00"
 ---

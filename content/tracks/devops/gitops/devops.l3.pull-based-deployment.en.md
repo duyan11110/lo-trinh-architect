@@ -15,7 +15,7 @@ vocab: [gitops, pull-based-deployment]
 example_tag: stage-2
 versions_used: [kubernetes, kind, github_actions, opentofu]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-21T17:59:15+07:00"
 ---

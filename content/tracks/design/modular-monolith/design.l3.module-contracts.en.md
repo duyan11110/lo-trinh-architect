@@ -15,7 +15,7 @@ vocab: [module-contract]
 example_tag: stage-3
 versions_used: [dotnet, aspnetcore, efcore, git]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-13T21:07:19+07:00"
 ---

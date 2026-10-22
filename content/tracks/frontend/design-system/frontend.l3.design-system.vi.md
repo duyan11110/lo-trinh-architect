@@ -15,7 +15,7 @@ vocab: [design-system]
 example_tag: stage-2
 versions_used: [flutter, git]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-20T19:03:44+07:00"
 ---

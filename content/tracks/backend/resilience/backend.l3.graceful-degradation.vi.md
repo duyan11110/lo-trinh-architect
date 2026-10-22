@@ -15,7 +15,7 @@ vocab: [graceful-degradation]
 example_tag: stage-2
 versions_used: [dotnet, aspnetcore, efcore, stackexchange_redis, kubernetes, docker]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-16T02:41:31+07:00"
 ---

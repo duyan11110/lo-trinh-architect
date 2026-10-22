@@ -15,7 +15,7 @@ vocab: [infrastructure-as-code]
 example_tag: stage-2
 versions_used: [kind, kubernetes, opentofu, opentofu_provider_kind]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-08T11:41:16+07:00"
 ---

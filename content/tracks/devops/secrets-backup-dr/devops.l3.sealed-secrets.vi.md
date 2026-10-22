@@ -15,7 +15,7 @@ vocab: [sealed-secret, sealing-key]
 example_tag: stage-3
 versions_used: [kubernetes, argocd, sealed_secrets, opentofu]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-13T21:10:48+07:00"
 ---

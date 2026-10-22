@@ -15,7 +15,7 @@ vocab: [self-heal]
 example_tag: stage-3
 versions_used: [argocd, kubernetes]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-21T22:20:54+07:00"
 ---

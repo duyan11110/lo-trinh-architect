@@ -15,7 +15,7 @@ vocab: [tofu-workspace]
 example_tag: stage-3
 versions_used: [opentofu, opentofu_provider_kind, opentofu_provider_kubernetes, kind]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-08T11:41:16+07:00"
 ---

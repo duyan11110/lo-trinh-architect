@@ -15,7 +15,7 @@ vocab: [contrast-ratio, wcag]
 example_tag: stage-3
 versions_used: [flutter, git]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-21T02:09:32+07:00"
 ---

@@ -15,7 +15,7 @@ vocab: [idempotent-consumer, inbox]
 example_tag: stage-3
 versions_used: [dotnet, efcore, postgresql, rabbitmq]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-14T11:23:06+07:00"
 ---

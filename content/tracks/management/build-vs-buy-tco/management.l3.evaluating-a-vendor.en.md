@@ -15,7 +15,7 @@ vocab: []
 example_tag: stage-3
 versions_used: []
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-21T14:38:30+07:00"
 ---

@@ -15,7 +15,7 @@ vocab: [event-snapshot]
 example_tag: stage-3
 versions_used: [dotnet]
 content_version: 1
-status: approved
+status: published
 ---
 
 ## Bạn cần biết trước

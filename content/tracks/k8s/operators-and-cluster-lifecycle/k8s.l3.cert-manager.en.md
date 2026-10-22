@@ -15,7 +15,7 @@ vocab: [cert-manager]
 example_tag: stage-3
 versions_used: [kubernetes, kind, cert_manager, gateway_api]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-20T13:17:58+07:00"
 ---

@@ -15,7 +15,7 @@ vocab: [kube-proxy, endpoint-slice, ebpf]
 example_tag: stage-3
 versions_used: [kubernetes, kind, docker]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-16T04:18:47+07:00"
 ---

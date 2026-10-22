@@ -15,7 +15,7 @@ vocab: [secret-rotation]
 example_tag: stage-3
 versions_used: [keycloak, aspnetcore, postgresql, kubernetes, sealed_secrets, argocd]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-13T22:18:03+07:00"
 ---

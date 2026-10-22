@@ -15,7 +15,7 @@ vocab: [poison-message, dead-letter-queue]
 example_tag: stage-3
 versions_used: [dotnet, rabbitmq, rabbitmq_client]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-14T12:41:23+07:00"
 ---

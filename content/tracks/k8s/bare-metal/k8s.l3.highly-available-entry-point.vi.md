@@ -15,7 +15,7 @@ vocab: [single-point-of-failure, high-availability, topology-spread-constraint]
 example_tag: stage-3
 versions_used: [kubernetes, kind, docker, helm, metallb, traefik]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-20T06:35:36+07:00"
 ---

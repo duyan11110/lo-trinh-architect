@@ -15,7 +15,7 @@ vocab: [bounded-context]
 example_tag: stage-2
 versions_used: [keycloak, dotnet, git]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-21T18:09:05+07:00"
 ---

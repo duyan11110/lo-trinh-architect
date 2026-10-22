@@ -15,7 +15,7 @@ vocab: [message-broker, message-queue, rabbitmq]
 example_tag: stage-3
 versions_used: [rabbitmq, docker, aspnetcore, postgresql]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-14T04:25:16+07:00"
 ---

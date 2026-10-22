@@ -15,7 +15,7 @@ vocab: [k8s-ingress, ingress-controller]
 example_tag: stage-3
 versions_used: [kubernetes, traefik]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-14T18:47:40+07:00"
 ---

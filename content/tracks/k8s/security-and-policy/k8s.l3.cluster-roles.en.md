@@ -15,7 +15,7 @@ vocab: [cluster-role, cluster-role-binding]
 example_tag: stage-3
 versions_used: [kubernetes, kind, argocd]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-15T19:22:51+07:00"
 ---

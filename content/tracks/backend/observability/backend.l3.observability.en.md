@@ -15,7 +15,7 @@ vocab: [observability, telemetry]
 example_tag: stage-2
 versions_used: [dotnet, aspnetcore, loki, alloy, grafana, prometheus]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-21T23:20:07+07:00"
 ---
