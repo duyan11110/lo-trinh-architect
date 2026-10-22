@@ -188,6 +188,48 @@ skills:
     vi: "Bảo trì node và nâng cấp cluster mà ứng dụng vẫn chạy"
     en: "Maintaining nodes and upgrading a cluster while apps keep running"
   prereqs: [k8s.lifecycle.bootstrap, k8s.workloads.replication, k8s.bare-metal.high-availability]
+- id: k8s.tenancy.shared-cluster
+  title:
+    vi: "Chia một cluster cho nhiều nhóm bằng namespace và quota"
+    en: "Sharing a cluster between teams with namespaces and quotas"
+  prereqs:
+  - k8s.security.access
+  - k8s.config.resources
+  - k8s.security.network-policy
+  - backend.tenancy.isolation
+- id: k8s.multicluster.boundaries
+  title:
+    vi: "Khi nào cần thêm một cluster"
+    en: "When to add another cluster"
+  prereqs: [k8s.tenancy.shared-cluster, k8s.lifecycle.maintenance, design.architecture.drivers]
+- id: k8s.multicluster.fleet-gitops
+  title:
+    vi: "Triển khai lên nhiều cluster từ một Argo CD"
+    en: "Deploying to many clusters from one Argo CD"
+  prereqs: [k8s.multicluster.boundaries, devops.gitops.sync, k8s.security.access]
+- id: k8s.multicluster.failover
+  title:
+    vi: "Failover giữa các cluster và giữa các region"
+    en: "Failing over between clusters and regions"
+  prereqs:
+  - k8s.multicluster.fleet-gitops
+  - k8s.bare-metal.high-availability
+  - backend.data.replication
+  - devops.dr.recovery
+- id: k8s.mesh.mutual-tls
+  title:
+    vi: "Mutual TLS giữa các service"
+    en: "Mutual TLS between services"
+  prereqs: [k8s.traffic.tls, k8s.extending.custom-resources, backend.security.layered-controls]
+- id: k8s.mesh.service-mesh
+  title:
+    vi: "Service mesh: nó làm gì và khi nào đáng dùng"
+    en: "Service meshes: what they do and when they pay off"
+  prereqs:
+  - k8s.mesh.mutual-tls
+  - backend.resilience.call-policies
+  - backend.observability.tracing
+  - management.decisions.records
 levels:
 - level: 1
   title:
@@ -2089,3 +2131,297 @@ levels:
       - "Seniors often assume worker nodes can be upgraded before the control plane."
       - "Seniors often assume an upgrade changes only Kubernetes, so the applications' manifests need no review."
       depth_notes: "Không dạy lệnh cài gói kubelet/kubeadm theo hệ điều hành, nâng cấp etcd riêng, thay node mới thay vì nâng cấp tại chỗ, nâng cấp managed cluster và tự động hóa (GĐ4), con số thời gian hỗ trợ từng minor version. Lab chỉ đọc."
+- level: 4
+  title:
+    vi: "Level 4"
+    en: "Level 4"
+  modules:
+  - id: multi-cluster-and-mesh
+    title:
+      vi: "Nhiều cluster, failover giữa region và service mesh"
+      en: "Many clusters, failover between regions and service meshes"
+    stage: 4
+    summary:
+      vi: "Biết namespace chia được gì trong một cluster và khi nào thêm cluster đáng cái giá của nó, triển khai lên nhiều cluster từ một Argo CD, chuyển traffic giữa hai cluster khi một bên hỏng và hiểu dữ liệu quyết định mất gì (ADR 0020), bảo vệ lời gọi giữa service bằng mutual TLS, tự làm rồi qua sidecar, trước khi quyết trong ADR 0021 service mesh có đáng dùng không."
+      en: "Know what namespaces can share in one cluster and when another cluster is worth its cost, deploy to several clusters from one Argo CD, move traffic between two clusters when one fails knowing the data decides what is lost (ADR 0020), and secure calls between services with mutual TLS, by hand and through a sidecar, before deciding in ADR 0021 whether a service mesh pays off."
+    lessons:
+    - id: k8s.l4.sharing-a-cluster
+      title:
+        vi: "Namespace chia một cluster cho nhiều nhóm, nhưng control plane vẫn là của chung"
+        en: "Namespaces share a cluster between teams, never its control plane"
+      main_path: true
+      duration_min: 14
+      skills: [k8s.tenancy.shared-cluster]
+      prereqs:
+      - k8s.l3.roles-and-role-bindings
+      - k8s.l1.requests-and-limits
+      - k8s.l3.network-policies
+      - backend.l3.multi-tenancy
+      related:
+      - k8s.l1.namespaces
+      - k8s.l3.pod-security-admission
+      - k8s.l3.custom-resources
+      - design.l4.one-deployment-for-all-shops
+      vocab: [resource-quota, limit-range]
+      example_tag: stage-4
+      example_files:
+      - deploy/k8s/lessons/team-quota.yaml
+      - deploy/k8s/lessons/team-limit-range.yaml
+      - scripts/k8s/team-quota.sh
+      outline:
+      - "Each namespace can get its own RoleBindings, NetworkPolicies and Pod Security level, so several teams can share one cluster with separate rights, connections and rules."
+      - "A ResourceQuota caps what all Pods of one namespace may claim together, such as the sum of their CPU and memory requests and the number of Pods; the API server refuses a Pod that would go over it."
+      - "`team-quota.sh` scales a Deployment in `tenancy-lessons` past `team-quota.yaml`: the extra Pods are never created, and the ReplicaSet's events show the refusal with `exceeded quota`."
+      - "Once a quota covers CPU or memory requests, a Pod that sets none is refused; a LimitRange such as `team-limit-range.yaml` gives such Pods default requests and limits instead."
+      - "Namespaces do not divide the nodes' kernel, the control plane or cluster-wide objects such as CRDs, so one team's CRD upgrade or an overloaded API server affects every team."
+      - "Namespaces fit teams of one company that trust each other; tenants that must neither affect nor see each other need separate clusters, the question of the next lesson."
+      misconceptions:
+      - "A namespace is a small separate cluster with resources of its own."
+      - "A ResourceQuota slows a namespace down once its Pods use too much CPU."
+      - "Each of Đơn Hàng's shops should get its own namespace to keep their data apart."
+      depth_notes: "Không dạy quota đếm object, scope của quota, API Priority and Fairness, namespace phân cấp, virtual cluster, runtime cách ly kernel. Cửa hàng là tenant trong ứng dụng (ADR 0012), không phải namespace. Không dạy lại RBAC, request/limit — k8s.l3.roles-and-role-bindings, k8s.l1.requests-and-limits."
+    - id: k8s.l4.why-more-than-one-cluster
+      title:
+        vi: "Thêm cluster chỉ đáng khi cần một ranh giới mà một cluster không giữ được"
+        en: "A second cluster pays off for a boundary one cluster cannot hold"
+      main_path: true
+      duration_min: 13
+      skills: [k8s.multicluster.boundaries]
+      prereqs:
+      - k8s.l4.sharing-a-cluster
+      - k8s.l3.cluster-upgrades
+      - devops.l3.one-state-per-environment
+      - design.l4.architectural-drivers
+      related:
+      - k8s.l3.admission-policies
+      - devops.l3.sealed-secrets
+      - management.l3.self-hosting-costs
+      - k8s.l3.control-plane-ha
+      vocab: [multi-cluster]
+      example_tag: stage-3
+      example_files:
+      - deploy/tofu/envs/staging/cluster/main.tf
+      - deploy/tofu/envs/production/cluster/main.tf
+      - deploy/sealed-secrets/controller.yaml
+      - docs/team/self-run-components.md
+      outline:
+      - "Everything in one cluster shares its control plane, etcd, network plugin and cluster-wide objects, so a failed upgrade or a broken admission webhook can stop work in every namespace at once."
+      - "Đơn Hàng already plans two clusters: OpenTofu builds production as `donhang-production` from the same module as staging, so nothing tried on staging, from a Kubernetes upgrade to a new CRD, reaches customers."
+      - "Other reasons to add a cluster are a second site that keeps serving when the first is lost, customers whose rules demand machines of their own, and the limits the Kubernetes project documents for one cluster's size."
+      - "Multi-cluster means running one system on several clusters, and each needs its own platform: Argo CD, Traefik, cert-manager and a Sealed Secrets controller, each with its own upgrades."
+      - "Each Sealed Secrets controller has its own sealing key, so a SealedSecret sealed for staging cannot be opened in production; unless the clusters share a key, every secret is sealed once per cluster."
+      - "Clusters are chosen by driver: environments and tenants that need hard isolation justify one each, while giving each team of one company its own cluster usually costs more than namespaces."
+      misconceptions:
+      - "More clusters always means higher availability."
+      - "Teams of the same company each need their own cluster to stop getting in each other's way."
+      - "A SealedSecret committed once works on every cluster that syncs the repository."
+      depth_notes: "Không nêu con số giới hạn kích thước cluster, công cụ quản lý fleet/Cluster API, một cluster cho mỗi cửa hàng (ADR 0012 đã chốt), managed vs tự vận hành (k8s/managed-vs-selfhosted). Triển khai lên nhiều cluster — bài sau. Không dạy lại nâng cấp cluster — k8s.l3.cluster-upgrades."
+    - id: k8s.l4.one-argo-cd-many-clusters
+      title:
+        vi: "ApplicationSet đưa một mẫu Application lên mọi cluster đã đăng ký"
+        en: "An ApplicationSet deploys one template to every registered cluster"
+      main_path: true
+      duration_min: 15
+      skills: [k8s.multicluster.fleet-gitops]
+      prereqs:
+      - k8s.l4.why-more-than-one-cluster
+      - devops.l3.argo-cd-applications
+      - k8s.l3.cluster-roles
+      - k8s.l2.config-repo-overlays
+      related:
+      - devops.l3.promoting-between-environments
+      - devops.l3.synced-versus-healthy
+      - k8s.l1.kubectl-and-the-api-server
+      - backend.l4.shared-credentials
+      vocab: [argocd-applicationset]
+      example_tag: stage-4
+      example_files:
+      - scripts/k8s/regions-up.sh
+      - deploy/gitops/lessons/regions-appset.yaml
+      - deploy/gitops/config-repo/platform/regions/echo-region.yaml
+      - scripts/k8s/applicationset.sh
+      outline:
+      - "`regions-up.sh` creates two one-node kind clusters, `donhang-north` and `donhang-south`, as stand-ins for two regions; one kubeconfig in `secrets/` holds a context for each, and `--context` picks the cluster per command."
+      - "Argo CD in `donhang-staging` deploys to another cluster once a Secret in `argocd` labelled `argocd.argoproj.io/secret-type: cluster` gives that cluster's API server address and credentials; `applicationset.sh` makes one per region."
+      - "An ApplicationSet holds an Application template and generators; its controller, part of Argo CD's install, creates one Application for each set of parameters the generators produce."
+      - "The cluster generator in `regions-appset.yaml` yields one set per registered cluster whose Secret carries the selected label, so each region gets an Application deploying `platform/regions/`, and staging gets none."
+      - "One commit to `platform/regions/` reaches both regions at their next sync, a mistake included; letting one region go first needs a separate path or revision per region in the template."
+      - "Argo CD now holds credentials that can change every registered cluster, so its blast radius, and that of write access to the config repository, covers all regions at once."
+      misconceptions:
+      - "Deploying to several clusters means running one Argo CD inside each of them."
+      - "An ApplicationSet is a larger Application that deploys to many clusters by itself."
+      - "With one template for all regions, a bad change can break only one region at a time."
+      depth_notes: "Không dạy generator khác (list, git, matrix), progressive sync, AppProject, `argocd cluster add`, so sánh Argo CD trung tâm với mỗi cluster một Argo CD, service discovery giữa cluster. Script xóa ApplicationSet và Secret cluster ở cuối. Không dạy lại Application — devops.l3.argo-cd-applications."
+    - id: k8s.l4.failover-between-clusters
+      title:
+        vi: "Một điểm vào đứng trước hai cluster chuyển traffic khi một bên hỏng"
+        en: "An entry in front of both clusters moves traffic when one fails"
+      main_path: true
+      duration_min: 15
+      skills: [k8s.multicluster.failover]
+      prereqs:
+      - k8s.l4.one-argo-cd-many-clusters
+      - k8s.l3.highly-available-entry-point
+      - k8s.l3.metallb-layer2-mode
+      - k8s.l1.readiness-probes
+      related:
+      - k8s.l3.service-types
+      - devops.l1.reverse-proxy-basics
+      - devops.l3.rpo-and-rto
+      - backend.l4.cap-theorem
+      vocab: [active-passive, active-active]
+      example_tag: stage-4
+      example_files:
+      - deploy/k8s/regions/global-entry.Caddyfile
+      - scripts/k8s/failover.sh
+      - deploy/gitops/config-repo/platform/regions/echo-region.yaml
+      outline:
+      - "Two clusters running the same Pods do not fail over by themselves: clients reach the system through one name or address, and something in front must send them to a cluster that works."
+      - "`failover.sh` starts `donhang-global-entry`, a Caddy container on the `kind` network whose `reverse_proxy` lists north before south with `lb_policy first` and an active health check on each."
+      - "Active-passive means one cluster serves all traffic while the other waits ready; with `lb_policy first`, every answer comes from north as long as its health check passes."
+      - "When the script pauses north's node, calls hang or fail until a health check marks north down; from then on south answers every call, with no change made to either cluster."
+      - "When north passes its checks again, `first` sends traffic back to it at once; teams often make failing back a manual step so that a region that keeps failing does not bounce customers."
+      - "Active-active means every cluster serves traffic at once, as `lb_policy round_robin` does here for stateless Pods; the lab's one entry container is a single point of failure that real setups spread over sites, often with DNS."
+      misconceptions:
+      - "If both clusters run the app, traffic moves to the healthy one automatically."
+      - "Failover switches traffic instantly, so no call fails while it happens."
+      - "Active-active is always better than active-passive because nothing sits idle."
+      depth_notes: "Không dạy DNS có kiểm tra sức khỏe, anycast, sản phẩm load balancer toàn cầu, service discovery giữa cluster, chỉnh thời gian health check. Dữ liệu khi failover — bài sau. Không dạy lại HA trong một cluster — k8s.l3.highly-available-entry-point. `failover.sh` không cần staging."
+    - id: k8s.l4.data-decides-failover
+      title:
+        vi: "Traffic chuyển trong vài giây; dữ liệu mới quyết định mất những gì"
+        en: "Traffic fails over in seconds; the data decides what is lost"
+      main_path: true
+      duration_min: 15
+      skills: [k8s.multicluster.failover]
+      prereqs:
+      - k8s.l4.failover-between-clusters
+      - backend.l3.read-replicas
+      - devops.l3.disaster-recovery-drill
+      - backend.l4.pacelc
+      related:
+      - devops.l3.rpo-and-rto
+      - backend.l4.cap-theorem
+      - devops.l3.point-in-time-recovery
+      - backend.l4.service-level-objectives
+      - management.l3.architecture-decision-record
+      vocab: [split-brain]
+      example_tag: stage-4
+      example_files:
+      - scripts/backend/promote-replica.sh
+      - db/replica/start.sh
+      - docs/adr/0020-mot-region-phuc-hoi-tu-ban-sao-luu.md
+      outline:
+      - "Pods come back in another region from the config repository, but orders exist only in the database, so a failover is only as good as the copy of the data waiting in the other region."
+      - "A standby fed by asynchronous replication, as `db-replica` is, lags its primary: commits the primary confirmed but had not yet sent are lost when the standby takes over, so RPO is the lag at that moment."
+      - "`promote-replica.sh` promotes `db-replica` with `pg_promote()` while `db` still runs: both then accept a different price for product 1 and disagree, two primaries at once, which is called split brain."
+      - "A standby is promoted only after the old primary is stopped or cut off from every client, since a region that looks dead from outside may still be taking orders."
+      - "Synchronous replication to another region keeps RPO at zero but makes every commit wait for a round trip between regions, the trade between latency and consistency that PACELC describes."
+      - "ADR `0020` keeps Đơn Hàng in one region and recovers in a second one from backups copied there, by the DR drill's steps; it is reopened when a contract asks for an RTO or RPO this cannot meet."
+      misconceptions:
+      - "Once traffic moves to the second region, every order made before the failure is there too."
+      - "Promoting the standby is safe as soon as the primary stops answering health checks."
+      - "Running both regions active-active only needs a load balancer in front of them."
+      depth_notes: "Không dạy cấu hình `synchronous_commit`, failover tự động bằng operator, database ghi nhiều nơi, chia đơn theo region. `promote-replica.sh` chạy trong Compose (profile `replica`). Không dạy lại replica, DR drill — backend.l3.read-replicas, devops.l3.disaster-recovery-drill."
+    - id: k8s.l4.mutual-tls
+      title:
+        vi: "Với mutual TLS, cả hai đầu của một lời gọi chứng minh mình là ai"
+        en: "With mutual TLS, both ends of a call prove who they are"
+      main_path: true
+      duration_min: 15
+      skills: [k8s.mesh.mutual-tls]
+      prereqs: [k8s.l3.cert-manager, backend.l4.pki-and-signing, backend.l4.api-gateway]
+      related:
+      - k8s.l2.tls-at-the-gateway
+      - backend.l4.threat-modeling
+      - k8s.l3.network-policies
+      - foundation.l1.tls-and-https
+      vocab: [mutual-tls]
+      example_tag: stage-4
+      example_files:
+      - deploy/k8s/lessons/mtls-certificates.yaml
+      - deploy/k8s/lessons/echo-mtls.yaml
+      - scripts/k8s/mutual-tls.sh
+      - docs/design/threat-model.md
+      outline:
+      - "Finding P5 of `threat-model.md` accepts that the Gateway calls the api Pods over plain HTTP: NetworkPolicies decide who may connect, but the bytes cross the node network unencrypted and the api knows a caller only by its address."
+      - "In ordinary TLS only the server shows a certificate; with mutual TLS (mTLS) the server also asks the client for one and checks it against a CA it trusts, so each end knows the other's name before any request."
+      - "`mtls-certificates.yaml` has cert-manager issue, from the lab CA, a server certificate for `echo-mtls` and a client certificate for a caller named `gateway-client`, each kept in its own Secret."
+      - "`echo-mtls.yaml` runs Caddy with the server certificate and `client_auth` set to `require_and_verify` against the lab CA; `mutual-tls.sh` calls it with no client certificate, then with one from another CA, and both handshakes fail."
+      - "With `gateway-client`'s certificate the call succeeds, and the server reads the caller's name from that certificate, an identity that does not depend on the caller's address."
+      - "Every workload now needs a key and a certificate that are renewed before they expire and trusted by its peers; cert-manager automates both, but which names may call which still has to be decided."
+      misconceptions:
+      - "A NetworkPolicy that lets only the Gateway connect already proves every request came from the Gateway."
+      - "Mutual TLS is ordinary HTTPS with a stronger cipher."
+      - "Once both sides have certificates, nothing about them needs looking after."
+      depth_notes: "Không dạy SPIFFE, thu hồi chứng chỉ, trust-manager, chứng chỉ client cho người dùng trình duyệt, TLS từ Gateway tới backend (BackendTLSPolicy). Lab trên `donhang`, namespace `mesh-lessons`. Không dạy lại cert-manager, chuỗi chứng chỉ — k8s.l3.cert-manager, backend.l4.pki-and-signing."
+    - id: k8s.l4.sidecar-proxies
+      title:
+        vi: "Service mesh đặt một proxy cạnh mỗi ứng dụng để lo các lời gọi của nó"
+        en: "A service mesh puts a proxy beside every app to handle its calls"
+      main_path: true
+      duration_min: 15
+      skills: [k8s.mesh.service-mesh]
+      prereqs:
+      - k8s.l4.mutual-tls
+      - k8s.l3.pod-network-model
+      - k8s.l3.service-accounts
+      - backend.l3.resilience-pipeline
+      related:
+      - backend.l3.traces-and-spans
+      - devops.l4.canary-release
+      - k8s.l3.operator-pattern
+      - k8s.l3.admission-policies
+      vocab: [sidecar-container, service-mesh]
+      example_tag: stage-4
+      example_files:
+      - deploy/k8s/lessons/echo-mtls-sidecar.yaml
+      - deploy/k8s/lessons/mtls-client-sidecar.yaml
+      - scripts/k8s/sidecar-proxy.sh
+      outline:
+      - "A sidecar container runs beside the app container in the same Pod; Kubernetes 1.34 marks one by listing it under `initContainers` with `restartPolicy: Always`, so it starts before the app and keeps running beside it."
+      - "In `echo-mtls-sidecar.yaml` the echo container answers plain HTTP on `localhost` only; a Caddy sidecar in the same Pod accepts mTLS on port 8443 and forwards to it, and the echo container is unchanged."
+      - "In `mtls-client-sidecar.yaml` the caller sends plain HTTP to its own sidecar on `localhost`, which opens the mTLS connection with the client certificate; `sidecar-proxy.sh` shows the call succeed while neither app container holds a key."
+      - "A service mesh automates this for every Pod: its controllers add the proxy to each Pod, give each workload a certificate, usually named after its ServiceAccount, renew it, and configure every proxy from objects in the API server."
+      - "Since every call passes through proxies, a mesh can also retry, time out, split calls between versions by weight or header and record each call, work Đơn Hàng's services do today in their own code."
+      - "Some meshes run one proxy per node instead of one per Pod, trading the memory of many sidecars for a shared component on each node."
+      misconceptions:
+      - "Adding a service mesh means changing every service's code to call the mesh."
+      - "A sidecar is just a second app container, and Kubernetes starts both in no particular order."
+      - "A service mesh replaces Kubernetes Services and their DNS names."
+      depth_notes: "Không nêu tên hay cài sản phẩm mesh nào (chưa có trong versions.yaml), không dạy chèn sidecar tự động bằng mutating webhook, cấu hình retry/chia traffic của mesh, giữ một khách trên một phiên bản, mesh giữa nhiều cluster. Có nên dùng mesh — bài sau. Lab trên `donhang`, namespace `mesh-lessons`."
+    - id: k8s.l4.when-a-mesh-pays-off
+      title:
+        vi: "Đơn Hàng chưa dùng service mesh khi cái giá của nó chưa mua được thứ còn thiếu"
+        en: "Đơn Hàng skips a service mesh until its cost buys something missing"
+      main_path: true
+      duration_min: 14
+      skills: [k8s.mesh.service-mesh]
+      prereqs:
+      - k8s.l4.sidecar-proxies
+      - management.l3.self-hosting-costs
+      - backend.l4.api-gateway
+      - management.l3.weighing-options-in-an-adr
+      related:
+      - backend.l4.threat-modeling
+      - devops.l4.release-strategy-per-component
+      - design.l4.over-abstraction
+      - k8s.l3.network-policies
+      vocab: []
+      example_tag: stage-4
+      example_files:
+      - docs/adr/0021-chua-dung-service-mesh.md
+      - docs/design/threat-model.md
+      - docs/team/self-run-components.md
+      outline:
+      - "A mesh adds a proxy to every Pod, costing memory and CPU on each and an extra hop on every call, and its controllers become one more platform component to upgrade and to understand when it breaks."
+      - "Because its proxies sit in every call path, one wrong mesh setting or a failed mesh upgrade can break calls between all services at once."
+      - "ADR `0021` maps each mesh feature to what Đơn Hàng already has: NetworkPolicies for who connects, token checks in each service, resilience pipelines, OpenTelemetry traces and HTTPRoute weights for canaries."
+      - "Encryption and proof of the caller's identity inside the cluster are the gaps left, so ADR `0021` declines a mesh for now and keeps finding P5 of `threat-model.md` accepted."
+      - "The ADR reopens the choice when a contract requires encryption inside the cluster, when services come from several teams or languages, or when services start calling across clusters."
+      - "For a company with many services in many languages a mesh is often cheaper than building mTLS, retries and per-call metrics into every codebase; with three .NET services and one team, Đơn Hàng is not there yet."
+      misconceptions:
+      - "Every production Kubernetes cluster should run a service mesh."
+      - "A service mesh is the only way to encrypt traffic between Pods."
+      - "Without a mesh, services have no retries, timeouts or per-call metrics."
+      depth_notes: "Không so sánh hay nêu tên sản phẩm mesh, không đo chi phí bằng số (chưa có metrics-server), không quyết lại ADR 0012, 0019. Không dạy lại mTLS, sidecar — k8s.l4.mutual-tls, k8s.l4.sidecar-proxies; cân nhắc phương án trong ADR — management.l3.weighing-options-in-an-adr."
