@@ -217,6 +217,31 @@ skills:
     vi: "Golden path cho service mới"
     en: "A golden path for new services"
   prereqs: [devops.platform.engineering, k8s.packaging.kustomize, k8s.security.admission-policy]
+- id: devops.alerting.symptoms
+  title:
+    vi: "Cảnh báo theo triệu chứng khách cảm nhận"
+    en: "Alerting on the symptoms customers feel"
+  prereqs: [backend.reliability.slo, devops.monitoring.dashboards]
+- id: devops.alerting.burn-rate
+  title:
+    vi: "Cảnh báo theo tốc độ tiêu error budget bằng rule của Prometheus"
+    en: "Alerting on error budget burn rate with Prometheus rules"
+  prereqs: [devops.alerting.symptoms, devops.monitoring.metrics, backend.reliability.slo]
+- id: devops.incident.on-call
+  title:
+    vi: "Trực sự cố và xử lý theo runbook"
+    en: "Being on-call and working from runbooks"
+  prereqs: [devops.alerting.burn-rate, devops.gitops.change-flow, devops.dr.recovery]
+- id: devops.incident.response
+  title:
+    vi: "Điều phối một sự cố và báo cho người bị ảnh hưởng"
+    en: "Coordinating an incident and keeping those affected informed"
+  prereqs: [devops.incident.on-call, management.communication.stakeholders]
+- id: devops.incident.postmortem
+  title:
+    vi: "Viết postmortem không đổ lỗi và theo tới khi xong action item"
+    en: "Writing blameless postmortems and following actions through"
+  prereqs: [devops.incident.response, management.debt.managing, devops.delivery.metrics]
 levels:
 - level: 1
   title:
@@ -2295,3 +2320,248 @@ levels:
       - "A service generated from the template stays up to date with the platform."
       - "The more options the template offers, the better the golden path."
       depth_notes: "Không dạy developer portal, sinh job CI hay code C# cho service mới; không thêm service thật vào Đơn Hàng. Không dạy lại Kustomize, admission policy, fitness function — k8s.l2.kustomize-overlays, k8s.l3.admission-policies, design.l4.fitness-functions."
+  - id: incidents
+    title:
+      vi: "Sự cố: cảnh báo, trực và postmortem"
+      en: "Incidents: alerting, on-call and postmortems"
+    stage: 4
+    summary:
+      vi: "Cảnh báo cho Đơn Hàng theo tốc độ tiêu error budget của các SLI trong `slo.md` bằng recording rule và alerting rule trên Prometheus của staging, có test bằng promtool; tổ chức trực sự cố, xử lý theo runbook đã diễn tập, điều phối một sự cố và viết postmortem không đổ lỗi."
+      en: "Alert on Đơn Hàng's error budget burn rate for the SLIs in `slo.md` with recording and alerting rules on staging's Prometheus, tested with promtool; organise on-call, act from a drilled runbook, coordinate an incident and write a blameless postmortem."
+    lessons:
+    - id: devops.l4.alerting-on-symptoms
+      title:
+        vi: "Cảnh báo theo điều khách cảm nhận, không theo từng nguyên nhân có thể"
+        en: "Alert on what customers feel, not on every possible cause"
+      main_path: true
+      duration_min: 13
+      skills: [devops.alerting.symptoms]
+      prereqs:
+      - backend.l4.error-budget
+      - backend.l4.service-level-indicators
+      - devops.l2.grafana-dashboards
+      - devops.l4.canary-release
+      related:
+      - devops.l2.why-monitoring
+      - backend.l3.queue-backlog-metrics
+      - backend.l3.dead-letter-queue
+      - devops.l3.restore-testing
+      vocab: [alert, incident, alert-fatigue]
+      example_tag: stage-4
+      example_files:
+      - docs/design/alerts.md
+      - docs/design/slo.md
+      - deploy/monitoring/grafana/dashboards/donhang-api.json
+      outline:
+      - "An alert is a condition checked automatically that tells a person something needs attention; an incident is an unplanned loss or degradation of the service customers receive."
+      - "An alert on a cause, such as high CPU or a restarted Pod, fires when customers notice nothing and stays silent when a cause nobody listed breaks the service."
+      - "Alerts that need no action teach people to ignore alerts, which is alert fatigue, until the alert that matters is ignored too."
+      - "An alert on a symptom watches what customers feel, the SLIs of `slo.md`, so any cause that hurts customers trips it and a cause that hurts no one stays quiet."
+      - "`alerts.md` lists Đơn Hàng's SLI alerts and the cause alerts that wait for working hours, such as messages in a dead-letter queue or a failed restore test."
+      - "Causes still belong on dashboards: the person who receives a symptom alert opens them to find out why it fired."
+      misconceptions:
+      - "The more alerts we have, the safer the system is."
+      - "High CPU on a server is a good reason to wake someone up at night."
+      - "If the dashboard shows everything, we do not need alerts."
+      depth_notes: "Chưa dạy rule của Prometheus — devops.l4.recording-rules, devops.l4.burn-rate-alerts; trực — devops.l4.on-call. Không dạy alert của Grafana, alert từ log. Không dạy lại SLI, dashboard — backend.l4.service-level-indicators, devops.l2.grafana-dashboards."
+    - id: devops.l4.recording-rules
+      title:
+        vi: "Recording rule lưu kết quả một truy vấn thành time series mới"
+        en: "A recording rule saves a query's result as a new time series"
+      main_path: true
+      duration_min: 14
+      skills: [devops.alerting.burn-rate]
+      prereqs:
+      - devops.l4.alerting-on-symptoms
+      - devops.l2.counters-and-rate
+      - devops.l2.histograms-and-percentiles
+      - backend.l4.service-level-indicators
+      related: [devops.l4.canary-release, devops.l2.prometheus-scraping, backend.l4.error-budget]
+      vocab: [recording-rule]
+      example_tag: stage-4
+      example_files:
+      - deploy/gitops/config-repo/platform/monitoring/rules/slo.rules.yml
+      - deploy/gitops/config-repo/platform/monitoring/prometheus.yaml
+      - docs/design/slo.md
+      outline:
+      - "Prometheus evaluates the rules in the rule files its configuration lists, group by group at a regular interval; a recording rule stores its expression's result as a new time series under the name it gives."
+      - "`slo.rules.yml` records, for each SLI of `slo.md`, the share of bad requests over several windows, such as 5 minutes and 1 hour, so alerts and dashboards read one series instead of repeating the query."
+      - "Each recorded share adds up the requests of every api Deployment staging's Prometheus scrapes, so the requests a canary serves count against the SLI like the others."
+      - "The recorded names follow the form `level:metric:operations` that the Prometheus documentation recommends, so the name tells a reader what was aggregated and how."
+      - "A recording rule starts writing values when it is loaded and does not fill in the past by itself, so a new rule's 1-hour series is incomplete during its first hour."
+      misconceptions:
+      - "A recording rule is a saved query that only runs when someone opens a dashboard."
+      - "A recording rule changes the metrics the api itself exports."
+      - "Once a 1-hour recording rule is added, its series already covers the hour before."
+      depth_notes: "Chưa dạy alerting rule — devops.l4.burn-rate-alerts; burn rate — devops.l4.burn-rate. Không dạy backfill rule, federation, remote write. Không dạy lại rate(), histogram, scrape — devops.l2.counters-and-rate, devops.l2.histograms-and-percentiles."
+    - id: devops.l4.burn-rate
+      title:
+        vi: "Burn rate cho biết error budget đang bị tiêu nhanh tới đâu"
+        en: "Burn rate says how fast the error budget is being spent"
+      main_path: true
+      duration_min: 13
+      skills: [devops.alerting.burn-rate]
+      prereqs: [devops.l4.recording-rules, backend.l4.error-budget, backend.l4.service-level-objectives]
+      related: [devops.l4.progressive-delivery, backend.l4.service-level-indicators]
+      vocab: [burn-rate]
+      example_tag: stage-4
+      example_files:
+      - docs/design/alerts.md
+      - docs/design/slo.md
+      - deploy/gitops/config-repo/platform/monitoring/rules/slo.rules.yml
+      outline:
+      - "Burn rate is the share of bad requests divided by the share the SLO allows; at a burn rate of 1 the error budget runs out exactly at the end of the SLO's window."
+      - "With a 28-day window of 672 hours, a burn rate of 2 spends the budget in 14 days, and spending 2% of the budget in one hour is a burn rate of 0.02 × 672, about 13.4."
+      - "For product reads, whose SLO is 99.5%, that burn rate is a bad share of 13.44 × 0.5%, about 6.7%, over the hour; `alerts.md` writes every threshold out this way."
+      - "The same bad share means different urgency for different SLOs: 1% bad is a burn rate of 2 against 99.5% but 1 against 99%; burn rate puts every SLI on one scale."
+      - "A low burn rate that lasts days can spend as much budget as a short high one, so `alerts.md` sets one threshold for sudden failures and another for slow leaks."
+      misconceptions:
+      - "Any error at all means the budget is burning too fast."
+      - "A burn rate of 1 means the whole error budget is already gone."
+      - "The same error percentage should trigger the same alert for every SLI."
+      depth_notes: "Chưa viết alerting rule, chưa chọn cửa sổ ngắn — devops.l4.burn-rate-alerts. Ngưỡng là lựa chọn của `alerts.md` cho cửa sổ 28 ngày, không phải chuẩn chung. Không dạy lại error budget, SLO — backend.l4.error-budget, backend.l4.service-level-objectives."
+    - id: devops.l4.burn-rate-alerts
+      title:
+        vi: "Alert theo burn rate kiểm cùng lúc một cửa sổ dài và một cửa sổ ngắn"
+        en: "A burn-rate alert checks a long window and a short one together"
+      main_path: true
+      duration_min: 15
+      skills: [devops.alerting.burn-rate]
+      prereqs: [devops.l4.burn-rate, devops.l4.recording-rules, devops.l2.quality-gate]
+      related: [devops.l4.alerting-on-symptoms, devops.l4.progressive-delivery, design.l4.fitness-functions]
+      vocab: [alerting-rule]
+      example_tag: stage-4
+      example_files:
+      - deploy/gitops/config-repo/platform/monitoring/rules/slo.rules.yml
+      - deploy/gitops/config-repo/platform/monitoring/rules/slo.test.yml
+      - scripts/devops/alert-rules-test.sh
+      - docs/design/alerts.md
+      outline:
+      - "An alerting rule is an expression Prometheus evaluates like a recording rule; while it returns results its alert is pending, and once it has returned them for the rule's `for` duration the alert is firing."
+      - "The fast-burn rule needs the 1-hour and the 5-minute bad share above the threshold together: the long window ignores a short spike, the short one lets the alert stop soon after the errors do."
+      - "Following the multi-window approach of the Site Reliability Workbook, a fast burn is labelled `severity: page`, for a person now, and a 6-hour burn checked with a 30-minute window `severity: ticket`."
+      - "`alert-rules-test.sh` runs `promtool test rules` on `slo.test.yml`, which feeds made-up series to the rules and checks which alerts are firing at given times."
+      - "The test covers a steady burn that must page, a two-minute spike that must not, and a slow leak that opens only a ticket; CI runs it, so a rule change is checked before staging loads it."
+      misconceptions:
+      - "An alert should fire on the first bad request, so we hear about problems as early as possible."
+      - "A longer window is always better, because it is more accurate."
+      - "The only way to know an alert works is to wait for a real outage."
+      depth_notes: "Không dạy gửi thông báo, gom hay tắt alert — devops.l4.on-call; không dạy `keep_firing_for`, template annotation. Ngưỡng cho 28 ngày — devops.l4.burn-rate. Không dạy lại quality gate trong CI — devops.l2.quality-gate."
+    - id: devops.l4.on-call
+      title:
+        vi: "Trực sự cố chỉ định một người phải trả lời khi alert gọi"
+        en: "On-call names the one person who must answer a paging alert"
+      main_path: true
+      duration_min: 13
+      skills: [devops.incident.on-call]
+      prereqs: [devops.l4.burn-rate-alerts, devops.l4.alerting-on-symptoms]
+      related:
+      - management.l2.risk-responses
+      - devops.l4.platform-engineering
+      - management.l3.service-level-agreement
+      vocab: [on-call, paging, escalation]
+      example_tag: stage-4
+      example_files: [docs/team/on-call.md, docs/design/alerts.md]
+      outline:
+      - "Being on-call means being the named person who, for an agreed period, answers within an agreed time; paging notifies that person at once, unlike a ticket read in working hours."
+      - "`on-call.md` sets Đơn Hàng's rotation by role, the handover between shifts, and the rule that only alerts labelled `severity: page` may page anyone."
+      - "Escalation is the written order of whom to call next when the person paged does not acknowledge in time or needs help, so one missed page does not leave customers with nobody."
+      - "Every page is reviewed after the shift: a page that needed no action becomes a ticket or is removed, because each useless page adds to alert fatigue."
+      - "Prometheus keeps alerts' states but delivers no notification; staging runs no component that does and production has no Prometheus yet, so `on-call.md` records that paging is not live."
+      misconceptions:
+      - "Whoever happens to be online when an alert fires should handle it."
+      - "Being on-call means fixing every problem alone, without waking anyone else."
+      - "An alert that once paged at night with nothing to do is still worth keeping, just in case."
+      depth_notes: "Không nêu sản phẩm gửi thông báo, lương trực, luật lao động; tổ chức nhóm — management/teams-and-leadership. Bước xử lý khi bị gọi — devops.l4.runbooks; vai trò trong sự cố lớn — devops.l4.incident-command."
+    - id: devops.l4.runbooks
+      title:
+        vi: "Runbook cho người trực các bước an toàn đầu tiên với một alert"
+        en: "A runbook gives on-call the first safe steps for one alert"
+      main_path: true
+      duration_min: 15
+      skills: [devops.incident.on-call]
+      prereqs:
+      - devops.l4.on-call
+      - devops.l3.rollback-by-revert
+      - devops.l3.disaster-recovery-drill
+      - devops.l4.progressive-delivery
+      related: [devops.l3.deploying-by-commit, devops.l4.feature-flags, backend.l3.bulkhead]
+      vocab: [runbook, mitigation]
+      example_tag: stage-4
+      example_files:
+      - docs/runbooks/product-reads-burn.md
+      - scripts/devops/incident-drill.sh
+      - deploy/gitops/config-repo/platform/monitoring/rules/slo.rules.yml
+      outline:
+      - "A runbook is a written procedure for one alert: what it means for customers, how to confirm it, the first safe actions and when to escalate; each paging alert in `slo.rules.yml` names its runbook file."
+      - "Mitigation stops the harm before anyone knows the cause: `product-reads-burn.md` first looks for a recent change in the config repository and reverts it, and the cause is looked for afterwards."
+      - "`incident-drill.sh` commits to staging a `catalog-reads` setting that lets one read run at a time, sends product reads until `ProductReadsFastBurn` fires, then takes the runbook's revert step."
+      - "After the revert the 5-minute bad share falls first, and the alert resolves while the 1-hour share is still above the threshold, which is what the short window is for."
+      - "A runbook step nobody has run may be wrong; running it in a drill, as the DR drill did for recovery, finds that out before an incident does."
+      misconceptions:
+      - "Before changing anything, find the root cause, or the fix may hide it."
+      - "A good runbook lists every possible cause and its fix."
+      - "A runbook written carefully once stays correct."
+      depth_notes: "Không tự động hóa bước sửa, không dạy chaos engineering. Vai trò khi nhiều người cùng xử lý — devops.l4.incident-command. Cấu hình hỏng bằng biến môi trường, `Program.cs` không đổi. Không dạy lại revert, DR drill — devops.l3.rollback-by-revert, devops.l3.disaster-recovery-drill."
+    - id: devops.l4.incident-command
+      title:
+        vi: "Khi có sự cố, một người điều phối còn những người khác sửa"
+        en: "During an incident, one person coordinates while others fix"
+      main_path: true
+      duration_min: 14
+      skills: [devops.incident.response]
+      prereqs: [devops.l4.runbooks, management.l2.stakeholder-communication]
+      related: [devops.l4.on-call, management.l3.service-level-agreement, backend.l4.error-budget]
+      vocab: [incident-commander, incident-severity]
+      example_tag: stage-4
+      example_files:
+      - docs/team/incident-response.md
+      - docs/team/stakeholder-update-example.md
+      - scripts/devops/incident-drill.sh
+      outline:
+      - "`incident-response.md` sets severity levels by impact on customers, from orders failing for every shop down to a slow budget leak, and the level decides who is called and how often shops hear from the team."
+      - "The incident commander coordinates, choosing what is tried next and who does it, but does not debug; the person on-call holds the role until handing it over."
+      - "With one person deciding, two people do not make conflicting changes, such as one reverting a commit while another changes the same Deployment by hand."
+      - "Updates to shops state the impact, what is being done and when the next update comes, in the shops' words, and leave guesses about the cause out."
+      - "Someone keeps a timeline during the incident of what was seen, decided and done, with times, because memory afterwards is incomplete and the review after the incident is written from it."
+      - "The incident ends when the alert has resolved and the SLI stays good with the mitigation in place, not when the cause is known."
+      misconceptions:
+      - "The most senior engineer should lead the incident and fix it at the same time."
+      - "Shops should hear from us only once we know the cause."
+      - "An incident is over only when we know exactly why it happened."
+      depth_notes: "Không dạy status page, công cụ quản lý sự cố, thông báo theo hợp đồng SLA; tổ chức nhóm — management/teams-and-leadership. Viết lại sau sự cố — devops.l4.blameless-postmortems. Không dạy lại cập nhật cho stakeholder — management.l2.stakeholder-communication."
+    - id: devops.l4.blameless-postmortems
+      title:
+        vi: "Postmortem không đổ lỗi hỏi điều gì để lỗi xảy ra, không hỏi ai"
+        en: "A blameless postmortem asks what let the failure happen, not who"
+      main_path: true
+      duration_min: 14
+      skills: [devops.incident.postmortem]
+      prereqs:
+      - devops.l4.incident-command
+      - devops.l4.delivery-metrics
+      - management.l3.technical-debt-register
+      - backend.l4.error-budget
+      related:
+      - devops.l4.runbooks
+      - devops.l4.release-strategy-per-component
+      - management.l3.architecture-decision-record
+      vocab: [postmortem, blameless-postmortem]
+      example_tag: stage-4
+      example_files:
+      - docs/postmortems/0001-doc-san-pham-tra-503.md
+      - docs/postmortems/template.md
+      - docs/design/slo.md
+      - docs/team/delivery-metrics.md
+      outline:
+      - "A postmortem is the written review after an incident: impact including the error budget spent, the timeline, contributing factors, what helped, and action items each with an owner and a due date."
+      - "`slo.md` requires one for every incident that spends more than a quarter of an SLI's budget; `template.md` gives the sections, and a team may write one for smaller incidents too."
+      - "A blameless postmortem describes what the system and the process allowed, such as a setting no check stops, instead of who made the change, because people who expect blame hide what they know."
+      - "`0001-doc-san-pham-tra-503.md` finds several contributing factors for the drill's incident, such as a change that skipped the canary ADR 0019 asks for, rather than one root cause."
+      - "Action items are tracked like other work until done; a postmortem whose actions stay open leaves the same incident free to happen again."
+      - "Postmortems are the incident records `delivery-metrics.md` names for failures not fixed by a revert and for the time to restore service."
+      misconceptions:
+      - "A postmortem's goal is to find who made the mistake so it does not happen again."
+      - "Every incident has exactly one root cause."
+      - "Once the postmortem is written, the incident work is finished."
+      depth_notes: "Không dạy kỹ thuật phân tích nguyên nhân (5 whys, fishbone), văn hóa nhóm, đánh giá hiệu suất — management/teams-and-leadership. Không dạy lại sổ nợ, DORA metrics — management.l3.technical-debt-register, devops.l4.delivery-metrics."
