@@ -1,0 +1,377 @@
+skills:
+  - id: sysdesign.problem.search
+    title:
+      vi: "Thiết kế tìm kiếm sản phẩm trong một cửa hàng"
+      en: "Designing product search within a shop"
+    prereqs:
+      - sysdesign.review.design-review
+      - backend.data.query-plans
+      - backend.data.ownership
+      - backend.capacity.planning
+  - id: sysdesign.problem.analytics
+    title:
+      vi: "Thiết kế báo cáo và analytics không làm chậm việc đặt hàng"
+      en: "Designing reports and analytics that never slow ordering"
+    prereqs:
+      - sysdesign.review.design-review
+      - design.cqrs.read-models
+      - backend.data.replication
+      - backend.tenancy.data-layout
+
+module:
+  id: search-and-analytics
+  title:
+    vi: "Bài toán: tìm kiếm sản phẩm, báo cáo và analytics"
+    en: "Problems: product search, reports and analytics"
+  stage: 4
+  summary:
+    vi: "Dùng khung thiết kế hệ thống cho hai bài toán của Đơn Hàng — cho khách tìm sản phẩm của một cửa hàng theo từ trong tên, rồi cho nhân viên xem báo cáo trên rất nhiều đơn mà không lấy tài nguyên của việc đặt hàng — đi từ yêu cầu, thiết kế, đánh đổi tới trả lời câu phản biện bằng ADR đã có."
+    en: "Apply the system design framework to two Đơn Hàng problems, letting customers search a shop's products by the words in their names, then giving staff reports over many orders without taking capacity from ordering, from requirements through design and trade-offs to answering challenges from recorded ADRs."
+  lessons:
+    - id: sysdesign.l4.product-search-requirements
+      title:
+        vi: "Tìm kiếm sản phẩm bắt đầu từ một danh sách chỉ lọc được theo giá"
+        en: "Product search starts from a list that filters only by price"
+      main_path: true
+      duration_min: 14
+      skills: [sysdesign.problem.search]
+      prereqs:
+        - sysdesign.l4.bank-signing-challenges
+        - frontend.l4.pages-for-search
+        - backend.l2.filtering-with-query-parameters
+        - backend.l4.capacity-planning
+      related:
+        - sysdesign.l4.clarifying-requirements
+        - backend.l2.offset-pagination
+        - backend.l2.cache-aside
+        - design.l4.quality-attribute-scenarios
+      vocab: []
+      example_tag: stage-4
+      example_files:
+        - docs/team/product-search-requirements.md
+        - DonHang.Catalog/CatalogService.cs
+        - DonHang.Api/Controllers/ProductsController.cs
+        - docs/adr/0017-giu-mot-ma-flutter-cho-moi-nen-tang.md
+      outline:
+        - "At stage-3 `GET /api/v1/products` returns pages of at most 100 products in `id` order and filters only by `maxPriceVnd`; a customer looking for a product by its name has to page through the list."
+        - "The search problem has two meanings, kept apart in the requirements: customers finding a product inside one shop, and product pages found from outside by search engines, which ADR `0017` leaves to a separate decision."
+        - "`product-search-requirements.md` writes in-shop search as scenarios with a measure, such as words typed without Vietnamese diacritics still finding the product, best matches first, within one shop only."
+        - "A clarifying question settles how fresh results must be: a new product or a changed name may appear in search a little later (assumed minutes), the same choice the product list already makes."
+        - "The estimate finds a shop's products few (assumed thousands at most), so the data fits easily in PostgreSQL; the risk is load, because a search is a query on every call and `ProductCache` keeps products only by `id`."
+        - "The ranked drivers are: words typed without diacritics find the product, search never takes capacity that orders need, and results stay within the caller's shop."
+      misconceptions:
+        - "Search is just a `WHERE name = ...` added to the product list."
+        - "Making products searchable in our shop also makes them show up on search engines."
+        - "Product reads are already cached in Redis, so search adds no load to the database."
+      depth_notes: "Không quyết lại ADR 0017, không xây trang công khai cho máy tìm kiếm. Không dạy lại lọc, phân trang, cache-aside, kế hoạch dung lượng — backend.l2.filtering-with-query-parameters, backend.l2.cache-aside, backend.l4.capacity-planning. Thiết kế — sysdesign.l4.product-search-design."
+    - id: sysdesign.l4.product-search-design
+      title:
+        vi: "Full-text search tìm sản phẩm theo các từ trong tên của nó"
+        en: "Full-text search finds products by the words in their names"
+      main_path: true
+      duration_min: 15
+      skills: [sysdesign.problem.search]
+      prereqs:
+        - sysdesign.l4.product-search-requirements
+        - sysdesign.l4.deep-dive
+        - backend.l2.indexes-and-plans
+        - backend.l4.data-ownership
+      related:
+        - sysdesign.l4.high-level-design
+        - design.l3.module-contracts
+        - backend.l4.shop-data-layout
+        - foundation.l1.sql-index-intro
+      vocab: [full-text-search, inverted-index]
+      example_tag: stage-4
+      example_files:
+        - docs/design/product-search-design-review.md
+        - docs/adr/0030-tim-san-pham-bang-full-text-search-cua-postgresql.md
+        - DonHang.Catalog/ICatalog.cs
+        - db/seed.sql
+      outline:
+        - "Full-text search splits text into words, normalises them the same way for the stored text and for the query, and returns the rows whose words match, ordered by how well they match."
+        - "An inverted index maps each word to the rows that contain it, so a search reads only matching rows; an ordinary index on `name` cannot serve a pattern that starts with a wildcard, so `LIKE '%phím%'` reads every row."
+        - "ADR `0030` keeps search in PostgreSQL, inside Catalog, the owner of `products`: the searchable words are built from the product's own row and indexed there, so there is no second copy to keep in sync."
+        - "The deep dive is diacritics: both the stored name and the query are lowercased and stripped of diacritics before matching, so `ban phim` finds `Bàn phím cơ` from `seed.sql`."
+        - "Search is an optional parameter of the existing product list behind `ICatalog`, limited to the caller's shop and read under the same `catalog-reads` limit as every other product read."
+        - "The rejected options keep their reasons: `LIKE` patterns scan every row, and a separate search engine adds a copy of the products, a path to feed it and one more service to run, not needed at the estimated size."
+      misconceptions:
+        - "Full-text search needs a separate search engine; a SQL database cannot do it."
+        - "An index on `name` makes `LIKE '%phím%'` fast."
+        - "Searching for `ban phim` can only find names written exactly without diacritics."
+      depth_notes: "Không code tìm kiếm ở stage-4 (chỉ ADR 0030, tài liệu). Không dạy cú pháp tsvector/tsquery, GIN/GiST, sửa lỗi gõ, đồng nghĩa; không tên công cụ tìm kiếm. Không dạy lại index, chủ dữ liệu, module contract — backend.l2.indexes-and-plans, backend.l4.data-ownership, design.l3.module-contracts."
+    - id: sysdesign.l4.product-search-trade-offs
+      title:
+        vi: "Tìm kiếm ngay trong PostgreSQL bỏ bớt khả năng so khớp để khỏi giữ một bản sao"
+        en: "Search inside PostgreSQL gives up richer matching to avoid a copy"
+      main_path: true
+      duration_min: 14
+      skills: [sysdesign.problem.search]
+      prereqs:
+        - sysdesign.l4.product-search-design
+        - design.l4.trade-off-points
+        - backend.l4.read-routing
+        - backend.l4.per-shop-limits
+      related:
+        - sysdesign.l4.finding-bottlenecks
+        - design.l3.read-model
+        - backend.l3.outbox-relay
+        - management.l3.total-cost-of-ownership
+      vocab: []
+      example_tag: stage-4
+      example_files:
+        - docs/design/product-search-design-review.md
+        - docs/adr/0030-tim-san-pham-bang-full-text-search-cua-postgresql.md
+        - DonHang.Catalog/ProductCache.cs
+        - docs/design/capacity-plan.md
+      outline:
+        - "The review records where search runs as a trade-off point: inside PostgreSQL there is nothing new to run and no copy to sync, but search queries share the database with orders."
+        - "Matching whole normalised words finds no product for a misspelt word and knows no synonyms; the review accepts this until measured complaints (assumed) meet ADR `0030`'s reopen condition."
+        - "A separate search engine would offer richer matching and its own capacity, but it is a read model fed from Catalog's changes, so it lags behind `products` and needs a way to be rebuilt."
+        - "Search load is held by limits already planned: the `catalog-reads` ceiling per process, per-shop limits of ADR `0016`, and moving search to the replica, which the product list's tolerance for stale data allows."
+        - "`ProductCache` stores products by `id` for 5 minutes, so it does not answer searches; caching results by search words is left out, because the review assumes most searches differ."
+      misconceptions:
+        - "A dedicated search engine is always better, so staying in PostgreSQL is only a shortcut."
+        - "If search runs on the replica, a product changed a second ago must still show its new name."
+        - "Caching each search's results will remove the load, just as `ProductCache` does for product pages."
+      depth_notes: "Số là giả định; không giá, không tên công cụ tìm kiếm. Không dạy lại điểm đánh đổi, định tuyến đọc, giới hạn theo cửa hàng, read model — design.l4.trade-off-points, backend.l4.read-routing, backend.l4.per-shop-limits, design.l3.read-model. Không đổi `Program.cs` hay `ProductCache`."
+    - id: sysdesign.l4.product-search-challenges
+      title:
+        vi: "Câu phản biện về tìm kiếm được trả lời bằng ADR 0017, 0026 và 0030"
+        en: "Search challenges are answered from ADRs 0017, 0026 and 0030"
+      main_path: true
+      duration_min: 13
+      skills: [sysdesign.problem.search]
+      prereqs:
+        - sysdesign.l4.product-search-trade-offs
+        - sysdesign.l4.answering-challenges
+        - sysdesign.l4.multi-shop-design
+      related:
+        - frontend.l4.client-technology-drivers
+        - management.l3.superseding-an-adr
+        - sysdesign.l4.multi-shop-challenges
+      vocab: []
+      example_tag: stage-4
+      example_files:
+        - docs/design/product-search-design-review.md
+        - docs/adr/0030-tim-san-pham-bang-full-text-search-cua-postgresql.md
+        - docs/adr/0017-giu-mot-ma-flutter-cho-moi-nen-tang.md
+        - docs/adr/0026-cua-hang-lon-chuyen-sang-database-rieng.md
+      outline:
+        - "Asked why customers cannot find our products from a search engine, the answer is ADR `0017`: public pages are HTML from the server, decided separately, and they would read the same Catalog."
+        - "Asked why Đơn Hàng does not use a search engine, the answer is the estimate and the drivers, and ADR `0030` names the condition that reopens it rather than ruling it out."
+        - "Asked what happens to search when a large shop moves to its own database under ADR `0026`, the answer is that the searchable words live in the shop's own product rows, so they move with them."
+        - "Asked whether search can slow ordering at a sales peak, the answer points to `catalog-reads`, ADR `0016`'s per-shop limits and the replica trigger in `capacity-plan.md`."
+        - "`product-search-design-review.md` keeps every challenge with its answer, the driver or ADR it traces to, and an owner by role when it stays open."
+      misconceptions:
+        - "If a reviewer asks for a feature the design lacks, such as typo tolerance, the design is wrong."
+        - "Once a shop has its own database, searching its products needs a different design."
+        - "A challenge about search engines means ADR `0017` must be decided again now."
+      depth_notes: "Không quyết lại ADR 0016, 0017, 0026. Không dạy lại trả lời phản biện, thay thế ADR — sysdesign.l4.answering-challenges, management.l3.superseding-an-adr. Bài toán báo cáo — sysdesign.l4.reporting-requirements."
+    - id: sysdesign.l4.reporting-requirements
+      title:
+        vi: "Báo cáo đọc rất nhiều đơn trong khi đặt hàng chỉ đụng vài dòng"
+        en: "A report reads many orders where placing an order touches a few"
+      main_path: true
+      duration_min: 14
+      skills: [sysdesign.problem.analytics]
+      prereqs:
+        - sysdesign.l4.product-search-challenges
+        - sysdesign.l4.multi-shop-challenges
+        - backend.l4.read-routing
+        - backend.l3.row-level-security
+      related:
+        - sysdesign.l4.clarifying-requirements
+        - foundation.l1.time-and-timezones
+        - backend.l4.data-ownership
+        - sysdesign.l4.payment-reconciliation-requirements
+      vocab: [analytical-query]
+      example_tag: stage-4
+      example_files:
+        - docs/team/reporting-requirements.md
+        - db/queries/revenue-by-customer.sql
+        - db/queries/orders-by-day.sql
+        - docs/design/multi-shop-design-review.md
+      outline:
+        - "An analytical query turns many rows into a few figures about a period, such as revenue per day, while placing an order reads and writes a few rows of one order."
+        - "The reporting problem starts from questions left open: `multi-shop-design-review.md` asks how a report across all shops reads a shop with its own database, and `capacity-plan.md` keeps all reads on the primary."
+        - "Since stage-3 payments live in `donhang_payments` and orders in `donhang`, so a revenue report like `revenue-by-customer.sql` can no longer be one query: a plain PostgreSQL query reads only the database its connection opened."
+        - "`reporting-requirements.md` names two readers, a shop's staff seeing only their shop and Đơn Hàng's own team seeing all shops, and accepts figures up to two hours old (assumed), each shown with its as-of time."
+        - "A clarifying question fixes what a day is: `orders-by-day.sql` shows orders that fall on different days in UTC and in Vietnam time, so the requirements define days in Vietnam time (assumed)."
+        - "The ranked drivers are: reports never take capacity ordering needs, each shop sees only its own figures, and reports across shops include shops in their own databases."
+      misconceptions:
+        - "A report is just a bigger `SELECT`, so it can run on the same database as everything else."
+        - "Reports must always show figures up to the second, or nobody will trust them."
+        - "Every shop's figures are in one database, so a report across shops is one query."
+      depth_notes: "Không dạy công cụ BI, biểu đồ; không quy định kế toán. Không dạy lại GROUP BY, múi giờ, row-level security, định tuyến đọc — foundation.l1.sql-group-by, foundation.l1.time-and-timezones, backend.l3.row-level-security, backend.l4.read-routing. Thiết kế — sysdesign.l4.reporting-design."
+    - id: sysdesign.l4.reporting-design
+      title:
+        vi: "Một job chép tổng theo ngày của từng cửa hàng vào database báo cáo riêng"
+        en: "A job copies daily totals per shop into a reporting database"
+      main_path: true
+      duration_min: 15
+      skills: [sysdesign.problem.analytics]
+      prereqs:
+        - sysdesign.l4.reporting-requirements
+        - design.l3.read-model
+        - backend.l3.cross-shard-queries
+        - sysdesign.l4.multi-shop-design
+      related:
+        - backend.l4.data-ownership
+        - backend.l3.read-replicas
+        - k8s.l2.scheduled-backups
+        - sysdesign.l4.deep-dive
+      vocab: [etl]
+      example_tag: stage-4
+      example_files:
+        - docs/design/reporting-design-review.md
+        - docs/adr/0031-bao-cao-tu-database-bao-cao-rieng.md
+        - DonHang.Domain/OrderMessage.cs
+        - db/replica/start.sh
+      outline:
+        - "ETL is a scheduled job that extracts data from its sources, transforms it into the shape the readers need, and loads it into a separate store."
+        - "ADR `0031` adds a reporting database on a server of its own (assumed): every hour (assumed) a job reads `donhang`, `donhang_payments` and every database the shop map lists, and writes totals per shop per day."
+        - "Report queries read only the reporting database, so a long analytical query uses none of the primary's connections; the job's own reads are short queries for recent days."
+        - "Each summary row carries the shop's id, so a shop's staff read only their shop's rows, guarded as ADR `0013` guards shared tables, while Đơn Hàng's own team reads across shops."
+        - "The deep dive is a shop moving under ADR `0026`: the job reads the shop map on every run, so the shop's figures come from its new database and reports across shops stay complete."
+        - "Rejected: reports on `db-replica`, which copies the whole `db` server but still cannot join two databases in one query; and a read model fed by order messages, which carry no amounts or items."
+      misconceptions:
+        - "A read replica is already a reporting database, so nothing else is needed."
+        - "The reporting tables become the place where revenue is decided."
+        - "The cleanest way to fill a reporting database is from the messages we already publish."
+      depth_notes: "Không code ETL ở stage-4 (chỉ ADR 0031, tài liệu). Không tên công cụ ETL, database phân tích; không star schema. Không dạy lại read model, scatter-gather, shard map, CronJob — design.l3.read-model, backend.l3.cross-shard-queries, sysdesign.l4.multi-shop-design, k8s.l2.scheduled-backups."
+    - id: sysdesign.l4.reporting-trade-offs
+      title:
+        vi: "Chép theo lô đổi độ mới của số liệu lấy việc không phải sửa message"
+        en: "Copying in batches trades freshness for no change to messages"
+      main_path: true
+      duration_min: 14
+      skills: [sysdesign.problem.analytics]
+      prereqs:
+        - sysdesign.l4.reporting-design
+        - design.l4.trade-off-points
+        - backend.l4.message-schema-evolution
+        - design.l3.event-projections
+      related:
+        - devops.l3.rpo-and-rto
+        - backend.l3.eventual-consistency
+        - sysdesign.l4.payment-reconciliation-trade-offs
+        - backend.l2.at-least-once-jobs
+      vocab: []
+      example_tag: stage-4
+      example_files:
+        - docs/design/reporting-design-review.md
+        - docs/adr/0031-bao-cao-tu-database-bao-cao-rieng.md
+        - docs/design/data-ownership.md
+        - DonHang.Domain/OrderMessage.cs
+      outline:
+        - "The review records the run's interval as a trade-off point: running every hour keeps the sources' extra load small, but a report may be an hour behind plus any replication lag."
+        - "Feeding reports from messages would be fresher, but every order message would need amounts and items, a schema change every reader must accept, and past orders cannot be read again from the broker."
+        - "Each run recomputes the last few days (assumed) and replaces those days' rows, so a repeated run gives the same result and a late cancellation or refund still reaches its day."
+        - "Totals per shop per day answer the agreed questions quickly, but a new question, such as sales per hour, needs a new summary filled again from the sources."
+        - "The reporting database holds only copies it can rebuild from the owners' data, so the review accepts rebuilding it instead of restoring it, at the cost of the time a rebuild takes."
+      misconceptions:
+        - "An hourly copy is just a slow version of real-time, so real-time is always the better design."
+        - "If the job runs twice by accident, every total will be counted twice."
+        - "The reporting database needs the same backups and restore targets as the orders database."
+      depth_notes: "Số là giả định; không giá, không tên công cụ. Không đổi `OrderMessage`. Không dạy lại điểm đánh đổi, tiến hóa schema message, event projection, RPO — design.l4.trade-off-points, backend.l4.message-schema-evolution, design.l3.event-projections, devops.l3.rpo-and-rto."
+    - id: sysdesign.l4.reporting-challenges
+      title:
+        vi: "Câu phản biện về báo cáo được trả lời bằng việc ai là chủ mỗi con số"
+        en: "Reporting challenges are answered from who owns each figure"
+      main_path: true
+      duration_min: 13
+      skills: [sysdesign.problem.analytics]
+      prereqs:
+        - sysdesign.l4.reporting-trade-offs
+        - sysdesign.l4.answering-challenges
+        - sysdesign.l4.payment-reconciliation-design
+      related:
+        - sysdesign.l4.multi-shop-challenges
+        - management.l3.superseding-an-adr
+        - backend.l4.pacelc
+      vocab: []
+      example_tag: stage-4
+      example_files:
+        - docs/design/reporting-design-review.md
+        - docs/adr/0031-bao-cao-tu-database-bao-cao-rieng.md
+        - docs/design/data-ownership.md
+        - docs/adr/0028-doi-soat-hoan-tien-hang-ngay-voi-bao-cao-cua-cong.md
+      outline:
+        - "Asked why a report's revenue differs from accounting's figure, the answer is data ownership: the reporting database holds copies, Payments owns the money, and its reconciliation under ADR `0028` settles differences."
+        - "Asked why reports do not simply read `db-replica`, the answer is the requirements: revenue joins two databases, and shops moved under ADR `0026` sit in databases of their own."
+        - "Asked whether one shop's staff could see another shop's totals, the answer is that every summary row carries its shop and is read with the shop taken from the caller's access token."
+        - "Asked for a live sales screen, the review records it as a new requirement that reopens ADR `0031`: it would need amounts in the order messages, a change for every reader."
+        - "`reporting-design-review.md` keeps every challenge with its answer, the driver or ADR it traces to, and an owner by role when it stays open."
+      misconceptions:
+        - "When two reports disagree, the newer one is right."
+        - "A request for live figures means the batch design was a mistake."
+        - "Hiding other shops' totals in the report screen is enough to keep them private."
+      depth_notes: "Không quyết lại ADR 0013, 0026, 0028. Không dạy lại trả lời phản biện, chủ dữ liệu, thay thế ADR — sysdesign.l4.answering-challenges, backend.l4.data-ownership, management.l3.superseding-an-adr. Bài toán tiếp theo — sysdesign/chat-and-saas."
+
+glossary_additions:
+  - term: full-text-search
+    en: "full-text search"
+    vi_keep: true
+    vi: "full-text search"
+    short_vi: "Tìm dòng theo các từ trong một đoạn chữ, chuẩn hóa từ như nhau ở cả dữ liệu lẫn câu tìm, rồi xếp kết quả theo mức khớp"
+    short_en: "Finding rows by the words in their text, normalised the same way on both sides, with results ordered by how well they match"
+    introduced_in: sysdesign.l4.product-search-design
+  - term: inverted-index
+    en: "inverted index"
+    vi_keep: true
+    vi: "inverted index"
+    short_vi: "Index ánh xạ mỗi từ tới các dòng chứa từ đó, để tìm theo từ mà không phải đọc mọi dòng"
+    short_en: "An index that maps each word to the rows containing it, so a search by word reads only those rows"
+    introduced_in: sysdesign.l4.product-search-design
+  - term: analytical-query
+    en: "analytical query"
+    vi_keep: false
+    vi: "truy vấn phân tích"
+    short_vi: "Truy vấn gom rất nhiều dòng thành vài con số về một khoảng thời gian, như doanh thu theo ngày"
+    short_en: "A query that turns many rows into a few figures about a period, such as revenue per day"
+    introduced_in: sysdesign.l4.reporting-requirements
+  - term: etl
+    en: "ETL (extract, transform, load)"
+    vi_keep: true
+    vi: ETL
+    short_vi: "Job định kỳ lấy dữ liệu từ các nguồn, đổi sang hình dạng người đọc cần, rồi ghi vào một nơi lưu riêng"
+    short_en: "A scheduled job that extracts data from its sources, reshapes it for its readers and loads it into a separate store"
+    introduced_in: sysdesign.l4.reporting-design
+
+repo_changes_needed:
+  - lesson: sysdesign.l4.product-search-requirements
+    need: "Tài liệu tiếng Việt (`### `, không `## `/`**`, mọi số ghi 'giả định'): xuất phát stage-3 (`GET /api/v1/products` trang tối đa 100, sắp theo `id`, chỉ lọc `maxPriceVnd`; `ProductCache` chỉ giữ từng sản phẩm theo `id`, danh sách không qua cache); phạm vi: tìm trong một cửa hàng; trang sản phẩm công khai cho máy tìm kiếm ngoài phạm vi theo ADR 0017 (không quyết lại); TK-n dạng kịch bản có thước đo: gõ không dấu vẫn ra sản phẩm (ví dụ `ban phim` → `Bàn phím cơ` của seed), khớp nhất lên trước, chỉ sản phẩm của cửa hàng người gọi, sản phẩm mới/đổi tên xuất hiện trong vài phút (giả định, cùng lựa chọn với danh sách sản phẩm trong consistency-per-operation.md), tìm kiếm không lấy sức chứa của đặt hàng; ước lượng: sản phẩm mỗi cửa hàng nhiều nhất vài nghìn, phần đọc sản phẩm là tìm kiếm theo tỉ lệ giả định so với đỉnh đọc sản phẩm của capacity-plan.md (không sửa capacity-plan.md); giả định + vai trò xác nhận (đội Cửa hàng của ADR 0025 phụ trách Catalog — giả định); driver xếp hạng."
+    suggested_path: "docs/team/product-search-requirements.md"
+  - lesson: sysdesign.l4.product-search-design
+    need: "ADR 0030 (Đã chấp nhận, chưa xây) + dòng README ADR: tìm sản phẩm bằng full-text search của PostgreSQL trong Catalog (chủ `products`), từ tìm được dựng từ chính dòng sản phẩm (chữ thường, bỏ dấu bằng extension đi kèm PostgreSQL, cấu hình không bỏ đuôi từ vì PostgreSQL không có cấu hình tiếng Việt — ghi đúng như tài liệu PostgreSQL 17), có inverted index, giới hạn theo cửa hàng của người gọi; là tham số tùy chọn của danh sách sản phẩm qua `ICatalog`, dưới giới hạn `catalog-reads`; sắp theo mức khớp rồi `id`; ít nhất 3 phương án (LIKE '%...%' — quét mọi dòng; full-text search trong PostgreSQL — chọn; công cụ tìm kiếm riêng, mô tả bằng lời, không tên sản phẩm — bản sao nuôi từ thay đổi của Catalog qua outbox, trễ, cần dựng lại, thêm một service phải chạy); điều kiện mở lại (khiếu nại về gõ sai/từ đồng nghĩa đo được — giả định; tải tìm kiếm vượt khoảng dư cả khi đã chuyển sang replica); thêm một dòng 'tìm sản phẩm: được cũ như danh sách sản phẩm' vào consistency-per-operation.md."
+    suggested_path: "docs/adr/0030-tim-san-pham-bang-full-text-search-cua-postgresql.md"
+  - lesson: sysdesign.l4.product-search-design
+    need: "Design review theo design-review-template.md: quyết định cần review + đề xuất, driver, ước lượng, một khối mermaid (app → API `GET /api/v1/products` có tham số tìm → `ICatalog` → `products` + inverted index trong PostgreSQL; replica là bước sau), đi sâu 'gõ không dấu' (cả tên lưu và câu tìm chuẩn hóa như nhau; `ban phim` tìm ra `Bàn phím cơ`), nút cổ chai (mỗi lần tìm là một truy vấn; `ProductCache` theo `id` không giúp; trần `catalog-reads` 20 chạy + 5 chờ mỗi process), điểm đánh đổi (chạy trong PostgreSQL vs công cụ riêng; khớp nguyên từ vs gõ sai/đồng nghĩa; không cache kết quả theo từ khóa — giả định phần lớn câu tìm khác nhau), rủi ro, câu hỏi mở với người phụ trách theo vai trò, mục 'Câu hỏi phản biện' 4–5 câu trỏ ADR 0016, 0017, 0026, 0030 và `capacity-plan.md`. Không code."
+    suggested_path: "docs/design/product-search-design-review.md"
+  - lesson: sysdesign.l4.reporting-requirements
+    need: "Tài liệu tiếng Việt (`### `, không `## `/`**`, số 'giả định'): xuất phát (stage-3 không có báo cáo nào ngoài các file `db/queries/*.sql` của bài SQL; từ stage-3 thanh toán ở `donhang_payments`, đơn ở `donhang` nên `revenue-by-customer.sql` không còn chạy được như một truy vấn; câu hỏi mở 'báo cáo xuyên cửa hàng' của multi-shop-design-review.md; capacity-plan.md giữ mọi đọc ở primary); hai nhóm người đọc (nhân viên một cửa hàng chỉ thấy cửa hàng mình; đội Đơn Hàng xem mọi cửa hàng); BC-n dạng kịch bản có thước đo: doanh thu/số đơn/hoàn tiền theo ngày, sản phẩm bán chạy theo cửa hàng; số liệu cũ nhiều nhất hai giờ (giả định), luôn ghi thời điểm chốt số; ngày tính theo giờ Việt Nam (giả định, trỏ orders-by-day.sql); ước lượng: số đơn mỗi ngày theo giả định của capacity-plan.md × thời gian giữ (giả định) → báo cáo một năm đọc rất nhiều dòng, một truy vấn báo cáo giữ kết nối lâu hơn một lần đặt hàng nhiều lần (giả định); driver xếp hạng; giả định + vai trò xác nhận (người phụ trách database báo cáo — đội Cửa hàng của ADR 0025, giả định)."
+    suggested_path: "docs/team/reporting-requirements.md"
+  - lesson: sysdesign.l4.reporting-design
+    need: "ADR 0031 (Đã chấp nhận, chưa xây) + dòng README ADR + một dòng trong data-ownership.md ('tổng báo cáo theo cửa hàng theo ngày — bản sao; chủ của từng con số vẫn là Ordering/Payments; giữ cho đúng bằng job chạy lại mỗi giờ'): database báo cáo trên server riêng (giả định); job ETL mỗi giờ (giả định) đọc `donhang`, `donhang_payments` và mọi database trong bảng ánh xạ cửa hàng của ADR 0026, ghi tổng theo cửa hàng theo ngày; mỗi lần chạy tính lại vài ngày gần nhất (giả định) và thay các dòng của những ngày đó (lặp lại an toàn); mỗi dòng có shop id, nhân viên cửa hàng đọc theo cửa hàng lấy từ access token (từ release 2), row-level security như ADR 0013 (giả định); truy vấn báo cáo chỉ đọc database báo cáo; dựng lại thay vì khôi phục; ít nhất 4 phương án (báo cáo trên primary; trên `db-replica` — bản sao cả server nhưng không join hai database trong một truy vấn, không có database riêng của cửa hàng; read model nuôi từ message — `OrderMessage` không có số tiền/món, không đọc lại được đơn cũ từ broker; database báo cáo nuôi bằng job — chọn); điều kiện mở lại (yêu cầu số liệu trực tiếp; câu hỏi mà tổng theo ngày không trả lời kịp — khi đó một nơi lưu dành cho truy vấn phân tích, mô tả bằng lời, không tên sản phẩm). Không code."
+    suggested_path: "docs/adr/0031-bao-cao-tu-database-bao-cao-rieng.md"
+  - lesson: sysdesign.l4.reporting-design
+    need: "Design review theo design-review-template.md: driver, ước lượng, một khối mermaid (`donhang`, `donhang_payments`, database riêng của cửa hàng theo bảng ánh xạ → job ETL mỗi giờ → database báo cáo → báo cáo của nhân viên cửa hàng / của đội Đơn Hàng), đi sâu 'cửa hàng chuyển database' (job đọc bảng ánh xạ mỗi lần chạy; trả lời câu hỏi mở của multi-shop-design-review.md — không sửa file đó), nút cổ chai (lượt đọc của job lên nguồn: truy vấn ngắn theo ngày gần đây), điểm đánh đổi (chu kỳ chạy; lô vs message; tổng theo ngày vs câu hỏi mới; dựng lại vs sao lưu), rủi ro (thay đổi cũ hơn cửa sổ tính lại, ví dụ hoàn tiền muộn — chạy lại toàn bộ định kỳ, giả định), câu hỏi mở với người phụ trách theo vai trò, mục 'Câu hỏi phản biện' 4–5 câu trỏ data-ownership.md, ADR 0013, 0026, 0028, 0031. Không code."
+    suggested_path: "docs/design/reporting-design-review.md"
+  - lesson: sysdesign.l4.product-search-requirements
+    need: "STAGE.md: thêm 6 file trên vào bảng file → bài. Thứ tự trong `/repo-stage 4`: sau ADR 0013/0016/0017/0026/0028, `capacity-plan.md`, `consistency-per-operation.md`, `data-ownership.md`, `design-review-template.md`, `system-design-method.md`, `multi-shop-design-review.md`; trước `fitness-functions.md`."
+    suggested_path: "STAGE.md"
+
+open_questions:
+  - "Số ADR: 0030 = tìm sản phẩm bằng full-text search của PostgreSQL trong Catalog; 0031 = báo cáo từ database báo cáo riêng, nuôi bằng job ETL mỗi giờ; đều 'Đã chấp nhận', chưa xây. Đề xuất: chấp nhận; ADR GĐ4 tiếp theo từ 0032."
+  - "versions.yaml không có khóa nào cho công cụ tìm kiếm hay nơi lưu dành cho phân tích (chỉ `data.postgresql` 17, `redis`, `rabbitmq`). Đề xuất: không thêm khóa — cả hai thiết kế dùng PostgreSQL 17 (full-text search, extension bỏ dấu đi kèm PostgreSQL, database báo cáo thường); công cụ tìm kiếm riêng và nơi lưu dành cho truy vấn phân tích chỉ là phương án bị loại/điều kiện mở lại, mô tả bằng lời, không tên sản phẩm. Nếu chủ muốn dạy một công cụ cụ thể, phải thêm khóa versions.yaml và đổi outline bài 2, 3, 6."
+  - "Stage-4 không có code tìm kiếm hay ETL: chỉ 6 tài liệu (2 yêu cầu, 2 ADR, 2 design review), trích code/SQL stage-3 có sẵn (`ProductsController.cs`, `CatalogService.cs`, `ICatalog.cs`, `ProductCache.cs`, `OrderMessage.cs`, `db/seed.sql`, `db/queries/*.sql`, `db/replica/start.sh`). Đề xuất: chấp nhận, như tiền lệ multi-shop-and-notifications và payments-and-signing. Một script lab chạy thử full-text search trên seed (`ban phim` → `Bàn phím cơ`) sẽ làm bài 2 cụ thể hơn nhưng là code mới — không làm, claim về full-text search/bỏ dấu kiểm bằng tài liệu PostgreSQL 17."
+  - "Chi tiết PostgreSQL cần reviewer 04 kiểm bằng tài liệu PostgreSQL 17 khi viết ADR 0030/bài 2: extension `unaccent` đi kèm bản phân phối và bỏ dấu tiếng Việt trong ví dụ của bài (ví dụ chỉ dùng `Bàn phím cơ`, không dựa vào chữ `đ`); PostgreSQL không có cấu hình text search tiếng Việt nên dùng cấu hình không bỏ đuôi từ; index B-tree không phục vụ mẫu `LIKE` bắt đầu bằng ký tự đại diện. Đề xuất: chấp nhận; câu nào không có nguồn thì viết ở mức nguyên lý."
+  - "Phát hiện khi đọc stage-3 (khác với mô tả nhiệm vụ): `ProductCache` chỉ cache `FindAsync` theo `id` (TTL 5 phút); `CatalogService.ListAsync` đọc thẳng `CatalogDbContext`, danh sách sản phẩm không qua Redis. Đề xuất: outline viết đúng như code (bài 1 mục 5, bài 3 mục 5)."
+  - "Trang sản phẩm công khai cho máy tìm kiếm (ADR 0017 để quyết riêng): module này không quyết, chỉ tách nghĩa ở bài 1 và trả lời phản biện ở bài 4 (HTML từ server, đọc cùng Catalog). Đề xuất: chấp nhận; không ADR mới cho việc này ở V1."
+  - "Báo cáo xuyên cửa hàng khi cửa hàng có database riêng (câu hỏi mở của multi-shop-design-review.md): ADR 0031 trả lời bằng job đọc bảng ánh xạ mỗi lần chạy. Đề xuất: không sửa multi-shop-design-review.md (bài multi-shop-challenges dựa vào câu hỏi mở đó); reporting-design-review.md ghi rõ nó trả lời câu hỏi ấy."
+  - "Báo cáo của nhân viên làm quá tải `db`: chọn database báo cáo riêng thay vì định tuyến báo cáo sang `db-replica`. Lý do: doanh thu cần `donhang` + `donhang_payments` (không join hai database trong một truy vấn), cửa hàng chuyển theo ADR 0026 không nằm trên replica đó. Đề xuất: chấp nhận; `capacity-plan.md` không đổi (vẫn mọi đọc ở primary); job ETL đọc nguồn bằng truy vấn ngắn, đọc qua replica nếu có (giả định)."
+  - "Không nuôi báo cáo từ message ở V1: `OrderMessage` (stage-3) chỉ có `OrderId`, `CustomerEmail`, `CustomerName`, `OccurredAt` — không số tiền, không món; `shopId` chỉ thêm từ release 2 của multi-shop-data-rollout.md. Đề xuất: chấp nhận; không đổi `OrderMessage`; đó là bước của điều kiện mở lại 'số liệu trực tiếp' trong ADR 0031."
+  - "Số giả định của dự án: sản phẩm mỗi cửa hàng nhiều nhất vài nghìn; sản phẩm mới/đổi tên xuất hiện trong tìm kiếm trong vài phút; số liệu báo cáo cũ nhiều nhất hai giờ; job chạy mỗi giờ; mỗi lần tính lại vài ngày gần nhất; ngày theo giờ Việt Nam; database báo cáo trên server riêng; đội Cửa hàng phụ trách Catalog và database báo cáo. Đề xuất: chấp nhận; `/repo-stage 4` đổi số thì sửa outline trước khi sinh bài."
+  - "Glossary +4: `full-text-search` (vi_keep), `inverted-index` (vi_keep), `analytical-query`, `etl` (vi_keep). Không thêm term cho 'materialized view', 'data warehouse', 'column store' — bài nói bằng lời. Đề xuất: chấp nhận."
+  - "Tên file là đề xuất (`product-search-requirements.md`, `product-search-design-review.md`, `reporting-requirements.md`, `reporting-design-review.md`, slug ADR 0030/0031). Nếu `/repo-stage 4` đổi tên, sửa `example_files` trước khi sinh bài."
