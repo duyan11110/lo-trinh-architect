@@ -1,0 +1,375 @@
+skills:
+  - id: sysdesign.problem.support-chat
+    title:
+      vi: "Thiết kế chat hỗ trợ real-time giữa khách và nhân viên cửa hàng"
+      en: "Designing real-time support chat between customers and shop staff"
+    prereqs:
+      - sysdesign.review.design-review
+      - backend.cache.redis
+      - backend.resilience.load-limits
+      - backend.capacity.planning
+  - id: sysdesign.problem.saas
+    title:
+      vi: "Thiết kế Đơn Hàng thành nền tảng SaaS cho cửa hàng tự phục vụ"
+      en: "Designing Đơn Hàng as a self-service SaaS platform for shops"
+    prereqs:
+      - sysdesign.review.design-review
+      - backend.tenancy.fair-share
+      - backend.sagas.steps
+      - k8s.platform.cost
+
+module:
+  id: chat-and-saas
+  title:
+    vi: "Bài toán: chat hỗ trợ real-time và nền tảng SaaS multi-tenant"
+    en: "Problems: real-time support chat and a multi-tenant SaaS platform"
+  stage: 4
+  summary:
+    vi: "Dùng khung thiết kế hệ thống cho hai bài toán cuối của Đơn Hàng — cho khách chat với nhân viên cửa hàng và thấy tin trả lời ngay, rồi cho cửa hàng tự đăng ký, chọn gói, rời đi và biết chi phí của từng cửa hàng — đi từ yêu cầu, thiết kế, đánh đổi tới trả lời câu phản biện bằng ADR đã có."
+    en: "Apply the system design framework to Đơn Hàng's last two problems, letting customers chat with shop staff and see replies at once, then letting shops sign up, choose a plan and leave while each shop's cost stays known, from requirements through design and trade-offs to answering challenges from recorded ADRs."
+  lessons:
+    - id: sysdesign.l4.support-chat-requirements
+      title:
+        vi: "Chat hỗ trợ cần tin trả lời tự hiện trên màn hình không ai tải lại"
+        en: "Support chat needs a reply to reach a screen nobody reloads"
+      main_path: true
+      duration_min: 14
+      skills: [sysdesign.problem.support-chat]
+      prereqs:
+        - sysdesign.l4.reporting-challenges
+        - sysdesign.l4.notification-requirements
+        - backend.l4.load-testing
+        - frontend.l2.futureprovider-and-asyncvalue
+      related:
+        - sysdesign.l4.clarifying-requirements
+        - sysdesign.l4.back-of-the-envelope
+        - design.l4.quality-attribute-scenarios
+        - frontend.l3.syncing-the-queue
+      vocab: []
+      example_tag: stage-4
+      example_files:
+        - docs/team/support-chat-requirements.md
+        - DonHang.App/lib/providers.dart
+        - DonHang.App/lib/screens/order_detail_screen.dart
+        - docs/adr/0017-giu-mot-ma-flutter-cho-moi-nen-tang.md
+      outline:
+        - "At stage-3 every screen of `DonHang.App` shows what it fetched: `orderProvider` fetches an order once and again only when the signed-in customer changes, and the app has no timer that asks the API again."
+        - "A support chat between a customer and the shop's staff needs what the system lacks: the server must send a new message to a screen that is already open, without that screen asking for it."
+        - "`support-chat-requirements.md` writes the scope as scenarios with a measure: a message shows on the other side within seconds (assumed), staff see only their shop's conversations, history is kept for an assumed period."
+        - "A clarifying question settles what happens when the customer is not on the screen: the reply waits in the conversation and an email tells them, because push notifications need a phone build ADR `0017` has not made."
+        - "The estimate counts open screens, not requests: by Little's law, conversations open at once equal conversations started per second times how long one stays open, all assumed, while messages per second stay few."
+        - "The ranked drivers are: a message reaches an open screen within seconds, no message is lost when delivery fails, staff never see another shop's chats, and chat never takes capacity that ordering needs."
+      misconceptions:
+        - "Chat is just another endpoint: the app can fetch new messages the way it fetches an order."
+        - "If there are only a few messages per second, chat is a small load for the system."
+        - "When the customer has closed the app, we can still pop the reply up on their phone."
+      depth_notes: "Không quyết lại ADR 0017, không dựng push. Không dạy lại làm rõ yêu cầu, Little's law, kênh email — sysdesign.l4.clarifying-requirements, backend.l4.load-testing, sysdesign.l4.notification-design. Thiết kế — sysdesign.l4.support-chat-design."
+    - id: sysdesign.l4.support-chat-design
+      title:
+        vi: "WebSocket cho server gửi mỗi tin chat ngay khi tin được lưu"
+        en: "A WebSocket lets the server send each chat message once it is saved"
+      main_path: true
+      duration_min: 15
+      skills: [sysdesign.problem.support-chat]
+      prereqs:
+        - sysdesign.l4.support-chat-requirements
+        - sysdesign.l4.deep-dive
+        - backend.l2.redis-key-value-store
+        - backend.l3.exchanges-and-bindings
+      related:
+        - sysdesign.l4.high-level-design
+        - foundation.l1.tcp-vs-udp
+        - backend.l4.data-ownership
+        - devops.l4.golden-path
+        - sysdesign.l4.notification-design
+      vocab: [websocket]
+      example_tag: stage-4
+      example_files:
+        - docs/design/support-chat-design-review.md
+        - docs/adr/0032-chat-ho-tro-qua-websocket-trong-service-rieng.md
+        - deploy/gitops/config-repo-kustomize/base/redis.yaml
+        - deploy/gitops/config-repo/platform/edge/httproutes.yaml
+      outline:
+        - "A WebSocket starts as an HTTP request asking to switch protocols; once the server accepts, the same TCP connection stays open and either side can send a message at any time."
+        - "ADR `0032` puts support chat in a service of its own, `DonHang.Support`, with its own database, so connections held open for minutes never share Pods or limits with the API taking orders."
+        - "Each message is saved in PostgreSQL first, with its conversation and shop, and only then sent to that conversation's open connections; the saved row, not the delivery, is the record."
+        - "With several Pods, sender and receiver may hold connections to different Pods, so a Pod publishes each saved message to a Redis publish/subscribe channel and every Pod passes it to the connections it holds."
+        - "The deep dive is a dropped connection: the app reconnects and asks for the messages after the last id it has, so anything missed while away is read from the database, not from Redis."
+        - "A reply the customer has not read within minutes (assumed) leaves through the outbox as a message, and Notifications emails the customer under ADR `0027`."
+      misconceptions:
+        - "With a WebSocket, a message sent is a message received, so nothing else is needed."
+        - "Each Pod only has to deliver to its own connections; the other Pods will take care of theirs."
+        - "Redis now holds the chat history, so if Redis goes down the messages are lost."
+      depth_notes: "Không có code chat ở stage-4 (chỉ ADR 0032 và tài liệu). Không dạy frame, ping, nén của WebSocket, thư viện client Dart. Không dạy lại Redis, publish/subscribe, outbox — backend.l2.redis-key-value-store, backend.l3.exchanges-and-bindings, backend.l3.outbox-pattern."
+    - id: sysdesign.l4.support-chat-trade-offs
+      title:
+        vi: "Thứ chat hỗ trợ cạn trước là kết nối đang mở, không phải request"
+        en: "Open connections, not requests, are what support chat runs out of"
+      main_path: true
+      duration_min: 14
+      skills: [sysdesign.problem.support-chat]
+      prereqs:
+        - sysdesign.l4.support-chat-design
+        - design.l4.trade-off-points
+        - backend.l3.retry-jitter
+        - devops.l4.release-strategy-per-component
+      related:
+        - backend.l4.capacity-planning
+        - sysdesign.l4.finding-bottlenecks
+        - backend.l2.at-least-once-jobs
+        - frontend.l4.library-reach
+      vocab: []
+      example_tag: stage-4
+      example_files:
+        - docs/design/support-chat-design-review.md
+        - docs/adr/0032-chat-ho-tro-qua-websocket-trong-service-rieng.md
+        - docs/design/capacity-plan.md
+        - docs/adr/0019-chien-luoc-phat-hanh-theo-thanh-phan.md
+      outline:
+        - "The review names the scarce resource: open connections per Pod, each held for a long, mostly idle time, so the chat service's capacity plan counts connections at the peak, not requests per second."
+        - "A chat connection holds no database connection: a Pod opens one only to save or read messages, so `max_connections` limits how fast messages are written, not how many customers are connected."
+        - "A release closes each replaced Pod's connections, so clients reconnect after a delay with jitter, and a Gateway weight decides only where new connections go; ADR `0032` keeps rolling updates for chat."
+        - "Redis publish/subscribe passes a message only to subscribers connected at that moment, at most once; the review accepts this because PostgreSQL keeps every message and a reconnecting app reads what it missed."
+        - "Polling every few seconds was rejected: it needs nothing new, but its load grows with open screens times frequency, and a message waits up to one interval; it stays the fallback when a connection cannot open."
+        - "SignalR, ASP.NET Core's real-time library, would give reconnection and fan-out between Pods ready-made; ADR `0032` defers it because the app would need a SignalR client for Dart that ASP.NET Core does not ship."
+      misconceptions:
+        - "A connection that sends nothing costs nothing, so idle chat screens are free."
+        - "Each open chat needs its own database connection, so `max_connections` caps how many customers can chat."
+        - "A release that restarts the chat Pods loses the messages that were on their way."
+        - "Polling is always the wrong choice for chat."
+      depth_notes: "Số là giả định. Không dạy giới hạn file handle, keep-alive, timeout của Gateway, sticky session. Không dạy lại điểm đánh đổi, jitter, chiến lược phát hành, at-most-once — design.l4.trade-off-points, backend.l3.retry-jitter, devops.l4.release-strategy-per-component."
+    - id: sysdesign.l4.support-chat-challenges
+      title:
+        vi: "Câu phản biện về chat được trả lời bằng ADR 0013, 0016, 0017 và 0032"
+        en: "Chat challenges are answered from ADRs 0013, 0016, 0017 and 0032"
+      main_path: true
+      duration_min: 13
+      skills: [sysdesign.problem.support-chat]
+      prereqs:
+        - sysdesign.l4.support-chat-trade-offs
+        - sysdesign.l4.answering-challenges
+        - backend.l4.per-shop-limits
+      related:
+        - sysdesign.l4.notification-challenges
+        - backend.l4.shop-data-layout
+        - management.l3.superseding-an-adr
+      vocab: []
+      example_tag: stage-4
+      example_files:
+        - docs/design/support-chat-design-review.md
+        - docs/adr/0032-chat-ho-tro-qua-websocket-trong-service-rieng.md
+        - docs/adr/0013-du-lieu-cua-hang-trong-bang-chung.md
+        - docs/adr/0016-gioi-han-tai-theo-cua-hang.md
+      outline:
+        - "Asked why customers get no alert on their phones, the answer is ADR `0017`: there is no phone build, so an unread reply goes out by email under ADR `0027` until one exists."
+        - "Asked whether one shop's staff could read another shop's chats, the answer is that every conversation row carries its shop, taken from the access token and guarded by row-level security as ADR `0013` decides."
+        - "Asked what a sale day in one shop does to chat in the others, the review records a risk and a cap on open connections per shop in the style of ADR `0016`, set only after connections are measured."
+        - "Asked why chat is not one more module of `DonHang.Api`, the answer is ADR `0032`'s driver: connections held for a long time would share the Pods, limits and canary releases of the process taking orders."
+        - "`support-chat-design-review.md` keeps every challenge with its answer, the driver or ADR it traces to, and an owner by role when it stays open."
+      misconceptions:
+        - "If a reviewer asks for phone notifications, the chat design is unfinished."
+        - "Hiding other shops' conversations in the staff screen is enough to keep them apart."
+        - "A new service for chat is over-engineering when a module would do."
+      depth_notes: "Không quyết lại ADR 0013, 0016, 0017, 0019. Không dựng giới hạn kết nối theo cửa hàng ở stage-4. Không dạy lại trả lời phản biện, giới hạn theo cửa hàng — sysdesign.l4.answering-challenges, backend.l4.per-shop-limits. Bài toán SaaS — sysdesign.l4.saas-requirements."
+    - id: sysdesign.l4.saas-requirements
+      title:
+        vi: "Nền tảng SaaS cho cửa hàng tự đăng ký, tự chọn gói và tự rời đi"
+        en: "A SaaS platform lets a shop sign up, pick a plan and leave on its own"
+      main_path: true
+      duration_min: 14
+      skills: [sysdesign.problem.saas]
+      prereqs:
+        - sysdesign.l4.support-chat-challenges
+        - sysdesign.l4.multi-shop-challenges
+        - backend.l4.shop-data-layout
+        - design.l4.a-thousand-shops
+      related:
+        - sysdesign.l4.clarifying-requirements
+        - backend.l4.shop-id-rollout
+        - devops.l3.point-in-time-recovery
+        - management.l4.compliance-controls
+      vocab: []
+      example_tag: stage-4
+      example_files:
+        - docs/team/saas-platform-requirements.md
+        - docs/team/multi-shop-requirements.md
+        - docs/adr/0013-du-lieu-cua-hang-trong-bang-chung.md
+        - docs/design/multi-shop-data-rollout.md
+      outline:
+        - "The SaaS problem starts from decisions it does not reopen: one shared deployment (ADR `0012`), shared tables (ADR `0013`), per-shop limits (ADR `0016`) and a large shop's own database (ADR `0026`)."
+        - "What they leave open is the shop's own path: under ADR `0013` opening a shop is adding a row to `shops`, but nothing says who adds it, what a shop may configure, which plan it is on or how it leaves."
+        - "`saas-platform-requirements.md` writes this as scenarios with a measure: a shop signs up and takes its first order within minutes (assumed), sets its name and brand without a deploy, and changes plan itself."
+        - "A clarifying question fixes what leaving means: the shop gets an export of its data, its rows are deleted after a grace period (assumed), and copies in backups end only when those backups expire."
+        - "The estimate finds sign-ups few per day (assumed), so opening a shop is a correctness problem, not a load problem; the driver that grows is cost, since each plan's price must cover its shops' share."
+        - "The ranked drivers are: a shop opens with nobody at Đơn Hàng acting, no shop's settings reach another shop, each plan's cost per shop is known, and a leaving shop's data is gone by a stated date."
+      misconceptions:
+        - "Multi-tenancy is already designed, so a SaaS platform has nothing left to decide."
+        - "Letting shops sign up on their own is mainly a question of load."
+        - "Once a shop's rows are deleted, its data is gone everywhere at the same moment."
+      depth_notes: "Không quyết lại ADR 0012, 0013, 0016, 0026. Không dạy giá, thanh toán định kỳ, hóa đơn gói, quy định pháp lý về dữ liệu. Không dạy lại multi-tenancy, PITR — backend.l3.multi-tenancy, devops.l3.point-in-time-recovery. Thiết kế — sysdesign.l4.saas-design."
+    - id: sysdesign.l4.saas-design
+      title:
+        vi: "Mở một cửa hàng là chuỗi bước mà bước nào cũng chạy lại được"
+        en: "Opening a shop is a chain of steps, each safe to run again"
+      main_path: true
+      duration_min: 15
+      skills: [sysdesign.problem.saas]
+      prereqs:
+        - sysdesign.l4.saas-requirements
+        - backend.l3.saga
+        - backend.l3.safe-to-repeat-saga-steps
+        - frontend.l3.brand-themes
+      related:
+        - sysdesign.l4.deep-dive
+        - devops.l4.feature-flags
+        - backend.l2.at-least-once-jobs
+        - frontend.l3.accessibility-checks
+        - backend.l2.role-based-access
+      vocab: []
+      example_tag: stage-4
+      example_files:
+        - docs/design/saas-platform-design-review.md
+        - docs/adr/0033-cua-hang-tu-dang-ky-goi-la-du-lieu.md
+        - DonHang.App/lib/design/brand.dart
+        - keycloak/donhang-realm.json
+      outline:
+        - "ADR `0033` keeps a shop's plan and settings as data: its row in `shops` names its plan, and a plan is a set of numbers, such as its share under ADR `0016`'s limits, so changing plan needs no deploy."
+        - "A plan's features are settings read from the shop's data and kept as long as the plan exists; they are not release flags, which are removed once a feature is fully on."
+        - "`brand.dart` ships one constant `Brand`; under ADR `0033` a shop picks by name among brands built into the app and covered by its tests, so no shop's colours escape the contrast checks."
+        - "The deep dive is sign-up: create the `shops` row as pending, create the first staff account in Keycloak with the `staff` role and the shop, send a welcome email, then mark the shop active."
+        - "The steps span two owners, Đơn Hàng's database and Keycloak, so no single transaction covers them; a background job runs them as a saga keyed by the sign-up's id, and each step first checks if it is done."
+        - "A step that keeps failing leaves the shop pending and listed for staff by role, never half open; the welcome email goes through Notifications at least once."
+      misconceptions:
+        - "Sign-up can be one transaction that writes the shop and its first staff account together."
+        - "A feature only for a higher plan is just another feature flag."
+        - "Giving each shop its own colours means building a separate copy of the app for each shop."
+      depth_notes: "Không có code đăng ký, gói ở stage-4 (chỉ ADR 0033 và tài liệu). Không dạy API quản trị Keycloak, thanh toán, giá gói. Không dạy lại saga, bước lặp an toàn, brand, feature flag — backend.l3.saga, backend.l3.safe-to-repeat-saga-steps, frontend.l3.brand-themes, devops.l4.feature-flags."
+    - id: sysdesign.l4.saas-trade-offs
+      title:
+        vi: "Biết chi phí của từng cửa hàng phải trả bằng telemetry"
+        en: "Knowing each shop's cost is paid for in telemetry"
+      main_path: true
+      duration_min: 15
+      skills: [sysdesign.problem.saas]
+      prereqs:
+        - sysdesign.l4.saas-design
+        - backend.l3.trace-sampling
+        - k8s.l4.requests-drive-cluster-cost
+        - backend.l4.error-budget
+      related:
+        - backend.l4.per-shop-limits
+        - devops.l2.histograms-and-percentiles
+        - design.l4.trade-off-points
+        - management.l3.total-cost-of-ownership
+      vocab: [usage-metering]
+      example_tag: stage-4
+      example_files:
+        - docs/design/cost-per-shop.md
+        - DonHang.Api/Program.cs
+        - deploy/monitoring/tempo.yml
+        - docs/design/cluster-cost.md
+      outline:
+        - "Most of a shop's cost is shared: nodes, databases and the platform serve every shop, so cost per shop is shared cost split by measured use, not a bill each shop runs up alone."
+        - "Usage metering counts what each tenant uses; `cost-per-shop.md` meters a few counts, such as ADR `0016`'s requests labelled by shop, orders and stored rows per shop and open chat connections."
+        - "Each label value adds time series: a shop label on a counter adds one series per shop, but on a histogram one per shop for every bucket, so per-shop detail stays on counters."
+        - "Traces grow with traffic, so they are sampled: a trace starting in the api is kept with probability `Telemetry:SampleRatio`, 0.1 unless configured, and SLIs stay exact because they come from metrics."
+        - "The ratio and how long traces are kept follow the SLOs: enough failing requests kept to explain an error budget burn, and traces kept longer than the lab's 24 hours, as long as an investigation takes (assumed)."
+        - "The trade-off point is detail against cost: finer metering and more traces give fairer plan prices and faster diagnosis, but every series and span is paid for in storage."
+      misconceptions:
+        - "We can bill each shop for exactly what it costs, as if it ran alone."
+        - "Keeping every trace is the only safe choice; sampling hides problems."
+        - "Adding a shop label to every metric is free, since it is only one more label."
+      depth_notes: "Số là giả định; không giá thật, không tên nhà cung cấp hay công cụ tính phí. Không dạy tail sampling, sampling trong Alloy. Không dạy lại sampling, chi phí cluster, error budget — backend.l3.trace-sampling, k8s.l4.requests-drive-cluster-cost, backend.l4.error-budget."
+    - id: sysdesign.l4.saas-challenges
+      title:
+        vi: "Câu phản biện về nền tảng SaaS được trả lời bằng ADR 0012, 0016, 0022 và 0033"
+        en: "SaaS challenges are answered from ADRs 0012, 0016, 0022 and 0033"
+      main_path: true
+      duration_min: 13
+      skills: [sysdesign.problem.saas]
+      prereqs:
+        - sysdesign.l4.saas-trade-offs
+        - sysdesign.l4.answering-challenges
+        - backend.l4.data-ownership
+        - k8s.l4.choosing-managed-kubernetes
+      related:
+        - design.l4.one-deployment-for-all-shops
+        - backend.l4.per-shop-limits
+        - sysdesign.l4.reporting-design
+        - management.l3.superseding-an-adr
+      vocab: []
+      example_tag: stage-4
+      example_files:
+        - docs/design/saas-platform-design-review.md
+        - docs/adr/0033-cua-hang-tu-dang-ky-goi-la-du-lieu.md
+        - docs/adr/0012-phuc-vu-moi-cua-hang-tu-mot-ban-trien-khai.md
+        - docs/design/data-ownership.md
+      outline:
+        - "Asked to give a large customer its own copy of the platform, the answer is ADR `0012`'s reopen condition: a contract that demands one, served without changing how the other shops are served."
+        - "Asked whether a shop on the cheapest plan can slow a shop on a higher one, the answer is ADR `0016`: limits cap each shop's share, and a plan changes only the size of that cap, never reserves capacity."
+        - "Asked to show a departed shop's data is gone, the answer walks the copies in `data-ownership.md`: rows deleted in each service's database, reporting rows rebuilt, cached copies expired, backups aged out."
+        - "Asked why a premium shop does not get a cluster of its own, the answer is ADR `0022` and the platform's fixed cost per cluster, which that shop's plan would have to carry alone."
+        - "`saas-platform-design-review.md` keeps every challenge with its answer, the driver or ADR it traces to, and an owner by role when it stays open."
+      misconceptions:
+        - "A customer who pays more should always get a deployment of its own."
+        - "A premium plan means capacity is set aside for that shop alone."
+        - "Deleting a shop's rows from the main database is enough to say its data is gone."
+      depth_notes: "Không quyết lại ADR 0012, 0013, 0016, 0022, 0026. Không dạy quy định pháp lý về xóa dữ liệu. Không dạy lại trả lời phản biện, chủ dữ liệu, thay thế ADR — sysdesign.l4.answering-challenges, backend.l4.data-ownership, management.l3.superseding-an-adr. Bài kết — sysdesign/architect-daily."
+
+glossary_additions:
+  - term: websocket
+    en: "WebSocket"
+    vi_keep: true
+    vi: WebSocket
+    short_vi: "Giao thức bắt đầu bằng một request HTTP rồi giữ kết nối mở, để cả client lẫn server gửi tin cho nhau bất cứ lúc nào"
+    short_en: "A protocol that starts as an HTTP request, then keeps the connection open so client and server can each send at any time"
+    introduced_in: sysdesign.l4.support-chat-design
+  - term: usage-metering
+    en: "usage metering"
+    vi_keep: false
+    vi: "đo mức dùng"
+    short_vi: "Đếm phần tài nguyên mỗi tenant dùng, như số request hay số đơn, để chia chi phí hoặc tính giá theo tenant"
+    short_en: "Counting what each tenant uses, such as requests or orders, to split costs or set prices per tenant"
+    introduced_in: sysdesign.l4.saas-trade-offs
+
+repo_changes_needed:
+  - lesson: sysdesign.l4.support-chat-requirements
+    need: "Tài liệu tiếng Việt (`### `, không `## `/`**`, mọi số ghi 'giả định'): xuất phát stage-3 (mọi màn hình của DonHang.App chỉ hiện thứ đã tải: `orderProvider` tải đơn một lần, tải lại chỉ khi đổi người đăng nhập; app không có timer hỏi lại API — trích chú thích `queue_sync.dart`; khách và cửa hàng chỉ liên lạc qua email của Notifications); phạm vi: chat giữa một khách và nhân viên cửa hàng của khách (có thể gắn một đơn), không chat giữa khách với nhau, không bot, không gửi file; CT-n dạng kịch bản có thước đo: tin hiện ở phía bên kia trong vài giây khi màn hình đang mở (giả định), nhân viên chỉ thấy cuộc trò chuyện của cửa hàng mình, không mất tin khi kết nối rớt, lịch sử giữ một khoảng (giả định), khách không mở màn hình thì nhận email sau vài phút chưa đọc (giả định; push chờ bản điện thoại theo ADR 0017, không quyết lại); ước lượng theo Little's law: số cuộc trò chuyện mở cùng lúc = số cuộc bắt đầu mỗi giây × thời gian mở trung bình (giả định) → tài nguyên đáng đếm là kết nối mở, số tin mỗi giây nhỏ so với đặt đơn; driver xếp hạng; giả định + vai trò xác nhận (đội Đặt hàng của ADR 0025 phụ trách — giả định)."
+    suggested_path: "docs/team/support-chat-requirements.md"
+  - lesson: sysdesign.l4.support-chat-design
+    need: "ADR 0032 (Đã chấp nhận, chưa xây) + dòng README ADR + một dòng trong data-ownership.md ('cuộc trò chuyện và tin chat — Support sở hữu; không có bản sao ngoài kênh Redis chỉ chuyển tiếp'): chat trong service riêng `DonHang.Support` với database riêng `donhang_support` trên server `db` (như Notifications/Payments), đi theo golden path; WebSocket bằng hỗ trợ WebSocket có sẵn của ASP.NET Core (khóa `aspnetcore`, không thêm khóa); mỗi tin lưu PostgreSQL trước (cuộc trò chuyện, cửa hàng, người gửi) rồi mới gửi; nhiều Pod: Pod publish tin đã lưu lên kênh publish/subscribe của Redis (Redis có sẵn, chỉ giữ bản sao như `redis.yaml` nói), mỗi Pod chuyển cho kết nối nó giữ; app nối lại thì hỏi tin sau id cuối nó có (đọc từ database); tin trả lời chưa đọc sau vài phút (giả định) → message qua outbox, Notifications gửi email theo ADR 0027; shop lấy từ access token (từ release 2), row-level security như ADR 0013; endpoint đề xuất `/api/v1/conversations` + HTTPRoute mới tới Support; rolling update (ADR 0019: weight của Gateway chỉ quyết kết nối mới); ít nhất 4 phương án (app hỏi lại API mỗi vài giây — tải theo số màn hình × tần suất, trễ tới một chu kỳ, giữ làm đường lui; module trong DonHang.Api — chung Pod, giới hạn, canary với việc đặt đơn; service riêng với WebSocket — chọn; SignalR — hoãn vì ASP.NET Core không có client SignalR cho Dart, reviewer kiểm với docs ASP.NET Core 10); điều kiện mở lại (có bản app điện thoại → push; client SignalR chính thức cho Dart; kết nối mỗi Pod vượt khoảng dư đo được)."
+    suggested_path: "docs/adr/0032-chat-ho-tro-qua-websocket-trong-service-rieng.md"
+  - lesson: sysdesign.l4.support-chat-design
+    need: "Design review theo design-review-template.md: driver, ước lượng, một khối mermaid (app ↔ Gateway ↔ Pod Support (WebSocket) → PostgreSQL `donhang_support`; Pod → kênh Redis → các Pod khác; Support → outbox → RabbitMQ → Notifications → email), đi sâu 'kết nối rớt' (nối lại có jitter, hỏi tin sau id cuối, tin lỡ đọc từ database), nút cổ chai (kết nối mở mỗi Pod; kết nối chat không giữ kết nối database; `max_connections` giới hạn tốc độ ghi tin), điểm đánh đổi (kết nối giữ mở vs hỏi lại định kỳ; Redis at-most-once vs database là bản ghi; service riêng vs module; WebSocket tự viết vs SignalR), rủi ro (một cửa hàng ngày đông giữ nhiều kết nối → trần kết nối theo cửa hàng kiểu ADR 0016, đặt sau khi đo; Redis sập → chỉ mất chuyển tiếp giữa Pod, app vẫn đọc được từ database khi nối lại), câu hỏi mở với người phụ trách theo vai trò (timeout của Gateway với kết nối dài — đội platform; cách kết nối mang access token — đội Đặt hàng), mục 'Câu hỏi phản biện' 4–5 câu trỏ ADR 0013, 0016, 0017, 0019, 0027, 0032. Không code; không khẳng định giá trị mặc định của Traefik."
+    suggested_path: "docs/design/support-chat-design-review.md"
+  - lesson: sysdesign.l4.saas-requirements
+    need: "Tài liệu tiếng Việt (`### `, không `## `/`**`, số 'giả định'): xuất phát (ADR 0012, 0013, 0016, 0026 không mở lại; theo ADR 0013 mở cửa hàng là thêm dòng `shops`, chưa ai quy định ai thêm, cửa hàng cấu hình được gì, gói nào, rời đi thế nào; yêu cầu 'cấu hình riêng từng shop' của multi-shop-requirements.md); SA-n dạng kịch bản có thước đo: cửa hàng tự đăng ký và nhận đơn đầu tiên trong vài phút (giả định), không ai ở Đơn Hàng phải làm gì; tự đặt tên, chọn brand không cần deploy; tự đổi gói, có hiệu lực trong vài phút (giả định); rời đi: nhận bản xuất dữ liệu của mình, dòng bị xóa sau một thời gian chờ (giả định), bản trong backup hết khi backup hết hạn giữ; ước lượng: số đăng ký mỗi ngày nhỏ (giả định) → đúng/sai quan trọng hơn tải; chi phí là driver tăng theo số cửa hàng, giá mỗi gói phải trả được phần chi phí của cửa hàng trong gói (giả định, không số tiền); driver xếp hạng; giả định + vai trò xác nhận (đội Cửa hàng của ADR 0025 phụ trách mở cửa hàng — giả định). Không quy định pháp lý, không giá."
+    suggested_path: "docs/team/saas-platform-requirements.md"
+  - lesson: sysdesign.l4.saas-design
+    need: "ADR 0033 (Đã chấp nhận, chưa xây) + dòng README ADR + dòng trong data-ownership.md (dòng `shops` gồm gói, cài đặt, trạng thái pending/active/leaving; bảng gói — chủ là đội Cửa hàng, giả định): gói và cài đặt cửa hàng là dữ liệu; gói = tập con số (phần đọc đồng thời theo ADR 0016, số tài khoản nhân viên, chat bật/tắt, thời gian giữ dữ liệu — giả định), đổi gói không deploy, có hiệu lực khi cache bảng ánh xạ của Pod hết hạn (ADR 0026); tính năng theo gói là cài đặt đọc từ dữ liệu cửa hàng, không phải flag phát hành (flag phát hành có ngày gỡ theo feature-flags.md); brand: cửa hàng chọn theo tên trong các `Brand` có sẵn trong app và đã qua test tương phản (thêm brand = một bản phát hành app); đăng ký là saga điều phối bởi background job theo id đăng ký: tạo dòng `shops` pending → tạo tài khoản nhân viên đầu tiên trong Keycloak có role `staff` và cửa hàng (token mang cửa hàng từ release 2) → message chào mừng qua outbox, Notifications gửi email at-least-once → active; mỗi bước kiểm đã làm chưa trước khi làm; bước lỗi mãi → để pending, hiện cho nhân viên Đơn Hàng theo vai trò; rời đi: job xuất dữ liệu của cửa hàng, sau thời gian chờ xóa theo lô trong từng database service (hoặc bỏ database riêng nếu cửa hàng đã chuyển theo ADR 0026); ít nhất 3 phương án (nhân viên Đơn Hàng mở tay; một transaction gộp — không làm được vì Keycloak là chủ khác; saga theo bước — chọn); điều kiện mở lại. Không code, không tên API quản trị Keycloak cụ thể."
+    suggested_path: "docs/adr/0033-cua-hang-tu-dang-ky-goi-la-du-lieu.md"
+  - lesson: sysdesign.l4.saas-trade-offs
+    need: "Tài liệu tiếng Việt (`### `, số 'giả định', không giá thật, không tên nhà cung cấp): chi phí theo cửa hàng = chi phí chung (node theo cluster-cost.md, database, platform) chia theo mức dùng đo được; đếm gì: counter request có label cửa hàng của ADR 0016, số đơn và số dòng mỗi cửa hàng từ database, kết nối chat mở mỗi cửa hàng (ADR 0032) — mỗi cách chia ghi 'ước lượng'; label: cửa hàng chỉ trên counter, không trên histogram (mỗi bucket nhân theo số cửa hàng); trace: stage-3 `Telemetry:SampleRatio` mặc định 0.1 (Program.cs), Compose đặt 1.0, staging tắt SDK (`OTEL_SDK_DISABLED`), Tempo lab giữ 24 giờ (`block_retention: 24h`); chọn tỉ lệ và thời gian giữ theo SLO trong slo.md: với tỉ lệ request xấu ở mức SLO cho phép (giả định lưu lượng), tỉ lệ sampling phải để lại đủ trace lỗi để giải thích một lần đốt error budget; giữ trace lâu hơn thời gian điều tra một sự cố và viết postmortem (vài ngày — giả định); SLI không đổi vì đến từ metric; giữ trace theo kết quả (đợi cả trace) chỉ là phương án nói bằng lời, chưa làm; log: thời gian giữ theo cùng lý do (giả định); điểm đánh đổi chi tiết vs chi phí lưu trữ; trỏ cluster-cost.md, không sửa file đó."
+    suggested_path: "docs/design/cost-per-shop.md"
+  - lesson: sysdesign.l4.saas-design
+    need: "Design review theo design-review-template.md: driver, ước lượng, một khối mermaid (form đăng ký → API → job saga → `shops` / Keycloak / outbox → Notifications; app đọc cài đặt + tên brand của cửa hàng), đi sâu 'đăng ký' (thứ tự bước, kiểm đã làm, bước lỗi mãi → pending) và 'rời đi' (xuất, chờ, xóa theo lô trong mọi database service, dòng báo cáo dựng lại theo ADR 0031, cache Redis hết TTL, backup hết hạn giữ; liệt kê theo data-ownership.md), nút cổ chai (không phải tải; xóa theo lô để tránh khóa lâu), điểm đánh đổi (brand có sẵn vs màu tự do; gói là trần vs giữ chỗ; chi tiết đo vs chi phí telemetry, trỏ cost-per-shop.md), rủi ro, câu hỏi mở với người phụ trách theo vai trò, mục 'Câu hỏi phản biện' 4–5 câu trỏ ADR 0012, 0016, 0022, 0026, 0031, 0033 và data-ownership.md. Không code."
+    suggested_path: "docs/design/saas-platform-design-review.md"
+  - lesson: sysdesign.l4.support-chat-requirements
+    need: "STAGE.md: thêm 7 file trên vào bảng file → bài. Thứ tự trong `/repo-stage 4`: sau ADR 0012/0013/0016/0017/0019/0022/0025/0026/0027/0031, `slo.md`, `capacity-plan.md`, `cluster-cost.md`, `data-ownership.md`, `feature-flags.md`, `golden-path.md`, `design-review-template.md`, `system-design-method.md` và doc của các module bài toán trước; trước `fitness-functions.md`."
+    suggested_path: "STAGE.md"
+
+open_questions:
+  - "Số ADR: 0032 = chat hỗ trợ qua WebSocket trong service riêng `DonHang.Support` (database `donhang_support`, Redis publish/subscribe giữa Pod, PostgreSQL là bản ghi); 0033 = cửa hàng tự đăng ký bằng saga theo bước, gói và cài đặt là dữ liệu, brand chọn trong các brand có sẵn của app. Đều 'Đã chấp nhận', chưa xây. Chi phí theo cửa hàng/sampling là tài liệu thiết kế `cost-per-shop.md`, không ADR. Đề xuất: chấp nhận; ADR GĐ4 tiếp theo từ 0034."
+  - "versions.yaml không có khóa `standards` cho WebSocket (RFC 6455). Đề xuất (CHỜ CHỦ — versions.yaml chỉ sửa khi chủ yêu cầu): thêm `standards.websocket: { docs: https://www.rfc-editor.org/rfc/rfc6455 }` (domain rfc-editor.org đã được phép, tải vào `refs/rfc/` như D9). Nếu chủ từ chối: claim về WebSocket chỉ ở mức nguyên lý và kiểm bằng docs ASP.NET Core 10 (trang hỗ trợ WebSocket, khóa `aspnetcore`); outline bài 2 giữ nguyên. Phía server dùng hỗ trợ WebSocket có sẵn của ASP.NET Core, không thêm khóa runtime."
+  - "Phía client: stage-4 không code nên không chọn gói Dart cho WebSocket; bài chỉ nói 'app giữ một kết nối mở'. Đề xuất: chấp nhận; khi xây thật, thêm khóa versions.yaml cho gói client trước khi viết bài trích code đó (frontend.l4.library-reach là related của bài 3)."
+  - "SignalR thuộc ASP.NET Core (khóa `aspnetcore`), được nêu tên ở bài 3 như phương án bị hoãn với lý do ASP.NET Core không phát hành client SignalR cho Dart. Reviewer 04 phải kiểm câu này với danh sách client trong docs ASP.NET Core 10. Đề xuất: chấp nhận; nếu docs cho thấy có client Dart chính thức thì DỪNG, sửa outline bài 3 mục 6 và ADR 0032 trước khi sinh bài."
+  - "Redis publish/subscribe (khóa `redis` 8, không thêm khóa): claim 'chỉ chuyển cho subscriber đang kết nối, at-most-once' kiểm bằng docs Redis. Redis staging là Deployment 1 replica không claim, chỉ giữ bản sao (`redis.yaml`) — hợp với thiết kế vì tin đã lưu PostgreSQL trước. Đề xuất: chấp nhận Redis thay vì RabbitMQ cho chuyển tiếp giữa Pod (không cần queue riêng mỗi Pod; RabbitMQ vẫn dùng cho message bền qua outbox như tin chưa đọc → email)."
+  - "Chat là service riêng `DonHang.Support` (tên project mới ngoài danh sách cố định của system prompt) thay vì module trong DonHang.Api; lý do: kết nối giữ lâu không chung Pod, giới hạn, canary với đặt đơn. Đề xuất: chấp nhận; đội Đặt hàng (ADR 0025) phụ trách chat (giả định — gắn với đơn và Notifications); đội Cửa hàng phụ trách đăng ký/gói (ADR 0025 đã giao mở cửa hàng mới)."
+  - "Stage-4 không code chat hay đăng ký: 7 tài liệu (2 yêu cầu, 2 ADR, 2 design review, `cost-per-shop.md`), trích code/cấu hình stage-3 có sẵn (`providers.dart`, `order_detail_screen.dart`, `redis.yaml`, `httproutes.yaml`, `brand.dart`, `donhang-realm.json`, `Program.cs`, `tempo.yml`). Đề xuất: chấp nhận như ba module bài toán trước. Một lab WebSocket hai Pod sẽ làm bài 2–3 cụ thể hơn nhưng cần code mới và khóa client — không làm."
+  - "example_tag: cả 8 bài `stage-4` (tài liệu chỉ có ở stage-4), như search-and-analytics/payments-and-signing; code trích là file stage-3 không đổi ở stage-4. Đề xuất: chấp nhận; nếu `/repo-stage 4` đổi `Program.cs` (SampleRatio), `tempo.yml` (24h), `providers.dart`, `brand.dart` thì sửa outline trước khi sinh bài."
+  - "Brand theo cửa hàng: chọn trong các `Brand` dựng sẵn trong app (đã qua test tương phản 4.5:1 của `accessibility-checks`), thay vì cho cửa hàng nhập màu tự do và kiểm tương phản lúc lưu. Đề xuất: chấp nhận cho V1 (thêm brand = một bản phát hành app); màu tự do là điều kiện mở lại của ADR 0033. Logo/ảnh của cửa hàng ngoài phạm vi."
+  - "Sampling và thời gian giữ: chuyển về đây từ k8s.l4.requests-drive-cluster-cost. Stage-3: `Telemetry:SampleRatio` mặc định 0.1, Compose đặt 1.0, staging tắt SDK ('No trace collector runs in the cluster before stage-4'), Tempo lab `block_retention: 24h`. Đề xuất: `cost-per-shop.md` chọn tỉ lệ/thời gian giữ cho production bằng lập luận theo SLO với số giả định, không đổi `Program.cs`/`tempo.yml`; tail sampling chỉ nói bằng lời (đã hứa 'GĐ4' ở backend.l3.trace-sampling — chấp nhận chỉ nêu như phương án chưa làm, không dạy cấu hình)."
+  - "Rời nền tảng và xóa dữ liệu: thời gian chờ, xóa theo lô, bản sao trong database báo cáo (ADR 0031), cache Redis (TTL), backup (hết hạn giữ) — không nêu luật/quy định nào. Đề xuất: chấp nhận; quy định pháp lý về dữ liệu cá nhân ngoài phạm vi V1."
+  - "Số giả định của dự án: tin hiện trong vài giây; email sau vài phút chưa đọc; lịch sử chat giữ một khoảng; cửa hàng tự đăng ký tới đơn đầu tiên trong vài phút; đổi gói có hiệu lực trong vài phút; thời gian chờ trước khi xóa dữ liệu cửa hàng rời đi; giữ trace vài ngày; số đăng ký mỗi ngày nhỏ. Đề xuất: chấp nhận; `/repo-stage 4` ghi số cụ thể thì outline giữ chữ 'giả định', đổi ý nghĩa thì sửa outline trước khi sinh bài."
+  - "Glossary +2: `websocket` (vi_keep), `usage-metering`. Không thêm term cho polling/long polling, backplane, sticky session, tail sampling, gói (plan), onboarding — bài nói bằng lời. Đề xuất: chấp nhận."
+  - "Tên file là đề xuất (`support-chat-requirements.md`, `support-chat-design-review.md`, `saas-platform-requirements.md`, `saas-platform-design-review.md`, `cost-per-shop.md`, slug ADR 0032/0033, endpoint `/api/v1/conversations`). Nếu `/repo-stage 4` đổi tên, sửa `example_files` trước khi sinh bài."
