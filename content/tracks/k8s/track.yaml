@@ -2290,7 +2290,7 @@ levels:
       - "Deploying to several clusters means running one Argo CD inside each of them."
       - "An ApplicationSet is a larger Application that deploys to many clusters by itself."
       - "With one template for all regions, a bad change can break only one region at a time."
-      depth_notes: "Không dạy generator khác (list, git, matrix), progressive sync, AppProject, `argocd cluster add`, so sánh Argo CD trung tâm với mỗi cluster một Argo CD, service discovery giữa cluster. Script xóa ApplicationSet và Secret cluster ở cuối. Không dạy lại Application — devops.l3.argo-cd-applications."
+      depth_notes: "Không dạy generator khác (list, git, matrix), progressive sync, AppProject, `argocd cluster add`, Argo CD trung tâm hay mỗi cluster một bản, discovery giữa cluster. Xóa ApplicationSet thì xóa luôn thứ đã deploy ở region. Không dạy lại Application — devops.l3.argo-cd-applications."
     - id: k8s.l4.failover-between-clusters
       title:
         vi: "Một điểm vào đứng trước hai cluster chuyển traffic khi một bên hỏng"
@@ -2325,7 +2325,7 @@ levels:
       - "If both clusters run the app, traffic moves to the healthy one automatically."
       - "Failover switches traffic instantly, so no call fails while it happens."
       - "Active-active is always better than active-passive because nothing sits idle."
-      depth_notes: "Không dạy DNS có kiểm tra sức khỏe, anycast, sản phẩm load balancer toàn cầu, service discovery giữa cluster, chỉnh thời gian health check. Dữ liệu khi failover — bài sau. Không dạy lại HA trong một cluster — k8s.l3.highly-available-entry-point. `failover.sh` không cần staging."
+      depth_notes: "Không dạy DNS có kiểm tra sức khỏe, anycast, sản phẩm load balancer toàn cầu, service discovery giữa cluster Dữ liệu khi failover — bài sau. Không dạy lại HA trong một cluster — k8s.l3.highly-available-entry-point. `failover.sh` không cần staging; capture chỉ in yes cho lời gọi lỗi, không đếm."
     - id: k8s.l4.data-decides-failover
       title:
         vi: "Traffic chuyển trong vài giây; dữ liệu mới quyết định mất những gì"
@@ -2383,7 +2383,7 @@ levels:
       - scripts/k8s/mutual-tls.sh
       - docs/design/threat-model.md
       outline:
-      - "Finding P5 of `threat-model.md` accepts that the Gateway calls the api Pods over plain HTTP: NetworkPolicies decide who may connect, but the bytes cross the node network unencrypted and the api knows a caller only by its address."
+      - "Finding P5 of `threat-model.md` accepts that the Gateway calls the api and Payments Pods over plain HTTP: NetworkPolicies limit who connects, but bytes cross the node network unencrypted and a caller is known only by its address."
       - "In ordinary TLS only the server shows a certificate; with mutual TLS (mTLS) the server also asks the client for one and checks it against a CA it trusts, so each end knows the other's name before any request."
       - "`mtls-certificates.yaml` has cert-manager issue, from the lab CA, a server certificate for `echo-mtls` and a client certificate for a caller named `gateway-client`, each kept in its own Secret."
       - "`echo-mtls.yaml` runs Caddy with the server certificate and `client_auth` set to `require_and_verify` against the lab CA; `mutual-tls.sh` calls it with no client certificate, then with one from another CA, and both handshakes fail."
@@ -2420,7 +2420,7 @@ levels:
       outline:
       - "A sidecar container runs beside the app container in the same Pod; Kubernetes 1.34 marks one by listing it under `initContainers` with `restartPolicy: Always`, so it starts before the app and keeps running beside it."
       - "In `echo-mtls-sidecar.yaml` the echo container answers plain HTTP on `localhost` only; a Caddy sidecar in the same Pod accepts mTLS on port 8443 and forwards to it, and the echo container is unchanged."
-      - "In `mtls-client-sidecar.yaml` the caller sends plain HTTP to its own sidecar on `localhost`, which opens the mTLS connection with the client certificate; `sidecar-proxy.sh` shows the call succeed while neither app container holds a key."
+      - "In `mtls-client-sidecar.yaml` the caller sends plain HTTP to its sidecar on `localhost`, which opens mTLS with the client certificate and sets `Host` to the upstream's name, or gets `421`; neither app container holds a key."
       - "A service mesh automates this for every Pod: its controllers add the proxy to each Pod, give each workload a certificate, usually named after its ServiceAccount, renew it, and configure every proxy from objects in the API server."
       - "Since every call passes through proxies, a mesh can also retry, time out, split calls between versions by weight or header and record each call, work Đơn Hàng's services do today in their own code."
       - "Some meshes run one proxy per node instead of one per Pod, trading the memory of many sidecars for a shared component on each node."
@@ -2517,21 +2517,20 @@ levels:
       vocab: [metrics-server, horizontal-pod-autoscaler]
       example_tag: stage-4
       example_files:
-      - scripts/k8s/metrics-server-install.sh
       - deploy/k8s/lessons/cpu-echo-hpa.yaml
       - scripts/k8s/autoscale.sh
       outline:
-      - "metrics-server collects each Pod's current CPU and memory use from the kubelets and serves it through the API server, where `kubectl top` reads it; it keeps no history, so it is not monitoring."
+      - "metrics-server collects each Pod's current CPU and memory from the kubelets and serves it through the API server for `kubectl top`; it keeps no history. `donhang` has none, so `kubectl top` fails."
       - "A HorizontalPodAutoscaler (HPA) is an object whose controller keeps setting a Deployment's replica count between `minReplicas` and `maxReplicas` from metrics."
       - "For CPU the target is a percentage of the request: the HPA divides measured use by the request, and the new count is the current one times measured over target, rounded up."
-      - "`autoscale.sh` sends load to `cpu-echo`: the HPA raises its replicas, and after the load stops lowers them once the scale-down window passes, 30 seconds in `cpu-echo-hpa.yaml` instead of the default 300."
-      - "If metrics-server is missing, or the containers set no CPU request, the HPA cannot compute utilization, shows its target as `<unknown>` and leaves the count as it is."
+      - "`autoscale.sh` loads `cpu-echo` under `cpu-echo-hpa.yaml`: with no metrics-server the HPA shows `cpu: <unknown>/50%`, `ScalingActive` is `False` with reason `FailedGetResourceMetric`, and the count stays at 1."
+      - "The same `<unknown>` appears when containers set no CPU request; the HPA then leaves the count as it is. Scaling down waits a window, 30 seconds in `cpu-echo-hpa.yaml` instead of the default 300."
       - "When Argo CD syncs a Deployment that an HPA scales, the manifest in Git leaves out `replicas`; otherwise Argo CD sets the count back to the value in Git."
       misconceptions:
       - "The HPA adds Pods when a Pod's CPU reaches its limit."
       - "Once the load drops, the extra Pods are removed straight away."
       - "`kubectl top` shows how a Pod's CPU use changed over the last day."
-      depth_notes: "Không dạy metric tùy biến hay từ Prometheus, scale theo memory chi tiết, VPA, scale về 0, tham số thuật toán (tolerance, chu kỳ). Thêm node — bài sau. Lab trên `donhang`, namespace `autoscale-lessons`; cờ TLS kubelet của metrics-server chỉ dành cho lab."
+      depth_notes: "Không dạy metric tùy biến hay từ Prometheus, scale theo memory chi tiết, VPA, scale về 0, tham số thuật toán (tolerance, chu kỳ). Thêm node — bài sau. Lab trên `donhang`, namespace `autoscale-lessons`; lab không cài metrics-server (DECISIONS 2026-10-26) nên chỉ thấy `<unknown>`."
     - id: k8s.l4.node-autoscaling
       title:
         vi: "Pod thêm cần chỗ: thêm node là việc của một autoscaler khác"
@@ -2583,12 +2582,10 @@ levels:
       vocab: [rightsizing]
       example_tag: stage-4
       example_files:
-      - scripts/k8s/requests-vs-usage.sh
       - docs/design/cluster-cost.md
-      - deploy/gitops/config-repo/apps/metrics-server.yaml
       outline:
       - "Nodes are filled by requests, so the number of nodes a cluster needs, and pays for, follows the sum of its Pods' requests, whether that capacity is used or not."
-      - "`requests-vs-usage.sh` prints, for each Pod on `donhang-staging`, its CPU and memory requests beside its current use from metrics-server, and for the node its capacity beside the sum of requests."
+      - "In `cluster-cost.md` only `api` among staging's workloads sets requests, so their total says little about the nodes staging needs; with no metrics-server in the lab, its proposed requests are assumed, not measured."
       - "Rightsizing sets requests from use measured at peak plus headroom: too low and Pods are slowed down, killed for memory or crowd their neighbours; too high and nodes sit reserved but idle."
       - "The platform runs in every cluster whatever the traffic: Argo CD, the Git server, Traefik, the Sealed Secrets controller and Prometheus are a fixed share each extra cluster or environment pays again."
       - "`cluster-cost.md` counts cost in nodes and team hours with figures marked as assumed, and lists the levers: requests, HPA minimums, environments stopped outside working hours and how long telemetry is kept."
@@ -2596,7 +2593,7 @@ levels:
       - "We only pay for the CPU our Pods actually use."
       - "Generous requests are free insurance against slowdowns."
       - "A cluster with little traffic costs almost nothing to keep running."
-      depth_notes: "Không nêu giá thật, chương trình giảm giá hay tên nhà cung cấp, spot node, công cụ phân bổ chi phí, VPA. Chọn tỉ lệ sampling, thiết kế theo chi phí chi tiết — sysdesign/chat-and-saas. Script chỉ đọc; `cluster-cost.md` đề xuất request, không đổi manifest staging."
+      depth_notes: "Không nêu giá thật, chương trình giảm giá hay tên nhà cung cấp, spot node, công cụ phân bổ chi phí, VPA. Chọn tỉ lệ sampling, thiết kế theo chi phí chi tiết — sysdesign/chat-and-saas. Lab không có metrics-server: request đề xuất là giả định, không đổi manifest staging."
     - id: k8s.l4.choosing-managed-kubernetes
       title:
         vi: "Đơn Hàng chạy production trên Kubernetes managed và ghi rõ khi nào thôi"
