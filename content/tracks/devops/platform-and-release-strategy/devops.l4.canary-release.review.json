@@ -1,0 +1,145 @@
+{
+  "id": "devops.l4.canary-release",
+  "technical": {
+    "reviewed_at": "2026-10-27T19:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "BackendRef weight: \"Weight specifies the proportion of requests forwarded to the referenced backend. This is computed as weight/(sum of all weights in this BackendRefs list).\" \"If weight is set to 0, no traffic should be forwarded for this entry.\" \"If unspecified, weight defaults to 1.\" Traffic splitting guide: \"the sum of all the weights within a single route rule is the denominator for all of the backends.\"",
+        "source": "https://gateway-api.sigs.k8s.io/references/spec/ (BackendRef.weight); https://gateway-api.sigs.k8s.io/guides/traffic-splitting/"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "canary.sh @ stage-4: line 30 `set_backends api 90 api-canary 10`, line 60 `set_backends api 100 api-canary 0`, lines 65-66 `set_backends api` + `overlay_remove api-canary.yaml`. release.sh 148-150: set_backends writes \"the backendRefs of the HTTPRoute api's first rule (/api/v1, /api/v2, /openapi). One service without a weight\". httproutes.yaml 17-29: PathPrefix /api/v1, /api/v2, /openapi -> api:8080.",
+        "source": "examples/don-hang scripts/devops/canary.sh, scripts/lib/release.sh, deploy/gitops/config-repo/platform/edge/httproutes.yaml @ stage-4"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "api-canary.yaml lines 6-7: \"the overlay's images field gives it the tag and digest, as it does for api.\" `replicas: 1`, label `app: api-canary`, envFrom configMapRef `api`, ConnectionStrings__Default from secretKeyRef `api`; Service api-canary selects `app: api-canary`, port 8080. base/api.yaml: Service api selector `app: api`; line 32 \"The tag and the digest come from each overlay's images field.\"",
+        "source": "deploy/gitops/lessons/api-canary.yaml; deploy/gitops/config-repo-kustomize/base/api.yaml @ stage-4"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "service.md: \"The Service targets TCP port 9376 on any Pod with the `app.kubernetes.io/name: MyApp` label.\" \"The controller for that Service continuously scans for Pods that match its selector, and then makes any necessary updates to the set of EndpointSlices\". update-intro.md: \"the Service will send traffic only to Pods that can handle requests.\"",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/services-networking/service.md L113-121; docs/tutorials/kubernetes-basics/update/update-intro.md L61"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "pod role \"discovers all pods and exposes their containers as targets\"; \"For each declared port of a container, a single target is generated\"; __meta_kubernetes_pod_label_<labelname>, __meta_kubernetes_pod_container_port_number. namespaces: \"If omitted, all namespaces are used.\" relabel: action default = replace, regex default = (.*); \"keep: Drop targets for which regex does not match the concatenated source_labels.\" Label on series confirmed by run: sum by (app) returned api and api-canary. Page is latest, not 3.5-specific.",
+        "source": "https://prometheus.io/docs/prometheus/latest/configuration/configuration/ (kubernetes_sd_config, relabel_config); outputs/stage-4/scripts/devops/canary.txt"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "prometheus.yaml @ stage-4 line 49 `scrape_interval: 5s`; lines 63-78: job_name api, role pod, namespaces names [donhang], keep regex api|api-canary|api-green, keep port \"8080\", __meta_kubernetes_pod_label_app -> app, __meta_kubernetes_pod_name -> pod. Lesson's line refs 64-67, 69-74, 75-76, 77-78 match the excerpt.",
+        "source": "deploy/gitops/config-repo/platform/monitoring/prometheus.yaml @ stage-4"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "prometheus-net README: \"Total number of received HTTP requests.\"; method/endpoint settled by the recorded run (query by method, endpoint returned api 180 / api-canary 20). Prometheus functions: \"The increase is extrapolated to cover the full time range as specified in the range vector selector, so that it is possible to get a non-integer result even if a counter increases only by integer increments.\" Functions page is latest, not 3.5-specific.",
+        "source": "https://github.com/prometheus-net/prometheus-net; https://prometheus.io/docs/prometheus/latest/querying/functions/ (increase); outputs/stage-4/scripts/devops/canary.txt"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "canary.sh @ stage-4: 18-23 echo/overlay_add/config_commit/sync_app staging/rollout status/wait_targets api-canary 1; 29 echo \"== commit the route api: api 90, api-canary 10\"; 30 set_backends; 31 config_commit; 32 git show | grep; 33 sync_app edge-staging; 34 wait_route; 45 before; 47 read_products 200 | sort | uniq -c | awk HTTP; 49 after; 51-52 join + awk $3-$2; 54-55 total, echo \"  together:   $total\".",
+        "source": "scripts/devops/canary.sh, scripts/lib/release.sh @ stage-4"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "canary.txt: \"route api: api weight 90, api-canary weight 10\", \"HTTP 200: 200\", \"api:        180\", \"api-canary: 20\", \"together:   200\", last \"route api: api weight 1\". Lesson output block matches these lines.",
+        "source": "examples/don-hang/outputs/stage-4/scripts/devops/canary.txt"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "deployment.md L269: \"By default, it ensures that at most 125% of the desired number of Pods are up (25% max surge).\" L1216: \"calculated from the percentage by rounding up. The default value is 25%.\" L389: \"when you roll back to an earlier revision, only the Deployment's Pod template part is rolled back.\" L167: \"A Deployment's rollout is triggered if and only if the Deployment's Pod template ... is changed\". base/api.yaml: replicas 2, no strategy -> ceil(0.5) = 1.",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/workloads/controllers/deployment.md L167, L269, L389, L1216; config-repo-kustomize/base/api.yaml @ stage-4"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Spec: \"Weight specifies the proportion of requests forwarded to the referenced backend.\" httproutes.yaml @ stage-4 rule 1 has matches + backendRefs only; no sessionPersistence field, so nothing binds a client to a backend. Lesson s4 now states exactly this (\"a proportion of requests, not of customers. Nothing on the route keeps one customer's requests on one backend\").",
+        "source": "https://gateway-api.sigs.k8s.io/references/spec/; deploy/gitops/config-repo/platform/edge/httproutes.yaml @ stage-4"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "update-intro.md: \"It does this by incrementally replacing the current Pods with new ones... Kubernetes waits for those new Pods to start before removing the old Pods.\" \"the Service will send traffic only to Pods that can handle requests.\"",
+        "source": "refs/kubernetes-website/content/en/docs/tutorials/kubernetes-basics/update/update-intro.md L30-33, L61"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "apps/edge-staging.yaml: name edge-staging, path platform/edge (holds httproutes.yaml). apps/staging.yaml: name staging, path envs/staging; overlay_add copies api-canary.yaml into envs/staging (release.sh).",
+        "source": "deploy/gitops/config-repo/apps/edge-staging.yaml, apps/staging.yaml, scripts/lib/release.sh @ stage-4"
+      },
+      {
+        "n": 14,
+        "verdict": "not-needed",
+        "evidence": "Conditional recommendation (\"when ... and both versions accept each other's data\"); presented with its condition in section 7. No factual dependence beyond claims 1 and 16."
+      },
+      {
+        "n": 15,
+        "verdict": "not-needed",
+        "evidence": "Conditional recommendation (\"when one customer must see one version for every request of a visit\"); rests on claim 11. Stated with its condition in section 7."
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "api-canary.yaml env ConnectionStrings__Default from Secret `api`, same as base/api.yaml; DonHangDbContext.cs line 39 `e.ToTable(\"orders\")`.",
+        "source": "deploy/gitops/lessons/api-canary.yaml; DonHang.Infrastructure/DonHangDbContext.cs @ stage-4"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "release.sh release_setup: if envs/staging/kustomization.yaml is missing, echo \"the config repository is not in the Kustomize layout yet: run scripts/k8s/kustomize-config-repo.sh first\" >&2; exit 1.",
+        "source": "scripts/lib/release.sh lines 39-42 @ stage-4"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "scope",
+        "text": "Outline item 4 still ends \"an exact tenth, since Traefik rotates through the weights in a fixed order\"; the lesson now (correctly, claim 10 of round 1 was unverified) says only that the tenth came out exact in this run. Lesson and outline disagree until the owner decides; meta open_questions already proposes it. Not fixable in the lesson.",
+        "quote": "The tenth came out exact in this run; the weights promise only a proportion, so another run may differ by a few requests.",
+        "fix": "Owner: drop \"since Traefik rotates through the weights in a fixed order\" from item 4 of devops.l4.canary-release in content/tracks/devops/track.yaml (or supply a Traefik 3.7 page stating it and re-review). No lesson change."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "version",
+        "text": "Claim 7 now mixes two version keys: the increase() extrapolation is Prometheus behaviour, but the claim carries version_key prometheus_net only.",
+        "quote": "`increase()`, named in the comment, works from the stored samples, so it would give an estimate.",
+        "fix": "In .meta.json split claim 7: keep the http_requests_received_total part under prometheus_net, and add a claim for \"increase() is extrapolated from stored samples, so it gives an estimate\" with version_key prometheus, source Prometheus docs Query functions > increase(). No lesson text change."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-27T20:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "issues": [],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}
