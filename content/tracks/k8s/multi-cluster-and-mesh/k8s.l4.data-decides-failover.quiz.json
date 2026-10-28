@@ -1,0 +1,396 @@
+{
+  "lesson": "k8s.l4.data-decides-failover",
+  "stage": 4,
+  "questions": [
+    {
+      "id": "k8s.l4.data-decides-failover.q1",
+      "type": "truefalse",
+      "bloom": "understand",
+      "difficulty": 2,
+      "skills": [
+        "k8s.multicluster.failover"
+      ],
+      "section_ref": 3,
+      "question": {
+        "en": "Look at the diagram in \"How it works\". A colleague says: \"Cutting the link between `db` and `db-replica` does not by itself cause a split brain; promoting `db-replica` while `db` still takes writes does.\" Is the colleague right?",
+        "vi": "Xem sơ đồ ở mục \"How it works\". Một đồng nghiệp nói: \"Chỉ riêng việc đứt liên kết giữa `db` và `db-replica` không gây ra split brain; promote `db-replica` trong khi `db` vẫn nhận ghi mới gây ra.\" Đồng nghiệp nói đúng không?"
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "True, because before the promotion only `db` accepts writes; the cut only stops `db-replica` from receiving new changes.",
+          "vi": "Đúng, vì trước khi promote chỉ `db` nhận ghi; việc đứt liên kết chỉ khiến `db-replica` ngừng nhận thay đổi mới.",
+          "polarity": "true"
+        },
+        {
+          "id": "b",
+          "en": "True, because `pg_promote()` copies every order from `db` to `db-replica` again, and that copy is what splits the data.",
+          "vi": "Đúng, vì `pg_promote()` sao lại mọi đơn từ `db` sang `db-replica`, và chính lần sao đó làm dữ liệu rẽ đôi.",
+          "polarity": "true"
+        },
+        {
+          "id": "c",
+          "en": "False, because once the link is cut the two servers already hold different data, and that difference is the split brain.",
+          "vi": "Sai, vì khi liên kết đứt thì hai server đã giữ dữ liệu khác nhau, và chính sự khác nhau đó là split brain.",
+          "polarity": "false"
+        },
+        {
+          "id": "d",
+          "en": "False, because a split brain needs two real regions, and in the lab `db` and `db-replica` run on one machine.",
+          "vi": "Sai, vì split brain cần hai region thật, còn trong bài lab `db` và `db-replica` chạy trên cùng một máy.",
+          "polarity": "false"
+        }
+      ],
+      "answer": [
+        "a"
+      ],
+      "explanation": {
+        "en": {
+          "correct": "Split brain means two copies both accept writes, each acting as the primary. Until `pg_promote()` runs, `db-replica` is still in recovery and takes no writes, so the cut only leaves it behind. Promoting it while `db` keeps taking orders creates the second primary.",
+          "b": "Promotion is the step that matters, so it is tempting to think it does the damage by moving data. But `pg_promote()` only ends recovery: `db-replica` stops following `db` and starts accepting writes; it copies nothing.",
+          "c": "After the cut `db-replica` does lack order 2, so the two servers already differ. That gap is lag, which becomes the failover's RPO; it is not a split brain, because only `db` accepts writes until the promotion.",
+          "d": "The lab does run both servers on one machine, so it can look like a simulation that proves nothing. But the script's output shows two primaries with two prices for product 1; where they run does not change that."
+        },
+        "vi": {
+          "correct": "Split brain là khi hai bản cùng nhận ghi, mỗi bên tự coi mình là primary. Trước khi `pg_promote()` chạy, `db-replica` vẫn đang recovery và không nhận ghi, nên việc đứt liên kết chỉ khiến nó bị tụt lại. Promote nó trong khi `db` vẫn nhận đơn mới tạo ra primary thứ hai.",
+          "b": "Promote là bước quyết định, nên dễ nghĩ nó gây hại bằng cách di chuyển dữ liệu. Nhưng `pg_promote()` chỉ kết thúc recovery: `db-replica` ngừng theo `db` và bắt đầu nhận ghi; nó không sao chép gì cả.",
+          "c": "Sau khi đứt liên kết, `db-replica` đúng là thiếu đơn 2, nên hai server đã khác nhau. Khoảng thiếu đó là độ trễ, nó trở thành RPO của lần failover; nó chưa phải split brain, vì tới lúc promote chỉ `db` nhận ghi.",
+          "d": "Bài lab đúng là chạy hai server trên một máy, nên dễ coi đó là mô phỏng không chứng minh được gì. Nhưng kết quả của script cho thấy hai primary với hai giá cho sản phẩm 1; chạy ở đâu không đổi được điều đó."
+        }
+      }
+    },
+    {
+      "id": "k8s.l4.data-decides-failover.q2",
+      "type": "single",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": [
+        "k8s.multicluster.failover"
+      ],
+      "section_ref": 4,
+      "question": {
+        "en": "`db-replica` is fed by asynchronous replication and is three seconds behind `db` when north goes silent. Every order in those three seconds got `201`. After `db-replica` is promoted and calls move to south, what is the RPO of this failover?",
+        "vi": "`db-replica` được nuôi bằng replication bất đồng bộ và đang chậm hơn `db` ba giây khi north im lặng. Mọi đơn trong ba giây đó đều nhận `201`. Sau khi `db-replica` được promote và lời gọi chuyển sang south, RPO của lần failover này là gì?"
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "Zero: each of those orders got `201`, so each was committed and is in `db-replica`",
+          "vi": "Bằng không: mỗi đơn đó đã nhận `201`, nên đã được commit và có trong `db-replica`",
+          "misconception": "Once traffic moves to the second region, every order made before the failure is there too."
+        },
+        {
+          "id": "b",
+          "en": "The orders confirmed in those three seconds, which `db-replica` never received",
+          "vi": "Các đơn được xác nhận trong ba giây đó, mà `db-replica` chưa bao giờ nhận được"
+        },
+        {
+          "id": "c",
+          "en": "The RPO the team's SLO sets, since the failover was planned to meet that target",
+          "vi": "RPO mà SLO của đội đặt ra, vì lần failover được lên kế hoạch để đạt mục tiêu đó"
+        },
+        {
+          "id": "d",
+          "en": "Every order since the last base backup, since the standby restarts from that copy",
+          "vi": "Mọi đơn kể từ base backup gần nhất, vì standby bắt đầu lại từ bản sao đó"
+        }
+      ],
+      "answer": [
+        "b"
+      ],
+      "explanation": {
+        "en": {
+          "correct": "With asynchronous replication `db` confirms a commit once it is safe on `db` itself, without waiting for the standby. Orders confirmed but not yet received by the standby are missing from the promoted copy, so the RPO is the lag at that moment, here three seconds of orders.",
+          "a": "A `201` does mean the order was committed, so it feels safe everywhere. But it was committed on `db` only; asynchronous replication confirms without waiting for the standby, so `db-replica` may never have seen it.",
+          "c": "An SLO does state RPO targets, so it is natural to read the failover's loss from it. But the loss is whatever the lag was when the link was cut, not a number anyone chose; ADR `0020` ties RPO to what is measured for the same reason.",
+          "d": "Losing everything since the last base backup does happen in option A, where the database is restored from copies. A standby is different: it streams every change after its base backup, so it lacks only what had not reached it yet."
+        },
+        "vi": {
+          "correct": "Với replication bất đồng bộ, `db` xác nhận một commit ngay khi nó an toàn trên chính `db`, không chờ standby. Những đơn đã xác nhận mà standby chưa nhận được sẽ thiếu trong bản được promote, nên RPO là độ trễ tại lúc đó, ở đây là ba giây đơn hàng.",
+          "a": "`201` đúng là nghĩa đơn đã được commit, nên dễ tưởng nó an toàn ở mọi nơi. Nhưng nó chỉ được commit trên `db`; replication bất đồng bộ xác nhận mà không chờ standby, nên `db-replica` có thể chưa từng thấy đơn đó.",
+          "c": "SLO đúng là có ghi mục tiêu RPO, nên dễ đọc mức mất của lần failover từ đó. Nhưng mức mất là độ trễ đúng lúc liên kết đứt, không phải con số ai chọn; ADR `0020` gắn RPO với số đo cũng vì lý do này.",
+          "d": "Mất mọi thứ kể từ base backup gần nhất đúng là xảy ra ở phương án A, khi database được khôi phục từ bản sao lưu. Standby thì khác: nó stream mọi thay đổi sau base backup, nên chỉ thiếu phần chưa tới được nó."
+        }
+      }
+    },
+    {
+      "id": "k8s.l4.data-decides-failover.q3",
+      "type": "single",
+      "bloom": "analyze",
+      "difficulty": 4,
+      "skills": [
+        "k8s.multicluster.failover"
+      ],
+      "section_ref": 5,
+      "question": {
+        "en": "Under `== and each answers with its own`, `promote-replica.sh` prints `1300000` on `db` and `1200000` on `db-replica`. A teammate says: \"Give it a moment; `db-replica` will catch up with `db` and the two will agree.\" Which reading is right?",
+        "vi": "Dưới dòng `== and each answers with its own`, `promote-replica.sh` in `1300000` trên `db` và `1200000` trên `db-replica`. Một đồng nghiệp nói: \"Đợi một chút; `db-replica` sẽ bắt kịp `db` và hai bên sẽ khớp nhau.\" Cách đọc nào đúng?"
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "They stay apart: after promotion nothing carries a change between the two servers in either direction",
+          "vi": "Chúng vẫn lệch: sau khi promote, không có gì mang thay đổi giữa hai server theo chiều nào cả"
+        },
+        {
+          "id": "b",
+          "en": "They agree soon: `db-replica` still streams `db`'s changes, only with some lag",
+          "vi": "Chúng sẽ sớm khớp: `db-replica` vẫn stream thay đổi của `db`, chỉ là có độ trễ"
+        },
+        {
+          "id": "c",
+          "en": "They agree on `1300000`: `db` was the primary first, so its value wins",
+          "vi": "Chúng sẽ khớp ở `1300000`: `db` là primary trước, nên giá trị của nó thắng"
+        },
+        {
+          "id": "d",
+          "en": "They agree on `1200000`: the later write wins once the two servers reconnect",
+          "vi": "Chúng sẽ khớp ở `1200000`: lần ghi sau sẽ thắng khi hai server nối lại"
+        }
+      ],
+      "answer": [
+        "a"
+      ],
+      "explanation": {
+        "en": {
+          "correct": "Line 43 shows `f`: `db-replica` has left recovery and no longer follows `db`. Both are primaries, nothing carries a change from one to the other, and no step will make them agree.",
+          "b": "Before the promotion this was true: line 35 shows `t`, and a standby does catch up after a lag. `pg_promote()` ended that, so from line 42 on nothing streams from `db` to `db-replica`.",
+          "c": "`db` was the original primary, so it feels like the source of truth. But nothing in the script or in PostgreSQL ranks the two; each holds its own value by its own records.",
+          "d": "Picking the latest write is one way people imagine a merge. Nothing here does it: the servers share no link after the promotion, and a merge would have to decide row by row, which for orders may keep both."
+        },
+        "vi": {
+          "correct": "Dòng 43 cho thấy `f`: `db-replica` đã rời recovery và không còn theo `db`. Cả hai đều là primary, không có gì mang thay đổi từ bên này sang bên kia, và không bước nào khiến chúng khớp lại.",
+          "b": "Trước khi promote thì điều này đúng: dòng 35 cho thấy `t`, và standby đúng là bắt kịp sau một độ trễ. `pg_promote()` đã chấm dứt việc đó, nên từ dòng 42 trở đi không còn gì stream từ `db` sang `db-replica`.",
+          "c": "`db` là primary ban đầu, nên dễ coi nó là nguồn sự thật. Nhưng không có gì trong script hay trong PostgreSQL xếp hạng hai bên; mỗi bên giữ giá trị của mình theo dữ liệu của chính nó.",
+          "d": "Lấy lần ghi mới nhất là một cách người ta hay hình dung việc gộp. Ở đây không có gì làm vậy: sau khi promote hai server không còn liên kết, và việc gộp phải quyết định từng dòng, mà với đơn hàng có thể phải giữ cả hai."
+        }
+      }
+    },
+    {
+      "id": "k8s.l4.data-decides-failover.q4",
+      "type": "multi",
+      "bloom": "analyze",
+      "difficulty": 4,
+      "skills": [
+        "k8s.multicluster.failover"
+      ],
+      "section_ref": 6,
+      "question": {
+        "en": "The team compares a warm standby fed by asynchronous replication with a synchronous replica in the other region. Which of these hold? Select all that apply.",
+        "vi": "Đội so sánh một warm standby được nuôi bằng replication bất đồng bộ với một replica đồng bộ ở region kia. Những điều nào đúng? Chọn tất cả các đáp án đúng."
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "With the synchronous replica, writes get slower as the regions get farther apart, even on a normal day",
+          "vi": "Với replica đồng bộ, việc ghi chậm đi khi hai region càng xa nhau, kể cả vào một ngày bình thường"
+        },
+        {
+          "id": "b",
+          "en": "With either one, the old primary must be stopped or cut off from every client before the standby is promoted",
+          "vi": "Với cả hai, primary cũ phải bị dừng hoặc bị cắt khỏi mọi client trước khi standby được promote"
+        },
+        {
+          "id": "c",
+          "en": "With the warm standby, the RPO is a number the team chooses when it sets up the replica",
+          "vi": "Với warm standby, RPO là một con số đội chọn khi dựng replica"
+        },
+        {
+          "id": "d",
+          "en": "With the synchronous replica, no commit the api was told succeeded is missing after promotion",
+          "vi": "Với replica đồng bộ, không commit nào api đã được báo thành công bị thiếu sau khi promote"
+        },
+        {
+          "id": "e",
+          "en": "With the warm standby, the RTO is the DR drill's time plus restoring the database",
+          "vi": "Với warm standby, RTO là thời gian của diễn tập DR cộng thời gian khôi phục database"
+        }
+      ],
+      "answer": [
+        "a",
+        "b",
+        "d"
+      ],
+      "explanation": {
+        "en": {
+          "correct": "Synchronous replication confirms a commit only after the standby has it, so a confirmed commit is lost only if both servers are lost at once, and every commit that writes pays a round trip between the regions for it. Neither option removes the split brain risk at promotion, so both need the old primary stopped or cut off first.",
+          "c": "Teams do write RPO targets, so it is easy to think the standby is set up to meet one. With asynchronous replication the loss is whatever the lag was at the moment of promotion, not a chosen number.",
+          "e": "The drill's time plus a restore is the RTO of option A, which rebuilds from backups. A warm standby keeps the cluster and the data waiting, so its RTO is much shorter."
+        },
+        "vi": {
+          "correct": "Replication đồng bộ chỉ xác nhận một commit sau khi standby đã có nó, nên một commit đã xác nhận chỉ mất khi cả hai server cùng mất, và mỗi commit có ghi trả giá bằng một vòng đi về giữa hai region. Không phương án nào bỏ được rủi ro split brain lúc promote, nên cả hai đều cần dừng hoặc cắt primary cũ trước.",
+          "c": "Các đội đúng là có ghi mục tiêu RPO, nên dễ nghĩ standby được dựng để đạt một con số. Với replication bất đồng bộ, mức mất là độ trễ đúng lúc promote, không phải con số được chọn.",
+          "e": "Thời gian diễn tập DR cộng một lần khôi phục là RTO của phương án A, vốn dựng lại từ bản sao lưu. Warm standby giữ sẵn cluster và dữ liệu, nên RTO của nó ngắn hơn nhiều."
+        }
+      }
+    },
+    {
+      "id": "k8s.l4.data-decides-failover.q5",
+      "type": "single",
+      "bloom": "analyze",
+      "difficulty": 4,
+      "skills": [
+        "k8s.multicluster.failover"
+      ],
+      "section_ref": 8,
+      "question": {
+        "en": "Đơn Hàng runs a warm standby in south. The entry's health checks of north have failed for a minute, and the on-call person is about to run `pg_promote()` on south's standby. What must they establish first?",
+        "vi": "Đơn Hàng chạy một warm standby ở south. Health check của điểm vào tới north đã thất bại suốt một phút, và người trực sắp chạy `pg_promote()` trên standby ở south. Họ phải xác định điều gì trước?"
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "Nothing more: failed checks mean north's database can no longer take orders",
+          "vi": "Không cần gì thêm: check thất bại nghĩa là database của north không còn nhận đơn được",
+          "misconception": "Promoting the standby is safe as soon as the primary stops answering health checks."
+        },
+        {
+          "id": "b",
+          "en": "That north's database is stopped or cut off from every client that could write to it",
+          "vi": "Rằng database của north đã dừng hoặc bị cắt khỏi mọi client có thể ghi vào nó"
+        },
+        {
+          "id": "c",
+          "en": "That the standby's lag is zero, so no order confirmed in north is lost",
+          "vi": "Rằng độ trễ của standby bằng không, để không đơn nào đã xác nhận ở north bị mất"
+        },
+        {
+          "id": "d",
+          "en": "That south's Pods are ready, since they came from the config repository",
+          "vi": "Rằng các Pod ở south đã sẵn sàng, vì chúng được dựng từ config repository"
+        }
+      ],
+      "answer": [
+        "b"
+      ],
+      "explanation": {
+        "en": {
+          "correct": "A failed check shows only that the checker cannot reach north; clients on north's side may still be writing to its database. Promoting then creates two primaries, so the old one must be stopped or cut off first.",
+          "a": "The entry does treat failed checks as \"north is down\", and for moving calls that is enough. For the data it is not: a region cut off from the checker looks the same as a stopped one, yet may still be taking orders.",
+          "c": "Zero lag would mean no confirmed order is lost, so it is a fair thing to wish for. But it does not prevent a split brain, and with asynchronous replication nobody can wait for it once the link is cut.",
+          "d": "South's Pods do need to be ready for the moved calls to be answered. That is the traffic half of failover; it says nothing about whether north's database is still accepting writes."
+        },
+        "vi": {
+          "correct": "Health check thất bại chỉ cho thấy bên kiểm tra không tới được north; các client ở phía north có thể vẫn đang ghi vào database của nó. Promote lúc đó sẽ tạo ra hai primary, nên primary cũ phải bị dừng hoặc bị cắt trước.",
+          "a": "Điểm vào đúng là coi check thất bại là \"north đã chết\", và để chuyển lời gọi thì vậy là đủ. Với dữ liệu thì không: một region bị cắt khỏi bên kiểm tra trông giống hệt một region đã dừng, nhưng có thể vẫn đang nhận đơn.",
+          "c": "Độ trễ bằng không nghĩa là không mất đơn đã xác nhận, nên mong điều đó là hợp lý. Nhưng nó không ngăn được split brain, và với replication bất đồng bộ thì không ai chờ được nó khi liên kết đã đứt.",
+          "d": "Các Pod ở south đúng là phải sẵn sàng thì lời gọi chuyển sang mới được trả lời. Đó là nửa traffic của failover; nó không nói gì về việc database của north còn nhận ghi hay không."
+        }
+      }
+    },
+    {
+      "id": "k8s.l4.data-decides-failover.q6",
+      "type": "scenario",
+      "bloom": "evaluate",
+      "difficulty": 5,
+      "skills": [
+        "k8s.multicluster.failover"
+      ],
+      "section_ref": 7,
+      "context": {
+        "en": "Đơn Hàng at `stage-4` runs in one region. Its SLO allows an RTO and RPO that the DR drill already meets, and no contract asks for less. The base backups and WAL still sit on the machine that runs the database. A team of four runs everything. A teammate proposes making it safer before the first real customers arrive.",
+        "vi": "Đơn Hàng ở `stage-4` chạy trong một region. SLO của nó cho phép một RTO và RPO mà diễn tập DR đã đạt, và chưa hợp đồng nào đòi thấp hơn. Base backup và WAL vẫn nằm trên máy đang chạy database. Một đội bốn người vận hành mọi thứ. Một đồng nghiệp đề xuất làm hệ thống an toàn hơn trước khi có khách thật đầu tiên."
+      },
+      "question": {
+        "en": "Which step fits best now?",
+        "vi": "Bước nào phù hợp nhất lúc này?"
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "Build a warm standby: a second cluster with an asynchronous replica and a manual failover",
+          "vi": "Dựng warm standby: một cluster thứ hai với replica bất đồng bộ và failover thủ công"
+        },
+        {
+          "id": "b",
+          "en": "Stay in one region, and copy the base backups and WAL to a second region first",
+          "vi": "Giữ một region, và trước hết sao base backup và WAL sang một region thứ hai"
+        },
+        {
+          "id": "c",
+          "en": "Add a synchronous replica in a second region, so no confirmed order is ever lost",
+          "vi": "Thêm một replica đồng bộ ở region thứ hai, để không bao giờ mất đơn đã xác nhận"
+        },
+        {
+          "id": "d",
+          "en": "Run both regions and put one entry in front, so either region can take orders",
+          "vi": "Chạy cả hai region và đặt một điểm vào phía trước, để region nào cũng nhận đơn được",
+          "misconception": "Running both regions active-active only needs a load balancer in front of them."
+        }
+      ],
+      "answer": [
+        "b"
+      ],
+      "explanation": {
+        "en": {
+          "correct": "Nothing asks for less than the drill measures, so a second cluster buys protection no one requires. The real gap is that losing the database's machine loses its backups too; copying them away closes it, as ADR `0020` says must happen before real customers.",
+          "a": "A warm standby does cut RTO to minutes, so it looks like the obvious upgrade. Here it doubles what four people run and upgrade for a target no SLO sets. It is the right choice when a contract demands minutes of RTO and accepts losing the last seconds of orders.",
+          "c": "Never losing a confirmed order sounds like the safest goal. But every commit that writes would wait a round trip between regions, failure or not, to meet a demand nobody made. It is right when no confirmed order may be lost and the regions are close enough that the round trip is cheap.",
+          "d": "An entry does spread calls over both regions, so this looks like the step after active-passive. But with one primary database only one region can take writes. It is right when each order belongs to one region, or with a database that accepts writes in several places."
+        },
+        "vi": {
+          "correct": "Không có gì đòi thấp hơn số đo của diễn tập DR, nên cluster thứ hai mua một sự bảo vệ chẳng ai yêu cầu. Khoảng trống thật là mất máy chạy database thì mất luôn bản sao lưu; sao chúng đi chỗ khác sẽ lấp được, như ADR `0020` nói phải làm trước khi có khách thật.",
+          "a": "Warm standby đúng là rút RTO xuống vài phút, nên trông như bước nâng cấp hiển nhiên. Ở đây nó nhân đôi những gì bốn người phải vận hành và nâng cấp, cho một mục tiêu không SLO nào đặt ra. Nó là lựa chọn đúng khi một hợp đồng đòi RTO vài phút và chấp nhận mất vài giây đơn cuối.",
+          "c": "Không bao giờ mất đơn đã xác nhận nghe như mục tiêu an toàn nhất. Nhưng mọi commit có ghi sẽ phải chờ một vòng đi về giữa hai region, dù có sự cố hay không, để đáp một yêu cầu chẳng ai đưa ra. Nó đúng khi không được mất đơn đã xác nhận nào và hai region đủ gần để vòng đi về rẻ.",
+          "d": "Một điểm vào đúng là chia lời gọi cho cả hai region, nên trông như bước tiếp theo sau active-passive. Nhưng với một database primary, chỉ một region nhận ghi được. Nó đúng khi mỗi đơn thuộc về một region, hoặc với một database nhận ghi ở nhiều nơi."
+        }
+      }
+    },
+    {
+      "id": "k8s.l4.data-decides-failover.q7",
+      "type": "order",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": [
+        "k8s.multicluster.failover"
+      ],
+      "section_ref": 4,
+      "question": {
+        "en": "Using the diagram in \"How it works\", put in order what happens from order 1's confirmation until north and south hold two primaries.",
+        "vi": "Dựa vào sơ đồ ở mục \"How it works\", sắp xếp theo thứ tự những gì xảy ra từ lúc đơn 1 được xác nhận cho tới khi north và south có hai primary."
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "The on-call person runs `pg_promote()` on `db-replica`",
+          "vi": "Người trực chạy `pg_promote()` trên `db-replica`"
+        },
+        {
+          "id": "b",
+          "en": "North's api writes order 3 to `db`, which accepts it",
+          "vi": "Api ở north ghi đơn 3 vào `db`, và `db` nhận nó"
+        },
+        {
+          "id": "c",
+          "en": "`db` tells the api that order 2 is committed",
+          "vi": "`db` báo cho api rằng đơn 2 đã được commit"
+        },
+        {
+          "id": "d",
+          "en": "`db` tells the api that order 1 is committed",
+          "vi": "`db` báo cho api rằng đơn 1 đã được commit"
+        },
+        {
+          "id": "e",
+          "en": "The link between north and south is cut",
+          "vi": "Liên kết giữa north và south bị đứt"
+        }
+      ],
+      "answer": [
+        "d",
+        "c",
+        "e",
+        "a",
+        "b"
+      ],
+      "explanation": {
+        "en": {
+          "correct": "Order 1 is confirmed, then order 2. The link is cut after order 2 was confirmed but before it reached `db-replica`, because asynchronous replication confirms without waiting for the standby. The cut leaves `db-replica` behind; promoting it while north's api keeps writing to `db` gives two primaries."
+        },
+        "vi": {
+          "correct": "Đơn 1 được xác nhận, rồi tới đơn 2. Liên kết đứt sau khi đơn 2 đã được xác nhận nhưng trước khi nó tới `db-replica`, vì replication bất đồng bộ xác nhận mà không chờ standby. Việc đứt liên kết khiến `db-replica` bị tụt lại; promote nó trong khi api ở north vẫn ghi vào `db` tạo ra hai primary."
+        }
+      }
+    }
+  ]
+}

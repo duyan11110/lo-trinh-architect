@@ -1,0 +1,133 @@
+{
+  "id": "k8s.l4.data-decides-failover",
+  "technical": {
+    "reviewed_at": "2026-10-28T23:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Round 2. Docs: \"PostgreSQL streaming replication is asynchronous by default. If the primary server crashes then some transactions that were committed may not have been replicated to the standby server, causing data loss. The amount of data loss is proportional to the replication delay at the time of failover.\" Lesson now says \"without waiting for the standby to receive it\" (§4), \"confirms a commit without waiting for the standby\" (§8), \"loses commits it had not received\" (summary 2), matching the claim.",
+        "source": "https://www.postgresql.org/docs/17/warm-standby.html (26.2.5, 26.2.8)"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "pg_promote: \"Promotes a standby server to primary status. With wait set to true (the default), the function waits until promotion is completed or wait_seconds seconds have passed, and returns true if promotion is successful and false otherwise.\" Signature pg_promote(wait boolean DEFAULT true, wait_seconds integer DEFAULT 60). pg_is_in_recovery: \"Returns true if recovery is still in progress.\" Capture promote-replica.txt shows t, promoted t (lines 10-13), then f.",
+        "source": "https://www.postgresql.org/docs/17/functions-admin.html (Tables 9.96, 9.97)"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Failover page: \"you must have a mechanism for informing the old primary that it is no longer the primary. This is sometimes known as STONITH ... necessary to avoid situations where both systems think they are the primary, which will lead to confusion and ultimately data loss.\" Execution evidence: promote-replica.txt @ stage-4 shows UPDATE 1 on both servers and price_vnd 1300000 on db vs 1200000 on db-replica after promotion.",
+        "source": "https://www.postgresql.org/docs/17/warm-standby-failover.html; examples/don-hang/outputs/stage-4/scripts/backend/promote-replica.txt"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Opinion grounded in docs: STONITH is \"necessary to avoid situations where both systems think they are the primary\". ADR 0020 option B: \"Failover thủ công, chỉ sau khi primary cũ đã bị dừng hoặc cắt khỏi mọi client\"; third consequence: \"Một replica bất đồng bộ không được promote khi primary còn có thể nhận ghi\".",
+        "source": "https://www.postgresql.org/docs/17/warm-standby-failover.html; docs/adr/0020-mot-region-phuc-hoi-tu-ban-sao-luu.md @ stage-4 lines 36-38, 61-62"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Round 2, re-fetched: \"each commit of a write transaction will wait until confirmation is received that the commit has been written to the write-ahead log on disk of both the primary and standby server. The only possibility that data can be lost is if both the primary and the standby suffer crashes at the same time.\" \"The minimum wait time is the round-trip time between primary and standby.\" \"Read-only transactions and transaction rollbacks need not wait\". §4, summary 4, q4, q6 now say \"every commit that writes\" and \"lost only if both servers are lost at once\".",
+        "source": "https://www.postgresql.org/docs/17/warm-standby.html (26.2.8)"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "docker-compose.yml: db command sets only archive_mode, archive_command, archive_timeout, hba_file; no synchronous_standby_names. db-replica: profiles [replica], command [\"sh\", \"/start.sh\"] mounting ./db/replica/start.sh. Docs: synchronous replication \"requires only one additional configuration step: synchronous_standby_names must be set to a non-empty value.\" Read from submodule working tree (master = stage-4 = 828fdeb, per round 1; git show not permitted in this session).",
+        "source": "examples/don-hang/docker-compose.yml @ 828fdeb (stage-4); https://www.postgresql.org/docs/17/warm-standby.html 26.2.8.1"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "db/replica/start.sh lines 5-18: `pg_basebackup --host db --username donhang --pgdata \"$PGDATA\" --write-recovery-conf --wal-method stream --checkpoint fast`, then postgres started as standby; comment: \"it streams every later change from db, applies it, and refuses writes.\" Lesson §5 \"(not shown) copies db by taking a base backup with PostgreSQL's pg_basebackup tool\" and §3 \"following state recovery\" consistent with pg_is_in_recovery.",
+        "source": "examples/don-hang/db/replica/start.sh @ 828fdeb (stage-4)"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Code block matches scripts/backend/promote-replica.sh lines 34-50 character for character. Line 35 pg_is_in_recovery, 42 pg_promote, 43 recheck, 46-47 the two UPDATEs, 49-50 the two SELECTs; on() at 21-27 echoes \"-- on $server\" and runs psql --echo-queries. New text \"(which starts at line 34)\" is correct.",
+        "source": "examples/don-hang/scripts/backend/promote-replica.sh @ 828fdeb (stage-4)"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Script lines 4-6: \"db-replica is started from the host (docker compose, profile replica), as a fresh copy of db, and removed with its volume at the end\"; line 14 `docker compose --profile replica up --detach --wait db-replica`; line 15 trap remove_replica (rm --stop + volume rm). Output .txt matches lesson block, pg_promote() result (lines 10-13, t) elided as \"...\", as §5 now says. Try-it setup sentence matches.",
+        "source": "examples/don-hang/scripts/backend/promote-replica.sh lines 4-17, 31-32; outputs/stage-4/scripts/backend/promote-replica.txt"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "ADR 0020 lines 31-43: A = one region, restore in a second from base backup and WAL copied there by DR drill steps; B = \"Standby ấm: một cluster thứ hai ... cùng một replica PostgreSQL bất đồng bộ. Failover thủ công\"; C = \"Active-active: cả hai region nhận đơn cùng lúc. Cần mỗi đơn thuộc về một region riêng hoặc một database ghi được ở nhiều nơi\". Line 47: \"Chọn A.\" Markdown block = lines 45-67 verbatim.",
+        "source": "examples/don-hang/docs/adr/0020-mot-region-phuc-hoi-tu-ban-sao-luu.md @ 828fdeb (stage-4)"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "ADR 0020 lines 55-67: RTO/RPO \"là số đo của DR drill và tần suất sao WAL sang region thứ hai\"; \"bản sao lưu và WAL chưa rời khỏi máy đang chạy database\"; \"Một replica bất đồng bộ không được promote khi primary còn có thể nhận ghi\"; reopen conditions: contract/SLA needing lower RTO/RPO, or shop data bound to a region.",
+        "source": "examples/don-hang/docs/adr/0020-mot-region-phuc-hoi-tu-ban-sao-luu.md @ 828fdeb (stage-4)"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "ADR 0020 lines 26-27: \"Pod và cấu hình dựng lại được ở bất kỳ cluster nào từ repo cấu hình. Dữ liệu thì không: đơn chỉ có trong database.\"",
+        "source": "examples/don-hang/docs/adr/0020-mot-region-phuc-hoi-tu-ban-sao-luu.md @ 828fdeb (stage-4)"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Round 2: write-cost cell now \"A round trip between regions on every commit that writes\", matching docs \"each commit of a write transaction will wait\" / \"Read-only transactions and transaction rollbacks need not wait\". RPO/RTO cells follow ADR 0020 A-B (B: \"RTO và RPO thấp hơn A nhiều\"). New A split-brain cell is conditional (\"If the lost region comes back still taking orders\") and applies claim 3/4's rule; supportable.",
+        "source": "https://www.postgresql.org/docs/17/warm-standby.html 26.2.8; ADR 0020 lines 31-43"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "Conditional recommendations, each with its condition; first bullet matches ADR 0020 decision and consequence 2 (\"Sao chúng sang region thứ hai là việc cần làm trước khi có khách thật\"); third bullet's cost matches docs \"The minimum wait time is the round-trip time between primary and standby.\"",
+        "source": "ADR 0020 lines 47-60; https://www.postgresql.org/docs/17/warm-standby.html 26.2.8"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "ADR 0020 lines 41-43: \"Cần mỗi đơn thuộc về một region riêng hoặc một database ghi được ở nhiều nơi. Không hợp một PostgreSQL primary\"; line 50: \"C đòi đổi cách chia dữ liệu mà ADR 0013 đã quyết\". New §5 sentence (one primary, so each order belongs to one region, which changes how data is split) follows both lines.",
+        "source": "examples/don-hang/docs/adr/0020-mot-region-phuc-hoi-tu-ban-sao-luu.md @ 828fdeb (stage-4)"
+      },
+      {
+        "n": 16,
+        "verdict": "not-needed",
+        "evidence": "Operational reasoning following from claim 3 (no replication between two diverged primaries); conditional, no number or syntax. The rule it supports is sourced under claims 3-4. Round 2 re-check opened: PG17 warm-standby.html (26.2.5, 26.2.8), promote-replica.sh, promote-replica.txt, ADR 0020 lines 20-69; changed parts §3, §4, §5, §6, §8, §9, summary, q2, q3, q4, q6, q7.",
+        "source": "claims 3, 4"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-28T23:45:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "style",
+        "text": "Round 2, new in changed text. \"every commit that writes\" made me stop: I know a transaction as a group of DB operations, and I assumed every commit writes something. The lesson never says a commit can write nothing (only reads), so I re-read to find which commits are excluded.",
+        "quote": "The cost is that every commit that writes waits at least one round trip between the regions, failure or not.",
+        "fix": "Add a short clause after \"every commit that writes\": \"(a transaction that only reads does not wait)\"."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

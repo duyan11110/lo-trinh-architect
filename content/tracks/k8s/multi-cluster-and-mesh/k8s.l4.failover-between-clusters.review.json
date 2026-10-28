@@ -1,0 +1,152 @@
+{
+  "id": "k8s.l4.failover-between-clusters",
+  "technical": {
+    "reviewed_at": "2026-10-28T22:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Read scripts/k8s/failover.sh (checked-out HEAD master = 828fdeb = stage-4 per versions.yaml; git show/extract-code denied by the permission system): line 3 \"Runs on the host ... It does not need donhang-staging\"; 25 region ... apply -f .../echo-region.yaml; 9 caddy:2.10.0@sha256:...; 33 docker create --name \"$entry\" --network kind -p 127.0.0.1:18090:8080 -e \"LB_POLICY=$1\".",
+        "source": "examples/don-hang scripts/k8s/failover.sh (stage-4)"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Read deploy/k8s/regions/global-entry.Caddyfile: lines 9-22 match the lesson block character for character; 16 reverse_proxy donhang-north-control-plane:30090 donhang-south-control-plane:30090; 17 lb_policy {$LB_POLICY:first}; 18 health_uri /; 19 health_interval 2s; 20 health_timeout 1s.",
+        "source": "examples/don-hang deploy/k8s/regions/global-entry.Caddyfile (stage-4)"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "reverse_proxy page: \"`first` chooses the first available upstream, from the order they are defined in the config\"; \"`round_robin` iterates each upstream in turn\". Page does not define \"available\"; that an upstream failing its check is not chosen is shown by execution: failover.txt prints south only after the pause, north again after unpause.",
+        "source": "https://caddyserver.com/docs/caddyfile/directives/reverse_proxy; examples/don-hang outputs/stage-4/scripts/k8s/failover.txt"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Round 2: claim now matches round-1 suggested_text. reverse_proxy page: \"Active health checks perform health checking in the background on a timer.\" \"To enable this, `health_uri` or `health_port` are required.\" health_timeout: \"how long to wait for a reply before marking the backend as down\". health_fails / health_passes: \"Default: `1`.\" Lesson s3 \"gets no calls until a later check passes\" agrees.",
+        "source": "https://caddyserver.com/docs/caddyfile/directives/reverse_proxy"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Caddyfile Concepts > Environment variables: \"Environment variables in this form are substituted before Caddyfile parsing begins\"; \"A default value can be specified for when the environment variable is not found, by using `:` as the delimiter between the variable name and the default value\" (example {$DOMAIN:localhost}). Execution: LB_POLICY=round_robin gives 3 x north, 3 x south.",
+        "source": "https://caddyserver.com/docs/caddyfile/concepts"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Docker bridge driver: \"User-defined bridges provide automatic DNS resolution between containers.\" \"On a user-defined bridge network, containers can resolve each other by name or alias.\" kind Known Issues: \"KIND creates a separate docker network named `kind`\". Execution: entry on --network kind reaching upstreams by name gets \"greetings from donhang-north-control-plane\".",
+        "source": "https://docs.docker.com/engine/network/drivers/bridge/; https://kind.sigs.k8s.io/docs/user/known-issues/; failover.txt"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Round 2: claim now matches round-1 suggested_text. docker container pause page: \"The `docker pause` command suspends all processes in the specified containers.\" \"On Linux, this uses the freezer cgroup.\" Lesson s4 \"suspends every process in it, so nothing in north answers\" stays within this.",
+        "source": "https://docs.docker.com/reference/cli/docker/container/pause/"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Round 2: claim now says hang or fail and states the no-retry default for both policies. reverse_proxy page: \"Retries are disabled by default.\"; http transport dial_timeout \"Default: `3s`\". failover.txt: \"at least one call hung or failed before south answered: yes\", then three south answers. Lesson s4 and the s6 active-active row now rest on this claim.",
+        "source": "https://caddyserver.com/docs/caddyfile/directives/reverse_proxy; examples/don-hang outputs/stage-4/scripts/k8s/failover.txt"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "reverse_proxy page: health_passes \"is the number of consecutive health checks required before marking the backend as healthy again. Default: `1`.\" plus `first` = first available upstream in config order. failover.sh 68 waits until a call returns north; failover.txt lines 21-26: three north answers after unpause.",
+        "source": "https://caddyserver.com/docs/caddyfile/directives/reverse_proxy; failover.txt"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Read failover.sh: lines 38-62 match the lesson block character for character; 39 call() curl -s -m 3 ... || echo \"failed\"; 44 entry_up first; 31-37 docker create / docker cp / docker start / until curl; 53 show docker pause donhang-north-control-plane; 55-59 loop breaks on *south*, else failed+1; 60 prints yes/no. scripts/lib/regions.sh line 7: show() { echo \"\\$ $*\"; \"$@\"; }.",
+        "source": "examples/don-hang scripts/k8s/failover.sh, scripts/lib/regions.sh (stage-4)"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "outputs/stage-4/scripts/k8s/failover.txt: lines 3-7 three north; 9-11 docker pause, \"at least one call hung or failed before south answered: yes\"; 13-17 three south; 19-26 unpause, three north; 30-31 \"3 x greetings from donhang-north-control-plane\", \"3 x greetings from donhang-south-control-plane\"; 32 \"removed donhang-global-entry\". Lesson output block matches with '...' elisions.",
+        "source": "examples/don-hang outputs/stage-4/scripts/k8s/failover.txt"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "echo-region.yaml (read in round 1): Deployment echo-region, namespace regions, caddy respond --body \"greetings from {env.NODE_NAME}\" (a fixed reply, nothing stored between calls), NODE_NAME from spec.nodeName; readinessProbe httpGet / 8080; Service NodePort, nodePort 30090. Round-2 addition \"keeping no state between calls\" follows from the static respond body.",
+        "source": "examples/don-hang deploy/gitops/config-repo/platform/regions/echo-region.yaml (stage-4)"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Service page, type NodePort: \"Each node proxies that port (the same port number on every Node) into your Service.\" Pod lifecycle, Readiness probe: \"If the readiness probe returns a failed state, the EndpointSlice controller removes the Pod's IP address from the EndpointSlices of all Services that match the Pod.\"",
+        "source": "https://kubernetes.io/docs/concepts/services-networking/service/; https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "kind Quick Start: \"kind runs a local Kubernetes cluster by using Docker containers as 'nodes'.\" and node container example \"kind-control-plane\". scripts/lib/regions.sh: clusters donhang-$name (2, 20), docker exec \"donhang-$1-control-plane\" (29). failover.txt: docker pause donhang-north-control-plane echoes the container name.",
+        "source": "https://kind.sigs.k8s.io/docs/user/quick-start/; examples/don-hang scripts/lib/regions.sh; failover.txt"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "Follows from the reverse_proxy page: checks run \"in the background on a timer\" every health_interval; health_timeout is \"how long to wait for a reply before marking the backend as down\"; health_fails \"Default: `1`\". Worst case after a pass: up to one interval to the next check plus one timeout = about 2 s + 1 s here; 30s interval -> about 31 s. Stated as \"roughly\" in s9.",
+        "source": "https://caddyserver.com/docs/caddyfile/directives/reverse_proxy"
+      },
+      {
+        "n": 16,
+        "verdict": "not-needed",
+        "evidence": "Round 2: \"teams often\" removed (s11 now \"a team can\"); opinion with its condition. \"This Caddyfile cannot hold north back\" follows from claim 4 (health_passes default 1, not set in the file) and claim 9."
+      },
+      {
+        "n": 17,
+        "verdict": "not-needed",
+        "evidence": "Opinion following from claims 3 and 8 (the surviving region receives every call once the other is marked down; round_robin sends any call to either region), stated as a sizing consequence with its condition (stateless Pods)."
+      },
+      {
+        "n": 18,
+        "verdict": "not-needed",
+        "evidence": "Opinion following from claim 3: with first the second region receives no calls while the first passes its check, so a fault only it has is exercised only at failover; with round_robin both receive calls daily."
+      },
+      {
+        "n": 19,
+        "verdict": "not-needed",
+        "evidence": "Recommendations in s7 each carry their condition (flapping region; stateless Pods and idle cost dominate; single-writer data), derived from claims 16-18."
+      },
+      {
+        "n": 20,
+        "verdict": "not-needed",
+        "evidence": "Round 2: s5 now reads \"A real setup can spread the entry itself over several sites, for example with DNS\"; no prevalence left. Single point of failure follows from failover.sh line 33 (one container). Round 2 re-read s3, s4 (incl. diagram), s5 prose, s6 table, s11 and meta claims 4,7,8,12,16,20; sources as in round 1 (Caddy reverse_proxy page, Docker pause page, failover.sh, failover.txt, echo-region.yaml)."
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-28T23:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (prompt 05, junior reader, round 2 targeted)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 3,
+        "kind": "gap",
+        "text": "Round 2, new in the changed bullet: the Failing back definition ends with `first`, but at this point I have not been told what `first` is; it is explained only in s4. I can continue, but I stop for a moment on a name I have not met yet.",
+        "quote": "once it passes its checks again; with `first` this happens at once.",
+        "fix": "Replace \"with `first` this happens at once\" with \"in the lab this happens at once\", or add \"(the policy explained below)\" after `first`."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}
