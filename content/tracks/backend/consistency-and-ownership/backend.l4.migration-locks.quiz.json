@@ -1,0 +1,351 @@
+{
+  "lesson": "backend.l4.migration-locks",
+  "stage": 4,
+  "questions": [
+    {
+      "id": "backend.l4.migration-locks.q1",
+      "type": "single",
+      "bloom": "understand",
+      "difficulty": 2,
+      "skills": [
+        "backend.data.schema-evolution"
+      ],
+      "section_ref": 4,
+      "question": {
+        "en": "A stage-4 migration runs a plain `CREATE INDEX` on `orders (status)` while the api serves customers. Until the build commits, what happens to a request that reads orders and to `POST /api/v1/orders`?",
+        "vi": "Một migration ở stage-4 chạy `CREATE INDEX` thường trên `orders (status)` trong lúc api đang phục vụ khách. Cho tới khi việc tạo index commit, điều gì xảy ra với một request đọc đơn hàng và với `POST /api/v1/orders`?"
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "Both answer as usual, since an index only changes how reads find rows.",
+          "vi": "Cả hai trả lời như thường, vì index chỉ đổi cách lệnh đọc tìm dòng.",
+          "misconception": "Adding an index only changes how reads work, so it is safe on a busy table."
+        },
+        {
+          "id": "b",
+          "en": "Reads answer as usual, while each new order waits until the build commits.",
+          "vi": "Lệnh đọc trả lời như thường, còn mỗi đơn mới phải chờ tới khi việc tạo index commit."
+        },
+        {
+          "id": "c",
+          "en": "Both wait, because the build takes the strongest lock on the table.",
+          "vi": "Cả hai đều chờ, vì việc tạo index lấy khóa mạnh nhất trên bảng."
+        },
+        {
+          "id": "d",
+          "en": "Reads wait until the index exists, while new orders are saved as usual.",
+          "vi": "Lệnh đọc chờ tới khi index có xong, còn đơn mới vẫn được lưu như thường."
+        }
+      ],
+      "answer": [
+        "b"
+      ],
+      "explanation": {
+        "en": {
+          "correct": "A plain `CREATE INDEX` takes a table lock that lets reads continue but conflicts with `INSERT`, `UPDATE` and `DELETE`. So reading orders answers, while placing an order waits until the build commits.",
+          "a": "The index is there to speed up reads, so it seems to touch nothing else. But building it takes a lock that conflicts with every `INSERT`, so the new order waits; reads still answering is what hides the problem.",
+          "c": "Waiting for a migration often means the whole table stops, so this sounds plausible. But the strongest lock is what `ALTER TABLE ... ADD COLUMN` needs; the lock of a plain `CREATE INDEX` still lets a `SELECT` read.",
+          "d": "An index that is not finished yet can seem unusable for reads, so reads look like the ones to wait. But a `SELECT` takes the weakest lock, which the build allows; it is the writes that conflict with the build."
+        },
+        "vi": {
+          "correct": "`CREATE INDEX` thường lấy một khóa bảng cho phép lệnh đọc tiếp tục nhưng xung đột với `INSERT`, `UPDATE` và `DELETE`. Nên đọc đơn hàng vẫn trả lời, còn đặt đơn phải chờ tới khi việc tạo index commit.",
+          "a": "Index có ra để đọc nhanh hơn, nên có vẻ nó không đụng tới gì khác. Nhưng việc tạo index lấy một khóa xung đột với mọi `INSERT`, nên đơn mới phải chờ; lệnh đọc vẫn trả lời chính là điều che giấu vấn đề.",
+          "c": "Chờ migration thường có nghĩa là cả bảng dừng lại, nên đáp án này nghe hợp lý. Nhưng khóa mạnh nhất là thứ `ALTER TABLE ... ADD COLUMN` cần; khóa của `CREATE INDEX` thường vẫn cho `SELECT` đọc.",
+          "d": "Index chưa xong có vẻ không dùng được cho lệnh đọc, nên lệnh đọc trông như bên phải chờ. Nhưng `SELECT` lấy khóa yếu nhất, loại mà việc tạo index cho phép; chính lệnh ghi mới xung đột với việc tạo index."
+        }
+      }
+    },
+    {
+      "id": "backend.l4.migration-locks.q2",
+      "type": "order",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": [
+        "backend.data.schema-evolution"
+      ],
+      "section_ref": 4,
+      "question": {
+        "en": "Session A keeps a transaction open after reading `orders`, B runs `ALTER TABLE orders ADD COLUMN note text` with a `lock_timeout`, then C sends a plain `SELECT`. Put what happens in order.",
+        "vi": "Phiên A giữ một giao dịch mở sau khi đọc `orders`, B chạy `ALTER TABLE orders ADD COLUMN note text` có `lock_timeout`, rồi C gửi một `SELECT` bình thường. Sắp xếp những gì xảy ra theo thứ tự."
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "B's `lock_timeout` runs out, and its `ALTER TABLE` is cancelled.",
+          "vi": "`lock_timeout` của B hết, và `ALTER TABLE` của nó bị hủy."
+        },
+        {
+          "id": "b",
+          "en": "A holds the weakest lock on `orders` until its transaction ends.",
+          "vi": "A giữ khóa yếu nhất trên `orders` cho tới khi giao dịch của nó kết thúc."
+        },
+        {
+          "id": "c",
+          "en": "C's `SELECT` gets its count.",
+          "vi": "`SELECT` của C nhận được kết quả đếm."
+        },
+        {
+          "id": "d",
+          "en": "B asks for the strongest lock on `orders` and waits for A.",
+          "vi": "B xin khóa mạnh nhất trên `orders` và chờ A."
+        },
+        {
+          "id": "e",
+          "en": "C asks for the weakest lock and joins the line behind B.",
+          "vi": "C xin khóa yếu nhất và xếp hàng sau B."
+        }
+      ],
+      "answer": [
+        "b",
+        "d",
+        "e",
+        "a",
+        "c"
+      ],
+      "explanation": {
+        "en": {
+          "correct": "A's open transaction keeps its lock, so B's request for the strongest lock waits. C's request conflicts with B's, which is already waiting, so C waits behind B although A alone would let it read. Only when B gives up at its `lock_timeout` does the line move and C get its count."
+        },
+        "vi": {
+          "correct": "Giao dịch đang mở của A giữ khóa, nên yêu cầu khóa mạnh nhất của B phải chờ. Yêu cầu của C xung đột với yêu cầu của B, vốn đang chờ sẵn, nên C chờ sau B dù chỉ riêng A thì vẫn cho nó đọc. Chỉ khi B bỏ cuộc ở `lock_timeout`, hàng chờ mới đi tiếp và C nhận được kết quả đếm."
+        }
+      }
+    },
+    {
+      "id": "backend.l4.migration-locks.q3",
+      "type": "truefalse",
+      "bloom": "analyze",
+      "difficulty": 4,
+      "skills": [
+        "backend.data.schema-evolution"
+      ],
+      "section_ref": 8,
+      "question": {
+        "en": "Statement: \"`ALTER TABLE orders ADD COLUMN note text` needs only a moment of work, so during a deploy it can make queries on `orders` wait for only about that moment.\"",
+        "vi": "Nhận định: \"`ALTER TABLE orders ADD COLUMN note text` chỉ cần một chút việc, nên trong lúc deploy nó chỉ có thể bắt các truy vấn trên `orders` chờ khoảng chừng ấy.\""
+      },
+      "options": [
+        {
+          "id": "a",
+          "polarity": "true",
+          "en": "True, because adding a column changes no existing row, so there is almost nothing to wait for.",
+          "vi": "Đúng, vì thêm cột không đổi dòng nào có sẵn, nên gần như không có gì để chờ.",
+          "misconception": "A migration that finishes in a second cannot block anyone."
+        },
+        {
+          "id": "b",
+          "polarity": "true",
+          "en": "True, because a `SELECT` takes the weakest lock, which conflicts with no lock a migration takes.",
+          "vi": "Đúng, vì `SELECT` lấy khóa yếu nhất, loại không xung đột với khóa nào mà migration lấy."
+        },
+        {
+          "id": "c",
+          "polarity": "false",
+          "en": "False, because it first waits for open transactions holding `orders`, and later queries wait behind it.",
+          "vi": "Sai, vì nó phải chờ các giao dịch đang mở giữ `orders` trước, và các truy vấn tới sau phải chờ sau nó."
+        },
+        {
+          "id": "d",
+          "polarity": "false",
+          "en": "False, because adding a column rewrites every row of `orders`, which takes a long time.",
+          "vi": "Sai, vì thêm cột phải ghi lại mọi dòng của `orders`, việc này mất nhiều thời gian."
+        }
+      ],
+      "answer": [
+        "c"
+      ],
+      "explanation": {
+        "en": {
+          "correct": "The wait lasts as long as the longest open transaction holding a lock on `orders`, not as long as the migration. `ALTER TABLE` needs the strongest lock, so it waits for every transaction that has read `orders`, and each query arriving after it waits behind its request in the lock queue.",
+          "a": "The work really is small, so judging the risk by the work seems fair. But before doing any work the migration must get its lock, and while it waits for that, every later query on `orders` waits behind it.",
+          "b": "A `SELECT` does take the weakest lock, and it lets a plain `CREATE INDEX` run alongside, so this sounds safe. But the weakest lock conflicts with the strongest, which is exactly the one `ALTER TABLE` needs.",
+          "d": "A long wait does happen, so a long piece of work seems the natural cause. But the lesson's `ALTER TABLE` needs only a moment of work; the wait comes from its lock waiting behind open transactions."
+        },
+        "vi": {
+          "correct": "Thời gian chờ kéo dài bằng giao dịch đang mở lâu nhất giữ khóa trên `orders`, không phải bằng migration. `ALTER TABLE` cần khóa mạnh nhất, nên nó chờ mọi giao dịch đã đọc `orders`, và mỗi truy vấn tới sau nó phải chờ sau yêu cầu của nó trong hàng chờ khóa.",
+          "a": "Việc cần làm đúng là nhỏ, nên đánh giá rủi ro theo khối lượng việc có vẻ hợp lý. Nhưng trước khi làm gì, migration phải lấy được khóa, và trong lúc chờ khóa, mọi truy vấn tới sau trên `orders` đều chờ sau nó.",
+          "b": "`SELECT` đúng là lấy khóa yếu nhất, và nó vẫn chạy song song được với `CREATE INDEX` thường, nên nghe có vẻ an toàn. Nhưng khóa yếu nhất xung đột với khóa mạnh nhất, đúng loại mà `ALTER TABLE` cần.",
+          "d": "Chờ lâu là có thật, nên một việc dài trông như nguyên nhân tự nhiên. Nhưng `ALTER TABLE` trong bài chỉ cần một chút việc; thời gian chờ đến từ khóa của nó phải chờ sau các giao dịch đang mở."
+        }
+      }
+    },
+    {
+      "id": "backend.l4.migration-locks.q4",
+      "type": "scenario",
+      "bloom": "evaluate",
+      "difficulty": 5,
+      "skills": [
+        "backend.data.schema-evolution"
+      ],
+      "section_ref": 7,
+      "context": {
+        "en": "It is stage-4. Customers place orders all day, so `POST /api/v1/orders` must keep working during every deploy, and nobody can plan a stop of order taking. `orders` holds many rows, and you need an index on `orders (status)`. Đơn Hàng's migrations are EF Core migrations, applied by the hook before the new api Pods start. A migration that fails can be run again later.",
+        "vi": "Đang ở stage-4. Khách đặt đơn cả ngày, nên `POST /api/v1/orders` phải vẫn chạy trong mọi lần deploy, và không ai lên kế hoạch dừng nhận đơn được. `orders` có nhiều dòng, và bạn cần một index trên `orders (status)`. Migration của Đơn Hàng là migration EF Core, được hook áp dụng trước khi các api Pod mới khởi động. Một migration lỗi có thể chạy lại sau."
+      },
+      "question": {
+        "en": "How do you add the index?",
+        "vi": "Bạn thêm index này thế nào?"
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "A plain `CREATE INDEX` in the migration, which stays one transaction that succeeds or rolls back whole.",
+          "vi": "Một `CREATE INDEX` thường trong migration, để migration vẫn là một giao dịch thành công hoặc rollback trọn vẹn.",
+          "misconception": "Adding an index only changes how reads work, so it is safe on a busy table."
+        },
+        {
+          "id": "b",
+          "en": "A plain `CREATE INDEX` in the migration's transaction, with a `lock_timeout` of a few seconds, so that new orders never wait long.",
+          "vi": "Một `CREATE INDEX` thường trong giao dịch của migration, kèm `lock_timeout` vài giây, để đơn mới không bao giờ phải chờ lâu."
+        },
+        {
+          "id": "c",
+          "en": "`CREATE INDEX CONCURRENTLY` through `migrationBuilder.Sql`, with `suppressTransaction: true`.",
+          "vi": "`CREATE INDEX CONCURRENTLY` qua `migrationBuilder.Sql`, với `suppressTransaction: true`."
+        },
+        {
+          "id": "d",
+          "en": "A plain `CREATE INDEX`, run in a short window while order taking is stopped.",
+          "vi": "Một `CREATE INDEX` thường, chạy trong một khoảng ngắn lúc ngừng nhận đơn."
+        }
+      ],
+      "answer": [
+        "c"
+      ],
+      "explanation": {
+        "en": {
+          "correct": "Orders arrive all day and no stop is possible, so writes must continue while the index builds; only the concurrent build allows that. It cannot run in EF Core's migration transaction, so it needs `suppressTransaction: true`. You accept a slower build and, if it fails, an invalid index to drop before running it again.",
+          "a": "One transaction that succeeds or rolls back whole is a real advantage, so the plain build looks tidy. But its lock makes every `INSERT` on `orders` wait until the build commits, which stops order taking on a large table. It is the right choice when the table is small and staff change it a few times a day.",
+          "b": "A `lock_timeout` is the guard the lesson recommends for migrations, so adding it feels safe. But it only limits how long the migration waits to get its lock; once it has the lock, every new order waits for the whole build. It is the right choice when a quick `ALTER TABLE` may wait behind a long transaction.",
+          "d": "With nobody writing, the plain build blocks no one and runs faster, so it looks clean. But the stop is a planned outage, which this team cannot have. It is the right choice when a short stop of order taking harms nobody."
+        },
+        "vi": {
+          "correct": "Đơn tới cả ngày và không thể dừng, nên lệnh ghi phải tiếp tục trong lúc tạo index; chỉ cách tạo index song song cho phép điều đó. Nó không chạy được trong giao dịch migration của EF Core, nên cần `suppressTransaction: true`. Bạn chấp nhận tạo index chậm hơn và, nếu lỗi, một index không hợp lệ phải xóa trước khi chạy lại.",
+          "a": "Một giao dịch thành công hoặc rollback trọn vẹn là ưu điểm thật, nên cách tạo index thường trông gọn. Nhưng khóa của nó bắt mọi `INSERT` trên `orders` chờ tới khi việc tạo index commit, tức là dừng nhận đơn trên một bảng lớn. Đây là lựa chọn đúng khi bảng nhỏ và nhân viên chỉ sửa nó vài lần mỗi ngày.",
+          "b": "`lock_timeout` là chốt chặn mà bài khuyên dùng cho migration, nên thêm nó có vẻ an toàn. Nhưng nó chỉ giới hạn thời gian migration chờ để lấy khóa; khi đã có khóa, mọi đơn mới phải chờ hết quá trình tạo index. Đây là lựa chọn đúng khi một `ALTER TABLE` nhanh có thể phải chờ sau một giao dịch dài.",
+          "d": "Khi không ai ghi, cách tạo index thường không chặn ai và chạy nhanh hơn, nên trông gọn gàng. Nhưng việc dừng là một lần ngừng phục vụ có kế hoạch, điều nhóm này không thể có. Đây là lựa chọn đúng khi ngừng nhận đơn một lúc ngắn không gây hại cho ai."
+        }
+      }
+    },
+    {
+      "id": "backend.l4.migration-locks.q5",
+      "type": "multi",
+      "bloom": "analyze",
+      "difficulty": 5,
+      "skills": [
+        "backend.data.schema-evolution"
+      ],
+      "section_ref": 6,
+      "question": {
+        "en": "On `orders`, you replace a plain `CREATE INDEX` with `CREATE INDEX CONCURRENTLY` run with `suppressTransaction: true`. Compared with the plain build, which of these are true of the new one? Select all that apply.",
+        "vi": "Trên `orders`, bạn thay `CREATE INDEX` thường bằng `CREATE INDEX CONCURRENTLY` chạy với `suppressTransaction: true`. So với cách tạo index thường, những điều nào dưới đây đúng với cách mới? Chọn tất cả câu đúng."
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "The build takes longer.",
+          "vi": "Việc tạo index mất nhiều thời gian hơn."
+        },
+        {
+          "id": "b",
+          "en": "A report that keeps a transaction open on `orders` can hold the build up.",
+          "vi": "Một báo cáo giữ một giao dịch mở trên `orders` có thể làm việc tạo index bị treo lại."
+        },
+        {
+          "id": "c",
+          "en": "A failed build leaves an invalid index, which you drop before trying again.",
+          "vi": "Nếu lỗi, nó để lại một index không hợp lệ, phải xóa trước khi thử lại."
+        },
+        {
+          "id": "d",
+          "en": "Reads of `orders` wait while it builds, though writes continue.",
+          "vi": "Lệnh đọc `orders` phải chờ trong lúc tạo index, dù lệnh ghi vẫn tiếp tục."
+        },
+        {
+          "id": "e",
+          "en": "The build finishes sooner, because it no longer holds writes back.",
+          "vi": "Việc tạo index xong sớm hơn, vì nó không còn chặn lệnh ghi.",
+          "misconception": "`CONCURRENTLY` makes an index build faster."
+        },
+        {
+          "id": "f",
+          "en": "A failed build is rolled back with the transaction, and nothing is left.",
+          "vi": "Nếu lỗi, việc tạo index được rollback cùng giao dịch, và không để lại gì."
+        }
+      ],
+      "answer": [
+        "a",
+        "b",
+        "c"
+      ],
+      "explanation": {
+        "en": {
+          "correct": "What the concurrent build buys is writes that continue. It pays with a slower build that reads the table twice and waits for transactions already open when it started, and, since it runs outside a transaction, a failure leaves an invalid index to drop.",
+          "d": "Something has to give in exchange for writes, so reads seem the likely cost. But reads were never blocked: they continue during a plain build too, and during a concurrent one.",
+          "e": "Not holding writes back sounds like less contention and so a quicker build. But it is the opposite: the concurrent build reads the table twice and waits for open transactions, so it is slower.",
+          "f": "That is how the plain build behaves in EF Core's migration transaction, so it is easy to carry over. But the concurrent build runs outside that transaction, and a failure leaves an invalid index behind."
+        },
+        "vi": {
+          "correct": "Điều cách tạo index song song mua được là lệnh ghi vẫn tiếp tục. Cái giá là tạo chậm hơn, vì nó đọc bảng hai lần và chờ các giao dịch đã mở từ khi nó bắt đầu, và vì chạy ngoài giao dịch, nếu lỗi nó để lại một index không hợp lệ phải xóa.",
+          "d": "Phải đánh đổi một thứ để lệnh ghi được tiếp tục, nên lệnh đọc có vẻ là cái giá. Nhưng lệnh đọc chưa bao giờ bị chặn: chúng vẫn tiếp tục khi tạo index thường, và cả khi tạo song song.",
+          "e": "Không chặn lệnh ghi nghe như ít tranh chấp hơn nên tạo nhanh hơn. Nhưng thực tế ngược lại: cách tạo song song đọc bảng hai lần và chờ các giao dịch đang mở, nên chậm hơn.",
+          "f": "Đó là cách tạo index thường hoạt động trong giao dịch migration của EF Core, nên dễ áp sang. Nhưng cách tạo song song chạy ngoài giao dịch đó, và nếu lỗi nó để lại một index không hợp lệ."
+        }
+      }
+    },
+    {
+      "id": "backend.l4.migration-locks.q6",
+      "type": "single",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": [
+        "backend.data.schema-evolution"
+      ],
+      "section_ref": 5,
+      "question": {
+        "en": "A Đơn Hàng migration passes `CREATE INDEX CONCURRENTLY orders_status_idx ON orders (status)` to `migrationBuilder.Sql`, without `suppressTransaction: true`. What happens when the hook applies it?",
+        "vi": "Một migration của Đơn Hàng truyền `CREATE INDEX CONCURRENTLY orders_status_idx ON orders (status)` cho `migrationBuilder.Sql`, không có `suppressTransaction: true`. Điều gì xảy ra khi hook áp dụng nó?"
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "It fails like step 2 of the script, since EF Core runs it inside the migration's transaction.",
+          "vi": "Nó lỗi giống bước 2 của script, vì EF Core chạy nó bên trong giao dịch của migration."
+        },
+        {
+          "id": "b",
+          "en": "It builds the index the plain way, so new orders wait until the migration commits.",
+          "vi": "Nó tạo index theo cách thường, nên đơn mới phải chờ tới khi migration commit."
+        },
+        {
+          "id": "c",
+          "en": "It builds the index concurrently, and EF Core commits it with the rest of the migration.",
+          "vi": "Nó tạo index song song, và EF Core commit nó cùng phần còn lại của migration."
+        },
+        {
+          "id": "d",
+          "en": "It fails partway and leaves an invalid index on `orders` to drop before the next try.",
+          "vi": "Nó lỗi giữa chừng và để lại một index không hợp lệ trên `orders`, phải xóa trước lần thử sau."
+        }
+      ],
+      "answer": [
+        "a"
+      ],
+      "explanation": {
+        "en": {
+          "correct": "EF Core runs a migration's statements in a transaction, and a concurrent build cannot run inside a transaction block. So the statement fails exactly as step 2 did with `BEGIN` and `COMMIT`; `suppressTransaction: true` is what makes EF Core run it outside.",
+          "b": "Falling back to the plain build would at least get the index made, so it sounds like a sensible outcome. But the statement is not changed into another one: step 2 shows PostgreSQL rejecting it with an error.",
+          "c": "`migrationBuilder.Sql` passes the SQL on as written, so it seems the concurrent build simply runs. But it runs inside EF Core's transaction, and that is the one place a concurrent build is refused.",
+          "d": "A failed concurrent build does leave an invalid index, so this failure looks like that one. But here, as in step 2, PostgreSQL refuses the statement before building anything, so no index is left behind."
+        },
+        "vi": {
+          "correct": "EF Core chạy các lệnh của migration trong một giao dịch, còn cách tạo index song song không chạy được bên trong một khối giao dịch. Nên lệnh lỗi đúng như bước 2 khi có `BEGIN` và `COMMIT`; `suppressTransaction: true` là thứ khiến EF Core chạy nó bên ngoài.",
+          "b": "Lùi về cách tạo thường ít nhất cũng tạo được index, nên nghe như một kết cục hợp lý. Nhưng lệnh không bị đổi thành lệnh khác: bước 2 cho thấy PostgreSQL từ chối nó bằng một lỗi.",
+          "c": "`migrationBuilder.Sql` chuyển SQL đi đúng như đã viết, nên có vẻ việc tạo song song cứ thế chạy. Nhưng nó chạy bên trong giao dịch của EF Core, và đó chính là chỗ cách tạo song song bị từ chối.",
+          "d": "Cách tạo song song bị lỗi đúng là để lại một index không hợp lệ, nên lỗi này trông giống thế. Nhưng ở đây, như ở bước 2, PostgreSQL từ chối lệnh trước khi tạo gì cả, nên không để lại index nào."
+        }
+      }
+    }
+  ]
+}
