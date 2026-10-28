@@ -1,0 +1,327 @@
+{
+  "lesson": "k8s.l4.moving-to-a-new-cluster",
+  "stage": 4,
+  "questions": [
+    {
+      "id": "k8s.l4.moving-to-a-new-cluster.q1",
+      "type": "scenario",
+      "bloom": "evaluate",
+      "difficulty": 5,
+      "skills": ["k8s.platform.cluster-migration"],
+      "section_ref": 7,
+      "context": {
+        "en": "The team rehearses `cluster-migration-plan.md` on a second staging cluster. The write stop, assumed at 15 minutes, takes 40: restoring the base backup is quick, but draining the queues and applying the last WAL take longer than expected. The production move is planned in two weeks, and the shops were going to be told five working days ahead about a 15-minute stop.",
+        "vi": "Đội diễn tập `cluster-migration-plan.md` trên một cluster staging thứ hai. Lần dừng ghi, giả định 15 phút, kéo dài 40 phút: khôi phục base backup thì nhanh, nhưng xả queue và áp đoạn WAL cuối lâu hơn dự kiến. Việc chuyển production dự kiến sau hai tuần, và các cửa hàng định được báo trước năm ngày làm việc về một lần dừng 15 phút."
+      },
+      "question": {
+        "en": "What should the team do next?",
+        "vi": "Đội nên làm gì tiếp theo?"
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "Plan the stop and the shops' notice around 40 minutes, unless a changed set of steps measures shorter in a new rehearsal.",
+          "vi": "Lên kế hoạch lần dừng và thông báo cho cửa hàng quanh 40 phút, trừ khi một bộ bước đã sửa đo được ngắn hơn trong lần diễn tập mới."
+        },
+        {
+          "id": "b",
+          "en": "Keep the 15-minute window, since production's managed cluster will likely run the steps faster than staging.",
+          "vi": "Giữ khung 15 phút, vì cluster managed của production có lẽ sẽ chạy các bước nhanh hơn staging."
+        },
+        {
+          "id": "c",
+          "en": "Skip the write stop and switch DNS once the base backup is restored, so the shops see no pause at all.",
+          "vi": "Bỏ bước dừng ghi và đổi DNS ngay khi base backup đã khôi phục xong, để cửa hàng không thấy lần dừng nào."
+        },
+        {
+          "id": "d",
+          "en": "Restore the old cluster's etcd snapshot into the new one, so fewer steps run during the stop.",
+          "vi": "Khôi phục etcd snapshot của cluster cũ vào cluster mới, để ít bước phải chạy trong lúc dừng hơn.",
+          "misconception": "Moving clusters means copying the old cluster's etcd into the new one."
+        }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "The plan marks every duration as assumed until a rehearsal measures it, and the measured stop sets both the window and the notice. So the team either plans around 40 minutes or changes the steps and measures again.",
+          "b": "A new managed cluster can feel faster than a rehearsal cluster, so 15 minutes seems safe to keep. But the plan replaces assumptions with measurements, and no number backs the guess. Keeping 15 minutes is right only when a rehearsal on comparable machines measures it.",
+          "c": "Skipping the stop removes the pause the shops would notice. But orders written after the restore, the last WAL and the queued messages would stay on the old cluster, so confirmed orders could be lost. Switching without a stop fits only when the service writes nothing that must be kept.",
+          "d": "A snapshot moves every object at once, so it looks like a shortcut. But objects are built from Git before the stop, and a snapshot holds objects, not the data on volumes, so it shortens nothing in the stop and brings the old cluster's nodes, addresses and Secrets along. It is not the right choice in this plan, even when the stop runs long."
+        },
+        "vi": {
+          "correct": "Kế hoạch ghi mọi thời lượng là giả định cho tới khi một lần diễn tập đo được, và thời gian dừng đo được quyết định cả khung giờ lẫn thông báo. Nên đội hoặc lên kế hoạch theo 40 phút, hoặc sửa các bước rồi đo lại.",
+          "b": "Một cluster managed mới có cảm giác nhanh hơn cluster diễn tập, nên giữ 15 phút có vẻ an toàn. Nhưng kế hoạch thay giả định bằng số đo, và không con số nào đỡ cho phỏng đoán này. Giữ 15 phút chỉ đúng khi một lần diễn tập trên máy tương đương đo được như vậy.",
+          "c": "Bỏ bước dừng sẽ xóa lần dừng mà cửa hàng nhận thấy. Nhưng đơn ghi sau lúc khôi phục, đoạn WAL cuối và message còn trong queue sẽ nằm lại ở cluster cũ, nên đơn đã xác nhận có thể mất. Đổi mà không dừng chỉ hợp khi dịch vụ không ghi gì cần giữ.",
+          "d": "Snapshot chuyển mọi object một lần, nên trông như lối tắt. Nhưng object đã được dựng từ Git trước lúc dừng, và snapshot giữ object chứ không giữ dữ liệu trên volume, nên nó không rút ngắn gì trong lúc dừng mà còn mang theo node, địa chỉ và Secret của cluster cũ. Nó không phải lựa chọn đúng trong kế hoạch này, kể cả khi lần dừng kéo dài."
+        }
+      }
+    },
+    {
+      "id": "k8s.l4.moving-to-a-new-cluster.q2",
+      "type": "single",
+      "bloom": "analyze",
+      "difficulty": 4,
+      "skills": ["k8s.platform.cluster-migration"],
+      "section_ref": 5,
+      "question": {
+        "en": "During the move, the new PostgreSQL has caught up. The old cluster's Application has self-heal on, as in `apps/staging.yaml`. To stop writes faster, an engineer runs `kubectl scale` to set the old cluster's `api` to zero replicas instead of making a commit. What happens next?",
+        "vi": "Trong lúc chuyển, PostgreSQL mới đã đuổi kịp. Application của cluster cũ bật self-heal, như trong `apps/staging.yaml`. Để dừng ghi nhanh hơn, một kỹ sư chạy `kubectl scale` đặt `api` ở cluster cũ về 0 replica thay vì tạo một commit. Chuyện gì xảy ra tiếp theo?"
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "Argo CD's self-heal puts Git's replica count back, so `api` returns and keeps taking orders on the old cluster.",
+          "vi": "Self-heal của Argo CD trả lại số replica trong Git, nên `api` chạy lại và tiếp tục nhận đơn ở cluster cũ."
+        },
+        {
+          "id": "b",
+          "en": "`api` stays at zero as with a commit; the only loss is that Git keeps no record of the stop.",
+          "vi": "`api` vẫn ở 0 như khi dùng commit; chỉ mất ở chỗ Git không lưu lại lần dừng."
+        },
+        {
+          "id": "c",
+          "en": "The queues stop draining, because Notifications and Payments go to zero together with `api`.",
+          "vi": "Các queue ngừng xả, vì Notifications và Payments về 0 cùng lúc với `api`."
+        },
+        {
+          "id": "d",
+          "en": "Writes stop as planned, and the commit can follow later, once DNS points to the new Gateway.",
+          "vi": "Ghi dừng như kế hoạch, và commit có thể làm sau, khi DNS đã trỏ sang Gateway mới."
+        }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "Self-heal syncs again when live objects drift from Git, and Git still says the old `api` has replicas. So `api` comes back and new orders land on the old cluster after the last WAL was meant to arrive. That is why the plan stops writes with a commit.",
+          "b": "Scaling by hand does set the count to zero at first, so it looks equal to a commit. But with self-heal on, Argo CD treats the change as drift and restores Git's count. This holds only for an Application without self-heal.",
+          "c": "Stopping writes and stopping the consumers both belong to the stop, so they can seem to happen together. But the command targets `api` only, and the plan keeps Notifications and Payments running until the queues are empty.",
+          "d": "Recording the stop later sounds like tidy paperwork. But self-heal does not wait for the commit: it restores the replicas from Git soon after the hand change, so writes do not stay stopped."
+        },
+        "vi": {
+          "correct": "Self-heal sync lại khi object trên cluster lệch khỏi Git, và Git vẫn ghi `api` cũ có replica. Nên `api` chạy lại và đơn mới rơi vào cluster cũ sau thời điểm đoạn WAL cuối lẽ ra đã tới. Vì vậy kế hoạch dừng ghi bằng commit.",
+          "b": "Đổi tay đúng là đưa số replica về 0 lúc đầu, nên trông như bằng một commit. Nhưng khi self-heal bật, Argo CD coi thay đổi này là lệch và trả lại số trong Git. Điều này chỉ đúng với Application không bật self-heal.",
+          "c": "Dừng ghi và dừng consumer đều thuộc lần dừng, nên có vẻ xảy ra cùng lúc. Nhưng lệnh chỉ nhắm vào `api`, và kế hoạch giữ Notifications và Payments chạy cho tới khi queue trống.",
+          "d": "Ghi lại lần dừng sau nghe như việc giấy tờ gọn gàng. Nhưng self-heal không đợi commit: nó trả lại số replica từ Git ngay sau lần đổi tay, nên ghi không dừng được."
+        }
+      }
+    },
+    {
+      "id": "k8s.l4.moving-to-a-new-cluster.q3",
+      "type": "multi",
+      "bloom": "understand",
+      "difficulty": 2,
+      "skills": ["k8s.platform.cluster-migration"],
+      "section_ref": 4,
+      "question": {
+        "en": "In `cluster-migration-plan.md`, what travels from the old cluster to the new one? Select all that apply.",
+        "vi": "Trong `cluster-migration-plan.md`, những gì đi từ cluster cũ sang cluster mới? Chọn tất cả đáp án đúng."
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "PostgreSQL's latest base backup.",
+          "vi": "Base backup mới nhất của PostgreSQL."
+        },
+        {
+          "id": "b",
+          "en": "The archived WAL after that backup, up to the last part written before the stop.",
+          "vi": "WAL lưu trữ sau bản backup đó, tới đoạn cuối được ghi trước lúc dừng."
+        },
+        {
+          "id": "c",
+          "en": "An etcd snapshot holding every object of the old cluster.",
+          "vi": "Một etcd snapshot chứa mọi object của cluster cũ.",
+          "misconception": "Moving clusters means copying the old cluster's etcd into the new one."
+        },
+        {
+          "id": "d",
+          "en": "The cache in Redis.",
+          "vi": "Cache trong Redis."
+        },
+        {
+          "id": "e",
+          "en": "The messages waiting in RabbitMQ's queues.",
+          "vi": "Các message đang chờ trong queue của RabbitMQ."
+        }
+      ],
+      "answer": ["a", "b"],
+      "explanation": {
+        "en": {
+          "correct": "Only data travels, and PostgreSQL's data travels as a base backup plus the archived WAL after it. The objects are built again from the config repository.",
+          "c": "A snapshot holds every object, so it looks like the whole cluster in one file. But it would bring the old cluster's nodes, addresses and Secrets along, so the plan builds the objects from Git instead.",
+          "d": "Redis runs on the old cluster, so it seems to be part of what moves. But it holds only a cache, which fills again on the new cluster.",
+          "e": "Messages in a queue are data that must not be lost, so they seem to need moving. But the plan keeps the consumers running on the old cluster until the queues are empty, so nothing is left to copy."
+        },
+        "vi": {
+          "correct": "Chỉ dữ liệu phải chuyển, và dữ liệu của PostgreSQL đi dưới dạng base backup cộng WAL lưu trữ sau nó. Các object được dựng lại từ repo cấu hình.",
+          "c": "Snapshot giữ mọi object, nên trông như cả cluster trong một file. Nhưng nó mang theo node, địa chỉ và Secret của cluster cũ, nên kế hoạch dựng object từ Git thay vào đó.",
+          "d": "Redis chạy trên cluster cũ, nên có vẻ thuộc phần phải chuyển. Nhưng nó chỉ giữ cache, và cache đầy lại dần ở cluster mới.",
+          "e": "Message trong queue là dữ liệu không được mất, nên có vẻ cần chuyển. Nhưng kế hoạch giữ các consumer ở cluster cũ chạy tới khi queue trống, nên không còn gì để chép."
+        }
+      }
+    },
+    {
+      "id": "k8s.l4.moving-to-a-new-cluster.q4",
+      "type": "truefalse",
+      "bloom": "evaluate",
+      "difficulty": 4,
+      "skills": ["k8s.platform.cluster-migration"],
+      "section_ref": 8,
+      "question": {
+        "en": "Statement: the new managed cluster is ready, and Argo CD is installed on it. Since every object of Đơn Hàng is in the config repository, the first sync can run now, and anything that differs per cluster can be fixed after it.",
+        "vi": "Nhận định: cluster managed mới đã sẵn sàng, và Argo CD đã cài trên đó. Vì mọi object của Đơn Hàng đều nằm trong repo cấu hình, lần sync đầu có thể chạy ngay, còn những gì khác nhau theo cluster thì sửa sau."
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "True, because Argo CD builds Đơn Hàng's objects from Git, the way the DR drill rebuilds staging.",
+          "vi": "Đúng, vì Argo CD dựng các object của Đơn Hàng từ Git, như DR drill dựng lại staging.",
+          "polarity": "true",
+          "misconception": "Since everything is in Git, the new cluster needs no changes before its first sync."
+        },
+        {
+          "id": "b",
+          "en": "True, because self-heal brings each object back in line with Git once the fixes are committed.",
+          "vi": "Đúng, vì self-heal đưa từng object về khớp với Git khi các sửa đổi đã được commit.",
+          "polarity": "true"
+        },
+        {
+          "id": "c",
+          "en": "False, because the SealedSecrets are sealed for the old key, so the `db` Pod cannot get its Secret.",
+          "vi": "Sai, vì các SealedSecret được niêm cho khóa cũ, nên Pod `db` không lấy được Secret của nó.",
+          "polarity": "false"
+        },
+        {
+          "id": "d",
+          "en": "False, because Argo CD builds objects only on the cluster made by the `kind-cluster` module.",
+          "vi": "Sai, vì Argo CD chỉ dựng object trên cluster tạo bởi module `kind-cluster`.",
+          "polarity": "false"
+        }
+      ],
+      "answer": ["c"],
+      "explanation": {
+        "en": {
+          "correct": "The new cluster has a new sealing key, so the controller cannot open SealedSecrets sealed for the old one, and `db` waits with `CreateContainerConfigError`, as in `dr-drill.sh --without-sealing-key`. The plan changes such values in Git first, one pull request each.",
+          "a": "Argo CD does build Đơn Hàng's objects from Git, which makes the repository look complete. But some values in it name one cluster's key, storage or address, and they are wrong for the new cluster until changed.",
+          "b": "Fixing in Git and letting Argo CD catch up is how changes usually flow, so fixing later seems harmless. But the first sync would already start `db` with secrets it cannot open and volumes without the provider's StorageClass.",
+          "d": "The old cluster was made by the `kind-cluster` module, so Argo CD can seem tied to it. But Argo CD on the new cluster builds the objects; what changes per cluster is a few values, not where Argo CD can run."
+        },
+        "vi": {
+          "correct": "Cluster mới có sealing key mới, nên controller không mở được các SealedSecret niêm cho khóa cũ, và `db` nằm chờ với `CreateContainerConfigError`, như trong `dr-drill.sh --without-sealing-key`. Kế hoạch sửa những giá trị đó trong Git trước, mỗi thứ một pull request.",
+          "a": "Argo CD đúng là dựng các object của Đơn Hàng từ Git, nên repo trông như đã đủ. Nhưng một số giá trị trong đó gọi tên khóa, storage hay địa chỉ của một cluster, và chúng sai với cluster mới cho tới khi được sửa.",
+          "b": "Sửa trong Git rồi để Argo CD bắt kịp là cách thay đổi thường đi, nên sửa sau có vẻ vô hại. Nhưng lần sync đầu đã khởi động `db` với secret nó không mở được và volume không có StorageClass của nhà cung cấp.",
+          "d": "Cluster cũ được tạo bởi module `kind-cluster`, nên Argo CD có vẻ gắn với nó. Nhưng Argo CD trên cluster mới dựng các object; thứ khác nhau theo cluster là vài giá trị, không phải nơi Argo CD chạy được."
+        }
+      }
+    },
+    {
+      "id": "k8s.l4.moving-to-a-new-cluster.q5",
+      "type": "order",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["k8s.platform.cluster-migration"],
+      "section_ref": 4,
+      "question": {
+        "en": "You run the production move from `cluster-migration-plan.md`. Put the steps in order, ending with writes open on the new cluster.",
+        "vi": "Bạn thực hiện việc chuyển production theo `cluster-migration-plan.md`. Sắp xếp các bước theo thứ tự, kết thúc khi ghi được mở ở cluster mới."
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "A commit sets the old cluster's `api` to zero replicas.",
+          "vi": "Một commit đặt `api` ở cluster cũ về 0 replica."
+        },
+        {
+          "id": "b",
+          "en": "Argo CD on the new cluster builds Đơn Hàng's objects from the config repository.",
+          "vi": "Argo CD trên cluster mới dựng các object của Đơn Hàng từ repo cấu hình."
+        },
+        {
+          "id": "c",
+          "en": "DNS points to the new Gateway, and writes open there.",
+          "vi": "DNS trỏ sang Gateway mới, và ghi được mở ở đó."
+        },
+        {
+          "id": "d",
+          "en": "Pull requests change the sealed secrets, StorageClass names, Gateway and cluster module for the new cluster.",
+          "vi": "Các pull request sửa secret đã niêm, tên StorageClass, Gateway và module cluster cho cluster mới."
+        },
+        {
+          "id": "e",
+          "en": "The queues on the old cluster drain, and the last WAL reaches the new database.",
+          "vi": "Các queue ở cluster cũ xả hết, và đoạn WAL cuối tới database mới."
+        },
+        {
+          "id": "f",
+          "en": "The new PostgreSQL starts from the latest base backup and catches up on archived WAL.",
+          "vi": "PostgreSQL mới khởi động từ base backup mới nhất và đuổi kịp bằng WAL lưu trữ."
+        }
+      ],
+      "answer": ["d", "b", "f", "a", "e", "c"],
+      "explanation": {
+        "en": {
+          "correct": "What differs per cluster changes before the first sync, so Argo CD then builds correct objects. The database catches up while the old cluster still serves; only then do writes stop, the last data arrives, and DNS switches.",
+          "d": "Fixing values after seeing the new cluster can feel more natural. But a sync before these pull requests starts objects with the old key, storage and address.",
+          "a": "Stopping writes early can seem safer. But the stop is kept short by letting the new database catch up first, so only the last WAL is left to apply during it.",
+          "c": "Switching DNS can feel like the moment the move begins. But until DNS changes, the old cluster is still the way back, so it comes last, after every check."
+        },
+        "vi": {
+          "correct": "Những gì khác nhau theo cluster được sửa trước lần sync đầu, nên Argo CD dựng ra object đúng. Database đuổi kịp trong lúc cluster cũ vẫn phục vụ; chỉ khi đó mới dừng ghi, phần dữ liệu cuối tới nơi, rồi đổi DNS.",
+          "d": "Sửa giá trị sau khi nhìn thấy cluster mới có vẻ tự nhiên hơn. Nhưng một lần sync trước các pull request này sẽ khởi động object với khóa, storage và địa chỉ cũ.",
+          "a": "Dừng ghi sớm có vẻ an toàn hơn. Nhưng lần dừng được giữ ngắn nhờ để database mới đuổi kịp trước, nên trong lúc dừng chỉ còn đoạn WAL cuối phải áp.",
+          "c": "Đổi DNS có cảm giác là lúc cuộc chuyển bắt đầu. Nhưng cho tới khi DNS đổi, cluster cũ vẫn là đường lui, nên bước này đi cuối, sau mọi phép kiểm."
+        }
+      }
+    },
+    {
+      "id": "k8s.l4.moving-to-a-new-cluster.q6",
+      "type": "single",
+      "bloom": "analyze",
+      "difficulty": 4,
+      "skills": ["k8s.platform.cluster-migration"],
+      "section_ref": 6,
+      "question": {
+        "en": "Suppose one release had moved the cluster and switched to the provider's managed PostgreSQL at once. The next morning `/api/v1/orders` answers slowly. Compared with the plan's move, what makes this harder?",
+        "vi": "Giả sử một bản phát hành vừa chuyển cluster vừa đổi sang PostgreSQL managed của nhà cung cấp cùng lúc. Sáng hôm sau `/api/v1/orders` trả lời chậm. So với cuộc chuyển theo kế hoạch, điều gì làm việc này khó hơn?"
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "Two things changed at once, so the slowdown cannot be traced to one of them.",
+          "vi": "Hai thứ đổi cùng lúc, nên không lần được sự chậm về một trong hai."
+        },
+        {
+          "id": "b",
+          "en": "Nothing; the move was the right moment for the database too, since one write stop served both changes.",
+          "vi": "Không gì cả; cuộc chuyển cũng là lúc hợp để đổi database, vì một lần dừng ghi phục vụ được cả hai thay đổi.",
+          "misconception": "A cluster move is the right moment to also switch the database to a managed one."
+        },
+        {
+          "id": "c",
+          "en": "The old cluster is no longer the way back, since writes have already opened on the new cluster.",
+          "vi": "Cluster cũ không còn là đường lui, vì ghi đã được mở ở cluster mới."
+        },
+        {
+          "id": "d",
+          "en": "The release needed the four per-cluster pull requests and the database change, so it took more work.",
+          "vi": "Bản phát hành cần bốn pull request theo cluster cộng thay đổi database, nên tốn nhiều công hơn."
+        }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "With two changes in one release, a failure afterwards points to the cluster or the database, and it is unclear which. The plan changes only the cluster, so a slow query after the move points to one change.",
+          "b": "One stop for two changes looks efficient while the team is busy with the move anyway. But it costs the ability to tell which change broke something, which is why the plan gives the database its own later release.",
+          "c": "After writes open, going back does mean moving data the other way, so this is true. But it is true of the plan's move as well, so it does not explain what is harder here.",
+          "d": "The combined release does carry the same four pull requests plus the database. But more work before the release does not explain why finding the cause of a slow query is harder after it."
+        },
+        "vi": {
+          "correct": "Với hai thay đổi trong một bản phát hành, lỗi sau đó có thể do cluster hoặc database, và không rõ là cái nào. Kế hoạch chỉ đổi cluster, nên một truy vấn chậm sau cuộc chuyển chỉ trỏ về một thay đổi.",
+          "b": "Một lần dừng cho hai thay đổi trông hiệu quả khi đội vốn đang bận chuyển. Nhưng cái giá là không còn biết thay đổi nào làm hỏng, nên kế hoạch dành cho database một bản phát hành riêng sau đó.",
+          "c": "Sau khi mở ghi, quay lại đúng là phải chuyển dữ liệu theo chiều ngược, nên câu này đúng. Nhưng nó cũng đúng với cuộc chuyển theo kế hoạch, nên không giải thích được điều gì khó hơn ở đây.",
+          "d": "Bản phát hành gộp đúng là mang bốn pull request cộng database. Nhưng nhiều việc hơn trước bản phát hành không giải thích được vì sao tìm nguyên nhân truy vấn chậm sau đó lại khó hơn."
+        }
+      }
+    }
+  ]
+}

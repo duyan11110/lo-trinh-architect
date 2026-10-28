@@ -1,0 +1,227 @@
+{
+  "id": "k8s.l4.moving-to-a-new-cluster",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-10-29T14:00:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "stage-4 cluster-migration-plan.md: plan only, not run; moves Đơn Hàng to the managed cluster of ADR 0022; new cluster built beside the old, then traffic switched; the old cluster keeps running as the way back until the move is checked; durations assumed until a staging rehearsal.",
+      "kind": "fact",
+      "source_hint": "docs/design/cluster-migration-plan.md lines 3-10 @ stage-4",
+      "needs_verification": false,
+      "section": 4
+    },
+    {
+      "n": 2,
+      "text": "Plan: Kubernetes objects are not copied; Argo CD on the new cluster rebuilds them from the config repository, as dr-drill.sh rebuilds staging; no etcd snapshot is carried over because it brings the old cluster's nodes, addresses and Secrets; only data moves.",
+      "kind": "fact",
+      "source_hint": "docs/design/cluster-migration-plan.md lines 12-15 @ stage-4",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 3,
+      "text": "An etcd snapshot holds the cluster's API objects (including Secrets), not the data stored on volumes.",
+      "kind": "behavior",
+      "source_hint": "Kubernetes docs: Operating etcd clusters for Kubernetes > Backing up an etcd cluster; k8s.l3.etcd-snapshots summary line 4",
+      "needs_verification": true,
+      "section": 6,
+      "version_key": "kubernetes"
+    },
+    {
+      "n": 4,
+      "text": "Plan table: four per-cluster differences, each changed in the config repository by its own pull request before the new cluster syncs: sealing key, StorageClass, Gateway address, cluster code (kind-cluster module -> managed cluster module in deploy/tofu/envs/production/cluster/main.tf).",
+      "kind": "fact",
+      "source_hint": "docs/design/cluster-migration-plan.md lines 17-27 @ stage-4",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 5,
+      "text": "New cluster gets a new sealing key pair; every SealedSecret of the overlay is sealed again with seal-secrets.sh and the new certificate, which carries the key's public half; only the controller holding the matching private key can decrypt a SealedSecret.",
+      "kind": "behavior",
+      "source_hint": "cluster-migration-plan.md line 24 @ stage-4; Sealed Secrets README (controller private key decrypts; kubeseal --cert)",
+      "needs_verification": true,
+      "section": 5,
+      "version_key": "sealed_secrets"
+    },
+    {
+      "n": 6,
+      "text": "Volumes of db, rabbitmq and db-backups set no storageClassName today, so they get the cluster's default StorageClass; on the new cluster the overlay names the provider's StorageClass for them.",
+      "kind": "behavior",
+      "source_hint": "cluster-migration-plan.md line 25 @ stage-4; Kubernetes docs: Persistent Volumes > Class (PVC without storageClassName uses default StorageClass)",
+      "needs_verification": true,
+      "section": 5,
+      "version_key": "kubernetes"
+    },
+    {
+      "n": 7,
+      "text": "Traefik is the controller serving the Gateway (kubernetesGateway provider on); today NodePorts 30080 and 30443; new cluster: the provider's load balancer; changes apps/traefik.yaml (Service type) and the DNS records of the two production names (api and login).",
+      "kind": "fact",
+      "source_hint": "docs/design/cluster-migration-plan.md line 26; deploy/gitops/config-repo/apps/traefik.yaml (providers.kubernetesGateway, service.spec.type) @ stage-4",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 8,
+      "text": "Plan data: new PostgreSQL restored from the latest base backup, then reads on in the archived WAL; once caught up writes stop (15 min, assumed) by a commit setting the old cluster's api to 0 replicas, so no new order or message is created.",
+      "kind": "fact",
+      "source_hint": "docs/design/cluster-migration-plan.md lines 31-34 @ stage-4",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 9,
+      "text": "With automated sync and selfHeal: true (as in apps/staging.yaml), Argo CD syncs again when live objects drift from Git, so a kubectl scale is reverted to the replica count in Git; hence writes stop by a commit.",
+      "kind": "behavior",
+      "source_hint": "Argo CD docs: Automated Sync Policy > Automatic Self-Healing; deploy/gitops/config-repo/apps/staging.yaml @ stage-4; plan lines 35-36",
+      "needs_verification": true,
+      "section": 5,
+      "version_key": "argocd"
+    },
+    {
+      "n": 10,
+      "text": "Plan RabbitMQ: during the stop Notifications and Payments on the old cluster keep running until queues are empty, then go to 0 by commit; messages in the dead-letter queue are handled first; no message is left in the old cluster's queues.",
+      "kind": "fact",
+      "source_hint": "docs/design/cluster-migration-plan.md lines 37-40 @ stage-4",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 11,
+      "text": "Plan: then wait for the last WAL to be applied to the new database and open it for writes; Redis holds only cache, is not moved and refills on the new cluster; so no order confirmed to a customer is lost.",
+      "kind": "fact",
+      "source_hint": "docs/design/cluster-migration-plan.md lines 41-44 @ stage-4",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 12,
+      "text": "Plan cutover: sync + catch-up + test via the new Gateway address; stop writes, drain queues, last WAL; switch DNS, open writes; old cluster kept without traffic. Before step 3, going back = no DNS switch (and revert the write-stop commits); after, new orders exist only on the new cluster.",
+      "kind": "fact",
+      "source_hint": "docs/design/cluster-migration-plan.md lines 46-56 @ stage-4",
+      "needs_verification": false,
+      "section": 4
+    },
+    {
+      "n": 13,
+      "text": "Plan scope: only the cluster changes; self-run components (PostgreSQL, RabbitMQ, Keycloak, per self-run-components.md) move as they run; switching them to managed services is later, one component per release, so a failure points to one change.",
+      "kind": "fact",
+      "source_hint": "docs/design/cluster-migration-plan.md lines 58-63 @ stage-4",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 14,
+      "text": "Plan rehearsal: before production, the whole plan runs on a second staging cluster, moving staging data and timing each step; the measured write stop decides the move window and how far ahead shops are told (5 working days, assumed).",
+      "kind": "fact",
+      "source_hint": "docs/design/cluster-migration-plan.md lines 65-70 @ stage-4",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 15,
+      "text": "dr-drill.sh rebuilds staging through OpenTofu, the controllers, the Git server from a mirror clone and Argo CD's Application from apps/staging.yaml until Synced/Healthy; no etcd snapshot is used.",
+      "kind": "fact",
+      "source_hint": "scripts/devops/dr-drill.sh lines 1-4, 45-100 @ stage-4",
+      "needs_verification": false,
+      "section": 8
+    },
+    {
+      "n": 16,
+      "text": "dr-drill.sh --without-sealing-key: the controller cannot open the SealedSecrets, no Secret db or api is created, and db's Pod waits with reason CreateContainerConfigError.",
+      "kind": "fact",
+      "source_hint": "scripts/devops/dr-drill.sh lines 4, 10, 63-66, 78-96 @ stage-4; devops.l3.disaster-recovery-drill",
+      "needs_verification": false,
+      "section": 8
+    },
+    {
+      "n": 17,
+      "text": "Opinion: after DNS has switched and writes opened, fix the problem on the new cluster with a new change unless orders are being lost, because going back then means moving data the other way.",
+      "kind": "opinion",
+      "source_hint": "docs/design/cluster-migration-plan.md lines 54-56 @ stage-4",
+      "needs_verification": false,
+      "section": 7
+    },
+    {
+      "n": 18,
+      "text": "Opinion (trade-offs table, choices): a move that changes cluster and database together leaves a failure ambiguous between the two; restoring a snapshot brings whatever the old cluster held, so a failure may come from it; keep the database switch for a later release.",
+      "kind": "opinion",
+      "source_hint": "docs/design/cluster-migration-plan.md lines 14-15, 60-63 @ stage-4",
+      "needs_verification": false,
+      "section": 6
+    },
+    {
+      "n": 19,
+      "text": "Production today runs on the cluster built by the kind-cluster module (deploy/tofu/envs/production/cluster/main.tf), which the move replaces with a managed cluster module.",
+      "kind": "fact",
+      "source_hint": "docs/design/cluster-migration-plan.md line 27 @ stage-4",
+      "needs_verification": false,
+      "section": 2
+    },
+    {
+      "n": 20,
+      "text": "Recovery started with recovery.signal (as db/pitr/start.sh, used by pitr.sh) ends at the end of the archived WAL; a server in standby mode keeps fetching new archived segments with restore_command and does not stop.",
+      "kind": "behavior",
+      "source_hint": "PostgreSQL docs: Server Configuration > Write Ahead Log > Archive Recovery (19.5.5); db/pitr/start.sh lines 10-22 @ stage-4",
+      "needs_verification": true,
+      "section": 4,
+      "version_key": "postgresql"
+    },
+    {
+      "n": 21,
+      "text": "pg_switch_wal() closes the current WAL segment so it is archived now, not after archive_timeout; pitr.sh calls it before recovering.",
+      "kind": "behavior",
+      "source_hint": "PostgreSQL docs: Functions > Backup Control Functions (pg_switch_wal); scripts/devops/pitr.sh lines 35-41 @ stage-4",
+      "needs_verification": true,
+      "section": 4,
+      "version_key": "postgresql"
+    },
+    {
+      "n": 22,
+      "text": "At stage-4 only the Compose db archives WAL (archive_mode, archive_command, archive_timeout); the in-cluster production db keeps its data in an emptyDir and archives no WAL.",
+      "kind": "fact",
+      "source_hint": "docker-compose.yml service db (command) ; deploy/gitops/config-repo/envs/production/db.yaml lines 2, 63 @ stage-4",
+      "needs_verification": false,
+      "section": 4
+    },
+    {
+      "n": 23,
+      "text": "The plan does not say how the write-stop commit reaches only the old cluster, nor what starts the new api when writes open.",
+      "kind": "fact",
+      "source_hint": "docs/design/cluster-migration-plan.md lines 29-56 @ stage-4 (absence)",
+      "needs_verification": false,
+      "section": 4
+    }
+  ],
+  "open_questions": [
+    "The plan leaves open how the write-stop commit targets only the old cluster when both clusters sync from the same config repository, and what brings up the new api when writes open; the lesson states this as a gap for the rehearsal."
+  ],
+  "repo_changes_needed": [
+    {
+      "lesson": "k8s.l4.moving-to-a-new-cluster",
+      "need": "Prompt 08: in lines 31-33 drop 'cùng cách pitr.sh khôi phục' (pitr.sh recovery stops at the end of the archive; the move needs a server that keeps reading new WAL). The lesson excerpt at stage-4 stays verbatim.",
+      "suggested_path": "docs/design/cluster-migration-plan.md"
+    },
+    {
+      "lesson": "k8s.l4.moving-to-a-new-cluster",
+      "need": "Prompt 08: the plan could name where each cluster's api replica count lives (per-cluster overlay or Application), so one commit stops only the old cluster's writes.",
+      "suggested_path": "docs/design/cluster-migration-plan.md"
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [1, 2, 3, 4, 5, 6],
+    "outline_items_missing": [],
+    "beyond_scope": [
+      "Redis cache not moved and the dead-letter queue step (plan lines 39-42) — part of the quoted excerpt, explained in one sentence each; no DNS-switch detail beyond 'DNS points to the new Gateway'."
+    ]
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1980,
+    "notes": "apply-review: §4 split; WAL-archive assumption, standby-style catch-up, pg_switch_wal, pre-switch test, plan gap on per-cluster commit (claims 20-23); rollback = keep DNS + revert stop commits; 'every object' -> Đơn Hàng's objects (lesson, quiz q4/q5); self-heal condition; Traefik, 4th table row, certificate, CreateContainerConfigError explained; 'fix forward' replaced; diagram queue note. Cut §4 para 1, §5 snapshot recap. Quiz q1/q6 rewording left to /quiz."
+  }
+}

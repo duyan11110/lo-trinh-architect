@@ -1,0 +1,145 @@
+{
+  "id": "k8s.l4.horizontal-pod-autoscaler",
+  "technical": {
+    "reviewed_at": "2026-10-28T23:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "resource-metrics-pipeline.md: \"The metrics-server fetches resource metrics from the kubelets and exposes them in the Kubernetes API server through the Metrics API for use by the HPA and VPA. You can also view these metrics using the `kubectl top` command.\" \"You must enable the API aggregation layer and register an APIService for the `metrics.k8s.io` API.\" resource-usage-monitoring.md: \"lightweight, short-term, in-memory metrics-server\". Round 2: lesson wording now matches.",
+        "source": "refs/kubernetes-website/content/en/docs/tasks/debug/debug-cluster/resource-metrics-pipeline.md; .../resource-usage-monitoring.md"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "horizontal-pod-autoscale.md: \"implements horizontal pod autoscaling as a control loop that runs intermittently\". Walkthrough, conditions: \"`ScalingActive`, indicates whether ... the HPA ... is able to calculate desired scales\"; \"`ScalingLimited`, indicates that the desired scale was capped by the maximum or minimum of the HorizontalPodAutoscaler\" - at maxReplicas the metric is still fetched and the desired count computed, only capped.",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/workloads/autoscaling/horizontal-pod-autoscale.md; .../tasks/run-application/horizontal-pod-autoscale-walkthrough.md (Appendix: Status Conditions)"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "horizontal-pod-autoscale.md: utilization \"as a percentage of the equivalent resource request ... then takes the mean ... across all targeted Pods\"; \"desiredReplicas = ceil[currentReplicas × currentMetricValue / desiredMetricValue]\"; \"The control plane skips any scaling action if the ratio is sufficiently close to 1.0 (within a configurable tolerance, 0.1 by default).\" Round 2: section 4 and summary line 3 now carry the condition.",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/workloads/autoscaling/horizontal-pod-autoscale.md (Algorithm details)"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Arithmetic against the documented formula: 100m/50m = 200%, ceil(1 × 200/50) = 4; 75m/50m = 150%, ceil(1 × 150/50) = 3; both ratios (4.0, 3.0) are far outside the 0.1 tolerance and ≤ maxReplicas 5. Request 50m from cpu-echo.yaml line 34, target 50 and max 5 from cpu-echo-hpa.yaml lines 17, 24 @ stage-4.",
+        "source": "horizontal-pod-autoscale.md (Algorithm details); examples/don-hang @ stage-4"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "horizontal-pod-autoscale.md: \"Figure 1. HorizontalPodAutoscaler controls the scale of a Deployment and its ReplicaSet\"; \"These resources each have a subresource named `scale`, an interface that allows you to dynamically set the number of replicas\".",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/workloads/autoscaling/horizontal-pod-autoscale.md"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Docs: \"if some of the Pod's containers do not have the relevant resource request set, CPU utilization for the Pod will not be defined and the autoscaler will not take any action for that metric.\" No-metrics case by execution (outputs/stage-4/scripts/k8s/autoscale.txt: \"cpu: <unknown>/50%\", REPLICAS 1). Round 2: lesson ties `<unknown>` only to the no-metrics case.",
+        "source": "horizontal-pod-autoscale.md (How does a HorizontalPodAutoscaler work?); examples/don-hang @ stage-4: outputs/stage-4/scripts/k8s/autoscale.txt"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "horizontal-pod-autoscale.md: \"For scaling down the stabilization window is _300_ seconds (or the value of the `--horizontal-pod-autoscaler-downscale-stabilization` command line option, if provided).\" Default behavior block: \"scaleDown: stabilizationWindowSeconds: 300\". cpu-echo-hpa.yaml line 27 @ stage-4: \"stabilizationWindowSeconds: 30\".",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/workloads/autoscaling/horizontal-pod-autoscale.md (Default behavior)"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "git show stage-4:deploy/k8s/lessons/cpu-echo-hpa.yaml: lines 6-27 match the lesson block character for character; lines 3-5: \"The Deployment above sets no replicas: the HPA owns the count. After the load drops, it waits 30 s (not the default 300 s)\".",
+        "source": "examples/don-hang @ stage-4: deploy/k8s/lessons/cpu-echo-hpa.yaml"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "tools/extract-code deploy/k8s/lessons/cpu-echo.yaml --tag stage-4: comment \"Caddy answering every request, so the CPU it uses grows with the requests sent to it. Its CPU request (50m)\"; namespace autoscale-lessons; container `echo` requests cpu 50m, memory 32Mi; Deployment spec has no `replicas`.",
+        "source": "examples/don-hang @ stage-4: deploy/k8s/lessons/cpu-echo.yaml"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Argo CD auto_sync (WebFetch, stable): \"By default, changes that are made to the live cluster will not trigger automated sync.\" \"If the selfHeal flag is set to true, then the sync will be attempted again after self-heal timeout (5 seconds by default).\" best_practices: \"do not include replicas in the manifests if you want replicas to be controlled by HPA\". K8s HPA docs: \"it is recommended that the value of spec.replicas ... be removed from their manifest(s)\". Fetched stable docs, not a 3.1-pinned page.",
+        "source": "https://argo-cd.readthedocs.io/en/stable/user-guide/auto_sync/; .../best_practices/; horizontal-pod-autoscale.md (Migrating Deployments)"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "autoscale.txt @ stage-4: \"error: Metrics API not available\"; apiservice NotFound; \"cpu: <unknown>/50%\" 1 replica; \"ScalingActive=False (FailedGetResourceMetric)\"; \"cpu-echo 1/1\". autoscale.sh: lessons_cluster runs cluster-up.sh if donhang absent; waits --timeout=180s rollout, 90x2s ScalingActive, 180s load Pod, sleep 60. Lines 24-40 match. Walkthrough: AbleToScale \"able to fetch and update scales\"; ScalingActive False \"generally indicates problems with fetching metrics\".",
+        "source": "examples/don-hang @ stage-4: scripts/k8s/autoscale.sh, scripts/lib/network-lessons.sh, outputs/stage-4/scripts/k8s/autoscale.txt; horizontal-pod-autoscale-walkthrough.md"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "horizontal-pod-autoscale.md: \"if a target utilization value is set, the controller calculates the utilization value as a percentage of the equivalent resource request on the containers in each Pod.\" The algorithm section defines the computation entirely in terms of the request; limits are not an input.",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/workloads/autoscaling/horizontal-pod-autoscale.md"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "resource-quotas.md: \"`requests.cpu` | Across all pods in a non-terminal state, the sum of CPU requests cannot exceed this value.\" and \"If creating or updating a resource violates a quota constraint, the control plane rejects that request\" — applies to any Pod, including those an HPA-driven ReplicaSet creates.",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/policy/resource-quotas.md"
+      },
+      {
+        "n": 14,
+        "verdict": "not-needed",
+        "evidence": "Labelled opinion in section 7, each branch stated with its condition (steady load with headroom / CPU-bound at peak). No unconditional recommendation.",
+        "source": "lesson section 7"
+      },
+      {
+        "n": 15,
+        "verdict": "not-needed",
+        "evidence": "Labelled opinion in section 7, conditioned on \"the database or a shared limit is full while `api` CPU stays low\"; follows from claim 12. Round 2 opened: refs horizontal-pod-autoscale.md, horizontal-pod-autoscale-walkthrough.md, resource-metrics-pipeline.md; autoscale.sh, network-lessons.sh, cpu-echo.yaml @ stage-4.",
+        "source": "lesson section 7"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-28T23:45:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "text": "New sentence: the HPA leaves the count alone when measured is \"only a little away\" from the target, but I am not told how little. In quiz q2 (80% measured vs 50% target) I hesitated over whether 80 counts as \"a little away\" before choosing to scale to 2.",
+        "quote": "when measured is only a little away from the target, the HPA leaves the count as it is",
+        "fix": "Add a few words giving a sense of scale, e.g. \"only a little away (a few percent of the target, not 80% against 50%)\", without naming the setting."
+      },
+      {
+        "severity": "minor",
+        "section": 9,
+        "kind": "example",
+        "text": "The run time is now concrete, which helps, but the heading still says 3 minutes while step 1 says to allow up to ten minutes, and longer if `donhang` has to be created first. The two numbers contradict each other.",
+        "quote": "allow up to ten minutes when `donhang` already runs",
+        "fix": "Say in step 1 that the 3 minutes is the reader's own work and the script's waiting comes on top, or say roughly how much longer it takes when the script must create `donhang`."
+      },
+      {
+        "severity": "minor",
+        "section": "k8s.l4.horizontal-pod-autoscaler.q3",
+        "kind": "style",
+        "text": "Explanation for option b (en) is missing a space after the full stop, so I read it as one word.",
+        "quote": "metrics-server indeed keeps no history.But the wait comes from the HPA's own scale-down window",
+        "fix": "Insert a space: \"history. But\" (the same typo is in q4 explanation c)."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [
+        "Section 4: \"only a little away from the target\" — how close counts as close is not given."
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

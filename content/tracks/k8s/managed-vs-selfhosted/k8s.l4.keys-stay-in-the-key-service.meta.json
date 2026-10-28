@@ -1,0 +1,195 @@
+{
+  "id": "k8s.l4.keys-stay-in-the-key-service",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-10-29T12:00:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "stage-4: dev-secrets.sh writes encryption-config.yaml with a secretbox key of 32 random bytes (openssl rand -base64 32) as text, then identity, which only serves reads of data written unencrypted; encryption-at-rest.sh gives the file to the lab API server on the control-plane node.",
+      "kind": "fact",
+      "source_hint": "scripts/dev-secrets.sh lines 86-106, scripts/k8s/encryption-at-rest.sh @ stage-4; Kubernetes docs encrypt-data > Providers (identity)",
+      "needs_verification": false,
+      "section": 2
+    },
+    {
+      "n": 2,
+      "text": "On a managed cluster the provider usually runs the control plane, so the team has no node to put the EncryptionConfiguration file on and does not edit the API server's configuration.",
+      "kind": "fact",
+      "source_hint": "k8s.l4.managed-control-plane outline 1; Kubernetes docs: Encrypting Confidential Data at Rest (config is an API server flag)",
+      "needs_verification": true,
+      "section": 5,
+      "version_key": "kubernetes"
+    },
+    {
+      "n": 3,
+      "text": "The kms provider uses envelope encryption: resources are encrypted with a data encryption key (DEK); DEKs are encrypted by a key encryption key (KEK) stored and managed in a remote KMS; the encrypted DEK is stored in etcd alongside the ciphertext.",
+      "kind": "behavior",
+      "source_hint": "Kubernetes docs: Using a KMS provider for data encryption > KMS encryption and per-object encryption keys; Encrypting Confidential Data at Rest > Managed (KMS) key storage",
+      "needs_verification": true,
+      "section": 4,
+      "version_key": "kubernetes"
+    },
+    {
+      "n": 4,
+      "text": "The API server encrypts the Secret's value itself with a data key; the value never goes to the KMS. Data keys are made from one random seed; the KMS encrypts the seed, and only the encrypted seed is stored beside the value. Decrypted data keys stay in memory; the KEK is never held.",
+      "kind": "behavior",
+      "source_hint": "Kubernetes docs: Using a KMS provider for data encryption (DEK/KEK, KMS v2 DEK from seed); Encrypting Confidential Data at Rest > Providers table (kms v2: data encrypted by DEKs using AES-GCM)",
+      "needs_verification": true,
+      "section": 4,
+      "version_key": "kubernetes"
+    },
+    {
+      "n": 5,
+      "text": "The API server talks to the KMS through a KMS plugin, a server deployed on the same hosts as the control plane, which handles all communication with the remote KMS.",
+      "kind": "behavior",
+      "source_hint": "Kubernetes docs: Using a KMS provider for data encryption (KMS plugin gRPC server over a UNIX domain socket on control-plane hosts)",
+      "needs_verification": true,
+      "section": 3,
+      "version_key": "kubernetes"
+    },
+    {
+      "n": 6,
+      "text": "KMS v2: once the API server has unwrapped a DEK via the KMS it caches it in the clear and can decrypt with it indefinitely without calling the KMS; so not every read calls the KMS, and reads of existing Secrets can continue during a short KMS outage.",
+      "kind": "behavior",
+      "source_hint": "Kubernetes docs: Using a KMS provider for data encryption > Configuring the KMS provider > KMS v2 (no cachesize; DEKs cached in the clear)",
+      "needs_verification": true,
+      "section": 4,
+      "version_key": "kubernetes"
+    },
+    {
+      "n": 7,
+      "text": "If the KEK is disabled or deleted, the KMS stops decrypting: a running API server keeps reading with cached DEKs, but once it restarts, as it does after a snapshot is restored, no Secret encrypted under that key can be read.",
+      "kind": "behavior",
+      "source_hint": "Kubernetes docs: Encrypting Confidential Data at Rest > Managed (KMS) key storage (dependence on the KEK); KMS provider page (DEK cache in memory); ADR 0023 lines 37-41",
+      "needs_verification": true,
+      "section": 4,
+      "version_key": "kubernetes"
+    },
+    {
+      "n": 8,
+      "text": "A copy of etcd or a snapshot holds ciphertext and encrypted DEKs but not the KEK, so reading needs the KMS (an attacker needs etcd and the KMS); credentials that let the API server call the KMS must themselves be protected.",
+      "kind": "behavior",
+      "source_hint": "Kubernetes docs: Encrypting Confidential Data at Rest > Managed (KMS) key storage; Protection for encryption keys",
+      "needs_verification": true,
+      "section": 9,
+      "version_key": "kubernetes"
+    },
+    {
+      "n": 9,
+      "text": "1.34: kms provider sits in the same EncryptionConfiguration providers list, apiVersion v2 (v1 off by default since 1.29); a kms entry names the plugin endpoint, holds no key. v2 derives DEKs from a seed the KMS encrypted and does not call EncryptRequest per Secret (not at a high rate).",
+      "kind": "syntax",
+      "source_hint": "Kubernetes docs: Using a KMS provider > KMS v2 (apiVersion, name, endpoint, timeout); KMS encryption and per-object encryption keys (DEK from seed); EncryptRequest rate",
+      "needs_verification": true,
+      "section": 4,
+      "version_key": "kubernetes"
+    },
+    {
+      "n": 10,
+      "text": "A KMS keeps keys, often inside HSMs, and encrypts, decrypts or signs on request for permitted callers, recording each use (ADR 0023 context: the key never leaves the HSM, permitted callers send data to sign and get the signature, each use logged).",
+      "kind": "fact",
+      "source_hint": "docs/adr/0023-khoa-ky-hoa-don-trong-hsm-cua-nha-cung-cap.md lines 12-14 @ stage-4; Kubernetes docs encrypt-data (kms implementations can work with HSMs)",
+      "needs_verification": false,
+      "section": 3
+    },
+    {
+      "n": 11,
+      "text": "Opinion: hosting providers that run the API server usually supply their own KMS plugin for their key service; turning it on follows the provider's instructions, not the EncryptionConfiguration file.",
+      "kind": "opinion",
+      "source_hint": "Kubernetes docs: Using a KMS provider > Enabling the KMS supported by your cloud provider; ADR 0023 lines 37-39",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 12,
+      "text": "ADR 0023 options @ stage-4: own HSM needs devices in two places and people to run, upgrade, back up (the work ADR 0022 declined for the cluster); provider's HSM service: no hardware, tied to provider; software key in KMS: cheapest, fails ADR 0015's HSM requirement.",
+      "kind": "fact",
+      "source_hint": "docs/adr/0023-khoa-ky-hoa-don-trong-hsm-cua-nha-cung-cap.md lines 18-24 @ stage-4",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 13,
+      "text": "ADR 0023 decision: provider's HSM service; only Payments' ServiceAccount may sign, nobody else incl. the team lead; key administration (create, disable) is a separate right.",
+      "kind": "fact",
+      "source_hint": "docs/adr/0023-khoa-ky-hoa-don-trong-hsm-cua-nha-cung-cap.md lines 26-30 @ stage-4",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 14,
+      "text": "ADR 0023 consequences: key cannot leave the HSM, so leaving means a new key and certificate; old invoices stay verifiable with public key and certificate. Production Secrets use a key of the same KMS (envelope encryption) instead of the lab secretbox file; disable/delete rights guarded like data.",
+      "kind": "fact",
+      "source_hint": "docs/adr/0023-khoa-ky-hoa-don-trong-hsm-cua-nha-cung-cap.md lines 34-41 @ stage-4",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 15,
+      "text": "Verifying a digital signature needs only the public key (and the certificate binding it), not the private key.",
+      "kind": "fact",
+      "source_hint": "glossary digital-signature, public-key; backend.l4.pki-and-signing; ADR 0015 lines 10-13, 47-49",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 16,
+      "text": "ADR 0023 reopening: a contract requiring the key in an HSM on Đơn Hàng's or a customer's own machines leads to a new ADR for that key only, other keys unchanged. Each signing is logged by the KMS besides audit-log.md.",
+      "kind": "fact",
+      "source_hint": "docs/adr/0023-khoa-ky-hoa-don-trong-hsm-cua-nha-cung-cap.md lines 42-49 @ stage-4",
+      "needs_verification": false,
+      "section": 7
+    },
+    {
+      "n": 17,
+      "text": "ADR 0015: a compromised Payments can request signatures only while the compromise lasts and cannot carry the key off; after the fix no new signature is made with that key.",
+      "kind": "fact",
+      "source_hint": "docs/adr/0015-khoa-ky-hoa-don-trong-hsm.md lines 35-37, 54 @ stage-4",
+      "needs_verification": false,
+      "section": 9
+    },
+    {
+      "n": 18,
+      "text": "Opinion (trade-offs and choices): keep the secretbox file for the lab when no key service exists, since a local key still protects snapshots taken off the node; refuse 'emergency' signing rights because ADR 0023 separates signing from key administration.",
+      "kind": "opinion",
+      "source_hint": "k8s.l3.encryption-at-rest (local key protects snapshots); ADR 0023 lines 28-30; Kubernetes docs encrypt-data > Local key storage",
+      "needs_verification": false,
+      "section": 7
+    },
+    {
+      "n": 19,
+      "text": "A local secretbox key in the EncryptionConfiguration on the host protects against an etcd compromise but not a host compromise: a copy of the node's disk holds both.",
+      "kind": "behavior",
+      "source_hint": "Kubernetes docs: Encrypting Confidential Data at Rest > Key storage > Local key storage",
+      "needs_verification": true,
+      "section": 6,
+      "version_key": "kubernetes"
+    },
+    {
+      "n": 20,
+      "text": "Lab encryption config lists only secrets under resources, so a snapshot of the lab cluster with encryption at rest keeps ConfigMaps and other objects readable; only Secrets written after encryption was turned on are encrypted (earlier ones stay under identity until rewritten).",
+      "kind": "behavior",
+      "source_hint": "scripts/dev-secrets.sh lines 91-106 @ stage-4; Kubernetes docs encrypt-data > Ensure all Secrets are encrypted; Providers (identity)",
+      "needs_verification": true,
+      "section": 9,
+      "version_key": "kubernetes"
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [1, 2, 3, 4, 5, 6],
+    "outline_items_missing": [],
+    "beyond_scope": [
+      "DEK caching in API server memory (claim 6) — needed to state outline item 4 and misconception 2 correctly; no KMS v2 configuration detail beyond apiVersion v2."
+    ]
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1900,
+    "notes": "apply-review r3: s4 defines material (one random secret value data keys are made from), split stored-material sentence; Core concepts data key/KEK aligned; s9 'at all' -> 'usually'; claim 4 reworded. Cut: 'as the diagram shows', redundant in-memory sentence. Quiz unchanged (already matches). r2: s4+diagram per KMS v2; claims 2,4,7,11; s9 snapshot narrowed; quiz q1a,q2,q5c."
+  },
+  "open_questions": [
+    "backend.l4.signing-key-custody not yet generated: re-check the 'Before you start' bullet against its five-line summary when it exists (W M06)."
+  ]
+}
