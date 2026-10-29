@@ -1,0 +1,141 @@
+{
+  "id": "backend.l4.per-shop-limits",
+  "technical": {
+    "reviewed_at": "2026-10-30T00:20:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Program.cs @ stage-4 lines 150-166 (tools/extract-code): AddPolicy(\"orders\", ...) returns RateLimitPartition.GetNoLimiter(\"signed-out\") when `sub` is null, else GetFixedWindowLimiter(customer, ...); AddConcurrencyLimiter(\"catalog-reads\", ...) takes no partition key. No shop claim is read anywhere in the file. ASP.NET Core docs: \"Rate limiting partitions divide the traffic into separate buckets that each get their own rate limit counters ... than a single global counter.\"",
+        "source": "examples/don-hang DonHang.Api/Program.cs @ stage-4 lines 150-166; refs/aspnetcore-docs/aspnetcore/performance/rate-limit.md line 284"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Round 2 (sec 5 now says \"10 orders a minute each\" and \"set in `catalogReads` on line 147\"): Program.cs line 140 `new FixedWindowRateLimiterOptions { PermitLimit = 10, Window = TimeSpan.FromMinutes(1) }`; line 147 `new ConcurrencyLimiterOptions { PermitLimit = 20, QueueLimit = 5 }`. Round 1: same lines at stage-3; no CatalogReads override in Compose/appsettings/deploy; Compose overrides only RateLimiting__Orders__Window for the lab.",
+        "source": "DonHang.Api/Program.cs @ stage-4 lines 140, 147; @ stage-3 same lines; docker-compose.yml @ stage-4 line 198"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "git grep EnableRateLimiting @ stage-4: OrdersController.cs:34 [EnableRateLimiting(\"orders\")] on the [HttpPost] of [Route(\"api/v1/orders\")]; ProductsController.cs:24,42 \"catalog-reads\". OrdersV2Controller POST has no rate-limit attribute. Program.cs line 209: \"only endpoints marked [EnableRateLimiting] are limited.\" Review doc row R2: \"Giới hạn này cũng chỉ gắn vào `POST /api/v1/orders`\".",
+        "source": "DonHang.Api/Controllers/OrdersController.cs, V2/OrdersV2Controller.cs, Program.cs @ stage-4; docs/design/multi-shop-architecture-review.md line 60"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "ADR 0013 line 55-56: \"Một cửa hàng đông vẫn dùng chung kết nối database và giới hạn tải với các cửa hàng khác (noisy neighbor). ADR này không giải quyết điều đó\". Review doc lines 59-60: K1 / `catalog-reads` / Rủi ro R1 \"Đếm chung mọi người gọi của một process api\"; K1 / `orders` / Rủi ro R2 \"Đếm theo `sub` của khách ... không theo cửa hàng\". ADR 0013 title: bảng chung, có `shop_id` và row-level security.",
+        "source": "docs/adr/0013-du-lieu-cua-hang-trong-bang-chung.md; docs/design/multi-shop-architecture-review.md lines 59-60 @ stage-4"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Review doc line 34: \"| K1 | CH-3 | Một cửa hàng chạy khuyến mãi, chiếm 10% tổng số đơn trong ngày | Giờ đông nhất của cửa hàng đó; các cửa hàng khác tải như ngày thường |\". Lesson's \"a tenth of the day's orders\" matches.",
+        "source": "docs/design/multi-shop-architecture-review.md line 34 @ stage-4"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "ADR 0016 lines 25-35, identical to the lesson's code block: three options (giữ giới hạn chung: không tốn gì, rủi ro còn nguyên; giới hạn theo cửa hàng chồng lên giới hạn chung; tách cửa hàng lớn: cô lập mạnh nhất, chỉ giúp cửa hàng đã biết là lớn, mỗi lần tách là một việc chuyển dữ liệu) and \"Chọn phương án thứ hai.\"",
+        "source": "docs/adr/0016-gioi-han-tai-theo-cua-hang.md lines 23-35 @ stage-4"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "ADR 0016 lines 35-38: \"Mỗi cửa hàng có một trần: một phần cố định của số lần đọc đồng thời mỗi process (giả định một phần tư của 20). Trần không phải chỗ giữ riêng ... nên 1.000 cửa hàng không chia nhỏ dung lượng thành 1.000 phần.\" Whole ADR read: no sentence fixes the order of the shop check and the shared check.",
+        "source": "docs/adr/0016-gioi-han-tai-theo-cua-hang.md lines 35-38 @ stage-4"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "ADR 0016 lines 40-44: \"Thêm một counter số request theo kết quả (...) có nhãn cửa hàng ... Không thêm nhãn cửa hàng vào histogram ...: 1.000 cửa hàng nhân với mọi bucket, endpoint và mã trả lời là quá nhiều series.\" New clause \"each one more that Prometheus stores and scrapes\": Prometheus instrumentation practices: \"Each labelset is an additional time series that has RAM, CPU, disk, and network costs.\" Naming practices: \"every unique combination of key-value label pairs represents a new time series, which can dramatically increase the amount of data stored.\"",
+        "source": "docs/adr/0016-gioi-han-tai-theo-cua-hang.md lines 40-44 @ stage-4; prometheus.io/docs/practices/instrumentation/ and /practices/naming/ (WebFetch 2026-10-29)"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "ADR 0016 lines 20-21: \"SLI trong `docs/design/slo.md` gộp mọi cửa hàng, nên một cửa hàng bị từ chối phần lớn thời gian vẫn có thể không kéo SLI xuống dưới SLO.\" slo.md 'Chưa có': \"SLI theo từng cửa hàng: S1–S4 gộp mọi cửa hàng, nên một cửa hàng bị từ chối phần lớn thời gian vẫn có thể không làm SLI tụt dưới SLO (ADR 0016).\"",
+        "source": "docs/adr/0016-gioi-han-tai-theo-cua-hang.md lines 20-21; docs/design/slo.md 'Chưa có' @ stage-4"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "ADR 0016 lines 50-54: \"Giới hạn cần biết cửa hàng của request, lấy từ access token, có từ release 2 của `docs/design/multi-shop-data-rollout.md`. Trước đó không làm được: `Program.cs` giữ nguyên giới hạn `orders` và `catalog-reads` ở stage-4. Mỗi process đếm riêng ...; nhiều Pod thì trần thực của một cửa hàng nhân theo số Pod.\" Rollout doc 'Release 2': access token mang claim `shop_id`.",
+        "source": "docs/adr/0016-gioi-han-tai-theo-cua-hang.md lines 46-54; docs/design/multi-shop-data-rollout.md 'Release 2' @ stage-4"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "ADR 0016 lines 56-57: \"Đội xem lại khi một cửa hàng thường xuyên cần nhiều hơn phần của mình: chuyển cửa hàng đó sang phương án thứ ba, theo điều kiện xem lại của ADR 0013.\" ADR 0013 lines 62-63: \"Đội xem lại khi một cửa hàng quá lớn so với bảng chung, hoặc phải được khôi phục riêng. Cửa hàng đó chuyển sang database riêng\". Sec 7's added clause matches both.",
+        "source": "docs/adr/0016-gioi-han-tai-theo-cua-hang.md lines 56-57; docs/adr/0013-du-lieu-cua-hang-trong-bang-chung.md lines 62-63 @ stage-4"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Docs: \"The concurrency limiter limits the number of concurrent requests.\" \"The default rejected status is 503 Service Unavailable.\" Program.cs lines 170-177: \"RejectionStatusCode, 503 unless set. A fixed window knows when its next permit comes, so that refusal becomes 429 with Retry-After ... The concurrency limiter cannot know: its refusals stay 503.\" Only two rate-limit policies exist (orders line 152, catalog-reads line 162), so sec 5's \"only `orders` answers `429`\" holds.",
+        "source": "refs/aspnetcore-docs/aspnetcore/performance/rate-limit.md lines 276, 479; DonHang.Api/Program.cs lines 140-177 @ stage-4"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Arithmetic re-done: stage-4, 30 concurrent reads vs PermitLimit 20 + QueueLimit 5 -> 20 run, 5 wait, 5 refused; B+C's 6 find no slot -> refused with 503 (matches the reworded expected result). Under the cap, with the now-stated assumption that a shop's reads do not wait: A 5, B+C 6, 9 of 20 free. 2 Pods x 5 = 10. 4 x 5 = 20.",
+        "source": "derived from Program.cs line 147 and ADR 0016 lines 35-38, 53-54 @ stage-4"
+      },
+      {
+        "n": 14,
+        "verdict": "not-needed",
+        "evidence": "Opinion stated with conditions in the 'When it fits' column, not as fact; each row's gives/costs traces to ADR 0016 lines 23-38, 56-57 and to the cap-vs-reservation sentence at lines 36-38.",
+        "source": "docs/adr/0016-gioi-han-tai-theo-cua-hang.md @ stage-4"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "First half is reasoning from ADR 0016 (the cap is what limits a busy shop). Second half is a repo fact: capacity-plan.md \"Tổng số Pod × kết nối tối đa mỗi Pod của mọi service phải nhỏ hơn `max_connections` của PostgreSQL\" and \"Thêm Pod api; mỗi Pod thêm 20 chỗ đọc nhưng cũng thêm một pool kết nối, nên số Pod bị chặn bởi `max_connections`.\"",
+        "source": "docs/design/capacity-plan.md lines 44-49, 70-71 @ stage-4"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "Whole ADR 0016 read (64 lines): the only waiting places and 503 it mentions are catalog-reads' (lines 15-17); the decision (lines 35-44) lists \"bị từ chối theo cửa hàng\" as an outcome but gives no queue and no status code for it. Sec 4 and Try it now name refuse-at-once as the diagram's assumption. Round 2 opened: ADR 0016, ADR 0013, Program.cs lines 140-177, Prometheus practices pages.",
+        "source": "docs/adr/0016-gioi-han-tai-theo-cua-hang.md lines 1-64 @ stage-4"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-29T23:59:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "style",
+        "text": "Round 2, new in the changed sentence: it now holds two colons and a nested condition (\"moves to the third option, under the review condition of ADR `0013`: a shop too large ... gets its own database\"). I had to re-read it to see which colon introduces the ADR 0016 rule and which the ADR 0013 condition.",
+        "quote": "The ADR says when to look again: a shop that regularly needs more than its share moves to the third option, under the review condition of ADR `0013`: a shop too large for the shared tables, or one that must be restored on its own, gets its own database.",
+        "fix": "Split after \"ADR `0013`\": end that sentence with a full stop and start a new one, \"That condition: a shop too large for the shared tables, or one that must be restored on its own, gets its own database.\""
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "style",
+        "text": "Round 2, new in the changed clause: \"each one more that Prometheus stores and scrapes\" reads awkwardly; I understood it only on the second pass as \"each extra series is one more thing Prometheus must store and scrape\".",
+        "quote": "is too many series, each one more that Prometheus stores and scrapes.",
+        "fix": "Replace \"each one more that Prometheus stores and scrapes\" with \"and every extra series is one more that Prometheus must scrape and store\"."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

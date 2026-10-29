@@ -1,0 +1,172 @@
+{
+  "id": "backend.l4.capacity-planning",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-10-29T22:00:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "capacity-plan.md inputs: 1,000 shops (from multi-shop-requirements.md, itself an assumption), 50 orders/shop/day, busiest day x2, 12% of a day's orders in its busiest hour, 40 product reads per placed order; every input after shops is marked (giả định).",
+      "kind": "fact",
+      "source_hint": "docs/design/capacity-plan.md lines 10-18; docs/team/multi-shop-requirements.md line 17 @ stage-4",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 2,
+      "text": "Results: 50,000 orders/ordinary day, 100,000 busiest day; ~0.6 orders/s average vs ~3.3/s (12,000 in one hour) at peak; ~23 vs ~133 product reads/s; the plan uses the busiest hour because the average is over five times lower.",
+      "kind": "fact",
+      "source_hint": "docs/design/capacity-plan.md lines 20-28 @ stage-4",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 3,
+      "text": "Ceiling per process by Little's law: max throughput = 20 / time per read; lab read time with 20 permits full ~10-12 ms (lab number, assumption), so ~20/0.012 ≈ 1,600 reads/s per process; 2 api Pods ≈ 3,200.",
+      "kind": "fact",
+      "source_hint": "docs/design/capacity-plan.md lines 35-42 @ stage-4",
+      "needs_verification": false,
+      "section": 4
+    },
+    {
+      "n": 4,
+      "text": "catalog-reads lets 20 product reads run and 5 wait per process (PermitLimit = 20, QueueLimit = 5), so the load test saw 503 only beyond 25; the ASP.NET Core concurrency limiter counts in one process's memory, so each api Pod has its own 20 permits.",
+      "kind": "behavior",
+      "source_hint": "DonHang.Api/Program.cs lines 143-148, 162-166 @ stage-4; ASP.NET Core docs, Rate limiting middleware, Concurrency limiter",
+      "version_key": "aspnetcore",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 5,
+      "text": "Base api.yaml: replicas: 2, one api process per Pod, no podAntiAffinity or topologySpreadConstraints; production overlay patches replicas to 3. The plan counts 2 without giving a reason and does not size for one node running both Pods.",
+      "kind": "fact",
+      "source_hint": "deploy/gitops/config-repo-kustomize/base/api.yaml line 15, envs/production/kustomization.yaml @ stage-4",
+      "needs_verification": false,
+      "section": 4
+    },
+    {
+      "n": 6,
+      "text": "Headroom rule: peak under half the ceiling of the 2 api Pods so one Pod carries all if the other is lost; the lesson states it as all Pods but one. Product reads 133 vs ~1,600: passes; orders 3.3/s, one short transaction each: passes.",
+      "kind": "fact",
+      "source_hint": "docs/design/capacity-plan.md lines 53-58 @ stage-4",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 7,
+      "text": "Runs out first: if Redis stops or the DB slows and a read takes 200 ms, ceiling per process is 100/s, half the ceiling of 2 Pods is 100 < 133, so catalog-reads runs out first and returns 503 for product reads while orders still run.",
+      "kind": "fact",
+      "source_hint": "docs/design/capacity-plan.md lines 60-66 @ stage-4",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 8,
+      "text": "Steps in order: (1) add api Pods, each adds 20 read permits and one connection pool, so Pod count is bounded by max_connections; (2) move the product list to the replica when its peak crosses the primary's headroom.",
+      "kind": "fact",
+      "source_hint": "docs/design/capacity-plan.md lines 68-73 @ stage-4",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 9,
+      "text": "Each api Pod keeps one Npgsql pool for ConnectionStrings:Default at default size (connection string sets none); Payments, Notifications, migrations and the backup job connect to the same server; read max_connections with SHOW, not guessed.",
+      "kind": "fact",
+      "source_hint": "docs/design/capacity-plan.md lines 44-49 @ stage-4",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 10,
+      "text": "Npgsql keeps a connection pool per connection string inside each process; its default Maximum Pool Size is 100. So 6 Pods with default pools could ask PostgreSQL for up to 600 connections.",
+      "kind": "number",
+      "source_hint": "Npgsql docs, Connection String Parameters: Pooling, Maximum Pool Size",
+      "version_key": "npgsql",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 11,
+      "text": "PostgreSQL accepts at most max_connections; once active connections reach max_connections minus superuser_reserved_connections (and reserved_connections), only superusers are accepted. Read the value with SHOW max_connections.",
+      "kind": "behavior",
+      "source_hint": "PostgreSQL 17 docs, 19.3.1 Connection Settings (max_connections, superuser_reserved_connections); SQL command SHOW",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 12,
+      "text": "A Pod whose resource requests fit no node is not scheduled and stays Pending.",
+      "kind": "behavior",
+      "source_hint": "Kubernetes docs, Resource Management for Pods and Containers: how Pods with resource requests are scheduled",
+      "version_key": "kubernetes",
+      "needs_verification": true,
+      "section": 8
+    },
+    {
+      "n": 13,
+      "text": "Triggers for a new plan: shops or average orders per shop off by more than a quarter; one shop over 10% of the busiest day's orders; Program.cs changes a limit, api.yaml changes Pod count, or staging read time differs far from the lab's.",
+      "kind": "fact",
+      "source_hint": "docs/design/capacity-plan.md lines 75-81 @ stage-4",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 14,
+      "text": "Plan from the busiest hour, not the daily average, when sizing a rate the system must answer, because a shared resource runs out while load is highest and the average hides that hour.",
+      "kind": "opinion",
+      "source_hint": "docs/design/capacity-plan.md lines 26-28 @ stage-4",
+      "needs_verification": false,
+      "section": 4
+    },
+    {
+      "n": 15,
+      "text": "Trade-offs: daily average hides the peak; busiest-hour plan with marked assumptions needs triggers; biggest server pays for unmeasured capacity and leaves catalog-reads permits and max_connections unchanged; more Pods need node room and add pools.",
+      "kind": "opinion",
+      "source_hint": "reasoning from capacity-plan.md and Program.cs lines 143-148 @ stage-4",
+      "needs_verification": false,
+      "section": 6
+    },
+    {
+      "n": 16,
+      "text": "Worked arithmetic (not repo numbers): 50 ms read -> 20/0.05 = 400/s per process, half of 2 Pods = 400 > 133; 2,000 shops and 100 ms -> peak ~267, 200/s per process, half of 2 Pods = 200 < 267; with 3 Pods, losing one leaves 400 > 267.",
+      "kind": "fact",
+      "source_hint": "arithmetic on capacity-plan.md lines 12-24, 35-42 @ stage-4",
+      "needs_verification": false,
+      "section": 7
+    },
+    {
+      "n": 17,
+      "text": "A one-shop limit keeping a busy shop from slowing others is a later lesson (backend.l4.per-shop-limits); moving the product list to the replica is backend.l4.read-routing.",
+      "kind": "fact",
+      "source_hint": "content/tracks/backend/track.yaml module capacity-and-slo",
+      "needs_verification": false,
+      "section": 7
+    },
+    {
+      "n": 18,
+      "text": "A Deployment with no strategy uses RollingUpdate with maxUnavailable 25% (rounded down) and maxSurge 25% (rounded up); with 2 replicas that is 0 and 1, so a third Pod starts before an old one stops; so a release does not leave one Pod alone.",
+      "kind": "behavior",
+      "source_hint": "Kubernetes docs, Deployments: Rolling Update Deployment, Max Unavailable and Max Surge",
+      "version_key": "kubernetes",
+      "needs_verification": true,
+      "section": 5
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [1, 2, 3, 4, 5],
+    "outline_items_missing": [],
+    "beyond_scope": [
+      "Npgsql default Maximum Pool Size 100 used to make the max_connections check concrete (claim 10).",
+      "Headroom rule generalised to 'all Pods but one' (plan states it only for 2 Pods); rolling-update surge in Connections (claim 18)."
+    ]
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1980,
+    "notes": "apply-review r2 2026-10-29: superuser/roles -> administrator accounts (s4, s8); s4: rule covers a failed node running one Pod, not both; s5: plan gives no reason for counting 2; s5 reconciles excerpt's rolling update with surge (claim 18); Try it: third Pod is in the plan's count, production runs 3. Cut s5 arithmetic, 200 ms recap, trade-offs footer; fix-validation: s4 <=300 words, claim 5 shortened. Quiz unchanged."
+  }
+}

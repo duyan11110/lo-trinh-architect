@@ -1,0 +1,156 @@
+{
+  "id": "backend.l4.capacity-planning",
+  "technical": {
+    "reviewed_at": "2026-10-29T23:59:50+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "capacity-plan.md @ stage-4 lines 12-18: '1.000', 'Trung bình 50 (giả định)', 'Gấp 2 (giả định)', '12% (giả định)', '40 (giả định)'. multi-shop-requirements.md line 17: 'Phục vụ 1.000 cửa hàng (giả định cho ba năm tới)'; lines 44-45: 'ước lượng tải và dung lượng là một việc riêng, không làm trong tài liệu này.'",
+        "source": "examples/don-hang docs/design/capacity-plan.md, docs/team/multi-shop-requirements.md @ stage-4"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "capacity-plan.md lines 20-28 match. Arithmetic checked: 1,000 x 50 = 50,000; x2 = 100,000; 0.12 x 100,000 = 12,000 / 3,600 = 3.33/s; 50,000 / 86,400 = 0.58/s; x40 = 23.1 and 133.3 reads/s; 3.33 / 0.58 = 5.8, so 'more than five times' holds.",
+        "source": "examples/don-hang docs/design/capacity-plan.md lines 20-28 @ stage-4"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "capacity-plan.md lines 35-42: 'thông lượng tối đa = 20 / thời gian một lần đọc ... khoảng 10–12 ms (số lab, giả định ...). Trần mỗi process khoảng 20 / 0,012, tức khoảng 1.600'; '2 Pod api ... trần của cả hai khoảng 3.200'. 20 / 0.012 = 1,667, 'about 1,600' is the plan's rounding. Little's law itself is not in any pinned doc; the lesson presents the number as the plan's.",
+        "source": "examples/don-hang docs/design/capacity-plan.md lines 35-42 @ stage-4"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Program.cs @ stage-4 line 147: 'new ConcurrencyLimiterOptions { PermitLimit = 20, QueueLimit = 5 }'; AddConcurrencyLimiter(\"catalog-reads\"), in-process, no shared store. ASP.NET Core docs: 'The concurrency limiter limits the number of concurrent requests. Each request reduces the concurrency limit by one.'; sample comment 'options.QueueLimit = 5; // Queue up to 5 additional requests'. 20 running + 5 queued = 25 before rejection.",
+        "source": "refs/aspnetcore-docs/aspnetcore/performance/rate-limit.md lines 276, 488; DonHang.Api/Program.cs lines 143-166 @ stage-4"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "base/api.yaml @ stage-4: 'replicas: 2'; one container 'name: api'; no affinity, podAntiAffinity or topologySpreadConstraints; no strategy. envs/production/kustomization.yaml patches '/spec/replicas' to 'value: 3' (round 1 check). capacity-plan.md lines 41-42 and 53-54 count '2 Pod api' with no stated reason and never mention two Pods sharing a node, so 'does not say why' and 'does not size for a node running both' hold.",
+        "source": "examples/don-hang deploy/gitops/config-repo-kustomize/base/api.yaml, envs/production/kustomization.yaml, docs/design/capacity-plan.md lines 41-54 @ stage-4"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "capacity-plan.md lines 53-58: 'tải đỉnh không vượt một nửa trần của 2 Pod api, để một Pod gánh được toàn bộ khi mất Pod kia'; '133 ... một nửa trần khoảng 1.600. Đạt'; '3,3 đơn mỗi giây ... Đạt'. 'All Pods but one' equals half for 2 Pods; the generalisation is declared in meta beyond_scope.",
+        "source": "examples/don-hang docs/design/capacity-plan.md lines 53-58 @ stage-4"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "capacity-plan.md lines 60-66 match; 20 / 0.2 = 100. The 503: ASP.NET Core docs 'The default rejected status is 503 Service Unavailable.' Program.cs OnRejected switches to 429 only when the lease has RetryAfter metadata; comment line 172: 'The concurrency limiter cannot know: its refusals stay 503.'",
+        "source": "refs/aspnetcore-docs/aspnetcore/performance/rate-limit-samples.md line 41; DonHang.Api/Program.cs lines 168-181 @ stage-4"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "capacity-plan.md lines 68-73: '1. Thêm Pod api; mỗi Pod thêm 20 chỗ đọc nhưng cũng thêm một pool kết nối, nên số Pod bị chặn bởi max_connections. 2. Chuyển danh sách sản phẩm sang replica ..., khi đỉnh đọc sản phẩm vượt khoảng dư của primary.' Section 5 prose states both steps in English.",
+        "source": "examples/don-hang docs/design/capacity-plan.md lines 68-73 @ stage-4"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "capacity-plan.md lines 44-49 match. api.yaml sets only ConnectionStrings__Default; Program.cs passes the same connectionString to AddCatalogModule and AddDonHangInfrastructure (both UseNpgsql(connectionString)). Npgsql EF docs: 'The EF provider internally creates an NpgsqlDataSource ... the provider knows to switch between NpgsqlDataSources automatically.'",
+        "source": "docs/design/capacity-plan.md lines 44-49 @ stage-4; https://www.npgsql.org/efcore/"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Npgsql Connection String Parameters, Pooling table (WebFetch summary, round 1): 'Maximum Pool Size | The maximum connection pool size. | 100 since 3.1, 20 previously'. 6 x 100 = 600. Pool-per-connection-string wording not seen verbatim; basic-usage says data sources '(usually) correspond to a connection pool'. The lesson relies only on the 100 default.",
+        "source": "https://www.npgsql.org/doc/connection-string-parameters.html; https://www.npgsql.org/doc/basic-usage.html"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "PostgreSQL 17, 19.3.1: 'At most max_connections connections can ever be active simultaneously. Whenever the number of active concurrent connections is at least max_connections minus superuser_reserved_connections, new connections will be accepted only for superusers.' Round 3: sections 4 and 8 say 'administrator accounts'; a plain-language rendering of superusers (reserved_connections slots also go only to privileged roles), so the condition is kept.",
+        "source": "https://www.postgresql.org/docs/17/runtime-config-connection.html"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Kubernetes docs, 'My Pods are pending with event message FailedScheduling': 'If the scheduler cannot find any node where a Pod can fit, the Pod remains unscheduled until a place can be found.' Example event: '0/42 nodes available: insufficient cpu'.",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/configuration/manage-resources-containers.md lines 576-597"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "capacity-plan.md lines 77-81: 'lệch quá một phần tư so với bảng trên'; 'Một cửa hàng giữ hơn 10% tổng số đơn của ngày đông nhất'; 'Program.cs đổi giới hạn, api.yaml đổi số Pod, hay thời gian một lần đọc đo trên staging khác xa số của lab.'",
+        "source": "examples/don-hang docs/design/capacity-plan.md lines 75-81 @ stage-4"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "Opinion conditioned ('when sizing a rate the system must answer') and narrowed to 'a shared resource runs out while load is highest, and the average hides that hour'; matches the plan's reason lines 26-28 ('hệ thống hỏng vào giờ đông, không vào lúc trung bình') and the 5.8x gap. Round 3: trade-offs footer removed; sections 4 and 8 keep the conditioned wording.",
+        "source": "examples/don-hang docs/design/capacity-plan.md lines 26-28 @ stage-4"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "PermitLimit = 20 is a process setting independent of machine size (Program.cs line 147, no override in base or production manifests); max_connections is a server setting (PG 17: 'This parameter can only be set at server start'); each Pod needs node room for requests cpu 250m / memory 256Mi (base/api.yaml). Conditions are in the 'When it fits' column.",
+        "source": "DonHang.Api/Program.cs line 147; deploy/gitops/config-repo-kustomize/base/api.yaml @ stage-4"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "20 / 0.05 = 400; half of 2 x 400 = 400 > 133. 2,000 shops: 2,000 x 50 x 2 x 0.12 / 3,600 x 40 = 266.7, written 'about 267'; 20 / 0.1 = 200; half of 400 = 200 < 266.7; 3 Pods minus one = 2 x 200 = 400 > 266.7, as Try it now states.",
+        "source": "arithmetic on capacity-plan.md lines 12-24, 35-42 @ stage-4"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "content/tracks/backend/track.yaml has 'id: backend.l4.per-shop-limits' and 'id: backend.l4.read-routing', both after this lesson in module capacity-and-slo; read-routing lists backend.l4.capacity-planning as prereq.",
+        "source": "content/tracks/backend/track.yaml lines 3591-3619"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "Deployments: '`.spec.strategy.type` can be \"Recreate\" or \"RollingUpdate\". \"RollingUpdate\" is the default value.' maxUnavailable: 'calculated from percentage by rounding down ... The default value is 25%.' maxSurge: 'calculated from the percentage by rounding up. The default value is 25%.' 2 x 25% -> 0 unavailable, 1 surge, so a release never drops below 2 Pods. base/api.yaml sets no strategy.",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/workloads/controllers/deployment.md lines 1177-1178, 1201-1216"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "major",
+        "section": 5,
+        "kind": "accuracy",
+        "quote": "counting fewer Pods keeps the check on the safe side, because production's third Pod only raises the read ceiling.",
+        "text": "New in round 3, in the changed s5 paragraph. Unlisted claim: author reasoning not in capacity-plan.md and not in claim 5. It is also wrong as written: the plan's step 1 (lines 70-71) and s4 say each added Pod also brings a connection pool, so production's third Pod does not 'only' raise the read ceiling; for the max_connections sum, counting 2 Pods instead of 3 undercounts pools, the unsafe side.",
+        "fix": "Replace the sentence after 'It does not say why;' with: 'for the read check, counting fewer Pods is the cautious choice, since a third Pod only adds read capacity there; for connections it is not, since production's third Pod also opens a pool that the sum below `max_connections` must include.' Add this as a claim (kind opinion, section 5) in .meta.json, or delete everything after 'It does not say why.'"
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "fix-required"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-29T23:59:59+07:00",
+    "reviewer": "review-junior (prompt 05), claude-opus-5-5, round 3 targeted",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "gap",
+        "quote": "counting fewer Pods keeps the check on the safe side, because production's third Pod only raises the read ceiling.",
+        "text": "New in round 3. Section 4 just told me each added api Pod also brings its own connection pool against `max_connections`. Here a third Pod 'only' raises the read ceiling. I stop and wonder whether counting 2 Pods is also safe for the connection check, or only for the read check.",
+        "fix": "Limit the sentence to the read check, e.g. 'for the read check, counting fewer Pods is the safe side; for the connection sum, production's third Pod still adds a pool that must be counted.'"
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [
+        "s5 says production's third Pod 'only' raises the read ceiling, while s4 says every Pod also adds a connection pool"
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}
