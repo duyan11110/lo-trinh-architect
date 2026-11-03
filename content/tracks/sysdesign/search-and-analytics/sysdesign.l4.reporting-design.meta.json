@@ -1,0 +1,203 @@
+{
+  "id": "sysdesign.l4.reporting-design",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-11-03T12:00:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "ADR 0031 decision: a separate reporting database on a server of its own (assumed); every hour (assumed) a job reads donhang, donhang_payments and every database the ADR 0026 shop map lists, and writes totals per shop per day (Vietnam time).",
+      "kind": "fact",
+      "source_hint": "docs/adr/0031-bao-cao-tu-database-bao-cao-rieng.md @ stage-4 lines 32-39",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 2,
+      "text": "Nothing is built at stage-4: ADR 0031 notes there is no reporting database or job in the repository.",
+      "kind": "fact",
+      "source_hint": "docs/adr/0031-bao-cao-tu-database-bao-cao-rieng.md @ stage-4 lines 8-9",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 3,
+      "text": "The shop map is a column of the shops table, owned by Ordering, in donhang; it records the database holding each shop's data, donhang by default. Only donhang moves shops out.",
+      "kind": "fact",
+      "source_hint": "docs/adr/0026-cua-hang-lon-chuyen-sang-database-rieng.md @ stage-4, Quyết định",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 4,
+      "text": "An ordinary PostgreSQL query reads only the database its connection opened; a query naming a table in another database fails with an error that cross-database references are not implemented.",
+      "kind": "behavior",
+      "source_hint": "PostgreSQL 17 docs: 22.1 Overview (Managing Databases) — a connection can access only the database named in the request; error text from the parser on db.schema.table",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 8
+    },
+    {
+      "n": 5,
+      "text": "Each job run reads the last 3 days (assumed), about 150,000 orders on normal days, with short queries; its load on the sources is small compared with order placement.",
+      "kind": "number",
+      "source_hint": "docs/design/reporting-design-review.md @ stage-4 lines 31-32, 65-66",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 6,
+      "text": "Report queries read only the reporting database, so long report queries take no connection of the primary.",
+      "kind": "fact",
+      "source_hint": "ADR 0031 @ stage-4 line 45; reporting-design-review.md lines 67-68",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 7,
+      "text": "Every summary row carries a shop id; staff read by the shop taken from the access token (from release 2), with row-level security as ADR 0013 (assumed), which keeps every shop in shared tables; Đơn Hàng's team reads every row.",
+      "kind": "fact",
+      "source_hint": "ADR 0031 @ stage-4 lines 43-44; ADR 0013 title and Quyết định; reporting-design-review.md lines 46-48",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 8,
+      "text": "The job reads each database and combines the results itself, with no query joining two databases; this answers the multi-shop review's open question on reports across all shops.",
+      "kind": "fact",
+      "source_hint": "docs/design/reporting-design-review.md @ stage-4 lines 59-61",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 9,
+      "text": "Rejected: reports on the primary (hold connections ordering needs, still no join); on db-replica (no primary connection, but a copy of the whole db server, no join across two databases, no moved shop's database); read model from messages (OrderMessage has no amounts or items).",
+      "kind": "fact",
+      "source_hint": "ADR 0031 @ stage-4 lines 21-30; reporting-design-review.md lines 74-79",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 10,
+      "text": "db/replica/start.sh copies the whole db server with pg_basebackup and runs it as a streaming standby; the replica is behind db by its replication lag.",
+      "kind": "fact",
+      "source_hint": "db/replica/start.sh @ stage-4 lines 5-18; PostgreSQL 17 docs: pg_basebackup (backs up the whole cluster), 26.2 Log-Shipping Standby Servers",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 11,
+      "text": "OrderMessage (DonHang.Domain/OrderMessage.cs) has exactly four fields: OrderId, CustomerEmail, CustomerName, OccurredAt; no amount and no line items.",
+      "kind": "fact",
+      "source_hint": "DonHang.Domain/OrderMessage.cs @ stage-4 line 8",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 12,
+      "text": "Adding amounts and items to order messages is a schema change every reader must accept, and orders placed before the change cannot be read again from the broker.",
+      "kind": "fact",
+      "source_hint": "ADR 0031 @ stage-4 lines 26-28",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 13,
+      "text": "Each run recomputes the last 3 days (assumed) and replaces those days' rows, so a repeated run gives the same result; a hand edit to today's total is replaced by the computed figure on the next run.",
+      "kind": "fact",
+      "source_hint": "ADR 0031 @ stage-4 lines 40-42",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 14,
+      "text": "Deep dive: the job reads the ADR 0026 shop map every run with no fixed list; a shop moved between runs is read from its new database next run; it is not counted twice since old rows are deleted only after a check period and the job reads one place per the map.",
+      "kind": "fact",
+      "source_hint": "docs/design/reporting-design-review.md @ stage-4 lines 50-58",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 15,
+      "text": "Consequences: figures up to one hour old plus the run time; one more database, server and job, owned by the Shop team (assumed); a new question such as sales per hour needs a new summary filled again from the sources.",
+      "kind": "fact",
+      "source_hint": "ADR 0031 @ stage-4 lines 50-54",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 16,
+      "text": "The requirements accept figures up to two hours old (assumed), each shown with its as-of time; a failed job leaves figures getting older, each report still showing its as-of time.",
+      "kind": "fact",
+      "source_hint": "docs/team/reporting-requirements.md @ stage-4 BC-1; ADR 0031 line 15; reporting-design-review.md line 70",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 17,
+      "text": "ADR 0031 ends with its revisit conditions: a requirement for live figures (order messages must then carry amounts); questions daily totals cannot answer in time, needing a store dedicated to analytical queries on detailed data.",
+      "kind": "fact",
+      "source_hint": "ADR 0031 @ stage-4 lines 58-60",
+      "needs_verification": true,
+      "section": 7
+    },
+    {
+      "n": 18,
+      "text": "Report amounts are copies; the owner of each figure stays Ordering or Payments, as data-ownership.md assigns.",
+      "kind": "fact",
+      "source_hint": "ADR 0031 @ stage-4 lines 55-56; docs/design/data-ownership.md @ stage-4",
+      "needs_verification": true,
+      "section": 8
+    },
+    {
+      "n": 19,
+      "text": "When every report reads one database and no shop has moved, both reasons ADR 0031 gives against db-replica no longer apply, and the team would have to weigh it again against the drivers.",
+      "kind": "opinion",
+      "source_hint": "ADR 0031 lines 23-25 and 64-66 (replica rejected only for the join and moved shops)",
+      "needs_verification": false,
+      "section": 7
+    },
+    {
+      "n": 20,
+      "text": "ADR 0031 does not state how the job will be scheduled.",
+      "kind": "fact",
+      "source_hint": "docs/adr/0031-bao-cao-tu-database-bao-cao-rieng.md @ stage-4 (whole file)",
+      "needs_verification": true,
+      "section": 10
+    },
+    {
+      "n": 21,
+      "text": "A report query holds a connection far longer than placing an order: seconds against milliseconds (assumed).",
+      "kind": "number",
+      "source_hint": "docs/team/reporting-requirements.md @ stage-4 lines 45-46",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 22,
+      "text": "Moving a shop (multi-shop review deep dive): its writes pause, its rows are copied to the new database and counted on both sides, then the map is switched; old rows in donhang are deleted only after a check period (assumed one week).",
+      "kind": "fact",
+      "source_hint": "docs/design/multi-shop-design-review.md @ stage-4 lines 50-63",
+      "needs_verification": true,
+      "section": 5
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [1, 2, 3, 4, 5, 6],
+    "outline_items_missing": [],
+    "beyond_scope": []
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1891,
+    "notes": "apply-review: replica wording (s2), daily-total shape (s3), yearly report assumed + claim 21, ADR 0013 gloss (s4); rejected options as bullets, move procedure + check period + claim 22, message cell (s5/6); claims 17, 19 suggested text (s7); hand edit narrowed to today's total, data-ownership wording (s8); Try it source; ledger sections renumbered. Quiz q2, q3, q5 updated."
+  },
+  "open_questions": [
+    "Prereq sysdesign.l4.multi-shop-design has no lesson file yet: its Before you start bullet follows its track.yaml outline items 1 and 4; re-check against its Five-line summary once it exists.",
+    "Claim 4 (error text for a cross-database reference) not run in the lab this session; a reviewer can confirm with SELECT * FROM donhang_payments.public.payments; from a donhang connection."
+  ],
+  "repo_changes_needed": []
+}
