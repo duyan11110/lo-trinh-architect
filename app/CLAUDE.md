@@ -5,7 +5,12 @@ của nó KHÔNG áp dụng ở đây. Đọc `../DECISIONS.md` trước (mục 
 ngữ pháp Markdown, giao thức cập nhật, test, CI) → `docs/05-ui-ux-flutter.md` (màn hình, trạng thái, token, component, microcopy) →
 `docs/04-app-v1-spec.md` (hợp đồng `content.json`) → `schemas/content.schema.json`.
 
+## Phiên bản
+- Flutter **3.47.2** stable / Dart **3.13.2** — pin ở `.fvmrc` và `pubspec.yaml` (`environment.flutter`). fvm 4.3.2 đã cài (`dart pub global activate fvm`, chạy qua `%LOCALAPPDATA%\Pub\Cache\bin\fvm.bat`), nhưng SDK cache của fvm chưa tải; trên máy chủ dùng `flutter` toàn cục `C:\Flutter\flutter\bin` cùng bản 3.47.2.
+
 ## Lệnh
+- Codegen (drift, riverpod): `dart run build_runner build` · đổi schema: sửa `lib/progress/tables.drift` + bước trong `migrations.dart` + tăng `schemaVersion` → `dart run drift_dev make-migrations` → `dart run drift_dev schema generate drift_schemas/app/ test/drift/app/generated/`
+- Git Bash: `MSYS_NO_PATHCONV=1 flutter build web --base-href /lo-trinh-architect/app/ --pwa-strategy offline-first`
 - `fvm flutter pub get` · `fvm flutter analyze` · `fvm flutter test` · `fvm flutter test --update-goldens` (chỉ khi người dùng yêu cầu)
 - `fvm flutter run -d chrome` · `fvm flutter run -d <android>`
 - `../tools/sync-app-content` → copy `../dist/content.json` vào `assets/content/` (cần khi nội dung đổi)
