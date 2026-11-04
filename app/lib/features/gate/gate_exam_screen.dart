@@ -15,6 +15,8 @@ import '../../l10n/app_localizations.dart';
 import '../../progress/exam_repository.dart';
 import '../../progress/quiz_repository.dart';
 import '../../shared/bottom_action_bar.dart';
+import '../quiz/quiz_screen.dart' show quizKeyBindings;
+import '../../shared/key_shortcuts.dart';
 import '../../shared/empty_state.dart';
 import '../../shared/lang_toggle.dart';
 import '../quiz/question_widgets/question_view.dart';
@@ -253,7 +255,15 @@ class _GateExamState extends ConsumerState<_GateExam> {
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) _pause();
       },
-      child: Scaffold(
+      child: KeyShortcuts(
+        bindings: quizKeyBindings(
+          choose: (i) {
+            final next = keyedResponse(q, _response(q), i);
+            if (next != null) setState(() => _responses[q.id] = next);
+          },
+          confirm: () => last ? _submit() : _go(_index + 1),
+        ),
+        child: Scaffold(
         appBar: AppBar(
           automaticallyImplyLeading: false,
           leading: IconButton(
@@ -358,6 +368,7 @@ class _GateExamState extends ConsumerState<_GateExam> {
             ],
           ),
         ),
+      ),
       ),
     );
   }

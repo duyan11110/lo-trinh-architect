@@ -785,4 +785,19 @@ class LVi extends L {
 
   @override
   String get pathEnterGate => 'Vào bài cổng';
+
+  @override
+  String get lessonToc => 'Mục lục';
+
+  @override
+  String get lessonMetaModule => 'Module';
+
+  @override
+  String get lessonMetaDuration => 'Thời lượng';
+
+  @override
+  String get lessonMetaPrereqs => 'Bạn cần biết trước';
+
+  @override
+  String get lessonMetaRelated => 'Liên hệ';
 }

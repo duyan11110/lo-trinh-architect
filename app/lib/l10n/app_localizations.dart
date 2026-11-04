@@ -1338,6 +1338,36 @@ abstract class L {
   /// In vi, this message translates to:
   /// **'Vào bài cổng'**
   String get pathEnterGate;
+
+  /// S3 web ≥ 900: tiêu đề cột mục lục trái (docs/05 S3 Web, M7).
+  ///
+  /// In vi, this message translates to:
+  /// **'Mục lục'**
+  String get lessonToc;
+
+  /// S3 web ≥ 1100: thẻ meta phải (M7).
+  ///
+  /// In vi, this message translates to:
+  /// **'Module'**
+  String get lessonMetaModule;
+
+  /// S3 web ≥ 1100: thẻ meta phải (M7).
+  ///
+  /// In vi, this message translates to:
+  /// **'Thời lượng'**
+  String get lessonMetaDuration;
+
+  /// S3 web ≥ 1100: thẻ meta, prereq (lời như mục 1 trong wireframe S3, M7).
+  ///
+  /// In vi, this message translates to:
+  /// **'Bạn cần biết trước'**
+  String get lessonMetaPrereqs;
+
+  /// S3 web ≥ 1100: thẻ meta, related (lời như mục Liên hệ trong wireframe S3, M7).
+  ///
+  /// In vi, this message translates to:
+  /// **'Liên hệ'**
+  String get lessonMetaRelated;
 }
 
 class _LDelegate extends LocalizationsDelegate<L> {

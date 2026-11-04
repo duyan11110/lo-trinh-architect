@@ -1,8 +1,11 @@
 // TermTooltip — docs/05 §6/S3: term, short definition, "Học ở: <bài>" chip,
 // "Thêm vào ôn" (docs/07 §5.3: creates the `term:<slug>` review item).
-// Bottom sheet on every platform for now (web popover is M7).
+// Bottom sheet below 900 dp; from 900 dp (web layout, docs/05 §9) a popover
+// next to the tapped term when the tap position is known (M7). Both close on
+// a tap outside or `Escape`.
 import 'package:flutter/material.dart';
 
+import '../app/layout.dart';
 import '../app/theme/tokens.dart';
 import '../content/models/models.dart';
 import '../l10n/app_localizations.dart';
@@ -17,11 +20,11 @@ Future<void> showTermTooltip(
   ValueChanged<String>? onOpenLesson,
   bool inReview = false,
   Future<void> Function(GlossaryEntry entry)? onAddReview,
+
+  /// Global tap position; with the two-column layout it anchors a popover.
+  Offset? anchor,
 }) {
-  return showModalBottomSheet<void>(
-    context: context,
-    showDragHandle: true,
-    builder: (sheet) => TermTooltipBody(
+  Widget body(BuildContext route) => TermTooltipBody(
       entry: entry,
       lang: lang,
       learnedInTitle: learnedInTitle,
@@ -29,13 +32,80 @@ Future<void> showTermTooltip(
       onOpenLesson: onOpenLesson == null
           ? null
           : (id) {
-              Navigator.of(sheet).pop();
+              Navigator.of(route).pop();
               onOpenLesson(id);
             },
       inReview: inReview,
       onAddReview: onAddReview,
-    ),
+    );
+  if (anchor != null && LtaLayout.of(context).twoColumn) {
+    final c = Theme.of(context).extension<LtaColors>()!;
+    return showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
+      barrierColor: Colors.transparent,
+      transitionDuration: LtaMotion.option,
+      pageBuilder: (route, _, _) => CustomSingleChildLayout(
+        delegate: _PopoverLayout(anchor),
+        child: SizedBox(
+          width: LtaSize.termPopover,
+          child: Material(
+            key: const ValueKey('term-popover'),
+            color: c.surface,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(LtaRadius.card),
+              side: BorderSide(color: c.line, width: LtaSize.border),
+            ),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(LtaRadius.card),
+                boxShadow: LtaElevation.soft(c),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.only(top: LtaSpace.s4),
+                child: body(route),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+  return showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    builder: body,
   );
+}
+
+/// Places the popover under the tap (above it when there is no room), kept
+/// inside the window with a 16 dp margin.
+class _PopoverLayout extends SingleChildLayoutDelegate {
+  const _PopoverLayout(this.anchor);
+
+  final Offset anchor;
+
+  @override
+  BoxConstraints getConstraintsForChild(BoxConstraints constraints) =>
+      constraints.loosen().deflate(const EdgeInsets.all(LtaSpace.s4));
+
+  @override
+  Offset getPositionForChild(Size size, Size child) {
+    const m = LtaSpace.s4;
+    final below = anchor.dy + LtaSpace.s3;
+    final y = below + child.height + m <= size.height
+        ? below
+        : (anchor.dy - LtaSpace.s3 - child.height).clamp(m, size.height);
+    final x = (anchor.dx - child.width / 2).clamp(
+      m,
+      (size.width - child.width - m).clamp(m, size.width),
+    );
+    return Offset(x, y.toDouble());
+  }
+
+  @override
+  bool shouldRelayout(_PopoverLayout old) => old.anchor != anchor;
 }
 
 class TermTooltipBody extends StatefulWidget {

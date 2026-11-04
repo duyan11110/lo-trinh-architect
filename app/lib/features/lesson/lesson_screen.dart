@@ -1,8 +1,10 @@
 // S3 Đọc bài (`/learn/:lessonId`) — docs/05 S3. Reads a lesson in VI/EN with
 // the full §3 grammar (M1); lesson progress (docs/07 §5.1), BottomActionBar
 // by status and the `Aa` sheet (M2); the quiz buttons open S4 (M3); the
-// prereq dialog S5 before rendering (M4). The ⋮ menu and the wide-web layout
-// (M7) come later.
+// prereq dialog S5 before rendering (M4). M7 (docs/05 S3 Web, §9): from
+// 900 dp a sticky table of contents on the left (current section bold) and
+// a 72 ch column; from 1100 dp the meta card on the right; keys `j/k`
+// section, `n` next lesson, `q` quiz, `l` language, `/` search.
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
@@ -11,6 +13,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../app/layout.dart';
 import '../../app/locations.dart';
 import '../../app/theme/text.dart';
 import '../../app/theme/tokens.dart';
@@ -24,6 +27,8 @@ import '../../progress/progress_repository.dart';
 import '../../progress/review_repository.dart';
 import '../../progress/review_scheduler.dart';
 import '../../shared/bottom_action_bar.dart';
+import '../../shared/key_shortcuts.dart';
+import '../../shared/lesson_link_chip.dart';
 import '../../shared/lang_toggle.dart';
 import '../../shared/status_dot.dart';
 import 'prereq_dialog.dart';
@@ -43,9 +48,8 @@ class LessonScreen extends ConsumerWidget {
     final l = L.of(context);
     final content = ref.watch(contentProvider);
     return content.when(
-      loading: () => const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      ),
+      loading: () =>
+          const Scaffold(body: Center(child: CircularProgressIndicator())),
       error: (e, st) {
         debugPrint('content load failed: $e');
         return _Message(
@@ -122,6 +126,12 @@ class _LessonViewState extends ConsumerState<_LessonView> {
   final _summaryKey = GlobalKey();
   late final ProgressRepository _repo;
 
+  /// Section numbers in reading order (from the last build).
+  List<int> _order = const [];
+
+  /// Section at the top of the viewport (TOC highlight, `j/k`).
+  int? _current;
+
   /// Already `read`/`passed`, or the read transition was requested.
   bool _readMarked = false;
   bool _barVisible = false;
@@ -174,6 +184,40 @@ class _LessonViewState extends ConsumerState<_LessonView> {
     final visible = _ratio >= LtaSize.actionBarScroll;
     if (visible != _barVisible) setState(() => _barVisible = visible);
     if (!_readMarked && _summaryInView()) _markRead();
+    final current = _sectionAtTop();
+    if (current != _current) setState(() => _current = current);
+  }
+
+  /// Offset of section [n]'s heading from the top of the viewport.
+  double? _sectionTop(int n) {
+    final box = _sectionKeys[n]?.currentContext?.findRenderObject();
+    if (box is! RenderBox || !box.attached || !box.hasSize) return null;
+    final viewport = RenderAbstractViewport.maybeOf(box);
+    if (viewport == null) return null;
+    return viewport.getOffsetToReveal(box, 0).offset - _scroll.offset;
+  }
+
+  /// Last section whose heading has reached the top area of the viewport.
+  int? _sectionAtTop() {
+    int? current;
+    for (final n in _order) {
+      final top = _sectionTop(n);
+      if (top == null) continue;
+      if (top <= LtaSpace.s7) {
+        current = n;
+      } else {
+        break;
+      }
+    }
+    return current ?? _order.firstOrNull;
+  }
+
+  /// `j` (+1) / `k` (−1): scroll to the next/previous section.
+  void _stepSection(int delta) {
+    if (_order.isEmpty) return;
+    final i = _current == null ? -1 : _order.indexOf(_current!);
+    final next = (i + delta).clamp(0, _order.length - 1);
+    _scrollToSection(_order[next]);
   }
 
   /// docs/07 §5.1: the Summary section is ≥ 50% inside the viewport (of its
@@ -198,6 +242,7 @@ class _LessonViewState extends ConsumerState<_LessonView> {
   void _scrollToSection(int n) {
     final ctx = _sectionKeys[n]?.currentContext;
     if (ctx != null) Scrollable.ensureVisible(ctx);
+    if (_current != n) setState(() => _current = n);
   }
 
   /// Switching language keeps the scroll ratio, not the pixel offset
@@ -269,11 +314,14 @@ class _LessonViewState extends ConsumerState<_LessonView> {
         .watch(proseCacheProvider)
         .get(lesson, lang, ref.watch(glossaryMatcherProvider(lang)));
     final reviewTerms = {
-      for (final i in ref.watch(reviewItemsProvider).value ?? const <ReviewItemRecord>[])
+      for (final i
+          in ref.watch(reviewItemsProvider).value ?? const <ReviewItemRecord>[])
         if (i.isTerm && !i.state.retired) i.itemId,
     };
     final links = _links(context, lang, progress, reviewTerms);
     final summaryN = _summaryN(parsed);
+    _order = [for (final s in parsed) s.section.n];
+    final layout = LtaLayout.of(context);
 
     final body = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -358,14 +406,16 @@ class _LessonViewState extends ConsumerState<_LessonView> {
       },
       child: SingleChildScrollView(
         controller: _scroll,
-        padding: const EdgeInsets.symmetric(
-          horizontal: LtaSpace.contentMobile,
+        padding: EdgeInsets.symmetric(
+          horizontal: layout.margin,
           vertical: LtaSpace.s4,
         ),
         child: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(
-              maxWidth: LtaSize.readingMaxWidth,
+            constraints: BoxConstraints(
+              maxWidth: layout.twoColumn
+                  ? _measure(context, prefs.fontSize)
+                  : LtaSize.readingMaxWidth,
             ),
             child: kIsWeb ? SelectionArea(child: body) : body,
           ),
@@ -374,41 +424,253 @@ class _LessonViewState extends ConsumerState<_LessonView> {
     );
 
     final status = record?.status ?? LessonStatus.opened;
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          position == null
-              ? moduleTitle
-              : l.lessonPosition(moduleTitle, position.index, position.total),
-          style: theme.textTheme.titleMedium,
-          overflow: TextOverflow.ellipsis,
-        ),
-        actions: [
-          LangToggle(lang: lang, onChanged: _setLang),
-          IconButton(
-            tooltip: l.readingSettings,
-            icon: const Icon(Icons.text_fields_rounded),
-            onPressed: _showReadingSheet,
+    final quiz = widget.content.quizzes[lesson.id];
+    final plan = ref.watch(learningPlanProvider).value?.next;
+    final nextId = plan != null && plan.id != lesson.id ? plan.id : null;
+    // One Row at every width (keyed children) so resizing across 900 dp
+    // keeps the same scroll view and its controller.
+    final Widget readingBody = Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (layout.twoColumn)
+          SizedBox(
+            key: const ValueKey('toc'),
+            width: layout == LtaLayout.wide ? LtaSize.tocWide : LtaSize.tocRail,
+            child: _Toc(
+              sections: [for (final s in parsed) s.section],
+              current: _current,
+              onTap: _scrollToSection,
+            ),
           ),
-          const SizedBox(width: LtaSpace.s1),
-        ],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(LtaSize.readingProgress),
-          child: _ReadingProgress(controller: _scroll),
-        ),
-      ),
-      body: MediaQuery.withClampedTextScaling(
-        maxScaleFactor: LtaText.maxTextScale,
-        child: scrollView,
-      ),
-      bottomNavigationBar: _barVisible
-          ? _LessonActions(
+        Expanded(key: const ValueKey('reading'), child: scrollView),
+        if (layout == LtaLayout.wide)
+          SizedBox(
+            key: const ValueKey('meta'),
+            width: LtaSize.lessonMeta,
+            child: _MetaPanel(
               content: widget.content,
               lesson: lesson,
-              status: status,
-              onMarkRead: _markRead,
-            )
-          : null,
+              lang: lang,
+              moduleTitle: moduleTitle,
+              progress: progress,
+              onOpen: (id) => context.push(lessonLocation(id)),
+            ),
+          ),
+      ],
+    );
+    return KeyShortcuts(
+      bindings: {
+        const CharacterActivator('j'): () => _stepSection(1),
+        const CharacterActivator('k'): () => _stepSection(-1),
+        const CharacterActivator('n', includeRepeats: false): () {
+          if (nextId != null) context.pushReplacement(lessonLocation(nextId));
+        },
+        const CharacterActivator('q', includeRepeats: false): () {
+          if (quiz != null) context.push(quizLocation(lesson.id));
+        },
+        const CharacterActivator('l', includeRepeats: false): () =>
+            _setLang(lang == ContentLang.vi ? ContentLang.en : ContentLang.vi),
+        const CharacterActivator('/', includeRepeats: false): () =>
+            context.go(searchLocation()),
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(
+            position == null
+                ? moduleTitle
+                : l.lessonPosition(moduleTitle, position.index, position.total),
+            style: theme.textTheme.titleMedium,
+            overflow: TextOverflow.ellipsis,
+          ),
+          actions: [
+            LangToggle(lang: lang, onChanged: _setLang),
+            IconButton(
+              tooltip: l.readingSettings,
+              icon: const Icon(Icons.text_fields_rounded),
+              onPressed: _showReadingSheet,
+            ),
+            const SizedBox(width: LtaSpace.s1),
+          ],
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(LtaSize.readingProgress),
+            child: _ReadingProgress(controller: _scroll),
+          ),
+        ),
+        body: MediaQuery.withClampedTextScaling(
+          maxScaleFactor: LtaText.maxTextScale,
+          child: readingBody,
+        ),
+        bottomNavigationBar: _barVisible
+            ? _LessonActions(
+                content: widget.content,
+                lesson: lesson,
+                status: status,
+                onMarkRead: _markRead,
+              )
+            : null,
+      ),
+    );
+  }
+
+  /// 72 ch of the reading font (docs/05 S3 Web, §9).
+  double _measure(BuildContext context, double fontSize) {
+    final style = Theme.of(context).textTheme.bodyLarge!
+        .copyWith(fontSize: fontSize);
+    final painter = TextPainter(
+      text: TextSpan(text: '0' * LtaSize.readingMeasureCh, style: style),
+      textDirection: TextDirection.ltr,
+      textScaler: MediaQuery.textScalerOf(context)
+          .clamp(maxScaleFactor: LtaText.maxTextScale),
+    )..layout();
+    final width = painter.width;
+    painter.dispose();
+    return width;
+  }
+}
+
+/// Table of contents (docs/05 S3 Web): sticky, the section being read bold.
+class _Toc extends StatelessWidget {
+  const _Toc({
+    required this.sections,
+    required this.current,
+    required this.onTap,
+  });
+
+  final List<LessonSection> sections;
+  final int? current;
+  final ValueChanged<int> onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final c = theme.extension<LtaColors>()!;
+    final t = theme.extension<LtaText>()!;
+    return ListView(
+      padding: const EdgeInsets.symmetric(
+        horizontal: LtaSpace.s3,
+        vertical: LtaSpace.s5,
+      ),
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: LtaSpace.s3),
+          child: Text(L.of(context).lessonToc.toUpperCase(), style: t.eyebrow),
+        ),
+        const SizedBox(height: LtaSpace.s2),
+        for (final s in sections)
+          Semantics(
+            selected: s.n == current,
+            button: true,
+            child: InkWell(
+              key: ValueKey('toc-${s.n}'),
+              borderRadius: BorderRadius.circular(LtaRadius.button),
+              onTap: () => onTap(s.n),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: LtaSpace.s3,
+                  vertical: LtaSpace.s2,
+                ),
+                child: Text(
+                  s.heading,
+                  style: theme.textTheme.bodyMedium!.copyWith(
+                    color: s.n == current ? c.ink : c.ink2,
+                    fontWeight: s.n == current ? FontWeight.w700 : null,
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// Meta card (docs/05 S3 Web ≥ 1100): module, skills, duration, prereqs,
+/// related.
+class _MetaPanel extends StatelessWidget {
+  const _MetaPanel({
+    required this.content,
+    required this.lesson,
+    required this.lang,
+    required this.moduleTitle,
+    required this.progress,
+    required this.onOpen,
+  });
+
+  final Content content;
+  final Lesson lesson;
+  final ContentLang lang;
+  final String moduleTitle;
+  final Map<String, LessonRecord> progress;
+  final ValueChanged<String> onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final l = L.of(context);
+    final theme = Theme.of(context);
+    final t = theme.extension<LtaText>()!;
+    final skills = {for (final s in content.skills) s.id: s};
+
+    Widget group(String label, List<Widget> children) => Padding(
+      padding: const EdgeInsets.only(bottom: LtaSpace.s4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label.toUpperCase(), style: t.eyebrow),
+          const SizedBox(height: LtaSpace.s1),
+          ...children,
+        ],
+      ),
+    );
+
+    Widget chips(List<String> ids) => Wrap(
+      spacing: LtaSpace.s2,
+      runSpacing: LtaSpace.s2,
+      children: [
+        for (final id in ids)
+          LessonLinkChip(
+            lessonId: id,
+            title: content.lessonTitle(id)?.of(lang),
+            available: content.lessons.containsKey(id),
+            status: progress[id]?.status ?? LessonStatus.newLesson,
+            onTap: () => onOpen(id),
+          ),
+      ],
+    );
+
+    final body = theme.textTheme.bodyMedium!;
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(
+        0,
+        LtaSpace.s5,
+        LtaSpace.s5,
+        LtaSpace.s5,
+      ),
+      children: [
+        Card(
+          margin: EdgeInsets.zero,
+          child: Padding(
+            padding: const EdgeInsets.all(LtaSpace.s4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                group(l.lessonMetaModule, [Text(moduleTitle, style: body)]),
+                if (lesson.skills.isNotEmpty)
+                  group(l.resultSkills, [
+                    for (final id in lesson.skills)
+                      Text(skills[id]?.title.of(lang) ?? id, style: body),
+                  ]),
+                group(l.lessonMetaDuration, [
+                  Text(l.durationMinutes(lesson.durationMin), style: body),
+                ]),
+                if (lesson.prereqs.isNotEmpty)
+                  group(l.lessonMetaPrereqs, [chips(lesson.prereqs)]),
+                if (lesson.related.isNotEmpty)
+                  group(l.lessonMetaRelated, [chips(lesson.related)]),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -557,8 +819,10 @@ class _ReadingProgress extends StatelessWidget {
           if (controller.hasClients &&
               controller.position.hasContentDimensions &&
               controller.position.maxScrollExtent > 0) {
-            v = (controller.offset / controller.position.maxScrollExtent)
-                .clamp(0.0, 1.0);
+            v = (controller.offset / controller.position.maxScrollExtent).clamp(
+              0.0,
+              1.0,
+            );
           }
           return Container(
             height: LtaSize.readingProgress,

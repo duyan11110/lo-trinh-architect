@@ -1,0 +1,191 @@
+# docs/07 §10, DECISIONS.md E7/E8/A6 — Flutter app: analyze + test (+ web
+# integration tests on Chrome), build web + APK with the latest published
+# content, deploy one GitHub Pages site holding app/ + content/.
+#
+# Safety: the Pages deploy runs only for the `main` branch (push, a content
+# run on main, or a manual run from main). Pushes to auto/* branches build
+# and test but never publish anything.
+name: app
+
+on:
+  push:
+    paths:
+      - "app/**"
+      - "dist/**"
+      - ".github/workflows/app.yml"
+      - ".github/scripts/fetch-published-content.sh"
+  workflow_run:
+    workflows: [content]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-${{ github.event.workflow_run.head_branch || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          channel: stable
+          flutter-version-file: app/.fvmrc
+          cache: true
+      - run: flutter --version
+      - run: flutter pub get
+      - run: flutter analyze
+      # Unit, widget and golden tests on the fixture (goldens compare on Linux, E4).
+      - run: flutter test
+
+  integration:
+    # E7: integration tests in Chrome through chromedriver (preinstalled on
+    # the runner image). They read the committed sample asset, so they run
+    # before any content sync.
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          channel: stable
+          flutter-version-file: app/.fvmrc
+          cache: true
+      - run: flutter pub get
+      - name: Start chromedriver
+        run: |
+          "$CHROMEWEBDRIVER/chromedriver" --port=4444 &
+          sleep 2
+      - name: Integration tests (Chrome)
+        run: |
+          for t in integration_test/*_test.dart; do
+            flutter drive --driver=test_driver/integration_test.dart \
+              --target="$t" -d web-server --browser-name=chrome --headless
+          done
+
+  build:
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - name: Content from the triggering content run
+        if: github.event_name == 'workflow_run'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: dist
+          path: dist
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+      - name: Else the published content
+        run: |
+          if [ -f dist/content.json ] && [ -f dist/content.json.gz ] && [ -f dist/manifest.json ]; then
+            echo "using dist/ ($(cat dist/VERSION 2>/dev/null || echo '?'))"
+          else
+            bash .github/scripts/fetch-published-content.sh dist || {
+              code=$?
+              if [ "$code" = "3" ]; then
+                echo "::warning::no published content yet; the app keeps the committed asset and the site has no content/"
+              else
+                exit "$code"
+              fi
+            }
+          fi
+      # docs/07 §10 step 2: the app always ships the latest published content.
+      - name: tools/sync-app-content
+        run: |
+          if [ -f dist/content.json ]; then bash tools/sync-app-content; fi
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          channel: stable
+          flutter-version-file: app/.fvmrc
+          cache: true
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: "17"
+      - run: flutter pub get
+        working-directory: app
+      - name: flutter build web
+        working-directory: app
+        run: flutter build web --release --base-href /lo-trinh-architect/app/ --pwa-strategy offline-first
+      - name: Release keystore (A6; debug-signed when the secrets are absent)
+        working-directory: app
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ] && [ -n "$KEY_ALIAS" ] && [ -n "$KEY_PASSWORD" ] && [ -n "$STORE_PASSWORD" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > android/app/upload.jks
+            {
+              echo "storeFile=upload.jks"
+              echo "storePassword=$STORE_PASSWORD"
+              echo "keyAlias=$KEY_ALIAS"
+              echo "keyPassword=$KEY_PASSWORD"
+            } > android/key.properties
+            echo "APK: release-signed"
+          else
+            echo "APK: debug-signed (keystore secrets not set, DECISIONS.md A6)"
+          fi
+      - name: flutter build apk
+        working-directory: app
+        run: flutter build apk --release
+      - name: Remove keystore
+        if: always()
+        working-directory: app
+        run: rm -f android/app/upload.jks android/key.properties
+      - name: Assemble site (app/ + content/)
+        run: |
+          mkdir -p site/app site/content
+          cp -r app/build/web/. site/app/
+          if [ -f dist/content.json.gz ] && [ -f dist/manifest.json ]; then
+            cp dist/content.json.gz dist/manifest.json site/content/
+          fi
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: apk
+          path: app/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: site
+
+  deploy:
+    needs: [build, integration]
+    # Only main publishes; auto/* branches never do.
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.event != 'pull_request')
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

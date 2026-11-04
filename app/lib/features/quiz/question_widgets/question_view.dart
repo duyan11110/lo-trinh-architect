@@ -189,18 +189,26 @@ class QuestionView extends StatelessWidget {
     return chosen ? QuizOptionState.wrong : QuizOptionState.dimmed;
   }
 
-  void _toggle(String id) {
-    if (question.type == QuestionType.multi) {
-      final next = [...response];
-      next.contains(id) ? next.remove(id) : next.add(id);
-      // Keep JSON option order so the stored answer is stable.
-      final order = [for (final o in question.options) o.id];
-      next.sort((a, b) => order.indexOf(a).compareTo(order.indexOf(b)));
-      onChanged(next);
-    } else {
-      onChanged([id]);
-    }
-  }
+  void _toggle(String id) => onChanged(toggleOption(question, response, id));
+}
+
+/// Response after choosing option [id]: `multi` toggles it (JSON option order
+/// kept so the stored answer is stable), the other choice types select it.
+List<String> toggleOption(Question q, List<String> response, String id) {
+  if (q.type != QuestionType.multi) return [id];
+  final next = [...response];
+  next.contains(id) ? next.remove(id) : next.add(id);
+  final order = [for (final o in q.options) o.id];
+  next.sort((a, b) => order.indexOf(a).compareTo(order.indexOf(b)));
+  return next;
+}
+
+/// Keys `1–6` on web (docs/05 §2, S4): option [index] (0-based, JSON order =
+/// letter order); `null` for `order`/`fill` or a key past the last option.
+List<String>? keyedResponse(Question q, List<String> response, int index) {
+  if (q.type == QuestionType.order || q.type == QuestionType.fill) return null;
+  if (index < 0 || index >= q.options.length) return null;
+  return toggleOption(q, response, q.options[index].id);
 }
 
 final _polarityPrefix = RegExp(

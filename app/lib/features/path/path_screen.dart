@@ -2,11 +2,14 @@
 // from `path.stages` → modules → lessons, the current stage (or `?stage=n`)
 // open. "Theo track": tracks → L1–L4 → modules → lessons with a small stage
 // tag, for lookup. Lessons not in content.json show "sắp có". Expansion is
-// remembered for the session. The two-column web layout is M7 (docs/05 §9).
+// remembered for the session. From 900 dp (docs/05 S2 Web, §9): two columns —
+// stages/modules on the left (own scroll), the selected module's lessons on
+// the right.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../app/layout.dart';
 import '../../app/locations.dart';
 import '../../app/theme/text.dart';
 import '../../app/theme/tokens.dart';
@@ -30,6 +33,19 @@ class PathExpansionNotifier extends Notifier<Map<String, bool>> {
 
   void set(String key, bool open) => state = {...state, key: open};
 }
+
+/// Two-column S2: the `track/module` key shown on the right; `null` = the
+/// module of "Học tiếp" (or the first one).
+class PathSelectionNotifier extends Notifier<String?> {
+  @override
+  String? build() => null;
+
+  void select(String key) => state = key;
+}
+
+final pathSelectionProvider = NotifierProvider<PathSelectionNotifier, String?>(
+  PathSelectionNotifier.new,
+);
 
 final pathExpansionProvider =
     NotifierProvider<PathExpansionNotifier, Map<String, bool>>(
@@ -94,9 +110,8 @@ class _PathScreenState extends ConsumerState<PathScreen> {
                   ButtonSegment(value: true, label: Text(l.pathByTrack)),
                 ],
                 selected: {widget.byTrack},
-                onSelectionChanged: (s) => context.go(
-                  s.single ? pathTracksLocation : pathLocation(),
-                ),
+                onSelectionChanged: (s) =>
+                    context.go(s.single ? pathTracksLocation : pathLocation()),
               ),
             ),
           ),
@@ -124,7 +139,11 @@ class _PathScreenState extends ConsumerState<PathScreen> {
           );
         },
         data: (p) {
+          final layout = LtaLayout.of(context);
           final data = _PathData(
+            twoColumn: layout.twoColumn,
+            selected: ref.watch(pathSelectionProvider),
+            onSelect: ref.read(pathSelectionProvider.notifier).select,
             content: ref.watch(contentProvider).requireValue,
             progress: ref.watch(lessonProgressProvider).requireValue,
             stages: stages.value ?? const {},
@@ -139,8 +158,61 @@ class _PathScreenState extends ConsumerState<PathScreen> {
             onGate: (stage) => context.push(gateLocation(stage)),
           );
           final children = widget.byTrack
-              ? _trackView(context, data)
-              : _stageView(context, data);
+              ? _trackView(
+                  context,
+                  data.withSelected(_selectedModule(data)?.key),
+                )
+              : _stageView(
+                  context,
+                  data.withSelected(_selectedModule(data)?.key),
+                );
+          if (layout.twoColumn) {
+            final module = _selectedModule(data);
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SizedBox(
+                  width: LtaSize.pathListWidth,
+                  child: ListView(
+                    key: const PageStorageKey('path-list'),
+                    padding: EdgeInsets.symmetric(
+                      horizontal: layout.margin,
+                      vertical: LtaSpace.s2,
+                    ),
+                    children: children,
+                  ),
+                ),
+                VerticalDivider(
+                  width: LtaSize.border,
+                  thickness: LtaSize.border,
+                  color: Theme.of(context).extension<LtaColors>()!.line,
+                ),
+                Expanded(
+                  child: ListView(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: layout.margin,
+                      vertical: LtaSpace.s4,
+                    ),
+                    children: [
+                      if (module != null)
+                        Center(
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(
+                              maxWidth: LtaSize.homeMaxWidth,
+                            ),
+                            child: _ModulePane(
+                              module: module,
+                              data: data.withSelected(module.key),
+                              byTrack: widget.byTrack,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          }
           return ListView(
             padding: const EdgeInsets.symmetric(
               horizontal: LtaSpace.contentMobile,
@@ -165,6 +237,28 @@ class _PathScreenState extends ConsumerState<PathScreen> {
     );
   }
 
+  /// The module shown on the right: the chosen one, else the module of the
+  /// next lesson, else the first module of the view.
+  TrackModule? _selectedModule(_PathData d) {
+    final chosen = d.selected == null ? null : d.content.module(d.selected!);
+    if (chosen != null) return chosen;
+    final next = d.plan.next?.module;
+    if (next != null) return next;
+    if (widget.byTrack) {
+      for (final t in d.content.tracks) {
+        for (final lv in t.levels) {
+          if (lv.modules.isNotEmpty) return lv.modules.first;
+        }
+      }
+      return null;
+    }
+    for (final s in d.content.stages) {
+      final ms = stageModules(d.content, s);
+      if (ms.isNotEmpty) return ms.first;
+    }
+    return null;
+  }
+
   List<Widget> _stageView(BuildContext context, _PathData d) => [
     for (final s in d.content.stages)
       if (stageModules(d.content, s).isNotEmpty) ...[
@@ -184,6 +278,9 @@ class _PathScreenState extends ConsumerState<PathScreen> {
 /// Everything the S2 sections read.
 class _PathData {
   const _PathData({
+    required this.twoColumn,
+    required this.selected,
+    required this.onSelect,
     required this.content,
     required this.progress,
     required this.stages,
@@ -197,6 +294,31 @@ class _PathData {
     required this.onModuleQuiz,
     required this.onGate,
   });
+
+  /// ≥ 900 dp: modules select the right pane instead of expanding.
+  final bool twoColumn;
+
+  /// Module shown on the right (two columns).
+  final String? selected;
+  final ValueChanged<String> onSelect;
+
+  _PathData withSelected(String? key) => _PathData(
+    twoColumn: twoColumn,
+    selected: key,
+    onSelect: onSelect,
+    content: content,
+    progress: progress,
+    stages: stages,
+    plan: plan,
+    expansion: expansion,
+    lang: lang,
+    openStage: openStage,
+    onToggle: onToggle,
+    onOpen: onOpen,
+    passedModules: passedModules,
+    onModuleQuiz: onModuleQuiz,
+    onGate: onGate,
+  );
 
   /// `track/module` keys with a module quiz ≥ 70% ("Module ✓").
   final Set<String> passedModules;
@@ -233,8 +355,11 @@ class _Header extends StatelessWidget {
     this.subtitle,
     required this.count,
     this.complete = false,
+    this.selected,
   });
 
+  /// Two-column module row: selection instead of expansion.
+  final bool? selected;
   final bool open;
   final VoidCallback onTap;
   final Widget title;
@@ -248,11 +373,14 @@ class _Header extends StatelessWidget {
     final theme = Theme.of(context);
     final c = theme.extension<LtaColors>()!;
     final t = theme.extension<LtaText>()!;
+    final selectable = selected != null;
     return Semantics(
-      expanded: open,
+      expanded: selectable ? null : open,
+      selected: selected,
       button: true,
       child: InkWell(
         onTap: onTap,
+        borderRadius: BorderRadius.circular(LtaRadius.button),
         child: ConstrainedBox(
           constraints: const BoxConstraints(minHeight: LtaSize.minTouch),
           child: Padding(
@@ -260,11 +388,11 @@ class _Header extends StatelessWidget {
             child: Row(
               children: [
                 Icon(
-                  open
+                  open && !selectable
                       ? Icons.expand_more_rounded
                       : Icons.chevron_right_rounded,
                   size: LtaSize.icon,
-                  color: c.ink2,
+                  color: selected == true ? c.accent : c.ink2,
                 ),
                 const SizedBox(width: LtaSpace.s2),
                 Expanded(
@@ -397,9 +525,7 @@ class _TrackSection extends StatelessWidget {
     final c = theme.extension<LtaColors>()!;
     final t = theme.extension<LtaText>()!;
     final key = 't:${track.id}';
-    final modules = [
-      for (final lv in track.levels) ...lv.modules,
-    ];
+    final modules = [for (final lv in track.levels) ...lv.modules];
     final open = data.isOpen(key, byDefault: modules.any(data.containsNext));
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -450,12 +576,34 @@ class _ModuleTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final l = L.of(context);
     final theme = Theme.of(context);
     final c = theme.extension<LtaColors>()!;
     final key = 'm:${module.key}';
     final open = data.isOpen(key, byDefault: data.containsNext(module));
     final count = moduleCount(module, data.progress);
+    if (data.twoColumn) {
+      final selected = module.key == data.selected;
+      return Padding(
+        padding: const EdgeInsetsDirectional.only(start: LtaSpace.s4),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: selected ? c.accentSoft : null,
+            borderRadius: BorderRadius.circular(LtaRadius.button),
+          ),
+          child: _Header(
+            open: false,
+            selected: selected,
+            onTap: () => data.onSelect(module.key),
+            title: Text(
+              module.title.of(data.lang),
+              style: theme.textTheme.titleSmall,
+            ),
+            count: count,
+            complete: count.complete,
+          ),
+        ),
+      );
+    }
     return Padding(
       padding: const EdgeInsetsDirectional.only(start: LtaSpace.s4),
       child: Column(
@@ -471,33 +619,104 @@ class _ModuleTile extends StatelessWidget {
             count: count,
             complete: count.complete,
           ),
-          if (open) ...[
-            for (final r in module.lessons)
-              _row(context, l, c, r),
-            if (moduleAllRead(module, data.progress))
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: LtaSpace.s2),
-                child: Row(
-                  children: [
-                    OutlinedButton(
-                      onPressed: () => data.onModuleQuiz(module.key),
-                      child: Text(l.pathModuleQuiz),
-                    ),
-                    if (data.passedModules.contains(module.key)) ...[
-                      const SizedBox(width: LtaSpace.s3),
-                      Text(
-                        l.pathModulePassed,
-                        style: theme.textTheme.labelLarge!.copyWith(
-                          color: c.correct,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-          ],
+          if (open)
+            _ModuleLessons(module: module, data: data, byTrack: byTrack),
         ],
       ),
+    );
+  }
+}
+
+/// Right pane of the two-column layout: the selected module.
+class _ModulePane extends StatelessWidget {
+  const _ModulePane({
+    required this.module,
+    required this.data,
+    required this.byTrack,
+  });
+
+  final TrackModule module;
+  final _PathData data;
+  final bool byTrack;
+
+  @override
+  Widget build(BuildContext context) {
+    final l = L.of(context);
+    final theme = Theme.of(context);
+    final c = theme.extension<LtaColors>()!;
+    final count = moduleCount(module, data.progress);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Text(
+                module.title.of(data.lang),
+                style: theme.textTheme.titleLarge,
+              ),
+            ),
+            const SizedBox(width: LtaSpace.s2),
+            Text(
+              l.pathCount(count.done, count.total),
+              style: theme.extension<LtaText>()!.eyebrow.copyWith(
+                color: c.ink2,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: LtaSpace.s3),
+        _ModuleLessons(module: module, data: data, byTrack: byTrack),
+      ],
+    );
+  }
+}
+
+/// Lessons of a module + "Quiz module" / "Module ✓" (ModuleTile body, and
+/// the right pane of the two-column layout).
+class _ModuleLessons extends StatelessWidget {
+  const _ModuleLessons({
+    required this.module,
+    required this.data,
+    required this.byTrack,
+  });
+
+  final TrackModule module;
+  final _PathData data;
+  final bool byTrack;
+
+  @override
+  Widget build(BuildContext context) {
+    final l = L.of(context);
+    final theme = Theme.of(context);
+    final c = theme.extension<LtaColors>()!;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final r in module.lessons) _row(context, l, c, r),
+        if (moduleAllRead(module, data.progress))
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: LtaSpace.s2),
+            child: Row(
+              children: [
+                OutlinedButton(
+                  onPressed: () => data.onModuleQuiz(module.key),
+                  child: Text(l.pathModuleQuiz),
+                ),
+                if (data.passedModules.contains(module.key)) ...[
+                  const SizedBox(width: LtaSpace.s3),
+                  Text(
+                    l.pathModulePassed,
+                    style: theme.textTheme.labelLarge!.copyWith(
+                      color: c.correct,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+      ],
     );
   }
 

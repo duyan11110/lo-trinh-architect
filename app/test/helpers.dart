@@ -76,5 +76,13 @@ Widget themedApp(
   locale: locale,
   localizationsDelegates: L.localizationsDelegates,
   supportedLocales: L.supportedLocales,
+  // Goldens put the app in a phone-sized box on a large surface: the window
+  // width the responsive layout reads (docs/05 §9) is the box's.
+  builder: (context, app) => LayoutBuilder(
+    builder: (context, box) => MediaQuery(
+      data: MediaQuery.of(context).copyWith(size: box.biggest),
+      child: app!,
+    ),
+  ),
   home: child,
 );

@@ -19,6 +19,7 @@ import '../../progress/quiz_repository.dart';
 import '../../progress/review_repository.dart';
 import '../../progress/review_scheduler.dart';
 import '../../shared/bottom_action_bar.dart';
+import '../../shared/key_shortcuts.dart';
 import '../../shared/empty_state.dart';
 import '../../shared/lang_toggle.dart';
 import '../quiz/explanation_panel.dart';
@@ -294,7 +295,22 @@ class _ReviewSessionState extends ConsumerState<_ReviewSession> {
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) _confirmLeave();
       },
-      child: Scaffold(
+      child: KeyShortcuts(
+        bindings: quizKeyBindings(
+          choose: (i) {
+            if (checked) return;
+            final next = keyedResponse(q, response, i);
+            if (next != null) setState(() => _responses[q.id] = next);
+          },
+          confirm: () {
+            if (checked) {
+              _next();
+            } else if (canCheck(q, response)) {
+              _check();
+            }
+          },
+        ),
+        child: Scaffold(
         appBar: AppBar(
           automaticallyImplyLeading: false,
           leading: IconButton(
@@ -384,6 +400,7 @@ class _ReviewSessionState extends ConsumerState<_ReviewSession> {
                   child: Text(l.quizCheck),
                 ),
               ),
+      ),
       ),
     );
   }

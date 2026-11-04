@@ -830,4 +830,19 @@ class LEn extends L {
 
   @override
   String get pathEnterGate => 'Open the gate exam';
+
+  @override
+  String get lessonToc => 'Contents';
+
+  @override
+  String get lessonMetaModule => 'Module';
+
+  @override
+  String get lessonMetaDuration => 'Duration';
+
+  @override
+  String get lessonMetaPrereqs => 'Before you start';
+
+  @override
+  String get lessonMetaRelated => 'Related';
 }

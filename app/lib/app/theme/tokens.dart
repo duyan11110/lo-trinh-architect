@@ -233,6 +233,9 @@ abstract final class LtaSize {
   /// `TermTooltip` bottom sheet height on mobile (docs/05 §6).
   static const double termSheet = 200;
 
+  /// `TermTooltip` popover width on web (docs/05 §6).
+  static const double termPopover = 360;
+
   /// `DiagramFullScreen` pinch-zoom limit.
   static const double diagramMaxScale = 4;
 
@@ -265,6 +268,19 @@ abstract final class LtaSize {
 
   /// Indent of side-branch rows under their module on S2 (docs/05 S2).
   static const double optionalIndent = 16;
+
+  /// S3 table of contents: 200 at 900–1099, 220 from 1100 (docs/05 §9).
+  static const double tocRail = 200;
+  static const double tocWide = 220;
+
+  /// S3 meta column from 1100 dp (docs/05 §9).
+  static const double lessonMeta = 260;
+
+  /// S3 reading column on web: 72 ch (docs/05 S3 Web, §9).
+  static const int readingMeasureCh = 72;
+
+  /// S2 left column (stages/modules) from 900 dp (docs/05 S2 Web).
+  static const double pathListWidth = 360;
 
   /// Inline `FillField` width; fixed so it does not hint at the answer length.
   static const double fillField = 160;
@@ -310,6 +326,9 @@ abstract final class LtaBreakpoint {
   static const double medium = 600;
   static const double rail = 900;
   static const double wide = 1100;
+
+  /// S1: NextLessonCard and ReviewDueRow side by side (docs/05 S1).
+  static const double homeTwoUp = 1200;
 }
 
 /// Font family names declared in pubspec.yaml (DECISIONS.md E3).

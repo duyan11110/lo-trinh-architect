@@ -6,6 +6,7 @@
 // review_session_screen.dart and `gate` gate_exam_screen.dart over the same
 // question widgets.
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -18,6 +19,7 @@ import '../../l10n/app_localizations.dart';
 import '../../progress/progress_repository.dart';
 import '../../progress/quiz_repository.dart';
 import '../../shared/bottom_action_bar.dart';
+import '../../shared/key_shortcuts.dart';
 import '../../shared/lang_toggle.dart';
 import 'explanation_panel.dart';
 import 'question_widgets/question_view.dart';
@@ -295,130 +297,163 @@ class _QuizSessionState extends ConsumerState<QuizSession> {
       if (q.sectionRef != null) l.quizSection(q.sectionRef!),
     ].join(' · ').toUpperCase();
 
+    // docs/05 §2/S4: `1–6` choose an option, `Enter` checks, then moves on.
+    final keys = quizKeyBindings(
+      choose: (i) {
+        if (checked) return;
+        final next = keyedResponse(q, response, i);
+        if (next != null) setState(() => _responses[q.id] = next);
+      },
+      confirm: () {
+        if (checked) {
+          _next();
+        } else if (canCheck(q, response)) {
+          _check();
+        }
+      },
+    );
+
     return PopScope(
       canPop: answered == 0 || _finishing,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) _confirmLeave();
       },
-      child: Scaffold(
-        appBar: AppBar(
-          automaticallyImplyLeading: false,
-          leading: IconButton(
-            tooltip: l.quizLeaveTooltip,
-            icon: const Icon(Icons.close_rounded),
-            onPressed: () => Navigator.of(context).maybePop(),
-          ),
-          title: Text(
-            l.quizProgress(_index + 1, total),
-            style: theme.textTheme.titleMedium,
-          ),
-          actions: [
-            LangToggle(
-              lang: lang,
-              onChanged: (v) => ref.read(contentLangProvider.notifier).set(v),
+      child: KeyShortcuts(
+        bindings: keys,
+        child: Scaffold(
+          appBar: AppBar(
+            automaticallyImplyLeading: false,
+            leading: IconButton(
+              tooltip: l.quizLeaveTooltip,
+              icon: const Icon(Icons.close_rounded),
+              onPressed: () => Navigator.of(context).maybePop(),
             ),
-            const SizedBox(width: LtaSpace.s1),
-          ],
-          bottom: PreferredSize(
-            preferredSize: const Size.fromHeight(LtaSize.quizProgress),
-            child: ExcludeSemantics(
-              child: LinearProgressIndicator(
-                value: (_index + (checked ? 1 : 0)) / total,
-                minHeight: LtaSize.quizProgress,
-                color: c.accent,
-                backgroundColor: c.line,
+            title: Text(
+              l.quizProgress(_index + 1, total),
+              style: theme.textTheme.titleMedium,
+            ),
+            actions: [
+              LangToggle(
+                lang: lang,
+                onChanged: (v) => ref.read(contentLangProvider.notifier).set(v),
+              ),
+              const SizedBox(width: LtaSpace.s1),
+            ],
+            bottom: PreferredSize(
+              preferredSize: const Size.fromHeight(LtaSize.quizProgress),
+              child: ExcludeSemantics(
+                child: LinearProgressIndicator(
+                  value: (_index + (checked ? 1 : 0)) / total,
+                  minHeight: LtaSize.quizProgress,
+                  color: c.accent,
+                  backgroundColor: c.line,
+                ),
               ),
             ),
           ),
-        ),
-        body: LayoutBuilder(
-          builder: (context, box) {
-            final wide = box.maxWidth >= LtaBreakpoint.rail;
-            final maxWidth = wide
-                ? LtaSize.quizCardWide
-                : LtaSize.quizCardMedium;
-            final panel = checked
-                ? ExplanationPanel(
-                    key: ValueKey('explanation-${q.id}'),
-                    question: q,
-                    lang: lang,
-                    response: response,
-                    onNext: _next,
-                    onReread: q.sectionRef == null ? null : _reread,
-                  )
-                : null;
-            final content = SingleChildScrollView(
-              controller: _scroll,
-              padding: EdgeInsets.fromLTRB(
-                LtaSpace.contentMobile,
-                LtaSpace.s5,
-                LtaSpace.contentMobile,
-                // Mobile: room to scroll the options above the sheet.
-                checked && !wide
-                    ? box.maxHeight * LtaSize.explanationSheet
-                    : LtaSpace.s5,
-              ),
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(maxWidth: maxWidth),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text(eyebrow, style: t.eyebrow),
-                      const SizedBox(height: LtaSpace.s3),
-                      QuestionView(
-                        key: ValueKey('question-${q.id}'),
-                        question: q,
-                        lang: lang,
-                        response: response,
-                        checked: checked,
-                        onChanged: (v) => setState(() => _responses[q.id] = v),
-                        contextExpanded: _contextExpanded,
-                        onContextToggle: () => setState(
-                          () => _contextExpanded = !_contextExpanded,
+          body: LayoutBuilder(
+            builder: (context, box) {
+              final wide = box.maxWidth >= LtaBreakpoint.rail;
+              final maxWidth = wide
+                  ? LtaSize.quizCardWide
+                  : LtaSize.quizCardMedium;
+              final panel = checked
+                  ? ExplanationPanel(
+                      key: ValueKey('explanation-${q.id}'),
+                      question: q,
+                      lang: lang,
+                      response: response,
+                      onNext: _next,
+                      onReread: q.sectionRef == null ? null : _reread,
+                    )
+                  : null;
+              final content = SingleChildScrollView(
+                controller: _scroll,
+                padding: EdgeInsets.fromLTRB(
+                  LtaSpace.contentMobile,
+                  LtaSpace.s5,
+                  LtaSpace.contentMobile,
+                  // Mobile: room to scroll the options above the sheet.
+                  checked && !wide
+                      ? box.maxHeight * LtaSize.explanationSheet
+                      : LtaSpace.s5,
+                ),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: maxWidth),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(eyebrow, style: t.eyebrow),
+                        const SizedBox(height: LtaSpace.s3),
+                        QuestionView(
+                          key: ValueKey('question-${q.id}'),
+                          question: q,
+                          lang: lang,
+                          response: response,
+                          checked: checked,
+                          onChanged: (v) =>
+                              setState(() => _responses[q.id] = v),
+                          contextExpanded: _contextExpanded,
+                          onContextToggle: () => setState(
+                            () => _contextExpanded = !_contextExpanded,
+                          ),
                         ),
-                      ),
-                      if (wide && panel != null) ...[
-                        const SizedBox(height: LtaSpace.s5),
-                        Card(margin: EdgeInsets.zero, child: panel),
+                        if (wide && panel != null) ...[
+                          const SizedBox(height: LtaSpace.s5),
+                          Card(margin: EdgeInsets.zero, child: panel),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                 ),
-              ),
-            );
-            if (wide || panel == null) return content;
-            return Stack(
-              children: [
-                Positioned.fill(child: content),
-                ExplanationSheet(
-                  key: ValueKey('sheet-${q.id}'),
-                  builder: (controller) => ExplanationPanel(
-                    key: ValueKey('explanation-${q.id}'),
-                    question: q,
-                    lang: lang,
-                    response: response,
-                    onNext: _next,
-                    onReread: q.sectionRef == null ? null : _reread,
-                    scrollController: controller,
+              );
+              if (wide || panel == null) return content;
+              return Stack(
+                children: [
+                  Positioned.fill(child: content),
+                  ExplanationSheet(
+                    key: ValueKey('sheet-${q.id}'),
+                    builder: (controller) => ExplanationPanel(
+                      key: ValueKey('explanation-${q.id}'),
+                      question: q,
+                      lang: lang,
+                      response: response,
+                      onNext: _next,
+                      onReread: q.sectionRef == null ? null : _reread,
+                      scrollController: controller,
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+          bottomNavigationBar: checked
+              ? null
+              : BottomActionBar(
+                  primary: FilledButton(
+                    onPressed: canCheck(q, response) ? _check : null,
+                    child: Text(l.quizCheck),
                   ),
                 ),
-              ],
-            );
-          },
         ),
-        bottomNavigationBar: checked
-            ? null
-            : BottomActionBar(
-                primary: FilledButton(
-                  onPressed: canCheck(q, response) ? _check : null,
-                  child: Text(l.quizCheck),
-                ),
-              ),
       ),
     );
   }
 }
+
+/// Quiz keys (docs/05 §2, S4): `1–6` → option index 0–5, `Enter` → confirm.
+Map<ShortcutActivator, VoidCallback> quizKeyBindings({
+  required ValueChanged<int> choose,
+  required VoidCallback confirm,
+}) => {
+  for (var i = 0; i < 6; i++)
+    CharacterActivator('${i + 1}', includeRepeats: false): () => choose(i),
+  const SingleActivator(LogicalKeyboardKey.enter, includeRepeats: false):
+      confirm,
+  const SingleActivator(LogicalKeyboardKey.numpadEnter, includeRepeats: false):
+      confirm,
+};
 
 /// Mobile ExplanationPanel: slides up (220 ms easeOutCubic, docs/05 §5.5),
 /// opens at 50% of the screen and can be dragged up.

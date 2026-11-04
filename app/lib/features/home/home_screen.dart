@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../app/layout.dart';
 import '../../app/locations.dart';
 import '../../app/router.dart';
 import '../../app/theme/text.dart';
@@ -139,7 +140,9 @@ class _HomeBody extends StatelessWidget {
         return (t.of(lang), quizLocation(q.refId));
       case QuizKind.module:
         final m = content.module(q.refId);
-        return m == null ? null : (m.title.of(lang), moduleQuizLocation(q.refId));
+        return m == null
+            ? null
+            : (m.title.of(lang), moduleQuizLocation(q.refId));
       case QuizKind.gate:
         final s = content.stages.where((s) => s.gate == q.refId).firstOrNull;
         return s == null
@@ -165,6 +168,26 @@ class _HomeBody extends StatelessWidget {
     final module = plan.next?.module ?? plan.pendingQuiz.firstOrNull?.module;
 
     final resume = openQuiz == null ? null : _resumeTarget(l, openQuiz!);
+    final layout = LtaLayout.of(context);
+    final card = _NextLessonCard(
+      plan: plan,
+      content: content,
+      lang: lang,
+      onOpen: open,
+      gateOutcome: gateOutcome,
+      progress: progress,
+    );
+    final reviewRow = (review?.dueTotal ?? 0) > 0
+        ? ReviewDueRow(
+            count: review!.dueTotal,
+            minutes: review!.minutes,
+            onStart: onStartReview,
+          )
+        : null;
+    // docs/05 S1: side by side from 1200 px.
+    final twoUp =
+        reviewRow != null &&
+        MediaQuery.sizeOf(context).width >= LtaBreakpoint.homeTwoUp;
     final children = <Widget>[
       if (newVersion != null)
         Padding(
@@ -201,14 +224,17 @@ class _HomeBody extends StatelessWidget {
         ),
         const SizedBox(height: LtaSpace.s5),
       ],
-      _NextLessonCard(
-        plan: plan,
-        content: content,
-        lang: lang,
-        onOpen: open,
-        gateOutcome: gateOutcome,
-        progress: progress,
-      ),
+      if (twoUp)
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: card),
+            const SizedBox(width: LtaSpace.s4),
+            Expanded(child: reviewRow),
+          ],
+        )
+      else
+        card,
       if (resume != null) ...[
         const SizedBox(height: LtaSpace.s4),
         OutlinedButton.icon(
@@ -225,13 +251,9 @@ class _HomeBody extends StatelessWidget {
           ),
         ),
       ],
-      if ((review?.dueTotal ?? 0) > 0) ...[
+      if (reviewRow != null && !twoUp) ...[
         const SizedBox(height: LtaSpace.s5),
-        ReviewDueRow(
-          count: review!.dueTotal,
-          minutes: review!.minutes,
-          onStart: onStartReview,
-        ),
+        reviewRow,
       ],
       if (plan.inProgress.isNotEmpty) ...[
         const SizedBox(height: LtaSpace.s6),
@@ -262,8 +284,8 @@ class _HomeBody extends StatelessWidget {
     ];
 
     return ListView(
-      padding: const EdgeInsets.symmetric(
-        horizontal: LtaSpace.contentMobile,
+      padding: EdgeInsets.symmetric(
+        horizontal: layout.margin,
         vertical: LtaSpace.s4,
       ),
       children: [

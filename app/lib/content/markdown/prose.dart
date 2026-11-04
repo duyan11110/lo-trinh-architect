@@ -333,7 +333,7 @@ class _InlineTextState extends State<_InlineText> {
     super.dispose();
   }
 
-  void _openTerm(GlossaryEntry entry) {
+  void _openTerm(GlossaryEntry entry, Offset anchor) {
     final links = widget.prose.links;
     showTermTooltip(
       context,
@@ -344,6 +344,7 @@ class _InlineTextState extends State<_InlineText> {
       onOpenLesson: links.onOpen,
       inReview: links.inReview?.call(entry.term) ?? false,
       onAddReview: links.onAddReview,
+      anchor: anchor,
     );
   }
 
@@ -372,7 +373,8 @@ class _InlineTextState extends State<_InlineText> {
               decorationStyle: TextDecorationStyle.dotted,
               decorationColor: c.muted,
             );
-            final r = TapGestureRecognizer()..onTap = () => _openTerm(term);
+            final r = TapGestureRecognizer()
+              ..onTapUp = (d) => _openTerm(term, d.globalPosition);
             _recognizers.add(r);
             spans.add(
               TermTextSpan(entry: term, text: text, style: style, recognizer: r),
