@@ -15,9 +15,9 @@ vocab: [capacity-planning, headroom]
 example_tag: stage-4
 versions_used: [aspnetcore, npgsql, postgresql, kubernetes]
 content_version: 1
-status: reviewed
-approved_by: null
-reviewed_at: "2026-10-29T14:06:06+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-11-04T19:58:30+07:00"
 ---
 
 ## Before you start
@@ -91,7 +91,7 @@ bình.
 
 Every input after the number of shops is marked "(giả định)", an assumption; so are the 1,000 shops in `multi-shop-requirements.md`. 1,000 shops times 50 orders, doubled on the busiest day, make 100,000; 12% of that in one hour is about 3.3 orders per second, and 40 reads per order make about 133. The daily average, about 0.6 orders per second, is the first teammate's number.
 
-The part between the two excerpts derives the ceiling. With all 20 permits of `catalog-reads` in use, a product list read took about 10–12 ms in the lab, so one process answers about 20 / 0.012, roughly 1,600 reads per second; the plan marks the lab time as an assumption. The base `api.yaml` sets `replicas: 2`, and each api Pod runs one api process, so the two together reach about 3,200. The plan counts these 2 Pods, the base value, not the 3 the production overlay sets. It does not say why; counting fewer Pods keeps the check on the safe side, because production's third Pod only raises the read ceiling. Then it compares:
+The part between the two excerpts derives the ceiling. With all 20 permits of `catalog-reads` in use, a product list read took about 10–12 ms in the lab, so one process answers about 20 / 0.012, roughly 1,600 reads per second; the plan marks the lab time as an assumption. The base `api.yaml` sets `replicas: 2`, and each api Pod runs one api process, so the two together reach about 3,200. The plan counts these 2 Pods, the base value, not the 3 the production overlay sets. It does not say why. Then it compares:
 
 ```markdown file=docs/design/capacity-plan.md tag=stage-4 lines=53-73
 Quy tắc: tải đỉnh không vượt một nửa trần của 2 Pod api, để một Pod gánh được

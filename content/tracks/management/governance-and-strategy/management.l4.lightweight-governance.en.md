@@ -15,9 +15,9 @@ vocab: [architecture-governance, architecture-principle]
 example_tag: stage-4
 versions_used: []
 content_version: 1
-status: reviewed
-approved_by: null
-reviewed_at: "2026-10-29T07:27:36+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-11-04T20:09:22+07:00"
 ---
 
 ## Before you start
@@ -93,7 +93,7 @@ nó kéo theo. Muốn làm khác một nguyên tắc thì theo mục Ngoại l�
 
 Lines 10–11 ("Mỗi nguyên tắc là một luật ngắn…") give the form of a principle: a short rule drawn from decisions already made, which were themselves taken because of the drivers, with its reason and what it implies. Each row NT1–NT5 has all three, plus its source. NT1's reason is the useful part: with exactly one owner, you know whose copy to trust when copies disagree. Its "Hệ quả" column follows from that: another service may keep a copy, as long as it states how the copy is updated. NT5's source is ADR `0011`, a rejected ADR.
 
-Lines 25–29 are the decision rights. Line 25 ("Thay đổi bên trong…") is your pull request: no ADR. Lines 26–28 need an ADR and name whom to ask. Line 28 ("Thêm một thành phần…") makes the product owner, the person who answers for what the product offers shops, a second decider next to the team lead; it points to `payment-gateway-evaluation.md`, the earlier comparison of payment gateways. Line 27 ("Đổi dữ liệu của cửa hàng…") also asks the product owner when shops can see the change. Line 29 ("Làm khác một nguyên tắc…") is your colleague's change.
+Lines 25–29 are the decision rights. Line 25 ("Thay đổi bên trong…") is your pull request: no ADR. Lines 26–28 need an ADR and name whom to ask. Line 28 ("Thêm một thành phần…") makes the product owner, the person who answers for what the product offers shops, a second decider next to the team lead; it points to `payment-gateway-evaluation.md`, the earlier comparison of outside services for taking payments. Line 27 ("Đổi dữ liệu của cửa hàng…") also asks the product owner when shops can see the change. Line 29 ("Làm khác một nguyên tắc…") is your colleague's change.
 
 What replaces approval, and where exceptions go:
 
@@ -163,7 +163,7 @@ Expected result: four lines; only the first needs no ADR, and the third also nam
 1. Change inside a module, no contract change: the person doing it, through an ordinary pull request review; no ADR; ask the pull request's reviewer.
 2. Change to a public API's contract: the team lead, after the comment period; ADR; ask the owners of each side that reads it, here the app.
 3. Departing from NT1: the team lead; an ADR recording the exception and when to look again; ask whoever owns the affected part. Once accepted, it is listed under "Ngoại lệ".
-4. A paid service: the team lead with the product owner; an ADR with an evaluation like `payment-gateway-evaluation.md`, the comparison of payment gateways; ask the product owner.
+4. A paid service: the team lead with the product owner; an ADR with an evaluation like `payment-gateway-evaluation.md`, the comparison of outside services for taking payments; ask the product owner.
 
 </details>
 
