@@ -177,7 +177,9 @@ Future<int> runBuild(List<String> argv) async {
   Map<String, dynamic>? previousLessons;
   if (previousManifestFile.existsSync()) {
     try {
-      previousHash = (loadJsonFile(previousManifestFile.path) as Map<String, dynamic>)['sha256'] as String?;
+      final previousManifest = loadJsonFile(previousManifestFile.path) as Map<String, dynamic>;
+      // Manifests before 2026-11-05 kept the content.json hash in 'sha256'.
+      previousHash = (previousManifest['content_sha256'] ?? previousManifest['sha256']) as String?;
     } catch (_) {}
   }
   final previousContentFile = File(repo.path('dist/content.json'));
@@ -216,10 +218,12 @@ Future<int> runBuild(List<String> argv) async {
     }
   }
 
+  // docs/07 §7: the app downloads content.json.gz and checks sha256/bytes against that file.
   final manifest = {
     'content_version': contentVersion,
-    'sha256': finalHash,
-    'bytes': finalBytes.length,
+    'sha256': sha256.convert(gz).toString(),
+    'bytes': gz.length,
+    'content_sha256': finalHash,
     'built_at': (contentJson['meta'] as Map)['built_at'],
     'lessons_added': lessonsAdded,
     'lessons_changed': lessonsChanged,
