@@ -15,7 +15,7 @@ vocab: [platform-engineering, internal-developer-platform]
 example_tag: stage-4
 versions_used: [git, shell, kubernetes, argocd, opentofu, gateway_api, sealed_secrets, github_actions]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-27T14:54:00+07:00"
 ---

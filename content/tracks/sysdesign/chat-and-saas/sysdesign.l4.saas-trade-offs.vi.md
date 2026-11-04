@@ -15,7 +15,7 @@ vocab: [usage-metering]
 example_tag: stage-4
 versions_used: [opentelemetry_dotnet, prometheus, tempo]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-11-04T01:43:02+07:00"
 ---

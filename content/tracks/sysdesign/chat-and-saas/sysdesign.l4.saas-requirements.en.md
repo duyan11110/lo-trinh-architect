@@ -15,7 +15,7 @@ vocab: []
 example_tag: stage-4
 versions_used: [postgresql]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-11-03T22:14:35+07:00"
 ---

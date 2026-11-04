@@ -15,7 +15,7 @@ vocab: [metrics-server, horizontal-pod-autoscaler]
 example_tag: stage-4
 versions_used: [kubernetes, kind, argocd]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-28T19:55:56+07:00"
 ---

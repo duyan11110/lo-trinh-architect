@@ -15,7 +15,7 @@ vocab: [hsm]
 example_tag: stage-4
 versions_used: [dotnet]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-29T04:29:53+07:00"
 ---

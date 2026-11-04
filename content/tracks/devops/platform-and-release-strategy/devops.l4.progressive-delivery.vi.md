@@ -15,7 +15,7 @@ vocab: [progressive-delivery]
 example_tag: stage-4
 versions_used: [kubernetes, gateway_api, argocd, prometheus, prometheus_net, aspnetcore]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-27T09:29:38+07:00"
 ---

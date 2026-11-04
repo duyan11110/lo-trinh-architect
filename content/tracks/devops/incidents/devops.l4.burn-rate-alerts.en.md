@@ -15,7 +15,7 @@ vocab: [alerting-rule]
 example_tag: stage-4
 versions_used: [prometheus, docker]
 content_version: 1
-status: approved
+status: published
 ---
 
 ## Before you start

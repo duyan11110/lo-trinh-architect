@@ -15,7 +15,7 @@ vocab: [active-passive, active-active]
 example_tag: stage-4
 versions_used: [kubernetes, kind, docker, caddy]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-28T10:15:47+07:00"
 ---

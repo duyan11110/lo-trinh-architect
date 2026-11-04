@@ -15,7 +15,7 @@ vocab: []
 example_tag: stage-4
 versions_used: [postgresql, efcore, kubernetes, argocd]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-28T18:00:24+07:00"
 ---

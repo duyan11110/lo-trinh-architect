@@ -15,7 +15,7 @@ vocab: [cluster-autoscaler]
 example_tag: stage-4
 versions_used: [kubernetes, kind, postgresql]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-28T21:29:36+07:00"
 ---

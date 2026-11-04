@@ -15,7 +15,7 @@ vocab: [threat-model, trust-boundary, stride]
 example_tag: stage-4
 versions_used: [postgresql, rabbitmq, kubernetes, aspnetcore]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-28T19:38:13+07:00"
 ---

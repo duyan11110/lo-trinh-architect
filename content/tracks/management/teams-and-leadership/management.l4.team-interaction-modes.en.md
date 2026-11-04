@@ -15,7 +15,7 @@ vocab: [team-interaction-mode, x-as-a-service]
 example_tag: stage-4
 versions_used: []
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-11-02T20:32:10+07:00"
 ---

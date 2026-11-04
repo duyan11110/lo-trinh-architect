@@ -15,7 +15,7 @@ vocab: [team-topologies, stream-aligned-team, platform-team, enabling-team, comp
 example_tag: stage-4
 versions_used: []
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-29T20:17:52+07:00"
 ---

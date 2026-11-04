@@ -15,7 +15,7 @@ vocab: [feature-flag, kill-switch]
 example_tag: stage-4
 versions_used: [dotnet, xunit, gateway_api]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-27T10:58:42+07:00"
 ---

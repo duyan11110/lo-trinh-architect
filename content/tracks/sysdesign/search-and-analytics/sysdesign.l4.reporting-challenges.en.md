@@ -15,7 +15,7 @@ vocab: []
 example_tag: stage-4
 versions_used: []
 content_version: 1
-status: approved
+status: published
 ---
 
 ## Before you start

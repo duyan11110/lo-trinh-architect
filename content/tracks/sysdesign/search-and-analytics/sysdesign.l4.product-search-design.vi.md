@@ -15,7 +15,7 @@ vocab: [full-text-search, inverted-index]
 example_tag: stage-4
 versions_used: [postgresql]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-11-03T06:33:51+07:00"
 ---

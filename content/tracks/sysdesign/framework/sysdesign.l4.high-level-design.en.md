@@ -15,7 +15,7 @@ vocab: [high-level-design]
 example_tag: stage-4
 versions_used: [rabbitmq]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-11-03T13:09:25+07:00"
 ---

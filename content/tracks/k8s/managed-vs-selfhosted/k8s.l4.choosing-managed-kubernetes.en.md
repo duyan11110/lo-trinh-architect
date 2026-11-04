@@ -15,7 +15,7 @@ vocab: [multi-cloud]
 example_tag: stage-4
 versions_used: [kubernetes, opentofu, argocd]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-29T01:12:34+07:00"
 ---

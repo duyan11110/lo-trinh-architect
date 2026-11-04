@@ -15,7 +15,7 @@ vocab: [incident-commander, incident-severity]
 example_tag: stage-4
 versions_used: [prometheus, kubernetes, git]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-28T03:47:18+07:00"
 ---

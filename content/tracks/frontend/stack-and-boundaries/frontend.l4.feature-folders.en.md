@@ -15,7 +15,7 @@ vocab: [package-by-feature]
 example_tag: stage-4
 versions_used: [flutter, riverpod, go_router]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-11-02T23:44:52+07:00"
 ---

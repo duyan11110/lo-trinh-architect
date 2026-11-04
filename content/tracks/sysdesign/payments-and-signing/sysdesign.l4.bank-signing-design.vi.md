@@ -15,7 +15,7 @@ vocab: [crl, ocsp, trusted-timestamp, timestamp-authority]
 example_tag: stage-4
 versions_used: []
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-11-04T16:24:26+07:00"
 ---

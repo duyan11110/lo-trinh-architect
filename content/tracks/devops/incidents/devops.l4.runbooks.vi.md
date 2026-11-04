@@ -15,7 +15,7 @@ vocab: [runbook, mitigation]
 example_tag: stage-4
 versions_used: [prometheus, argocd, kubernetes, git, aspnetcore]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-28T02:14:08+07:00"
 ---

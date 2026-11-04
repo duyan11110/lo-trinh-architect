@@ -15,7 +15,7 @@ vocab: [sidecar-container, service-mesh]
 example_tag: stage-4
 versions_used: [kubernetes, kind, cert_manager, caddy, tls]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-28T15:33:45+07:00"
 ---

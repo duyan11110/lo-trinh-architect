@@ -15,7 +15,7 @@ vocab: [alert, incident, alert-fatigue]
 example_tag: stage-4
 versions_used: [prometheus, grafana]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-27T18:27:17+07:00"
 ---

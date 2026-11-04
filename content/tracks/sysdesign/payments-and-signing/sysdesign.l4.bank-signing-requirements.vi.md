@@ -15,7 +15,7 @@ vocab: [certificate-revocation]
 example_tag: stage-4
 versions_used: []
 content_version: 1
-status: approved
+status: published
 ---
 
 ## Bạn cần biết trước

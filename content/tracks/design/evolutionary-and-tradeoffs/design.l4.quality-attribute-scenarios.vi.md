@@ -15,7 +15,7 @@ vocab: [quality-attribute-scenario]
 example_tag: stage-3
 versions_used: []
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-27T22:16:13+07:00"
 ---

@@ -15,7 +15,7 @@ vocab: [release-train]
 example_tag: stage-4
 versions_used: []
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-29T15:38:20+07:00"
 ---

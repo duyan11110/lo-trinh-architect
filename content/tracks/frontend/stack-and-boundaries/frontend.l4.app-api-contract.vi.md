@@ -15,7 +15,7 @@ vocab: [contract-test, consumer-driven-contract]
 example_tag: stage-4
 versions_used: [flutter, dotnet, aspnetcore, xunit]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-11-03T05:48:41+07:00"
 ---

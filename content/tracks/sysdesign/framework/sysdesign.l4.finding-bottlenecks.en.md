@@ -15,7 +15,7 @@ vocab: [bottleneck]
 example_tag: stage-4
 versions_used: [postgresql]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-11-03T16:08:32+07:00"
 ---

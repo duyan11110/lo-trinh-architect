@@ -15,7 +15,7 @@ vocab: [multi-cluster]
 example_tag: stage-3
 versions_used: [kubernetes, kind, opentofu, sealed_secrets]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-28T07:38:37+07:00"
 ---

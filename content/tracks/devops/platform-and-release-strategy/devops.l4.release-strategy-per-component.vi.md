@@ -15,7 +15,7 @@ vocab: []
 example_tag: stage-4
 versions_used: [kubernetes, gateway_api, rabbitmq]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-27T12:16:47+07:00"
 ---

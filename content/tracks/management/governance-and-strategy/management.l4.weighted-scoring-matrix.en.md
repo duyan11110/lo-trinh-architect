@@ -15,7 +15,7 @@ vocab: [weighted-scoring-matrix]
 example_tag: stage-4
 versions_used: []
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-29T08:46:47+07:00"
 ---

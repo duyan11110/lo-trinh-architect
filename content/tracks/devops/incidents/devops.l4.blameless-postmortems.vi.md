@@ -15,7 +15,7 @@ vocab: [postmortem, blameless-postmortem]
 example_tag: stage-4
 versions_used: [git, kubernetes, prometheus]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-28T05:00:25+07:00"
 ---

@@ -15,7 +15,7 @@ vocab: [fitness-function]
 example_tag: stage-3
 versions_used: [dotnet, xunit, github_actions, grype]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-27T20:53:44+07:00"
 ---

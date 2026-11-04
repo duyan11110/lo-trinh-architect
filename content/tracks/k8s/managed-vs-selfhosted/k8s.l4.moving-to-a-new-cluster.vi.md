@@ -15,7 +15,7 @@ vocab: []
 example_tag: stage-4
 versions_used: [kubernetes, argocd, postgresql, rabbitmq, sealed_secrets]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-29T04:24:32+07:00"
 ---

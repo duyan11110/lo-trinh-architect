@@ -15,7 +15,7 @@ vocab: [compliance, compliance-control, separation-of-duties]
 example_tag: stage-4
 versions_used: []
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-29T17:02:35+07:00"
 ---

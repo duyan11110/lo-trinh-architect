@@ -15,7 +15,7 @@ vocab: [deep-dive]
 example_tag: stage-4
 versions_used: [rabbitmq, postgresql]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-11-03T14:33:04+07:00"
 ---

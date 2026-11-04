@@ -15,7 +15,7 @@ vocab: [on-call, paging, escalation]
 example_tag: stage-4
 versions_used: [prometheus]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-10-28T00:36:04+07:00"
 ---
