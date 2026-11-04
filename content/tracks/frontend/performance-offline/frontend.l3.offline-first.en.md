@@ -15,7 +15,7 @@ vocab: [offline-first, local-storage]
 example_tag: stage-3
 versions_used: [flutter, riverpod]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-11-05T02:04:48+07:00"
 ---
