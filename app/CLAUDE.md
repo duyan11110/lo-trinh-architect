@@ -10,7 +10,7 @@ ngữ pháp Markdown, giao thức cập nhật, test, CI) → `docs/05-ui-ux-flu
 
 ## Lệnh
 - Codegen (drift, riverpod): `dart run build_runner build` · đổi schema: sửa `lib/progress/tables.drift` + bước trong `migrations.dart` + tăng `schemaVersion` → `dart run drift_dev make-migrations` → `dart run drift_dev schema generate drift_schemas/app/ test/drift/app/generated/`
-- Git Bash: `MSYS_NO_PATHCONV=1 flutter build web --base-href /lo-trinh-architect/app/ --pwa-strategy offline-first`
+- Git Bash: `MSYS_NO_PATHCONV=1 flutter build web --base-href /lo-trinh-architect/app/` (web V1 chỉ online — Flutter 3.47 đã gỡ `--pwa-strategy`; Android mới offline, DECISIONS.md §3)
 - `fvm flutter pub get` · `fvm flutter analyze` · `fvm flutter test` · `fvm flutter test --update-goldens` (chỉ khi người dùng yêu cầu)
 - `fvm flutter run -d chrome` · `fvm flutter run -d <android>`
 - `../tools/sync-app-content` → copy `../dist/content.json` vào `assets/content/` (cần khi nội dung đổi)
