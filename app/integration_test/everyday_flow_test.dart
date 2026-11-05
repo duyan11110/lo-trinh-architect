@@ -13,7 +13,7 @@ import 'package:lta_app/progress/clock.dart';
 import 'package:lta_app/progress/database.dart';
 import 'package:lta_app/progress/progress_repository.dart';
 
-import '../test/flows/everyday_flow.dart';
+import 'flows/everyday_flow.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();

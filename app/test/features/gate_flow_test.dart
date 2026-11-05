@@ -25,7 +25,7 @@ import 'package:lta_app/progress/quiz_repository.dart';
 import 'package:lta_app/progress/settings_repository.dart';
 
 import '../fixtures/content_builder.dart';
-import '../flows/everyday_flow.dart' show pumpUntilFound;
+import '../../integration_test/flows/everyday_flow.dart' show pumpUntilFound;
 import '../helpers.dart';
 
 class _Files implements ProgressFiles {

@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'catalog.dart';
 import 'glossary.dart';
 import 'i18n.dart';
+import 'json_slice.dart';
 import 'lesson.dart';
 import 'quiz.dart';
 
@@ -102,3 +103,8 @@ class Content {
 
 /// Top-level so it can run in an isolate (`compute`).
 Content parseContent(String source) => Content.fromJson(jsonDecode(source));
+
+/// From UTF-8 bytes, never building the whole document as a String.
+/// Lesson `sections`/`diagram_svg` stay undecoded ([decodeContentLazily]).
+Content parseContentBytes(Uint8List utf8Json) =>
+    Content.fromJson(decodeContentLazily(utf8Json));

@@ -10,7 +10,7 @@ import 'package:lta_app/features/quiz/quiz_screen.dart';
 import 'package:lta_app/progress/database.dart';
 
 import '../../fixtures/content_builder.dart';
-import '../../flows/everyday_flow.dart' show answerQuestion;
+import '../../../integration_test/flows/everyday_flow.dart' show answerQuestion;
 import '../../helpers.dart';
 
 void main() {

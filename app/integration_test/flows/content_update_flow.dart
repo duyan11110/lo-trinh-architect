@@ -4,6 +4,9 @@
 // nothing was switched or stored; then a good download → Học tiếp on the
 // new version. Shared by the widget-level test
 // (test/features/content_update_test.dart) and integration_test/. Web-safe.
+import 'dart:convert';
+
+import 'package:flutter/foundation.dart' show Uint8List;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart';
@@ -20,7 +23,7 @@ import 'package:lta_app/progress/database.dart';
 import 'package:lta_app/progress/progress_repository.dart';
 import 'package:lta_app/progress/settings_repository.dart';
 
-import '../fixtures/fake_remote.dart';
+import 'fake_remote.dart';
 import 'everyday_flow.dart' show pumpUntilFound;
 
 /// Serves the requests of the current step; swapped between steps.
@@ -37,7 +40,7 @@ class _Source implements ContentSource {
   _Source(this.raw);
   final String raw;
   @override
-  Future<String> read() async => raw;
+  Future<Uint8List> read() async => utf8.encode(raw);
 }
 
 /// Overrides wiring the real resolved source to [bundled] (the "asset"),

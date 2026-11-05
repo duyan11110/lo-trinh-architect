@@ -1,7 +1,7 @@
 // M3 Done (docs/07 §11): the everyday flow at widget level — mở app → Học
 // tiếp → đọc tới cuối → quiz (1 câu sai) → kết quả, on an in-memory database
 // and a fixed clock. integration_test/everyday_flow_test.dart runs the same
-// steps (test/flows/everyday_flow.dart) on the platform database.
+// steps (integration_test/flows/everyday_flow.dart) on the platform database.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -9,7 +9,7 @@ import 'package:lta_app/main.dart';
 import 'package:lta_app/progress/clock.dart';
 import 'package:lta_app/progress/database.dart';
 
-import '../flows/everyday_flow.dart';
+import '../../integration_test/flows/everyday_flow.dart';
 import '../helpers.dart';
 
 void main() {

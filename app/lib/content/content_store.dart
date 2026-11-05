@@ -6,12 +6,12 @@
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
 
-/// Downloaded `content.json` texts by `content_version`.
+/// Downloaded `content.json` texts (as UTF-8 bytes) by `content_version`.
 abstract interface class ContentStore {
-  Future<String?> read(int version);
+  Future<Uint8List?> read(int version);
 
-  /// Stores [json] as [version]; atomic (all or nothing).
-  Future<void> write(int version, String json);
+  /// Stores [utf8Json] as [version]; atomic (all or nothing).
+  Future<void> write(int version, Uint8List utf8Json);
 
   /// Deletes every stored version except [keep] (`null` = delete all).
   Future<void> deleteExcept(int? keep);
@@ -50,22 +50,25 @@ class SqliteContentStore implements ContentStore {
 
   final ContentCacheDatabase _db;
 
+  // The column stays TEXT; the CASTs move UTF-8 bytes in and out without a
+  // Dart String in between.
   @override
-  Future<String?> read(int version) async {
+  Future<Uint8List?> read(int version) async {
     final row = await _db
         .customSelect(
-          'SELECT json FROM content_file WHERE version = ?',
+          'SELECT CAST(json AS BLOB) AS b FROM content_file WHERE version = ?',
           variables: [Variable.withInt(version)],
         )
         .getSingleOrNull();
-    return row?.read<String>('json');
+    return row?.read<Uint8List>('b');
   }
 
   @override
-  Future<void> write(int version, String json) => _db.transaction(
+  Future<void> write(int version, Uint8List utf8Json) => _db.transaction(
     () => _db.customStatement(
-      'INSERT OR REPLACE INTO content_file (version, json) VALUES (?, ?)',
-      [version, json],
+      'INSERT OR REPLACE INTO content_file (version, json) '
+      'VALUES (?, CAST(? AS TEXT))',
+      [version, utf8Json],
     ),
   );
 
@@ -81,13 +84,14 @@ class SqliteContentStore implements ContentStore {
 
 /// In-memory store (tests; never persisted).
 class MemoryContentStore implements ContentStore {
-  final files = <int, String>{};
+  final files = <int, Uint8List>{};
 
   @override
-  Future<String?> read(int version) async => files[version];
+  Future<Uint8List?> read(int version) async => files[version];
 
   @override
-  Future<void> write(int version, String json) async => files[version] = json;
+  Future<void> write(int version, Uint8List utf8Json) async =>
+      files[version] = utf8Json;
 
   @override
   Future<void> deleteExcept(int? keep) async =>

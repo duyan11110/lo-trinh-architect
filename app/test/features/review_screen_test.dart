@@ -15,7 +15,7 @@ import 'package:lta_app/progress/database.dart';
 import 'package:lta_app/progress/quiz_repository.dart';
 import 'package:lta_app/progress/review_repository.dart';
 
-import '../flows/everyday_flow.dart';
+import '../../integration_test/flows/everyday_flow.dart';
 import '../helpers.dart';
 
 void main() {

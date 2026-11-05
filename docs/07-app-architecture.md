@@ -210,7 +210,7 @@ Cache kết quả theo `(lesson id, brightness)`. Font trong SVG: build ép `fon
 
 ## 8. Nạp và hiệu năng
 
-- Parse `content.json` (≈ 10 MB) trong `Isolate.run` → model bất biến; giữ `lessons` dạng `Map<String, Lesson>` nhưng `sections` chỉ parse Markdown → AST **khi mở bài** (cache LRU 10 bài).
+- Parse `content.json` (≈ 10 MB) trong `Isolate.run` → model bất biến; giữ `lessons` dạng `Map<String, Lesson>` nhưng `sections` chỉ parse Markdown → AST **khi mở bài** (cache LRU 10 bài). App đọc byte UTF-8 (không qua `String` cả file); `sections`/`diagram_svg` từng bài giữ dạng byte, giải mã JSON khi mở bài (DECISIONS.md §3).
 - FTS index xây trong isolate lần đầu và khi đổi nội dung; màn Tìm hiện "đang lập chỉ mục" nếu chưa xong.
 - Web: `content.json` nằm trong asset bundle; web V1 chỉ online (không service worker offline; DECISIONS.md §3); SQLite qua WASM + OPFS.
 - Khởi động mục tiêu: < 1,5 s tới màn Học tiếp trên Android tầm trung (đo bằng `event` local).

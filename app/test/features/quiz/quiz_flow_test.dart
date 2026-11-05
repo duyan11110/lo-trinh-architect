@@ -15,7 +15,7 @@ import 'package:lta_app/main.dart';
 import 'package:lta_app/progress/database.dart';
 import 'package:lta_app/progress/lesson_status.dart';
 
-import '../../flows/everyday_flow.dart' show answerQuestion;
+import '../../../integration_test/flows/everyday_flow.dart' show answerQuestion;
 import '../../helpers.dart';
 
 void main() {

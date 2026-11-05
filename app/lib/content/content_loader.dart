@@ -26,7 +26,10 @@ enum ContentSourceKind { asset, remote }
 
 /// Where content.json comes from (`settings.content_source`).
 abstract interface class ContentSource {
-  Future<String> read();
+  /// The UTF-8 bytes of content.json. Bytes, not a `String`: the 42 MB
+  /// document is decoded straight from them (docs/07 §8), never held as a
+  /// UTF-16 string (~2× its size) that is then copied into the isolate.
+  Future<Uint8List> read();
 }
 
 /// `assets/content/content.json`, copied from `dist/` by
@@ -40,7 +43,10 @@ class AssetContentSource implements ContentSource {
   final String path;
 
   @override
-  Future<String> read() => (_bundle ?? rootBundle).loadString(path, cache: false);
+  Future<Uint8List> read() async {
+    final data = await (_bundle ?? rootBundle).load(path);
+    return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+  }
 }
 
 /// The source the settings point at: the stored remote version when
@@ -57,7 +63,7 @@ class ResolvedContentSource implements ContentSource {
   final SettingsRepository settings;
 
   @override
-  Future<String> read() async {
+  Future<Uint8List> read() async {
     try {
       final kind = await settings.get(SettingKeys.contentSource);
       final version = int.tryParse(
@@ -85,8 +91,10 @@ class ContentLoader {
 
   Future<Content> load(ContentSource source) async => parse(await source.read());
 
-  Future<Content> parse(String raw) async =>
-      background ? compute(parseContent, raw) : parseContent(raw);
+  /// [utf8Json]: content.json as UTF-8 bytes.
+  Future<Content> parse(Uint8List utf8Json) async => background
+      ? compute(parseContentBytes, utf8Json)
+      : parseContentBytes(utf8Json);
 }
 
 /// `manifest.json` (docs/07 §7).
@@ -202,10 +210,10 @@ class ContentUpdater {
     if (sha256.convert(gz).toString() != manifest.sha256) {
       throw const ContentUpdateException(ContentUpdateFailure.checksum);
     }
-    final String json;
+    final Uint8List json;
     final Content content;
     try {
-      json = utf8.decode(const GZipDecoder().decodeBytes(gz, throwOnError: true));
+      json = const GZipDecoder().decodeBytes(gz, throwOnError: true);
       content = await loader.parse(json);
     } catch (e) {
       throw ContentUpdateException(ContentUpdateFailure.corrupt, e);

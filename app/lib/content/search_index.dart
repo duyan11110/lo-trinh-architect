@@ -26,13 +26,9 @@ const int searchMinChars = 2;
 const String searchMarkStart = '\u0002';
 const String searchMarkEnd = '\u0003';
 
-/// One lesson in one language, as sent to the extraction isolate.
-typedef SearchSource = ({
-  String lessonId,
-  String lang,
-  String title,
-  List<String> sections,
-});
+/// One lesson, as sent to the extraction isolate. Sections travel
+/// undecoded (docs/07 §8) and are decoded there, not on the UI isolate.
+typedef SearchSource = ({String lessonId, I18n title, LessonSections sections});
 
 /// One `search_index` row.
 typedef SearchDoc = ({String lessonId, String lang, String title, String body});
@@ -75,26 +71,24 @@ String searchableText(String md) {
   return out.toString();
 }
 
-/// Top-level for `compute`.
+/// Top-level for `compute`. One doc per lesson and language.
 List<SearchDoc> buildSearchDocs(List<SearchSource> sources) => [
   for (final s in sources)
-    (
-      lessonId: s.lessonId,
-      lang: s.lang,
-      title: s.title,
-      body: s.sections.map(searchableText).join('\n'),
-    ),
+    for (final lang in ContentLang.values)
+      (
+        lessonId: s.lessonId,
+        lang: lang.name,
+        title: s.title.of(lang),
+        body: [
+          for (final sec in s.sections.of(lang))
+            searchableText('${sec.heading}\n${sec.md}'),
+        ].join('\n'),
+      ),
 ];
 
 List<SearchSource> searchSources(Content content) => [
   for (final l in content.lessons.values)
-    for (final lang in ContentLang.values)
-      (
-        lessonId: l.id,
-        lang: lang.name,
-        title: l.title.of(lang),
-        sections: [for (final s in l.sections(lang)) '${s.heading}\n${s.md}'],
-      ),
+    (lessonId: l.id, title: l.title, sections: l.sectionsData),
 ];
 
 /// Identifies one content build.

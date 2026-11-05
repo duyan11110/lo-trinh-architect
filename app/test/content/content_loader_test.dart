@@ -14,7 +14,7 @@ import 'package:lta_app/progress/clock.dart';
 import 'package:lta_app/progress/database.dart';
 import 'package:lta_app/progress/settings_repository.dart';
 
-import '../fixtures/fake_remote.dart';
+import '../../integration_test/flows/fake_remote.dart';
 import '../helpers.dart';
 
 class _Bundle extends CachingAssetBundle {
@@ -31,16 +31,16 @@ class _Bundle extends CachingAssetBundle {
 
 class _FailingStore extends MemoryContentStore {
   @override
-  Future<void> write(int version, String json) async =>
+  Future<void> write(int version, Uint8List utf8Json) async =>
       throw StateError('disk full');
 }
 
 class _CountingAsset implements ContentSource {
   int reads = 0;
   @override
-  Future<String> read() async {
+  Future<Uint8List> read() async {
     reads++;
-    return sampleJson();
+    return utf8.encode(sampleJson());
   }
 }
 
@@ -148,7 +148,7 @@ void main() {
 
     test('sha256 ok → stored, settings switched together, event', () async {
       final remote = FakeRemote(version: 2, base: sampleJson());
-      store.files[1] = 'old download';
+      store.files[1] = utf8.encode('old download');
       final c = await updater(remote).apply(await manifestOf(remote));
       expect(c.meta.contentVersion, 2);
       expect(store.files.keys, [2], reason: 'older versions are dropped');
@@ -268,15 +268,21 @@ void main() {
     });
 
     test('SqliteContentStore keeps one text per version', () async {
-      final s = SqliteContentStore(
-        ContentCacheDatabase(NativeDatabase.memory()),
-      );
+      final cache = ContentCacheDatabase(NativeDatabase.memory());
+      final s = SqliteContentStore(cache);
       addTearDown(s.close);
       expect(await s.read(1), isNull);
-      await s.write(1, 'one');
-      await s.write(2, 'two');
-      await s.write(2, 'two again');
-      expect(await s.read(2), 'two again');
+      await s.write(1, utf8.encode('one'));
+      await s.write(2, utf8.encode('two'));
+      await s.write(2, utf8.encode('{"t": "Đơn hàng — hai"}'));
+      expect(utf8.decode((await s.read(2))!), '{"t": "Đơn hàng — hai"}');
+      final row = await cache
+          .customSelect(
+            'SELECT typeof(json) AS t, json FROM content_file WHERE version = 2',
+          )
+          .getSingle();
+      expect(row.read<String>('t'), 'text', reason: 'column stays TEXT');
+      expect(row.read<String>('json'), '{"t": "Đơn hàng — hai"}');
       await s.deleteExcept(2);
       expect(await s.read(1), isNull);
       await s.deleteExcept(null);

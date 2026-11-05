@@ -2,10 +2,11 @@
 import 'package:flutter/foundation.dart';
 
 import 'i18n.dart';
+import 'json_slice.dart';
 
 @immutable
 class Lesson {
-  const Lesson({
+  Lesson({
     required this.id,
     required this.track,
     required this.level,
@@ -19,21 +20,40 @@ class Lesson {
     required this.related,
     required this.vocab,
     required this.exampleTag,
-    required this.sectionsVi,
-    required this.sectionsEn,
-    required this.diagramSvg,
+    required List<LessonSection> sectionsVi,
+    required List<LessonSection> sectionsEn,
+    required String? diagramSvg,
+    required this.skipNote,
+    required this.contentVersion,
+  }) : sectionsData = LessonSections(vi: sectionsVi, en: sectionsEn),
+       _svg = diagramSvg;
+
+  Lesson._({
+    required this.id,
+    required this.track,
+    required this.level,
+    required this.stage,
+    required this.module,
+    required this.mainPath,
+    required this.durationMin,
+    required this.title,
+    required this.skills,
+    required this.prereqs,
+    required this.related,
+    required this.vocab,
+    required this.exampleTag,
+    required this.sectionsData,
+    required this._svg,
     required this.skipNote,
     required this.contentVersion,
   });
 
   factory Lesson.fromJson(Object? json) {
     final m = asMap(json, 'lessons{}');
-    final sections = asMap(m['sections'], 'sections');
-    List<LessonSection> secs(String lang) => List.unmodifiable(
-      asList(sections[lang], 'sections.$lang').map(LessonSection.fromJson),
-    );
+    final sections = m['sections'];
+    final svg = m['diagram_svg'];
     final skip = m['skip_note'];
-    return Lesson(
+    return Lesson._(
       id: m.str('id'),
       track: m.str('track'),
       level: m.integer('level'),
@@ -47,9 +67,10 @@ class Lesson {
       related: m.strings('related'),
       vocab: m.strings('vocab'),
       exampleTag: m.str('example_tag'),
-      sectionsVi: secs('vi'),
-      sectionsEn: secs('en'),
-      diagramSvg: m.strOrNull('diagram_svg'),
+      sectionsData: sections is JsonSlice
+          ? LessonSections.lazy(id: m.str('id'), slice: sections)
+          : LessonSections.fromJson(sections),
+      svg: svg is JsonSlice || svg is String ? svg : null,
       skipNote: skip == null ? null : _skipNote(asMap(skip, 'skip_note')),
       contentVersion: m.integer('content_version'),
     );
@@ -78,19 +99,86 @@ class Lesson {
   final List<String> related;
   final List<String> vocab;
   final String exampleTag;
-  final List<LessonSection> sectionsVi;
-  final List<LessonSection> sectionsEn;
+
+  /// Both languages' sections; decoded on each read when loaded lazily
+  /// (the parsed blocks are cached by `ProseCache`).
+  final LessonSections sectionsData;
+
+  /// `String`, a not yet decoded [JsonSlice], or `null`.
+  final Object? _svg;
+
+  List<LessonSection> get sectionsVi => sectionsData.of(ContentLang.vi);
+  List<LessonSection> get sectionsEn => sectionsData.of(ContentLang.en);
 
   /// Mermaid already rendered by `tools/build`, with sentinel colours
-  /// (docs/07 §6). `null` when the build could not render it.
-  final String? diagramSvg;
+  /// (docs/07 §6). `null` when the build could not render it. Decoded on
+  /// first use and kept (only lessons actually opened pay for it).
+  late final String? diagramSvg = switch (_svg) {
+    final String svg => svg,
+    final JsonSlice slice => _decodeSvg(slice),
+    _ => null,
+  };
+
+  String? _decodeSvg(JsonSlice slice) {
+    try {
+      final v = slice.decode();
+      return v is String ? v : null;
+    } on FormatException catch (e) {
+      debugPrint('lesson $id: diagram_svg unreadable ($e)');
+      return null;
+    }
+  }
   final I18n? skipNote;
   final int contentVersion;
 
   String get moduleKey => '$track/$module';
 
-  List<LessonSection> sections(ContentLang lang) =>
-      lang == ContentLang.vi ? sectionsVi : sectionsEn;
+  List<LessonSection> sections(ContentLang lang) => sectionsData.of(lang);
+}
+
+/// `sections` of a lesson (`{vi: [...], en: [...]}`): decoded, or kept as
+/// a [JsonSlice] and decoded on every [of] (docs/07 §8). Sendable to an
+/// isolate (the search index decodes there).
+@immutable
+class LessonSections {
+  const LessonSections({
+    required List<LessonSection> this._vi,
+    required List<LessonSection> this._en,
+  }) : _slice = null,
+       _id = '';
+
+  const LessonSections.lazy({
+    required this._id,
+    required JsonSlice this._slice,
+  }) : _vi = null,
+       _en = null;
+
+  factory LessonSections.fromJson(Object? json) {
+    final m = asMap(json, 'sections');
+    return LessonSections(vi: _list(m, 'vi'), en: _list(m, 'en'));
+  }
+
+  static List<LessonSection> _list(JsonMap m, String lang) => List.unmodifiable(
+    asList(m[lang], 'sections.$lang').map(LessonSection.fromJson),
+  );
+
+  final List<LessonSection>? _vi;
+  final List<LessonSection>? _en;
+  final JsonSlice? _slice;
+  final String _id;
+
+  /// A section list that does not decode (the build validates the schema,
+  /// so only a damaged file) reads as empty rather than crashing the screen.
+  List<LessonSection> of(ContentLang lang) {
+    final slice = _slice;
+    if (slice == null) return lang == ContentLang.vi ? _vi! : _en!;
+    try {
+      return _list(asMap(slice.decode(), 'sections'), lang.name);
+    } on FormatException catch (e) {
+      debugPrint('lesson $_id: sections unreadable ($e)');
+      return const [];
+    }
+  }
 }
 
 @immutable

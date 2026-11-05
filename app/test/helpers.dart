@@ -1,8 +1,10 @@
 // Shared test helpers: the sample fixture (docs/07 §9) and an app harness.
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show DatabaseConnection, driftRuntimeOptions;
 import 'package:drift/native.dart';
+import 'package:flutter/foundation.dart' show Uint8List;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/misc.dart';
 import 'package:lta_app/app/theme/theme.dart';
@@ -25,7 +27,7 @@ class StringContentSource implements ContentSource {
   StringContentSource(this.raw);
   final String raw;
   @override
-  Future<String> read() async => raw;
+  Future<Uint8List> read() async => utf8.encode(raw);
 }
 
 /// Provider overrides that serve [raw] (default: the sample) synchronously

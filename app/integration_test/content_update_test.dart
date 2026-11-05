@@ -1,7 +1,7 @@
 // docs/07 §11 M6 integration "cập nhật thất bại giữ bản cũ": the real app on
 // the platform database, the bundled asset as the old content, an in-memory
 // content store and a fake HTTP client (never the network). Same steps as
-// the widget-level test (test/flows/content_update_flow.dart).
+// the widget-level test (integration_test/flows/content_update_flow.dart).
 // CI: `flutter drive --driver=test_driver/integration_test.dart
 // --target=integration_test/content_update_test.dart -d chrome` (E7).
 import 'package:flutter/material.dart';
@@ -15,8 +15,8 @@ import 'package:lta_app/content/models/models.dart';
 import 'package:lta_app/main.dart';
 import 'package:lta_app/progress/database.dart';
 
-import '../test/fixtures/fake_remote.dart';
-import '../test/flows/content_update_flow.dart';
+import 'flows/fake_remote.dart';
+import 'flows/content_update_flow.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();

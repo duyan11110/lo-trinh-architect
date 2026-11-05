@@ -1,7 +1,7 @@
 // M6 Done (docs/07 §11): "cập nhật thất bại giữ bản cũ" at widget level —
 // the real app, in-memory database and content store, fake HTTP client.
 // integration_test/content_update_test.dart runs the same steps
-// (test/flows/content_update_flow.dart) on the platform database.
+// (integration_test/flows/content_update_flow.dart) on the platform database.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -12,8 +12,8 @@ import 'package:lta_app/progress/clock.dart';
 import 'package:lta_app/progress/database.dart';
 import 'package:lta_app/progress/settings_repository.dart';
 
-import '../fixtures/fake_remote.dart';
-import '../flows/content_update_flow.dart';
+import '../../integration_test/flows/fake_remote.dart';
+import '../../integration_test/flows/content_update_flow.dart';
 import '../helpers.dart';
 
 void main() {
