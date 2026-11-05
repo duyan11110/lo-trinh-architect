@@ -16,7 +16,7 @@ example_tag: stage-3
 versions_used: [dotnet, http_resilience, polly, docker]
 content_version: 1
 status: published
-approved_by: auto
+approved_by: owner
 reviewed_at: "2026-10-16T06:32:13+07:00"
 ---
 

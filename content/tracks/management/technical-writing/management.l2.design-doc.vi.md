@@ -19,7 +19,7 @@ example_tag: stage-2
 versions_used: []
 content_version: 1
 status: published
-approved_by: auto
+approved_by: owner
 reviewed_at: "2026-10-03T20:11:51+07:00"
 ---
 

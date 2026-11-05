@@ -16,7 +16,7 @@ example_tag: stage-2
 versions_used: [flutter, riverpod]
 content_version: 1
 status: published
-approved_by: auto
+approved_by: owner
 reviewed_at: "2026-09-29T20:38:04+07:00"
 ---
 

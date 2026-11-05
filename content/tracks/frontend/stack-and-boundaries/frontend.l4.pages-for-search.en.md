@@ -16,7 +16,7 @@ example_tag: stage-4
 versions_used: [flutter, caddy]
 content_version: 1
 status: published
-approved_by: auto
+approved_by: owner
 reviewed_at: "2026-11-02T22:00:48+07:00"
 ---
 

@@ -16,7 +16,7 @@ example_tag: stage-2
 versions_used: [aspnetcore, efcore, postgresql]
 content_version: 1
 status: published
-approved_by: auto
+approved_by: owner
 reviewed_at: "2026-09-28T06:54:08+07:00"
 ---
 

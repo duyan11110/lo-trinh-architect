@@ -16,7 +16,7 @@ example_tag: stage-2
 versions_used: [aspnetcore, keycloak]
 content_version: 1
 status: published
-approved_by: auto
+approved_by: owner
 reviewed_at: "2026-09-28T13:01:56+07:00"
 ---
 

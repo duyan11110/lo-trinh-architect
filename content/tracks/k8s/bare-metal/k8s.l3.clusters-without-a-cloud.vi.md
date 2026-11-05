@@ -16,7 +16,7 @@ example_tag: stage-3
 versions_used: [kubernetes, kind, docker]
 content_version: 1
 status: published
-approved_by: auto
+approved_by: owner
 reviewed_at: "2026-10-20T01:44:18+07:00"
 ---
 
