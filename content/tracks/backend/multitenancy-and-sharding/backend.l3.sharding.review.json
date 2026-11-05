@@ -1,0 +1,114 @@
+{
+  "id": "backend.l3.sharding",
+  "technical": {
+    "reviewed_at": "2026-10-20T16:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "not-needed",
+        "evidence": "Definitional: matches the lesson's own Core concepts entries for sharding and shard, and the outline item 1 wording. No version-dependent behaviour; no official PostgreSQL page defines sharding (PG17 has no built-in sharding)."
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Table 9.4: \"numeric_type % numeric_type -> numeric_type. Modulo (remainder); available for smallint, integer, bigint, and numeric. 5 % 4 -> 1\". Range 0-3 for the positive ids 1..200000 (fill.sql generate_series(1, 200000)) is confirmed by the captured output, which shows only shards 0-3.",
+        "source": "https://www.postgresql.org/docs/17/functions-math.html ; examples/don-hang outputs/stage-3/scripts/backend/shard-skew.txt"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Round 2: section 4 now reads 'PostgreSQL itself skips the partitions a query cannot need'. 5.12.4: \"the planner will examine the definition of each partition and prove that the partition need not be scanned\"; \"Partition pruning can be performed not only during the planning of a given query, but also during its execution.\" 22.1: \"a client must specify the database name in its connection request. It is not possible to access more than one database per connection.\"",
+        "source": "https://www.postgresql.org/docs/17/ddl-partitioning.html ; https://www.postgresql.org/docs/17/manage-ag-overview.html"
+      },
+      {
+        "n": 4,
+        "verdict": "unverified",
+        "evidence": "General scaling principle; the condition (writes must spread over the shards) is stated. No page under the pinned postgresql docs root covers sharding throughput, and the lab does not measure write capacity (shard-skew.sql only counts rows). Opinion kind, so this does not block."
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "5.10: \"A client connection to the server can only access data in a single database, the one specified in the connection request.\" and \"database.schema.table ... If you write a database name, it must be the same as the database you are connected to.\" 22.1: \"It is not possible to access more than one database per connection.\" (22.1 also notes postgres_fdw/dblink proxies; the lesson's 'ordinary' and plain-query framing stays within the documented rule.)",
+        "source": "https://www.postgresql.org/docs/17/ddl-schemas.html ; https://www.postgresql.org/docs/17/manage-ag-overview.html"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "db/schema.sql lines 26-32: order_items(order_id, product_id, quantity, unit_price_vnd, PRIMARY KEY (order_id, product_id)), no customer_id. donhang_perf is built from the EF migrations, not schema.sql (perf-db.sh lines 22-26); DonHangDbContextModelSnapshot.cs OrderItem has only OrderId, ProductId, Quantity, UnitPrice -> order_items. Same result.",
+        "source": "examples/don-hang db/schema.sql ; DonHang.Infrastructure/Migrations/DonHangDbContextModelSnapshot.cs ; scripts/backend/perf-db.sh"
+      },
+      {
+        "n": 7,
+        "verdict": "unverified",
+        "evidence": "Design guidance, no official source under the pinned docs roots; opinion kind, does not block. Round 2: the condition is now in the text ('usually read together' in sections 4 and 9; section 5 adds 'pick a key that keeps rows usually read together on one shard, and among those, one where no single value holds a large share'), matching the ledger. The mechanical part (a JOIN on one shard sees only that shard's rows) follows from claim 5."
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "% is a deterministic operator (Table 9.4, claim 2), so equal key values give equal shard numbers for any N. Execution: fill.sql gives customer 1 162,000 orders (81% of 200,000); shard-skew.txt shows shard 1 = 170000 >= 162000, i.e. none of customer 1's orders left shard 1.",
+        "source": "https://www.postgresql.org/docs/17/functions-math.html ; examples/don-hang db/perf/fill.sql, outputs/stage-3/scripts/backend/shard-skew.txt"
+      },
+      {
+        "n": 9,
+        "verdict": "not-needed",
+        "evidence": "Follows from the lesson's own definition (rows stored in one of several databases, a value in the row decides which) applied to database-per-tenant from the prereq; 'one large shop can be a hot shard' is claim 8 applied to the tenant key. Matches outline item 6."
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "shard-skew.sql lines 1-2: \"Where donhang_perf's 200,000 orders would land with 4 shards, for two shard keys. Nothing is moved: each query only counts.\" Both statements are SELECT ... GROUP BY only. STAGE.md line 38-39: \"lab databases for tenancy, partitioning and sharding live under db/\" - the api is not described as sharded.",
+        "source": "examples/don-hang db/sharding/shard-skew.sql ; STAGE.md"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "3.5: \"It is also possible to omit PARTITION BY, in which case there is a single partition containing all rows.\" \"When ORDER BY is omitted the default frame consists of all rows in the partition.\" \"The rows considered by a window function are those of the virtual table produced by the query's FROM clause as filtered by its WHERE, GROUP BY, and HAVING clauses\" \"window functions execute after non-window aggregate functions. This means it is valid to include an aggregate function call in the arguments of a window function\". round(v numeric, s integer): \"Rounds v to s decimal places.\"",
+        "source": "https://www.postgresql.org/docs/17/tutorial-window.html ; https://www.postgresql.org/docs/17/functions-math.html"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "fill.sql: customers generate_series(1, 20); orders generate_series(1, 200000) with customer_id CASE WHEN g % 100 < 81 THEN 1 ELSE g % 100 - 79 END, i.e. 81 of every 100 to customer 1, residues 81..99 to customers 2..20 (1 each = 2,000 orders). outputs/stage-3/scripts/backend/perf-db.txt: \"customers: 20\", \"orders: 200000\".",
+        "source": "examples/don-hang db/perf/fill.sql ; outputs/stage-3/scripts/backend/perf-db.txt"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "shard-skew.sh lines 6-9: outside a container (/.dockerenv absent) run perf-db.sh --if-missing, then exec lab-run.sh; lab-run.sh line 18: docker compose exec -T lab bash ... (compose service 'lab'). Lines 11-14: psql --host db --username donhang --dbname donhang_perf ... --file /repo/db/sharding/shard-skew.sql. Round 2 prose ('psql, PostgreSQL's command-line client, from a prepared container that reaches the database by the name db') matches.",
+        "source": "examples/don-hang scripts/backend/shard-skew.sh ; scripts/lab-run.sh ; scripts/backend/perf-db.sh"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "outputs/stage-3/scripts/backend/shard-skew.txt matches the lesson's output block line for line: 0|10000|5.0, 1|170000|85.0, 2|10000|5.0, 3|10000|5.0; then 50000|25.0 for shards 0-3. Arithmetic cross-check from fill.sql: 162000 + 4*2000 = 170000; 5*2000 = 10000; id % 4 over 1..200000 gives 50000 each.",
+        "source": "examples/don-hang outputs/stage-3/scripts/backend/shard-skew.txt ; db/perf/fill.sql"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "Customers with id % 4 = 1 in 1..20: 1, 5, 9, 13, 17. 81% + 4 x 1% = 85%, matching the captured 85.0. Lower bound of 81% for any N follows from claim 8. Round 2 (targeted): re-read sections 4, 5, 9 and quiz q1, q2, q4, q5 against round-1 issues; opened shard-skew.sh, lab-run.sh, meta.json; PG17 ddl-partitioning and manage-ag-overview quotes from round 1. No issues remain.",
+        "source": "examples/don-hang db/perf/fill.sql ; outputs/stage-3/scripts/backend/shard-skew.txt"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-20T17:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (prompt 05, junior reader, round 2 targeted)",
+    "issues": [],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

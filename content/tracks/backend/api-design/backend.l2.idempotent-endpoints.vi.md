@@ -15,8 +15,8 @@ vocab: [idempotency-key]
 example_tag: stage-2
 versions_used: [aspnetcore, efcore, postgresql, http]
 content_version: 1
-status: approved
-approved_by: auto
+status: published
+approved_by: owner
 reviewed_at: "2026-09-28T06:06:54+07:00"
 ---
 

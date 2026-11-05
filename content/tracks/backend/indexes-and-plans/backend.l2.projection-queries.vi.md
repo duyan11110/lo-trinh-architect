@@ -15,8 +15,8 @@ vocab: [projection]
 example_tag: stage-2
 versions_used: [efcore, dotnet]
 content_version: 1
-status: approved
-approved_by: auto
+status: published
+approved_by: owner
 reviewed_at: "2026-09-28T23:49:20+07:00"
 ---
 

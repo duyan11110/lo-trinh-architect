@@ -15,8 +15,8 @@ vocab: [cache-aside, cache-hit, cache-miss]
 example_tag: stage-2
 versions_used: [aspnetcore, efcore, stackexchange_redis, redis, docker]
 content_version: 1
-status: approved
-approved_by: auto
+status: published
+approved_by: owner
 reviewed_at: "2026-09-28T15:15:57+07:00"
 ---
 

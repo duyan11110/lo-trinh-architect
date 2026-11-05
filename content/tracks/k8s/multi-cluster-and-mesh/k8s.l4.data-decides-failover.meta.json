@@ -1,0 +1,152 @@
+{
+  "id": "k8s.l4.data-decides-failover",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-10-28T19:00:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "With asynchronous streaming replication (the PostgreSQL default), the primary confirms a commit without waiting for the standby; if the primary is lost, committed transactions not yet replicated are lost, in proportion to the replication delay at failover.",
+      "kind": "behavior",
+      "source_hint": "PostgreSQL 17 docs: High Availability > Log-Shipping Standby Servers > Streaming Replication (asynchronous by default; data loss proportional to replication delay)",
+      "needs_verification": true,
+      "section": 4,
+      "version_key": "postgresql"
+    },
+    {
+      "n": 2,
+      "text": "pg_promote() promotes a standby to primary (by default waiting up to 60 s for completion) and returns true on success; pg_is_in_recovery() returns true while the server is still in recovery (a standby) and false after promotion.",
+      "kind": "syntax",
+      "source_hint": "PostgreSQL 17 docs: Functions > System Administration Functions > Recovery Control Functions (pg_is_in_recovery, pg_promote)",
+      "needs_verification": true,
+      "section": 3,
+      "version_key": "postgresql"
+    },
+    {
+      "n": 3,
+      "text": "After promotion the former standby accepts writes and no longer follows the old primary; nothing sends changes between the two, so if the old primary still runs both accept writes and diverge.",
+      "kind": "behavior",
+      "source_hint": "PostgreSQL 17 docs: High Availability > Failover (old primary must be told it is no longer primary, STONITH, both systems thinking they are primary leads to data loss); promote-replica.txt @ stage-4",
+      "needs_verification": true,
+      "section": 4,
+      "version_key": "postgresql"
+    },
+    {
+      "n": 4,
+      "text": "Opinion: promote a standby only after the old primary is stopped or cut off from every client, because a failed health check from outside does not show that clients on the primary's side have stopped writing.",
+      "kind": "opinion",
+      "source_hint": "PostgreSQL 17 docs: High Availability > Failover; ADR 0020 option B and third consequence; outline item 4",
+      "needs_verification": false,
+      "section": 4
+    },
+    {
+      "n": 5,
+      "text": "With synchronous replication, each commit of a write transaction (not read-only ones or rollbacks) waits until the standby has its WAL, so a confirmed commit is lost only if both servers fail at once; the minimum wait is the round-trip time between primary and standby.",
+      "kind": "behavior",
+      "source_hint": "PostgreSQL 17 docs: High Availability > Synchronous Replication (basic configuration; minimum wait time is the round-trip time)",
+      "needs_verification": true,
+      "section": 4,
+      "version_key": "postgresql"
+    },
+    {
+      "n": 6,
+      "text": "docker-compose.yml @ stage-4: db-replica (hostname db-replica) has profiles [replica] and runs db/replica/start.sh; db's command sets archive_mode/archive_command/archive_timeout but no synchronous_standby_names, so replication to db-replica is asynchronous.",
+      "kind": "fact",
+      "source_hint": "docker-compose.yml @ stage-4 services db (lines 64-100) and db-replica (lines 586-601)",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 7,
+      "text": "db/replica/start.sh @ stage-4 copies db once with pg_basebackup --write-recovery-conf --wal-method stream and starts postgres as a standby streaming every later change (lines 5-18). A standby replaying WAL is 'in recovery' (pg_is_in_recovery).",
+      "kind": "fact",
+      "source_hint": "db/replica/start.sh @ stage-4",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 8,
+      "text": "promote-replica.sh @ stage-4 lines 34-50: pg_is_in_recovery() on db-replica (35), pg_promote() while db runs (42), recovery check again (43), product 1 set to 1300000 on db and 1200000 on db-replica (46-47), both read back (49-50); on() (21-27) runs psql --echo-queries on the named host.",
+      "kind": "fact",
+      "source_hint": "scripts/backend/promote-replica.sh @ stage-4",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 9,
+      "text": "promote-replica.sh/.txt @ stage-4: the script starts db-replica (profile replica) as a fresh copy of db itself (lines 4-16); output: replica t; promoted t (elided); replica f; UPDATE 1 on both; 1300000 on db, 1200000 on db-replica; old price restored, db-replica and volume removed.",
+      "kind": "fact",
+      "source_hint": "outputs/stage-4/scripts/backend/promote-replica.txt; script lines 7-19, 29-32",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 10,
+      "text": "ADR 0020 @ stage-4: options A (one region, restore in a second from base backup and WAL copied there, by the DR drill), B (warm standby cluster, async replica, manual failover after old primary stopped/cut off), C (both regions take orders); chooses A.",
+      "kind": "fact",
+      "source_hint": "docs/adr/0020-mot-region-phuc-hoi-tu-ban-sao-luu.md @ stage-4 lines 29-51",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 11,
+      "text": "ADR 0020: RTO/RPO = DR drill's measurement and how often WAL is copied to region 2; at stage-4 backups and WAL have not left the DB machine; no async replica promoted while the primary can write. Reopened on a contract/SLA needing lower RTO/RPO, or shop data bound to a place.",
+      "kind": "fact",
+      "source_hint": "docs/adr/0020-mot-region-phuc-hoi-tu-ban-sao-luu.md @ stage-4 lines 53-67",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 12,
+      "text": "Pods and configuration are rebuilt in any cluster from the config repository, while orders exist only in the database (ADR 0020 context, lines 26-27).",
+      "kind": "fact",
+      "source_hint": "docs/adr/0020-mot-region-phuc-hoi-tu-ban-sao-luu.md @ stage-4 lines 26-27; k8s.l4.one-argo-cd-many-clusters",
+      "needs_verification": false,
+      "section": 4
+    },
+    {
+      "n": 13,
+      "text": "Opinion: the trade-offs table (RPO, RTO, write cost, what runs, split brain risk) for one region with backups, warm async standby, synchronous replica in the other region, and both regions taking orders; RPO/RTO cells follow ADR 0020 and claims 1, 5.",
+      "kind": "opinion",
+      "source_hint": "ADR 0020 options A-C; claims 1, 3, 5",
+      "needs_verification": false,
+      "section": 6
+    },
+    {
+      "n": 14,
+      "text": "Opinion: one region with copied backups when no SLO/contract asks for less than the drill measures; warm async standby with a stop-the-old-primary step when minutes of RTO are needed and seconds of loss accepted; synchronous replication when no confirmed order may be lost and regions are close.",
+      "kind": "opinion",
+      "source_hint": "trade-off reasoning; ADR 0020; claims 1, 5",
+      "needs_verification": false,
+      "section": 7
+    },
+    {
+      "n": 15,
+      "text": "Opinion: with one primary database only one region can take writes; both regions writing needs each order to belong to one region or a database accepting writes in several places (ADR 0020 option C).",
+      "kind": "opinion",
+      "source_hint": "ADR 0020 lines 41-43 and 50 (C changes how data is split, ADR 0013); outline misconception 3; also stated in section 5",
+      "needs_verification": false,
+      "section": 8
+    },
+    {
+      "n": 16,
+      "text": "Opinion: merging two diverged primaries means finding every row changed on each side since promotion and deciding which change wins, which is why the rule is to stop or cut off the old primary first rather than merge afterwards.",
+      "kind": "opinion",
+      "source_hint": "operational reasoning; claim 3",
+      "needs_verification": false,
+      "section": 9
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [1, 2, 3, 4, 5, 6],
+    "outline_items_missing": [],
+    "beyond_scope": []
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1900,
+    "notes": "generate 2026-10-28; lab shows split brain only, lost commits from PG docs. apply-review 2026-10-28: async = 'without waiting for the standby' (s4, s8, summary, quiz q2/q7); sync = commits that write, loss only if both lost (s4, s6, q4, q6); q7 option c now order 2 confirmed; on-call person, psql, pg_basebackup, recovery, promotion sense, option C reason, Try-it setup, s6 A cell, q3/q4 option a reworded."
+  }
+}

@@ -15,8 +15,8 @@ vocab: [cache-invalidation]
 example_tag: stage-2
 versions_used: [aspnetcore, efcore, stackexchange_redis, redis, docker, keycloak]
 content_version: 1
-status: approved
-approved_by: auto
+status: published
+approved_by: owner
 reviewed_at: "2026-09-28T15:59:40+07:00"
 ---
 

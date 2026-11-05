@@ -1,0 +1,187 @@
+{
+  "id": "sysdesign.l4.multi-shop-design",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-11-03T21:00:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "ADR 0026 header: not built at stage-4, no multi-shop code in the repository; the design and its review are in docs/design/multi-shop-design-review.md.",
+      "kind": "fact",
+      "source_hint": "docs/adr/0026-cua-hang-lon-chuyen-sang-database-rieng.md @ stage-4 lines 8-9",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 2,
+      "text": "ADR 0026 chooses the second option: table shops (owned by Ordering, in donhang) gains a column recording the database holding the shop's data, default the shared database donhang; shared tables stay the default for every other shop.",
+      "kind": "fact",
+      "source_hint": "docs/adr/0026-... @ stage-4 lines 26-28, 34-38",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 3,
+      "text": "From release 2 of multi-shop-data-rollout.md, each request takes its shop from the access token, looks up that shop's database in the map, then opens a connection there.",
+      "kind": "fact",
+      "source_hint": "docs/adr/0026-... @ stage-4 lines 38-40; docs/design/multi-shop-data-rollout.md lines 36-39",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 4,
+      "text": "Each Pod keeps the map in memory for a short time, 30 seconds (assumed).",
+      "kind": "number",
+      "source_hint": "docs/adr/0026-... @ stage-4 lines 40-41; docs/design/multi-shop-design-review.md lines 44-47",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 5,
+      "text": "Only DonHang.Api's database (donhang) moves shops out; Notifications and Payments keep every shop in shared tables because each shop's data there is small.",
+      "kind": "fact",
+      "source_hint": "docs/adr/0026-... @ stage-4 lines 43-44; multi-shop-design-review.md lines 29-30",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 6,
+      "text": "The map is a dependency of every request: unreadable means no request knows its database (ADR consequences); the in-Pod cache lets requests run on for up to 30 seconds, after which new requests stop; the review calls the map a new single point of failure.",
+      "kind": "fact",
+      "source_hint": "docs/adr/0026-... @ stage-4 lines 51-52; multi-shop-design-review.md lines 44-47, 82-83",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 7,
+      "text": "Moving a shop: (1) pause its writes, the API returns a temporary error to its writes, reads go on from shared tables; (2) wait for the relay to send all its outbox rows; (3) copy rows and count each table on both sides; (4) switch the map; (5) resume writes after every Pod's map cache time.",
+      "kind": "fact",
+      "source_hint": "docs/design/multi-shop-design-review.md @ stage-4 lines 50-59",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 8,
+      "text": "If the row counts differ in step 3, the move stops and writes reopen in the old place.",
+      "kind": "fact",
+      "source_hint": "docs/design/multi-shop-design-review.md @ stage-4 lines 56-57",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 9,
+      "text": "The write pause is longer than the map cache time, so no Pod writes to the old place after the switch; the other shops do not pause at any step.",
+      "kind": "fact",
+      "source_hint": "docs/design/multi-shop-design-review.md @ stage-4 lines 61-62",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 10,
+      "text": "The old rows in the shared tables are deleted only after a check period, assumed one week.",
+      "kind": "number",
+      "source_hint": "docs/design/multi-shop-design-review.md @ stage-4 lines 62-63",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 11,
+      "text": "The review's risks table: row counts matching while content differs is a risk; a tester is to add a checksum comparison over a few columns before the map switches.",
+      "kind": "fact",
+      "source_hint": "docs/design/multi-shop-design-review.md @ stage-4 line 103",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 12,
+      "text": "Restoring a shop in shared tables: recover the whole server to just before the incident into a separate instance, as pitr.sh does with container db-pitr, read that shop's rows there and copy them back into donhang; other shops do not go back in time, but the copying is manual and slow.",
+      "kind": "fact",
+      "source_hint": "docs/design/multi-shop-design-review.md @ stage-4 lines 67-70",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 13,
+      "text": "pitr.sh recovers the server into the separate db-pitr container while db keeps running, then copies the deleted order_items rows from db-pitr back into db.",
+      "kind": "fact",
+      "source_hint": "scripts/devops/pitr.sh @ stage-4 lines 2, 45-67",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 14,
+      "text": "Point-in-time recovery of a PostgreSQL 17 server returns every database on that server to the same moment, so restoring in place would take every other shop back too.",
+      "kind": "behavior",
+      "source_hint": "PostgreSQL 17 docs, 25.3 Continuous Archiving and Point-in-Time Recovery",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 15,
+      "text": "A shop with its own database on a server of its own is restored alone from its own backup (ADR consequences: each own database has its own backup); while it shares a server with donhang, PITR covers the whole cluster, so it is restored beside.",
+      "kind": "fact",
+      "source_hint": "docs/design/multi-shop-design-review.md @ stage-4 lines 71-72, 76-80; docs/adr/0026-... lines 55-56; PostgreSQL 17 docs 25.3: PITR restores only an entire database cluster",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 16,
+      "text": "CH-5 measure: the moving shop stops taking writes for at most 15 minutes (assumed), and other shops see no change.",
+      "kind": "fact",
+      "source_hint": "docs/team/multi-shop-open-requirements.md @ stage-4 lines 32-33",
+      "needs_verification": true,
+      "section": 2
+    },
+    {
+      "n": 17,
+      "text": "A separate deployment is what ADR 0012 keeps for a contract that demands one; ADR 0026 lists a moved shop needing more isolation than a database as ADR 0012's review condition.",
+      "kind": "fact",
+      "source_hint": "docs/adr/0026-... @ stage-4 lines 29-32, 65-66; multi-shop-design-review.md line 89",
+      "needs_verification": true,
+      "section": 8
+    },
+    {
+      "n": 18,
+      "text": "Trade-off rows: resuming at once risks writes in the old place via stale cached entries; no cache adds a query per request and stops every request at once if shops is unreadable; restoring in place fails driver 2.",
+      "kind": "opinion",
+      "source_hint": "Derived from multi-shop-design-review.md @ stage-4 lines 44-47, 61-62, 67-72, 82-83",
+      "needs_verification": false,
+      "section": 6
+    },
+    {
+      "n": 19,
+      "text": "If the cache time were raised to five minutes, each move's pause would last the time to the switch (outbox wait, copy, counts) plus five minutes and should be checked against CH-5 first.",
+      "kind": "opinion",
+      "source_hint": "Follows from review lines 59-62 and CH-5 measure",
+      "needs_verification": false,
+      "section": 7
+    },
+    {
+      "n": 20,
+      "text": "The largest shop holds about 10% of orders, the level at which capacity-plan.md says the plan must be redone.",
+      "kind": "fact",
+      "source_hint": "docs/team/multi-shop-open-requirements.md @ stage-4, section Ước lượng, first bullet",
+      "needs_verification": true,
+      "section": 2
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [1, 2, 3, 4, 5, 6],
+    "outline_items_missing": [],
+    "beyond_scope": []
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1992,
+    "notes": "generate 2026-11-03: blocks are prose files (ADR 0026 34-47, review 50-72). apply-review: claims 11/15/19 rephrased; own-server condition for restore alone (s5, s7, quiz q3 c); dropped 'failed move costs only the pause'; claim 20 added; 'up to 30s'; driver 2 named; Ordering dropped; Try it says other Pods' read times unknown; outbox reason not in repo -> open_questions. Cut to fit 2000: s5 map/Notifications paras, s4 pause sentence, s7/s9 tails."
+  },
+  "open_questions": [
+    "Review step 2 says only 'so no message is left behind in the old place'; it does not say what an outbox row left unsent at copy time would cause (lost, duplicated, late). The lesson says the review states only the aim; the repo review could add the reason.",
+    "Review lines 71-72 say an own database is restored alone, but own databases share the donhang server for now (lines 76-80) and PG 17 PITR is whole-cluster; the review could state the own-server condition."
+  ],
+  "repo_changes_needed": []
+}

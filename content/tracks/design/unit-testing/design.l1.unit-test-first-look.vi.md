@@ -15,8 +15,8 @@ vocab: [unit-test]
 example_tag: stage-0
 versions_used: [dotnet, xunit]
 content_version: 1
-status: approved
-approved_by: auto
+status: published
+approved_by: owner
 reviewed_at: "2026-09-26T11:40:00+07:00"
 ---
 

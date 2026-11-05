@@ -1,0 +1,141 @@
+{
+  "id": "backend.l4.verified-email-owner",
+  "technical": {
+    "reviewed_at": "2026-10-28T23:55:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "NotifyCustomerOnOrderEvents.cs:32-34 loads the customer and calls outbox.Add(routingKey, new OrderMessage(order.Id, customer.Email, ...)); Notifications OrderEventsConsumer.cs:146 sets Email = message.CustomerEmail. No non-test code assigns Customer.Email. ADR 0014 l.10-12 and data-ownership.md l.40-42 say the same.",
+        "source": "examples/don-hang @ stage-4 (828fdeb): DonHang.Domain/NotifyCustomerOnOrderEvents.cs, DonHang.Notifications/OrderEventsConsumer.cs, docs/design/data-ownership.md"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "data-ownership.md has a single '### Câu hỏi mở' section (l.38-48): 'Email của khách nằm ở hai nơi: tài khoản Keycloak và cột `customers.email`. Không gì giữ hai giá trị bằng nhau.' ... l.48 '- Đã quyết ở ADR 0014 (Keycloak giữ email khách), chưa làm ở stage-4.'",
+        "source": "examples/don-hang @ stage-4: docs/design/data-ownership.md l.38-48"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Keycloak 26.7.4 Server Administration Guide, Update Email Workflow: 'If a user has `Email Verified` set, and both `Verify Email` and `Force Email Verification` are disabled,' (the flag is reset on email update) — a per-user Email Verified flag. donhang-realm.json @ stage-4 l.68,79,90,101,112,123: all six users have \"emailVerified\": true.",
+        "source": "https://www.keycloak.org/docs/26.7.4/server_admin/index.html (Controlling login options > Update Email Workflow); keycloak/donhang-realm.json @ stage-4"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Entities.cs l.9-19: public sealed class Customer { Id; required FullName; required Email; required City; string? IdentitySubject } — no verified flag.",
+        "source": "examples/don-hang @ stage-4: DonHang.Domain/Entities.cs l.9-19"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "threat-model.md l.54: '| I | Email chi tiết đơn tới địa chỉ không còn của khách | P3 |'; l.70: '| P3 | `customers.email` không có dấu đã xác minh; email đơn hàng gửi tới địa chỉ đó | Sửa theo ADR 0014 (Keycloak giữ email khách) |'.",
+        "source": "examples/don-hang @ stage-4: docs/design/threat-model.md l.54, 70"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Round 2: claim now attributed to the ADR, not to Keycloak. ADR 0014 l.17-19 (Bối cảnh): 'Access token mà app nhận cho `donhang-api` đã mang claim `email` và `email_verified`: client `donhang-app` có client scope `email` trong scope mặc định. Không cần thêm mapper.' donhang-realm.json l.32: \"defaultClientScopes\": [\"basic\", \"profile\", \"email\", \"web-origins\"]. Keycloak's own behaviour stays unverified (see meta open_questions) but the lesson no longer asserts it.",
+        "source": "examples/don-hang @ stage-4: docs/adr/0014-keycloak-giu-email-khach-hang.md l.17-19; keycloak/donhang-realm.json l.32"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "ADR 0014 l.36-40: 'API đọc `email` và `email_verified` từ access token đã kiểm; nếu `email_verified` là `true` và email khác `customers.email`, API cập nhật `customers.email` trong cùng transaction với đơn. Email chưa xác minh không được chép.'",
+        "source": "examples/don-hang @ stage-4: docs/adr/0014-keycloak-giu-email-khach-hang.md l.36-40"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "OrderService.cs l.45-50 (code inspection, not executed): 'Its handlers add their rows (an outbox message, say) to the same DbContext first; this one SaveChangesAsync then writes the order and those rows in one transaction, or none of them.' followed by await repository.SaveChangesAsync().",
+        "source": "examples/don-hang @ stage-4: DonHang.Domain/OrderService.cs l.45-50"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "ADR 0014 l.48-49: '`OrderMessage` giữ nguyên hình dạng: `customerEmail` vẫn lấy từ `customers` lúc ghi outbox, Notifications và Payments không đổi.' Payments has its own OrderMessage record (DonHang.Payments/Messages.cs l.6) with the same fields.",
+        "source": "examples/don-hang @ stage-4: docs/adr/0014 l.48-49; DonHang.Payments/Messages.cs"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "ADR 0014 l.21-32 lists exactly three options: periodic sync job; Keycloak owner + refresh from access token claim on each order when email_verified is true; drop the copy, Notifications asks Keycloak per email.",
+        "source": "examples/don-hang @ stage-4: docs/adr/0014 l.21-32"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "ADR 0014 l.24-25 (option 1): 'job cần một credential đọc được mọi tài khoản ở Keycloak'; l.30-32 (option 3): 'Notifications cần một credential đọc được mọi tài khoản ở Keycloak, mở rộng blast radius ... mỗi email phụ thuộc thêm vào Keycloak'; l.42-43: 'Phương án thứ ba bị từ chối vì credential của nó; phương án thứ nhất vì vẫn giữ hai chủ và cũng cần credential đó.'",
+        "source": "examples/don-hang @ stage-4: docs/adr/0014 l.23-32, 42-43"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "ADR 0014 l.3 'Trạng thái: Đã chấp nhận'; l.50-51 'Chưa làm ở stage-4: chưa có code làm mới email; câu hỏi mở trong `data-ownership.md` giữ nguyên, kèm dòng trỏ tới ADR này.'; data-ownership.md l.48 has that pointer line.",
+        "source": "examples/don-hang @ stage-4: docs/adr/0014 l.3, 50-51; docs/design/data-ownership.md l.48"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "ADR 0014 l.53-55: 'Đội xem lại khi email phải gửi cho khách đã lâu không đăng nhập ..., hoặc khi một service khác cần email khách mà không có access token của khách.' l.26-27 and l.47: refresh only 'mỗi khi khách đặt đơn', copy 'mới tới lần đặt đơn gần nhất'. l.57-61, last section '### Ý kiến đã nhận': 'Email về đơn cũ (hoàn tiền) vẫn đi tới địa chỉ cũ; đây là điều kiện xem lại thứ nhất'.",
+        "source": "examples/don-hang @ stage-4: docs/adr/0014 l.26-27, 47, 53-61"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "Opinion grounded in the ADR: l.47 'customers.email thành bản sao của Keycloak, mới tới lần đặt đơn gần nhất'; l.26-28 option two 'không cần credential mới'; l.30-32 option three gives Notifications the every-account credential; l.53-54 stale copy for customers who have not signed in for a long time is a review condition.",
+        "source": "examples/don-hang @ stage-4: docs/adr/0014 l.26-32, 47, 53-54"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "Opinion consistent with ADR l.59-61: the refund-email case is 'điều kiện xem lại thứ nhất, được ghi thay vì giải quyết trước' — recorded, not solved in advance.",
+        "source": "examples/don-hang @ stage-4: docs/adr/0014 l.59-61"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "Opinion consistent with ADR l.42 (option three rejected for its credential) and l.54-55 (review when another service needs a customer's email without the customer's access token).",
+        "source": "examples/don-hang @ stage-4: docs/adr/0014 l.42, 54-55"
+      },
+      {
+        "n": 17,
+        "verdict": "not-needed",
+        "evidence": "General statement about what an ADR records; the stage-4 instance is covered by claim 12. Round 2 targeted re-review, zero issues: opened at stage-4 docs/adr/0014 (full), docs/design/data-ownership.md l.38-48, keycloak/donhang-realm.json (defaultClientScopes); re-read changed §2, §4, §5, §6, §7, §9 and quiz q3; round-1 Keycloak 26.7.4 Server Admin Guide evidence kept for claim 3.",
+        "source": "examples/don-hang @ stage-4: docs/adr/0014 l.3, 50-51"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-28T23:59:00+07:00",
+    "reviewer": "claude-opus-5-5 (prompt 05)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "text": "Carried from round 1, downgraded from major. The token claims are now stated as a fact the ADR records, so I can follow the main idea. But the 'reason' still links a scope to claims: known_vocab says a scope limits what a token may be used for, not that it adds fields, so I accept the reason without understanding it.",
+        "quote": "Its reason: in that file the client `donhang-app` lists the `email` scope among the scopes it gets by default.",
+        "fix": "Either drop the 'Its reason' sentence and keep only 'So the ADR needs no Keycloak change', or add a few words saying the ADR states that the `email` scope is what puts those two claims into the token."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [
+        "§4: why listing the `email` scope among the default scopes makes the token carry `email` and `email_verified` (taken on the ADR's word)"
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

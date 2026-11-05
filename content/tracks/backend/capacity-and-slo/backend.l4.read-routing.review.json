@@ -1,0 +1,109 @@
+{
+  "id": "backend.l4.read-routing",
+  "technical": {
+    "reviewed_at": "2026-10-29T23:59:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Round 2: claim now names one database connection string. Program.cs @ stage-4 line 24: GetConnectionString(\"Default\") ?? throw ...; line 30: GetConnectionString(\"Redis\") (the cache); lines 37-38 pass the Default string to AddCatalogModule and AddDonHangInfrastructure. No replica connection (capacity-plan.md line 85).",
+        "source": "examples/don-hang DonHang.Api/Program.cs lines 24-38 @ stage-4"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "consistency-per-operation.md lines 40-43: \"Ở stage-4 API không đọc `db-replica`: nó chỉ có một connection string, `ConnectionStrings:Default`, trỏ tới primary. Replica nhận thay đổi không đồng bộ, nên một lần đọc từ replica có thể chưa thấy lần ghi vừa xong, kể cả lần ghi của chính người gọi (không có read-your-writes).\"",
+        "source": "examples/don-hang docs/design/consistency-per-operation.md @ stage-4"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Line 45-46: \"Được phép chuyển: danh sách sản phẩm, vì nó chấp nhận dữ liệu hơi cũ và không ghi lại gì từ kết quả đọc.\" Line 14 (row Danh sách sản phẩm), reason column: \"Nghiệp vụ chấp nhận danh sách hơi cũ; đọc primary chỉ vì code chưa có bản sao nào khác\".",
+        "source": "examples/don-hang docs/design/consistency-per-operation.md lines 14, 45-46 @ stage-4"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Lines 47-51: \"Không chuyển: xem đơn của mình và lịch sử của đơn; mọi lần đọc ngay sau một lần ghi của cùng người gọi; một sản phẩm đọc qua `ProductCache` (cả khi đặt đơn)... nạp từ một replica chưa có giá mới sẽ đặt giá cũ trở lại Redis thêm trọn một TTL.\" Line 13: \"`ProductCache`, TTL 5 phút\". ProductCache.cs line 18: Ttl = TimeSpan.FromMinutes(5); line 90 StringSetAsync(key, json, Ttl).",
+        "source": "consistency-per-operation.md lines 13, 47-51; DonHang.Catalog/ProductCache.cs lines 18, 90 @ stage-4"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Lines 23-26: \"`OrderService` hỏi giá qua `IProductPrices`, tới `ICatalog.FindAsync`, nên giá đi qua `ProductCache`... đơn đặt trong thời gian còn lại của TTL dùng giá cũ, tối đa 5 phút.\" Line 53: \"Chuyển một thao tác khác sang replica cần sửa bảng trên trước.\" A stale reload is set with the same 5-minute Ttl (ProductCache.cs line 90), so the bound holds for the replica case too.",
+        "source": "consistency-per-operation.md lines 21-29, 53; ProductCache.cs @ stage-4"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "capacity-plan.md lines 85-94: \"Ở stage-4 API chỉ có một connection string, `ConnectionStrings:Default`; mọi lần đọc vào primary. `db-replica` chỉ dùng trong lab. - Chuyển trước nếu cần: danh sách sản phẩm... - Không chuyển: đơn của chính khách, `GET /api/v1/orders/{id}/history`, mọi lần đọc ngay sau một lần ghi... - Điều kiện kích hoạt: đỉnh dự kiến của đọc sản phẩm vượt khoảng dư của primary.\" No number in the trigger.",
+        "source": "examples/don-hang docs/design/capacity-plan.md lines 83-94 @ stage-4"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "capacity-plan.md lines 95-99: \"Đường lui: mỗi lần đọc qua replica phải quay về primary khi replica trễ hơn mức danh sách sản phẩm chịu được, hoặc không trả lời. Replica chỉ gánh những lần đọc được chuyển sang nó... Stage-4 không có code định tuyến.\" Round 2 addition checked: Grep of docs/design for \"ngay sau|read-your-writes\" finds only capacity-plan.md:91 and consistency-per-operation.md:43,47, none of which says how such a read is recognised.",
+        "source": "examples/don-hang docs/design/capacity-plan.md lines 95-99; consistency-per-operation.md lines 43, 47 @ stage-4"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Claim now equals round-1 suggested_text. PG 17 26.2.5: \"Streaming replication is asynchronous by default..., in which case there is a small delay between committing a transaction in the primary and the changes becoming visible in the standby.\" 26.2.8.1: synchronous replication requires that \"synchronous_standby_names must be set to a non-empty value\". 26.2.2: \"the server continuously applies WAL received from the primary\". Lesson §4 and q4 f now say \"does not wait\" by default.",
+        "source": "https://www.postgresql.org/docs/17/warm-standby.html (26.2.2, 26.2.5, 26.2.8.1), as fetched in round 1"
+      },
+      {
+        "n": 9,
+        "verdict": "unverified",
+        "evidence": "Round 2: script still not run (git/Bash commands not approved in this session) and outputs/stage-4/scripts/backend/replica-lag.txt still does not exist (Glob finds nothing). Inspection only: replica-lag.sh lines 6-11 remove the replica volume and start db-replica fresh; line 37 UPDATE to 1300000; lines 38-39 read db then db-replica; line 40 sleep 6; db/replica/start.sh line 18 recovery_min_apply_delay=5s; seed price 1250000. Consistent with the claim, not observed output.",
+        "source": "scripts/backend/replica-lag.sh, db/replica/start.sh, db/seed.sql @ stage-4"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Line 15 (row Tìm sản phẩm): \"chưa có ở stage-4, ADR 0030\"; \"Từ chối (lỗi), như danh sách sản phẩm\"; \"Được cũ như danh sách sản phẩm\"; \"Full-text search của PostgreSQL trên primary; replica khi `capacity-plan.md` cho phép\"; \"Cùng lựa chọn với danh sách sản phẩm\".",
+        "source": "examples/don-hang docs/design/consistency-per-operation.md line 15 @ stage-4"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Conditional recommendation grounded in the repo's own design docs: consistency-per-operation.md lines 45-53 decide per operation (not per HTTP method) and keep reads after the caller's write on the primary; capacity-plan.md lines 93-94 make the move conditional on the product-read peak crossing the primary's headroom, and lines 95-96 require a way back. The lesson states the condition each time.",
+        "source": "consistency-per-operation.md lines 38-53; capacity-plan.md lines 83-99 @ stage-4"
+      },
+      {
+        "n": 12,
+        "verdict": "not-needed",
+        "evidence": "Conditional reasoning, not a fact about a tool: it follows directly from claim 7 (every routed read returns to the primary when the replica lags) and is phrased with a condition (\"If that happens\"). capacity-plan.md does not contain this check; the lesson presents it as advice, not as the plan's content, which is acceptable.",
+        "source": "capacity-plan.md lines 95-99 @ stage-4"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 9,
+        "kind": "example",
+        "text": "Carried from round 1. Claim 9's source_hint still cites outputs/stage-4/scripts/backend/replica-lag.txt, which does not exist; the expected result of Try it rests only on reading the script, not on captured output.",
+        "quote": "Expected result: `1300000` on `db` and `1250000` on `db-replica` straight after the update",
+        "fix": "Capture the output with tools/capture-output for scripts/backend/replica-lag.sh at stage-4 (or point source_hint to an existing capture) and keep the expected values only if the capture shows them."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-29T23:58:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation, round 2 targeted re-review)",
+    "issues": [],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

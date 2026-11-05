@@ -1,0 +1,133 @@
+{
+  "id": "k8s.l2.statefulsets",
+  "technical": {
+    "reviewed_at": "2026-10-15T17:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "\"By default, pods will be assigned ordinals from 0 up through N-1.\" \"The pattern for the constructed hostname is $(statefulset name)-$(ordinal). The example above will create three Pods named web-0,web-1,web-2.\" \"The identity sticks to the Pod, regardless of which node it's (re)scheduled on.\" Capture: after `kubectl delete pod db-0` the list shows `db-0 1/1 Running`.",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/workloads/controllers/statefulset.md (Pod Identity, Ordinal Index, Stable Network ID); examples/don-hang/outputs/stage-3/scripts/k8s/statefulset-db.txt"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Round 2: lesson now says \"it can get a different IP address, as it does here\" (s4), \"nothing keeps the old IP address for it\" (s6), \"a replacement Pod is not promised its old IP address\" (summary 4). Docs: \"the IP addresses associated with the Pods may have changed. In the cluster used for this tutorial, they have.\" Capture: `same IP address as before: no`.",
+        "source": "refs/kubernetes-website/content/en/docs/tutorials/stateful-application/basic-stateful-set.md (lines 304-308); outputs/stage-3/scripts/k8s/statefulset-db.txt"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "\"For each VolumeClaimTemplate entry defined in a StatefulSet, each Pod receives one PersistentVolumeClaim.\" \"When a Pod is (re)scheduled onto a node, its volumeMounts mount the PersistentVolumes associated with its PersistentVolume Claims.\" Tutorial: template `www`, StatefulSet `web` -> claims `www-web-0`, `www-web-1`. Capture: `data-db-0 Bound`, same claim after the Pod is replaced, orders 12.",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/workloads/controllers/statefulset.md (Stable Storage); tutorials/stateful-application/basic-stateful-set.md (lines 341-343, 429-432)"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "\"For a StatefulSet with N replicas, when Pods are being deployed, they are created sequentially, in order from {0..N-1}.\" \"When Pods are being deleted, they are terminated in reverse order, from {N-1..0}.\" \"Before a scaling operation is applied to a Pod, all of its predecessors must be Running and Ready.\" \"OrderedReady pod management is the default for StatefulSets.\"",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/workloads/controllers/statefulset.md (Deployment and Scaling Guarantees; Pod Management Policies)"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Round 2: \"By default\" now in section 3 (Claims left in place), section 4 and summary 4. Docs: \"Retain (default): PVCs from the volumeClaimTemplate are not affected when their Pod is deleted.\" \"Deleting and/or scaling a StatefulSet down will not delete the volumes\". Tutorial: \"When you recreated the StatefulSet and it relaunched web-0, its original PersistentVolume was remounted.\"",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/workloads/controllers/statefulset.md (Limitations; PersistentVolumeClaim retention); basic-stateful-set.md (lines 564-568, 1050-1054)"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "\"If no StorageClass is specified, then the default StorageClass will be used.\" Capture at stage-3: `data-db-0 Bound pvc-... 1Gi RWO standard`, i.e. the claim from the template with no storageClassName got `standard`. Round 2: section 4 now says \"the cluster's default StorageClass, `standard`\" and no longer re-asserts \"on one node\".",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/workloads/controllers/statefulset.md (Stable Storage); outputs/stage-3/scripts/k8s/statefulset-db.txt"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Execution evidence (captured run): first db-0 on a new claim -> `orders: 12` (seeded); replacement db-0 on the same claim logs `PostgreSQL Database directory appears to contain a database; Skipping initialization`, orders still 12. Docker Official Image docs are not a `docs` root in versions.yaml, so no documentation sentence quoted; verdict rests on the captured output only.",
+        "source": "examples/don-hang/outputs/stage-3/scripts/k8s/statefulset-db.txt (lines 15, 23-26)"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "\"As the name says, the emptyDir volume is initially empty.\" \"When a Pod is removed from a node for any reason, the data in the emptyDir is deleted permanently.\" Section 2's new gloss \"a volume created empty with the Pod and deleted with it\" matches. With claim 7, a replacement Pod reseeds and loses rows written since.",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/storage/volumes.md (emptyDir, lines 163-167)"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "\"`.spec.strategy.type` can be \"Recreate\" or \"RollingUpdate\". \"RollingUpdate\" is the default value.\" maxUnavailable: \"calculated from percentage by rounding down... The default value is 25%.\" maxSurge: \"calculated from the percentage by rounding up. The default value is 25%.\" replicas 1 -> surge 1, unavailable 0: new Pod first. The Deployment db in the repo sets no strategy (grep). One Pod template -> same claim for every Pod.",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/workloads/controllers/deployment.md (Strategy, Max Unavailable, Max Surge, lines 1174-1216)"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Each Pod gets its own claim (\"each Pod receives one PersistentVolumeClaim\"). Copying data to a new member is the application's job, not the StatefulSet's: in the replicated example \"The second init container, named clone-mysql, performs a clone operation on a replica Pod the first time it starts up on an empty PersistentVolume.\" base/db.yaml has no such container. Empty folder -> init scripts seed 12 (claim 7).",
+        "source": "refs/kubernetes-website/content/en/docs/tasks/run-application/run-replicated-stateful-application.md (lines 186-189); statefulset.md (Stable Storage)"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "\"The Service targets TCP port 9376 on any Pod with the app.kubernetes.io/name: MyApp label.\" \"The controller for that Service continuously scans for Pods that match its selector, and then makes any necessary updates to the set of EndpointSlices for the Service.\" Service db selects `app: db`, the label of the StatefulSet's Pod template, so db-0 and db-1 would both be targets.",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/services-networking/service.md (Defining a Service, lines 111-121)"
+      },
+      {
+        "n": 12,
+        "verdict": "unverified",
+        "evidence": "Working tree of base/db.yaml lines 48-69 re-read in round 2: matches the excerpt and the line references (53-54, 55-58, 62-69). Content at tag stage-3 still not confirmable: `git rev-parse stage-3^{commit}` and `tools/extract-code --tag stage-3` were refused by the permission system again.",
+        "source": "examples/don-hang/deploy/gitops/config-repo-kustomize/base/db.yaml (working tree)"
+      },
+      {
+        "n": 13,
+        "verdict": "unverified",
+        "evidence": "Working tree matches the excerpt (lines 35-45) and the prose: db_ip/orders at L8-9, L38 keeps the IP, L39 deletes db-0, L40 waits, L45 greps the log; L19-33 commit/sync/print/count. Same limitation as claim 12: content at tag stage-3 not confirmable (git / extract-code refused).",
+        "source": "examples/don-hang/scripts/k8s/statefulset-db.sh (working tree)"
+      },
+      {
+        "n": 14,
+        "verdict": "unverified",
+        "evidence": "outputs/stage-3/scripts/k8s/statefulset-db.txt in the working tree matches the lesson's output block line for line (lines 12-26, with `...` replacing lines 1-11). Content at the tag itself not confirmable, as for claims 12-13.",
+        "source": "examples/don-hang/outputs/stage-3/scripts/k8s/statefulset-db.txt (working tree)"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "\"Note that, the PersistentVolumes associated with the Pods' PersistentVolume Claims are not deleted when the Pods, or StatefulSet are deleted.\" \"When a Pod is (re)scheduled onto a node, its volumeMounts mount the PersistentVolumes associated with its PersistentVolume Claims.\" The claim is not recreated, so its VOLUME and AGE persist across the Pod's replacement.",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/workloads/controllers/statefulset.md (Stable Storage)"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "Section 2 states it as the need of a database (\"A database wants one server on one folder\"), consistent with: \"StatefulSets are valuable for applications that require one or more of the following: Stable, unique network identifiers. Stable, persistent storage.\"",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/workloads/controllers/statefulset.md (Using StatefulSets; front matter)"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "version",
+        "text": "Carried from round 1. Claim 7 (init scripts run only on an empty data folder) is behaviour of the postgres Docker image entrypoint, not of PostgreSQL 17; versions.yaml has no key or docs root for that image. Verified here only by the captured run; open_questions[1] still unresolved.",
+        "quote": "Its image runs the scripts in `/docker-entrypoint-initdb.d` only when the data folder is empty.",
+        "fix": "No text change needed in the lesson; resolve open_questions[1] by having the owner decide the version_key (or add the image to versions.yaml), and keep the sentence tied to what the output shows (\"Skipping initialization\")."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-15T18:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior, round 2)",
+    "issues": [],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

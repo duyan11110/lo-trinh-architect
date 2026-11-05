@@ -1,0 +1,184 @@
+{
+  "id": "backend.l3.queue-backlog-metrics",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-10-15T23:30:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "At stage-3 POST /api/v1/orders completes when the api saves the order and its outbox row in one transaction; OutboxRelay, hosted in the api, publishes to RabbitMQ afterwards, and no step of the request waits for Notifications.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Infrastructure/EfOutbox.cs, DonHang.Messaging/OutboxRelay.cs, DonHang.Api/Program.cs (AddOutboxRelay); STAGE.md data flow",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 2,
+      "text": "RabbitMQ keeps a message in a queue until a consumer takes it; with Notifications stopped, order messages stay in notifications.order-events (durable queue, data in the rabbitmq-data volume).",
+      "kind": "behavior",
+      "source_hint": "RabbitMQ docs 'Queues'; examples/don-hang @ stage-3 docker-compose.yml lines 258-277; outputs/stage-3/scripts/backend/queue-backlog.txt",
+      "version_key": "rabbitmq",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 3,
+      "text": "The rabbitmq_prometheus plugin serves the broker's metrics in the Prometheus text format on port 15692.",
+      "kind": "number",
+      "source_hint": "RabbitMQ docs 'Monitoring with Prometheus and Grafana' (rabbitmq_prometheus, port 15692)",
+      "version_key": "rabbitmq",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 4,
+      "text": "By default the plugin's /metrics endpoint returns metrics aggregated across all queues, not one series per queue.",
+      "kind": "behavior",
+      "source_hint": "RabbitMQ docs 'Monitoring with Prometheus and Grafana' (aggregated vs per-object metrics; return_per_object_metrics default false)",
+      "version_key": "rabbitmq",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 5,
+      "text": "/metrics/detailed returns only the metric families (named groups of metrics) named in the family parameter; with queue_coarse_metrics, per-queue series with a queue label and the rabbitmq_detailed_ prefix, e.g. rabbitmq_detailed_queue_messages_ready.",
+      "kind": "syntax",
+      "source_hint": "RabbitMQ docs 'Monitoring with Prometheus and Grafana' (/metrics/detailed, family query parameter, queue_coarse_metrics)",
+      "version_key": "rabbitmq",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 6,
+      "text": "queue_messages_ready counts messages ready for delivery; queue_messages counts ready plus delivered-unacknowledged. Both gauges. With manual acks (Notifications: autoAck false) RabbitMQ removes a message only once the consumer acknowledges it.",
+      "kind": "behavior",
+      "source_hint": "RabbitMQ docs 'Monitoring with Prometheus and Grafana' metric table; 'Queues'; 'Consumer Acknowledgements'; DonHang.Notifications/OrderEventsConsumer.cs lines 42-55",
+      "version_key": "rabbitmq",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 7,
+      "text": "In a Prometheus scrape config, metrics_path replaces the default path /metrics and params adds URL query parameters to each scrape request.",
+      "kind": "syntax",
+      "source_hint": "Prometheus docs 'Configuration' (scrape_config: metrics_path default /metrics, params)",
+      "version_key": "prometheus",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 8,
+      "text": "prometheus.yml at stage-3 (lines 13-23) has a job rabbitmq scraping rabbitmq:15692 with metrics_path /metrics/detailed and params family: [queue_coarse_metrics].",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: deploy/monitoring/prometheus.yml lines 13-23",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 9,
+      "text": "The official rabbitmq image used (rabbitmq:4.1.8-management-alpine) has the rabbitmq_prometheus plugin enabled; compose publishes only port 15672 to the host, so 15692 is reached only on the donhang network.",
+      "kind": "behavior",
+      "source_hint": "Docker Official Image 'rabbitmq' Dockerfile (rabbitmq-plugins enable rabbitmq_prometheus); examples/don-hang @ stage-3 docker-compose.yml lines 265-282",
+      "version_key": "rabbitmq",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 10,
+      "text": "donhang-api.json at stage-3 adds panels 'Order emails waiting in RabbitMQ' (rabbitmq_detailed_queue_messages_ready{queue=\"notifications.order-events\"}) and 'Dead-lettered order messages' (rabbitmq_detailed_queue_messages{queue=\"notifications.order-events.dead\"}), neither using rate().",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: deploy/monitoring/grafana/dashboards/donhang-api.json lines 193-282",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 11,
+      "text": "When a consumer works off a burst the waiting line rises and comes back down; a line that only rises means the consumer is stopped or slower than the arrival rate.",
+      "kind": "opinion",
+      "source_hint": "follows from claim 6 (gauge of ready messages); RabbitMQ docs 'Monitoring' (queue depth)",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 12,
+      "text": "No code consumes notifications.order-events.dead, so its total equals its ready count; any value above zero warrants a person looking, because nothing retries dead-lettered messages automatically in Đơn Hàng.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Notifications/RabbitMqTopology.cs (only declaration of the dead queue); donhang-api.json panel 6 description",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 13,
+      "text": "queue-backlog.sh 27-48: waits for 0, stops notifications (trap ... EXIT restarts it when the script exits), POSTs 5 orders with a token from keycloak_access_token (scripts/lib/keycloak.sh), waits for 5, prints the 5xx change; after 48 restarts and waits for 0.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: scripts/backend/queue-backlog.sh lines 8-54; scripts/lib/keycloak.sh lines 38-41; bash manual 'trap' (EXIT)",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 14,
+      "text": "Captured output at stage-3: five 201 responses, waiting count 5, 5xx change 0, and after Notifications restarts the count is 0.",
+      "kind": "behavior",
+      "source_hint": "examples/don-hang @ stage-3: outputs/stage-3/scripts/backend/queue-backlog.txt",
+      "version_key": "rabbitmq",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 15,
+      "text": "http_requests_received_total is the api's request counter from prometheus-net, with a code label holding the status code.",
+      "kind": "behavior",
+      "source_hint": "prometheus-net README 'ASP.NET Core HTTP request metrics'; examples/don-hang @ stage-3 scripts/backend/queue-backlog.sh line 16",
+      "version_key": "prometheus_net",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 16,
+      "text": "PromQL rate() is meant for counters: it treats any decrease as a counter reset and counts the value after the drop as growth from zero, so its result is never negative and cannot show a gauge going down.",
+      "kind": "behavior",
+      "source_hint": "Prometheus docs 'Query functions' (rate: should only be used with counters; breaks in monotonicity treated as counter resets)",
+      "version_key": "prometheus",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 17,
+      "text": "A container listed as running by docker compose ps says nothing about whether Notifications consumes its queue as fast as messages arrive.",
+      "kind": "opinion",
+      "source_hint": "Docker docs 'docker compose ps' (state of containers); RabbitMQ docs 'Monitoring'",
+      "needs_verification": false,
+      "section": 6
+    },
+    {
+      "n": 18,
+      "text": "Try it: with the monitoring profile up, queue-backlog.sh prints five '-> 201', value 5, 5xx 0, then value 0, and the waiting panel steps up to 5 and back to 0 while the 5xx panel stays flat.",
+      "kind": "behavior",
+      "source_hint": "examples/don-hang @ stage-3: scripts/backend/queue-backlog.sh line 3; outputs/stage-3/scripts/backend/queue-backlog.txt; prometheus.yml scrape_interval 5s",
+      "needs_verification": true,
+      "section": 7
+    },
+    {
+      "n": 19,
+      "text": "Situation at stage-3: Mailpit is the lab's fake mail server whose web page shows the emails it receives; the api panels (request rate, 5xx, p95) do not move when Notifications stops; the queue panels are separate.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: docker-compose.yml lines 244-256 (mailpit); donhang-api.json panels; outputs/stage-3/scripts/backend/queue-backlog.txt",
+      "needs_verification": true,
+      "section": 2
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [1, 2, 3, 4, 5],
+    "outline_items_missing": [],
+    "beyond_scope": [
+      "one sentence distinguishing messages_ready from messages (both panels use different metrics; no prefetch or consumer count taught)"
+    ]
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1520,
+    "notes": "apply-review: situation limited to the api panels watched; Mailpit and docker compose ps added; diagram scrapes a broker node; relay, acknowledge, family, trap, keycloak_access_token explained in plain words; dead panel metric reason; rate() reset sentence; Payments dropped (quiz misconception strings updated). Cut Grafana sentence, moved $waiting text above script. Claims 1,5,6,12,13,16,17 updated, 19 added."
+  }
+}

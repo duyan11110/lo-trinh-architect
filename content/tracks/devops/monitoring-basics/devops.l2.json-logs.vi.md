@@ -15,8 +15,8 @@ vocab: [log-level]
 example_tag: stage-2
 versions_used: [aspnetcore, docker]
 content_version: 1
-status: approved
-approved_by: auto
+status: published
+approved_by: owner
 reviewed_at: "2026-09-29T17:36:27+07:00"
 ---
 

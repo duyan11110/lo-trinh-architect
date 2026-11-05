@@ -1,0 +1,136 @@
+{
+  "id": "design.l3.read-model",
+  "technical": {
+    "reviewed_at": "2026-10-15T15:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "refs apply-simplified-microservice-cqrs-ddd-patterns.md:24 \"It uses a single data source or database, but two logical models plus DDD patterns for the transactional domain\"; cqrs-microservice-reads.md:28 \"the returned type can be specifically made for the clients, based on the data returned by the queries\". Supports a read side shaped for its query and living in the same database. 'Written from the write side's changes' is the course glossary definition.",
+        "source": "refs/dotnet-docs/docs/architecture/microservices/microservice-ddd-cqrs-patterns/apply-simplified-microservice-cqrs-ddd-patterns.md; cqrs-microservice-reads.md"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Migrations/20261005224255_AddOrderStatusHistory.Designer.cs (model as stage-2 left it plus the new table) maps orders as customer_id (:132), idempotency_key (:136), placed_at (:140), status (:145) besides id; placed_at is the only time column. Order.Status has a private setter changed in place by each method (Entities.cs:34, 113-175). git show stage-2: not runnable in this session.",
+        "source": "examples/don-hang DonHang.Infrastructure/Migrations/20261005224255_AddOrderStatusHistory.Designer.cs:125-160; DonHang.Domain/Entities.cs"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "OrderService.cs:59-68: `var order = await repository.FindAsync(orderId) ?? throw ...; order.Cancel(); await events.DispatchAsync(order); await repository.SaveChangesAsync();` no reference to history. Entities.cs:121-133: Cancel() sets `Status = \"cancelled\"`, then adds OrderCancelled. Round 2 (s4 now starts at the controller): OrdersController.cs @ stage-3, PATCH {id:int}/cancel calls `orderService.CancelOrderAsync(id)`.",
+        "source": "examples/don-hang DonHang.Domain/OrderService.cs:59-68; DonHang.Domain/Entities.cs:121-133; DonHang.Api/Controllers/OrdersController.cs (Cancel)"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "RecordOrderStatusHistory.cs:13-15 implements IDomainEventHandler<> for OrderPlaced, OrderCancelled, OrderShipped, OrderRefundRequested, OrderRefunded, OrderRefundFailed. ServiceCollectionExtensions.cs:36-41: six `services.AddScoped<IDomainEventHandler<...>, RecordOrderStatusHistory>();`. DomainEvents.cs:15-27 declares exactly these six; Entities.cs adds them at lines 87, 132, 142, 155, 165, 176.",
+        "source": "examples/don-hang DonHang.Infrastructure/RecordOrderStatusHistory.cs:13-15; ServiceCollectionExtensions.cs:36-41; DonHang.Domain/DomainEvents.cs:15-27"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Round 2. tools/extract-code DonHang.Domain/Entities.cs --tag stage-3: the public Order constructor sets `Status = \"new\";` then `domainEvents.Add(new OrderPlaced(this, placedAt));`. RecordOrderStatusHistory.cs:17-28 (extract-code, stage-3): placed/new, cancelled/cancelled, shipped/shipped, refund-requested/refunding, refunded/cancelled, refund-failed/paid. AddRow (30-40) only calls `db.OrderStatusHistory.Add(new OrderStatusHistoryEntry {...})` and returns `Task.CompletedTask`.",
+        "source": "examples/don-hang @ stage-3 DonHang.Domain/Entities.cs (Order constructor); DonHang.Infrastructure/RecordOrderStatusHistory.cs:17-40"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Order (Entities.cs:29-178) has Id, CustomerId, PlacedAt, Status, Items, DomainEvents, IdempotencyKey, Version, Customer; none refers to history. OrderStatusHistoryEntry.cs:5-6: \"Only RecordOrderStatusHistory writes these and only EfOrderHistory reads them; Order has no property pointing here.\" DonHangDbContext.cs:114 `e.HasOne(h => h.Order).WithMany()` (no inverse navigation).",
+        "source": "examples/don-hang DonHang.Domain/Entities.cs; DonHang.Infrastructure/OrderStatusHistoryEntry.cs; DonHangDbContext.cs:103-114"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "refs efcore saving/transactions.md:17 \"By default, if the database provider supports transactions, all changes in a single call to `SaveChanges` are applied in a transaction. If any of the changes fail, then the transaction is rolled back and none of the changes are applied to the database.\"",
+        "source": "refs/efcore-docs/entity-framework/core/saving/transactions.md"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "PostgreSQL 17, 13.2.1 (WebFetch, returned as a quote): \"Read Committed is the default isolation level in PostgreSQL. When a transaction uses this isolation level, a SELECT query (without a FOR UPDATE/SHARE clause) sees only data committed before the query began\". Capture order-history.txt:11-13 shows the cancelled row in the GET right after `cancel -> 200`.",
+        "source": "https://www.postgresql.org/docs/17/transaction-iso.html; examples/don-hang outputs/stage-3/scripts/design/order-history.txt"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Round 2: claim now matches the round-1 suggested_text; the no-id clause is gone from s5. refs related-data.md:36 \"If you change the navigation property of an entity, the corresponding changes will be made to the foreign key column in the database.\" Code (extract-code stage-3, RecordOrderStatusHistory.cs:34): `Order = domainEvent.Order, // EF Core fills in order_id, even for a new order`; no OrderId is assigned.",
+        "source": "refs/efcore-docs/entity-framework/core/saving/related-data.md:36; examples/don-hang @ stage-3 DonHang.Infrastructure/RecordOrderStatusHistory.cs:30-40"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "OrdersController.cs:83-95: `[HttpGet(\"{id:int}/history\")]`, `var order = await repository.FindForReadingAsync(id); if (order is null) return NotFound();`, `AuthorizeAsync(User, order, \"OrderOwner\")` -> `Forbid()`, then `history.ListAsync(id)` mapped to `OrderStatusChangeDto(c.Event, c.Status, c.OccurredAt)`. Get (:65-76) uses the same FindForReadingAsync; EfOrderRepository.cs:15-16 uses `AsNoTracking()`.",
+        "source": "examples/don-hang DonHang.Api/Controllers/OrdersController.cs:65-95; DonHang.Infrastructure/EfOrderRepository.cs:15-16"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "EfOrderHistory.cs:12-17: `db.OrderStatusHistory.Where(row => row.OrderId == orderId).OrderBy(row => row.Id).Select(row => new OrderStatusChange(row.Event, row.Status, row.OccurredAt)).ToListAsync();`. id is IdentityByDefaultColumn (AddOrderStatusHistory.cs:19-20), so id order follows insertion.",
+        "source": "examples/don-hang DonHang.Infrastructure/EfOrderHistory.cs:10-17; Migrations/20261005224255_AddOrderStatusHistory.cs:19-20"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "refs efcore querying/tracking.md:67 \"If the result set doesn't contain any entity types, then no tracking is done.\" OrderStatusChange (DonHang.Domain/OrderStatusChange.cs:6) is a record of three scalars, not a mapped entity type.",
+        "source": "refs/efcore-docs/entity-framework/core/querying/tracking.md"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "AddOrderStatusHistory.cs:47-50: `INSERT INTO order_status_history (order_id, event, status, occurred_at) SELECT id, 'placed', 'new', placed_at FROM orders ORDER BY id`. With the qualifier 'from orders' the second sentence matches the orders columns (claim 2).",
+        "source": "examples/don-hang DonHang.Infrastructure/Migrations/20261005224255_AddOrderStatusHistory.cs:42-50"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "Round 2, read at the tag via extract-code. order-history.sh: `customer_3=$(keycloak_access_token dung.le@example.com)` (the script gets the token); prints `SELECT id, customer_id, status FROM orders WHERE id = 7`, GET history of 7, POST then PATCH cancel, GET history of the new order, `SELECT event, status FROM order_status_history WHERE order_id = $order`. Output: `7 | 3 | shipped`; `[{\"event\":\"placed\",\"status\":\"new\",...}]`; `cancel -> 200`; placed/new, cancelled/cancelled; `(2 rows)`. Not re-run live.",
+        "source": "examples/don-hang @ stage-3 scripts/design/order-history.sh; outputs/stage-3/scripts/design/order-history.txt"
+      },
+      {
+        "n": 15,
+        "verdict": "not-needed",
+        "evidence": "Opinion with its condition in the text (s6 myth 1: \"is an option when writes must not wait for it; readers then see the change only after the message is handled\"). Its factual half rests on claims 7 and 8.",
+        "source": "lesson s6; claims 7, 8"
+      },
+      {
+        "n": 16,
+        "verdict": "not-needed",
+        "evidence": "Design opinion tied to a stated condition (\"no rule of `Order` reads the history\"); premise borne out: no method of Order reads past statuses (Entities.cs:109-177 check only the current Status).",
+        "source": "examples/don-hang DonHang.Domain/Entities.cs:109-177"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "Entities.cs:109-114 MarkPaid sets `Status = \"paid\"` and calls no `domainEvents.Add`; RecordOrderStatusHistory.cs:13-15 handles only the six event types. Grep: MarkPaid is called only from tests and samples, not from production code.",
+        "source": "examples/don-hang DonHang.Domain/Entities.cs:109-114; DonHang.Infrastructure/RecordOrderStatusHistory.cs:13-15"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "OrderService.cs: `await events.DispatchAsync(order); await repository.SaveChangesAsync();` at 49-50, 65-66, 77-78, 92-93, 105-106, 117-118 (all six methods). DomainEventDispatcher.DispatchAsync (IDomainEventHandler.cs:26-54) is the only caller of the handlers. Round 2 opened: extract-code stage-3 for both blocks, Entities.cs, OrdersController.cs, order-history.sh/.txt; refs related-data.md.",
+        "source": "examples/don-hang DonHang.Domain/OrderService.cs; DonHang.Domain/IDomainEventHandler.cs:18-55"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-15T16:00:00+07:00",
+    "reviewer": "review-junior (prompt 05), claude-opus-5-5, round 2 targeted re-review",
+    "issues": [],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

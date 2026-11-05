@@ -1,0 +1,311 @@
+{
+  "lesson": "backend.l3.payments-service",
+  "stage": 3,
+  "questions": [
+    {
+      "id": "backend.l3.payments-service.q1",
+      "type": "single",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["backend.consistency.distributed"],
+      "section_ref": 5,
+      "question": {
+        "en": "At stage-3 a teammate sees `Host=db` in the `payments` connection string in `docker-compose.yml`, the server that also holds `donhang`, and plans to let Payments update `orders` directly. Which reading of the code is right?",
+        "vi": "Ở stage-3, một đồng nghiệp thấy `Host=db` trong connection string của `payments` ở `docker-compose.yml`, cũng là server chứa `donhang`, và định cho Payments sửa thẳng `orders`. Cách đọc code nào đúng?"
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "The server is shared but the database is not: Payments names its own, and its DbContext has no `orders` mapping.",
+          "vi": "Server dùng chung nhưng database thì không: Payments ghi tên database riêng, và DbContext của nó không có mapping nào cho `orders`."
+        },
+        {
+          "id": "b",
+          "en": "Same server, same data: `Host=db` already reaches `orders`, so Payments only needs to map an `Order` class.",
+          "vi": "Cùng server, cùng dữ liệu: `Host=db` đã tới được `orders`, nên Payments chỉ cần map thêm một class `Order`.",
+          "misconception": "Payments can still set the order's status in Đơn Hàng's database, since both services use PostgreSQL."
+        },
+        {
+          "id": "c",
+          "en": "Separate servers: `payments` reaches PostgreSQL on a host of its own, so `orders` is out of its reach.",
+          "vi": "Khác server: `payments` kết nối tới PostgreSQL trên một host riêng, nên không với tới được `orders`."
+        },
+        {
+          "id": "d",
+          "en": "Separate rights: `payments` can see `orders`, but its PostgreSQL user is not allowed to write to it.",
+          "vi": "Khác quyền: `payments` nhìn thấy được `orders`, nhưng user PostgreSQL của nó không được phép ghi vào đó."
+        }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "`Host=db` names the server, and `Database=donhang_payments` names a separate database on it. `PaymentsDbContext` maps only `payments`, `outbox_messages` and `inbox_messages`, so there is no `orders` table in Payments' reach.",
+          "b": "Seeing the same host does suggest the same data, and both services do use PostgreSQL. But a server holds several databases, and this string names `donhang_payments`; writing `orders` from Payments would also skip the rules in the API's `Order` class.",
+          "c": "A service with its own database can sound like a service with its own server. But the string says `Host=db`, the same server that holds `donhang`; the separation is the database name, not the server.",
+          "d": "Keeping access apart through user rights is a reasonable guess. But the string uses the same user, `donhang`, that the `api` service uses for `donhang`; what keeps `orders` out is that Payments connects to another database and maps no such table."
+        },
+        "vi": {
+          "correct": "`Host=db` chỉ server, còn `Database=donhang_payments` chỉ một database riêng trên server đó. `PaymentsDbContext` chỉ map `payments`, `outbox_messages` và `inbox_messages`, nên Payments không với tới bảng `orders` nào.",
+          "b": "Thấy cùng host thì dễ nghĩ là cùng dữ liệu, và hai service đúng là đều dùng PostgreSQL. Nhưng một server chứa nhiều database, và chuỗi này ghi `donhang_payments`; ghi `orders` từ Payments còn bỏ qua các quy tắc trong class `Order` của API.",
+          "c": "Service có database riêng nghe như service có server riêng. Nhưng chuỗi ghi `Host=db`, đúng server chứa `donhang`; chỗ tách nhau là tên database, không phải server.",
+          "d": "Tách quyền truy cập bằng quyền của user là một phỏng đoán hợp lý. Nhưng chuỗi dùng cùng user `donhang` mà service `api` dùng cho `donhang`; điều giữ `orders` ở ngoài là Payments kết nối tới database khác và không map bảng nào như vậy."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.payments-service.q2",
+      "type": "truefalse",
+      "bloom": "analyze",
+      "difficulty": 4,
+      "skills": ["backend.consistency.distributed"],
+      "section_ref": 6,
+      "question": {
+        "en": "A teammate proposes that `POST /api/v1/orders/{id}/refund` call Payments over HTTP and wait for its answer, instead of saving an outbox row and answering `202`. Statement: refund requests would keep being accepted while Payments restarts for a deploy.",
+        "vi": "Một đồng nghiệp đề xuất cho `POST /api/v1/orders/{id}/refund` gọi Payments qua HTTP và chờ câu trả lời, thay vì lưu một dòng outbox rồi trả `202`. Nhận định: các yêu cầu hoàn tiền vẫn được nhận trong lúc Payments khởi động lại để deploy."
+      },
+      "options": [
+        {
+          "id": "a",
+          "polarity": "true",
+          "en": "True, because Payments is now a service of its own, so the API can simply call it and wait for the refund.",
+          "vi": "Đúng, vì giờ Payments là service riêng, nên API chỉ cần gọi nó và chờ việc hoàn tiền xong.",
+          "misconception": "Now that Payments is a service, the API can call it over HTTP and wait for the refund inside the customer's request."
+        },
+        {
+          "id": "b",
+          "polarity": "true",
+          "en": "True, because only Payments calls the gateway, so a failing gateway no longer touches the customer's request.",
+          "vi": "Đúng, vì chỉ Payments gọi cổng thanh toán, nên cổng thanh toán lỗi không còn ảnh hưởng tới request của khách."
+        },
+        {
+          "id": "c",
+          "polarity": "false",
+          "en": "False, because a waiting call fails whenever Payments is down, bringing back the wait the refund design rejected.",
+          "vi": "Sai, vì một lời gọi phải chờ sẽ lỗi mỗi khi Payments không chạy, đưa lại đúng kiểu chờ mà thiết kế hoàn tiền đã loại bỏ."
+        },
+        {
+          "id": "d",
+          "polarity": "false",
+          "en": "False, because calling Payments over HTTP would put the gateway's key back into the `api` service.",
+          "vi": "Sai, vì gọi Payments qua HTTP sẽ đưa key của cổng thanh toán trở lại service `api`."
+        }
+      ],
+      "answer": ["c"],
+      "explanation": {
+        "en": {
+          "correct": "With the outbox, the API saves its own change and answers `202` without Payments being up. A request that waits for Payments fails every time Payments is down, and the refund design (YC-7) requires refund requests to be accepted even while the gateway fails.",
+          "a": "A separate service with an address does invite a direct call. But waiting for it inside the request adds \"Payments is down\" to the ways a refund request fails, which the outbox exists to avoid.",
+          "b": "It is true that only Payments calls the gateway. But a waiting HTTP call to Payments would also wait for Payments' own work, so a slow or failing gateway would reach the customer's request again.",
+          "d": "Moving gateway work back into the API would indeed bring the key back. But calling Payments is not calling the gateway: the key would stay in `payments`; the problem is the wait, not the key."
+        },
+        "vi": {
+          "correct": "Với outbox, API lưu thay đổi của chính nó và trả `202` mà không cần Payments đang chạy. Một request chờ Payments sẽ lỗi mỗi khi Payments không chạy, trong khi thiết kế hoàn tiền (YC-7) yêu cầu yêu cầu hoàn tiền vẫn được nhận ngay cả khi cổng thanh toán lỗi.",
+          "a": "Một service riêng có địa chỉ riêng dễ khiến ta muốn gọi thẳng. Nhưng chờ nó ngay trong request sẽ thêm \"Payments không chạy\" vào các lý do khiến yêu cầu hoàn tiền thất bại, điều mà outbox sinh ra để tránh.",
+          "b": "Đúng là chỉ Payments gọi cổng thanh toán. Nhưng một lời gọi HTTP phải chờ Payments thì cũng chờ luôn phần việc của Payments, nên cổng thanh toán chậm hay lỗi lại chạm tới request của khách.",
+          "d": "Chuyển việc gọi cổng thanh toán về API thì đúng là sẽ đưa key trở lại. Nhưng gọi Payments không phải gọi cổng thanh toán: key vẫn nằm ở `payments`; vấn đề là việc chờ, không phải key."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.payments-service.q3",
+      "type": "multi",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["backend.consistency.distributed"],
+      "section_ref": 3,
+      "question": {
+        "en": "At stage-3 a customer's refund for order 7 goes through completely. Which statements about who changes what are true? Select all that apply.",
+        "vi": "Ở stage-3, yêu cầu hoàn tiền của khách cho đơn 7 được xử lý trọn vẹn. Những nhận định nào về việc ai thay đổi cái gì là đúng? Chọn tất cả các đáp án đúng."
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "`DonHang.Payments` saves the refund row, in `donhang_payments`.",
+          "vi": "`DonHang.Payments` lưu dòng hoàn tiền, trong `donhang_payments`."
+        },
+        {
+          "id": "b",
+          "en": "`DonHang.Api` changes order 7's status, in `donhang`.",
+          "vi": "`DonHang.Api` đổi trạng thái của đơn 7, trong `donhang`."
+        },
+        {
+          "id": "c",
+          "en": "`DonHang.Notifications` handles the customer's email.",
+          "vi": "`DonHang.Notifications` lo email gửi cho khách."
+        },
+        {
+          "id": "d",
+          "en": "`DonHang.Api` calls the gateway itself, since it accepted the customer's request.",
+          "vi": "`DonHang.Api` tự gọi cổng thanh toán, vì chính nó nhận yêu cầu của khách."
+        },
+        {
+          "id": "e",
+          "en": "Payments sends its answers through a broker of its own, apart from the RabbitMQ that Notifications uses.",
+          "vi": "Payments gửi câu trả lời qua một broker riêng của nó, tách khỏi RabbitMQ mà Notifications dùng.",
+          "misconception": "Each new service needs its own way of sending messages, so Payments brings a second broker."
+        }
+      ],
+      "answer": ["a", "b", "c"],
+      "explanation": {
+        "en": {
+          "correct": "Each piece of data has one owning service: the refund row belongs to Payments, the order's status to `DonHang.Api`, the email to Notifications. No one service changes all three, which is why a refund now spans three services.",
+          "d": "The service that accepts a request often does the work itself, as `DonHang.Api` did before the split. At stage-3, though, the `api` service has no gateway setting at all; only `payments` holds the address and key.",
+          "e": "A new service bringing its own tools sounds tidy. But Payments uses the same RabbitMQ and the shared `DonHang.Messaging` project; it adds only its own exchange, `donhang.payments`, and its own queues on that broker."
+        },
+        "vi": {
+          "correct": "Mỗi phần dữ liệu có một service sở hữu: dòng hoàn tiền thuộc Payments, trạng thái đơn thuộc `DonHang.Api`, email thuộc Notifications. Không service nào tự đổi được cả ba, nên giờ một lần hoàn tiền trải qua ba service.",
+          "d": "Service nhận request thường tự làm việc đó, như `DonHang.Api` từng làm trước khi tách. Nhưng ở stage-3, service `api` không có setting nào cho cổng thanh toán; chỉ `payments` giữ địa chỉ và key.",
+          "e": "Service mới mang theo công cụ riêng nghe có vẻ gọn. Nhưng Payments dùng cùng RabbitMQ và project dùng chung `DonHang.Messaging`; nó chỉ thêm exchange riêng, `donhang.payments`, và các queue riêng của nó trên broker đó."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.payments-service.q4",
+      "type": "order",
+      "bloom": "understand",
+      "difficulty": 2,
+      "skills": ["backend.consistency.distributed"],
+      "section_ref": 4,
+      "question": {
+        "en": "A customer asks for a refund of order 7. Put the steps by which the request reaches Payments in order.",
+        "vi": "Một khách yêu cầu hoàn tiền đơn 7. Sắp xếp các bước để yêu cầu này tới được Payments theo đúng thứ tự."
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "`RefundRequestedConsumer` acknowledges the message.",
+          "vi": "`RefundRequestedConsumer` xác nhận message."
+        },
+        {
+          "id": "b",
+          "en": "The relay publishes `order.refund-requested` to RabbitMQ.",
+          "vi": "Relay publish `order.refund-requested` lên RabbitMQ."
+        },
+        {
+          "id": "c",
+          "en": "`DonHang.Api` saves an `order.refund-requested` row in its outbox.",
+          "vi": "`DonHang.Api` lưu một dòng `order.refund-requested` vào outbox của nó."
+        },
+        {
+          "id": "d",
+          "en": "`RefundRequestedConsumer` saves the message id in Payments' inbox.",
+          "vi": "`RefundRequestedConsumer` lưu message id vào inbox của Payments."
+        }
+      ],
+      "answer": ["c", "b", "d", "a"],
+      "explanation": {
+        "en": {
+          "correct": "The request takes the same path order events take to Notifications: the API's outbox row comes first, then the relay publishes it to RabbitMQ. Payments' consumer saves the message id in its inbox, and acknowledges only after that save."
+        },
+        "vi": {
+          "correct": "Yêu cầu đi đúng con đường mà các sự kiện của đơn đi tới Notifications: dòng outbox của API có trước, rồi relay publish nó lên RabbitMQ. Consumer của Payments lưu message id vào inbox của nó, và chỉ xác nhận sau khi lưu xong."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.payments-service.q5",
+      "type": "single",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["backend.consistency.distributed"],
+      "section_ref": 5,
+      "question": {
+        "en": "Reviewing `DonHang.Payments/Program.cs`, a teammate asks why the new service needed no messaging code of its own. Which answer matches the file?",
+        "vi": "Khi review `DonHang.Payments/Program.cs`, một đồng nghiệp hỏi vì sao service mới không cần code gửi nhận message riêng. Câu trả lời nào khớp với file?"
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "It calls `AddRabbitMq` and `AddOutboxRelay` from `DonHang.Messaging`, as the API does, passing its own exchange.",
+          "vi": "Nó gọi `AddRabbitMq` và `AddOutboxRelay` từ `DonHang.Messaging`, như API làm, và truyền exchange riêng của nó."
+        },
+        {
+          "id": "b",
+          "en": "It brings a second broker for payment messages, so it only needs that broker's client settings.",
+          "vi": "Nó mang theo một broker thứ hai cho message thanh toán, nên chỉ cần setting client cho broker đó.",
+          "misconception": "Each new service needs its own way of sending messages, so Payments brings a second broker."
+        },
+        {
+          "id": "c",
+          "en": "It reads the API's `outbox_messages` table in `donhang` directly, so no message has to be sent.",
+          "vi": "Nó đọc thẳng bảng `outbox_messages` của API trong `donhang`, nên không message nào phải được gửi đi."
+        },
+        {
+          "id": "d",
+          "en": "It publishes straight into Notifications' queue, so it needs neither an outbox nor an exchange.",
+          "vi": "Nó publish thẳng vào queue của Notifications, nên không cần outbox lẫn exchange."
+        }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "`AddRabbitMq` and `AddOutboxRelay` come from the shared project `DonHang.Messaging`, the same calls `DonHang.Api` makes with `donhang.orders`. Payments passes `donhang.payments` and starts `RefundRequestedConsumer`, built like `OrderEventsConsumer`.",
+          "b": "A new kind of message can seem to call for a new channel. But Payments connects to the same RabbitMQ as every other service; here a second broker would be one more server to run, back up and watch, and Payments needs nothing the shared RabbitMQ cannot already do.",
+          "c": "Reading the outbox directly would skip a hop, which sounds efficient. But Payments connects to `donhang_payments` and maps only its own outbox and inbox tables; the API's outbox reaches it only as messages.",
+          "d": "Sending to the reader's queue directly sounds like the shortest path. But Payments has its own outbox, published by its own relay to `donhang.payments`, so a missed publish is retried like the API's."
+        },
+        "vi": {
+          "correct": "`AddRabbitMq` và `AddOutboxRelay` đến từ project dùng chung `DonHang.Messaging`, đúng những lời gọi mà `DonHang.Api` dùng với `donhang.orders`. Payments truyền `donhang.payments` và chạy `RefundRequestedConsumer`, được dựng giống `OrderEventsConsumer`.",
+          "b": "Một loại message mới có vẻ cần một kênh mới. Nhưng Payments kết nối tới cùng RabbitMQ như mọi service khác; ở đây một broker thứ hai là thêm một server phải chạy, sao lưu và theo dõi, trong khi Payments không cần điều gì mà RabbitMQ dùng chung chưa làm được.",
+          "c": "Đọc thẳng outbox thì bớt được một bước, nghe có vẻ hiệu quả. Nhưng Payments kết nối tới `donhang_payments` và chỉ map bảng outbox và inbox của chính nó; outbox của API chỉ tới được nó dưới dạng message.",
+          "d": "Gửi thẳng vào queue của bên đọc nghe như đường ngắn nhất. Nhưng Payments có outbox riêng, được relay riêng của nó publish lên `donhang.payments`, nên một lần publish bị lỡ sẽ được thử lại như ở API."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.payments-service.q6",
+      "type": "scenario",
+      "bloom": "evaluate",
+      "difficulty": 4,
+      "skills": ["backend.consistency.distributed"],
+      "section_ref": 6,
+      "context": {
+        "en": "It is stage-3. Customers complain that after asking for a refund they only see `202` and must check back later. The person who decides the product's features asks for the refund result inside the same response. The refund design still requires that a refund request be accepted even while the gateway fails (YC-7). Payments is redeployed every week, and the team wants the gateway's key to stay in one service.",
+        "vi": "Đang ở stage-3. Khách phàn nàn rằng sau khi yêu cầu hoàn tiền họ chỉ thấy `202` và phải quay lại xem sau. Người quyết định tính năng của sản phẩm muốn có kết quả hoàn tiền ngay trong cùng response. Thiết kế hoàn tiền vẫn yêu cầu yêu cầu hoàn tiền phải được nhận ngay cả khi cổng thanh toán lỗi (YC-7). Payments được deploy lại hằng tuần, và team muốn key của cổng thanh toán chỉ nằm ở một service."
+      },
+      "question": {
+        "en": "Which response to that request fits best?",
+        "vi": "Cách đáp lại yêu cầu đó nào phù hợp nhất?"
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "Keep the outbox message and the `202`, and show the result later, once Payments' answer reaches `DonHang.Api`.",
+          "vi": "Giữ message qua outbox và `202`, rồi hiển thị kết quả sau, khi câu trả lời của Payments tới `DonHang.Api`."
+        },
+        {
+          "id": "b",
+          "en": "Have the endpoint call Payments over HTTP and wait for its answer before responding.",
+          "vi": "Cho endpoint gọi Payments qua HTTP và chờ câu trả lời rồi mới phản hồi.",
+          "misconception": "Now that Payments is a service, the API can call it over HTTP and wait for the refund inside the customer's request."
+        },
+        {
+          "id": "c",
+          "en": "Give the `api` service the gateway settings and call the gateway inside the request.",
+          "vi": "Cho service `api` các setting của cổng thanh toán và gọi cổng thanh toán ngay trong request."
+        },
+        {
+          "id": "d",
+          "en": "Add a second broker just for refund messages, so they travel apart from order events.",
+          "vi": "Thêm một broker thứ hai chỉ cho message hoàn tiền, để chúng đi tách khỏi các sự kiện của đơn.",
+          "misconception": "Each new service needs its own way of sending messages, so Payments brings a second broker."
+        }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "YC-7 rules out any answer that waits for the gateway, and the weekly deploys make waiting for Payments fail too. Keeping the outbox path accepts every request; the result can be shown later, when Payments' answer arrives on `orders.payment-events`.",
+          "b": "Waiting for Payments looks like the direct way to give the result at once. But each Payments deploy would then fail refund requests, and the wait would also cover the gateway. It fits only when a refund request may fail whenever Payments or the gateway is down.",
+          "c": "Skipping Payments looks fastest, and the API used to work this way. But it puts the key back in every copy of the API and still waits for the gateway, against YC-7. It fits only when the key may live in the API, as before the split.",
+          "d": "Separating refund traffic sounds like it could speed things up. But it changes nothing about the wait customers complain about, and adds a server to run, back up and watch. It fits only when the shared broker cannot do something Payments needs."
+        },
+        "vi": {
+          "correct": "YC-7 loại mọi cách phải chờ cổng thanh toán, và việc deploy hằng tuần khiến chờ Payments cũng sẽ lỗi. Giữ đường outbox thì mọi yêu cầu đều được nhận; kết quả có thể hiển thị sau, khi câu trả lời của Payments tới `orders.payment-events`.",
+          "b": "Chờ Payments có vẻ là cách thẳng nhất để trả kết quả ngay. Nhưng khi đó mỗi lần deploy Payments sẽ làm yêu cầu hoàn tiền thất bại, và việc chờ còn trùm lên cả cổng thanh toán. Chỉ hợp khi chấp nhận yêu cầu hoàn tiền thất bại mỗi khi Payments hay cổng thanh toán không chạy.",
+          "c": "Bỏ qua Payments trông nhanh nhất, và API từng làm vậy. Nhưng nó đưa key trở lại mọi bản chạy của API và vẫn phải chờ cổng thanh toán, trái với YC-7. Chỉ hợp khi key được phép nằm trong API, như trước khi tách.",
+          "d": "Tách luồng message hoàn tiền nghe như có thể nhanh hơn. Nhưng nó không đổi gì ở việc chờ mà khách phàn nàn, lại thêm một server phải chạy, sao lưu và theo dõi. Chỉ hợp khi broker dùng chung không làm được điều Payments cần."
+        }
+      }
+    }
+  ]
+}

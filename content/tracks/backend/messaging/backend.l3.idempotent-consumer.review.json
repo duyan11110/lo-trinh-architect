@@ -1,0 +1,129 @@
+{
+  "id": "backend.l3.idempotent-consumer",
+  "technical": {
+    "reviewed_at": "2026-10-14T23:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "stage-3 DonHang.Messaging/RabbitMqPublisher.cs PublishAsync: `MessageId = message.Id.ToString(),` (header comment: \"Only OutboxRelay calls it.\"); OutboxRelay.RelayDueAsync calls publisher.PublishAsync(message, ...) per outbox row. DonHang.Tests/Messaging/OutboxRelayTests.cs:38 asserts `Assert.Equal(row.Id.ToString(), delivered.BasicProperties.MessageId)`. OutboxMessage.cs:7: \"Id is new for every message and travels with it as its MessageId\".",
+        "source": "examples/don-hang @ stage-3: DonHang.Messaging/RabbitMqPublisher.cs, OutboxRelay.cs, OutboxMessage.cs, DonHang.Tests/Messaging/OutboxRelayTests.cs"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Round 2. RabbitMQ confirms: manual-ack deliveries \"not acked\" are \"automatically requeued\" on channel/connection close; \"Positive acknowledgements simply instruct RabbitMQ to record a message as delivered and can be discarded\" (so ack-first then stop loses it). OutboxRelay.RelayDueAsync sets PublishedAt after PublishAsync, commits in finally (\"A crash after a confirm and before the commit publishes that row again\"); ClaimDueAsync selects only `WHERE published_at IS NULL`, so recording it first then stopping never publishes the row.",
+        "source": "https://www.rabbitmq.com/docs/confirms; examples/don-hang: DonHang.Messaging/OutboxRelay.cs, DonHang.Notifications/OrderEventsConsumer.cs"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Round 2 (lines 100-101 added). Lesson block = stage-3 OrderEventsConsumer.cs:89-113 (round 1 extract-code, block text unchanged). Numbering from 89: 98 Guid.TryParse/PoisonMessageException, 100 `using var scope = scopeFactory.CreateScope();`, 101 `GetRequiredService<NotificationsDbContext>()`, 102 InboxMessages.Add, 103 Notifications.Add, 106 SaveChangesAsync, 109 catch (DbUpdateException ex) when (Inbox.IsDuplicate(ex)), 111 LogInformation skip; no rethrow.",
+        "source": "examples/don-hang @ stage-3: DonHang.Notifications/OrderEventsConsumer.cs:89-113"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "refs/efcore-docs transactions.md:17: \"By default, if the database provider supports transactions, all changes in a single call to `SaveChanges` are applied in a transaction. If any of the changes fail, then the transaction is rolled back and none of the changes are applied to the database.\" HandleAsync opens no explicit transaction, so the default applies.",
+        "source": "refs/efcore-docs/entity-framework/core/saving/transactions.md (Default transaction behavior)"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "PG 17 ddl-constraints: a primary key \"requires that the values be both unique and not null\"; indexes-unique: \"When an index is declared unique, multiple table rows with equal indexed values are not allowed.\" errcodes-appendix: `23505 unique_violation`. tutorial-transactions: \"a transaction block that was put in aborted state by the system due to an error\". Migration InitialCreate: PrimaryKey(\"PK_inbox_messages\", x => x.message_id).",
+        "source": "https://www.postgresql.org/docs/17/ddl-constraints.html; /docs/17/indexes-unique.html; /docs/17/errcodes-appendix.html; /docs/17/tutorial-transactions.html"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "stage-3 DonHang.Messaging/Inbox.cs: `ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation } postgres && postgres.ConstraintName == \"PK_inbox_messages\"`. Constraint name matches DonHang.Notifications/Migrations/20261005232044_InitialCreate.cs `table.PrimaryKey(\"PK_inbox_messages\", x => x.message_id)`.",
+        "source": "examples/don-hang @ stage-3: DonHang.Messaging/Inbox.cs; DonHang.Notifications/Migrations/20261005232044_InitialCreate.cs"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "OrderEventsConsumer.OnReceivedAsync (subscribed via `consumer.ReceivedAsync += (_, delivery) => OnReceivedAsync(channel, delivery)`): `await HandleAsync(...); await channel.BasicAckAsync(delivery.DeliveryTag, multiple: false);` inside try; `catch (PoisonMessageException)` -> BasicRejectAsync(requeue: false); `catch (Exception)` -> BasicNackAsync(requeue: true). No ack on any exception path. Supports §5 naming OnReceivedAsync as the method that acknowledges.",
+        "source": "examples/don-hang @ stage-3: DonHang.Notifications/OrderEventsConsumer.cs (OnReceivedAsync)"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "tools/extract-code NotificationsDbContext.cs --tag stage-3 --lines 34-45 matches; line 42 `e.HasKey(m => m.MessageId);`, line 43 `HasColumnName(\"message_id\")`. File header: \"The database donhang_notifications, which only this service uses: the email jobs, and the ids of the messages\"; same context maps `notifications`. docker-compose.yml: `ConnectionStrings__Default: \"Host=db;Database=donhang_notifications;...\"`.",
+        "source": "examples/don-hang @ stage-3: DonHang.Notifications/NotificationsDbContext.cs; docker-compose.yml:316"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "RabbitMQ publishers doc: Message ID property = \"Arbitrary message ID\", not required; no broker use stated. Reliability guide: \"consumer applications will need to perform deduplication or handle incoming messages in an idempotent manner\"; confirms doc: \"consumers must be prepared to handle redeliveries\". Execution: outputs/stage-3/scripts/backend/duplicate-message.txt shows both publishes with one id print `routed: true`.",
+        "source": "https://www.rabbitmq.com/docs/publishers; https://www.rabbitmq.com/docs/reliability; https://www.rabbitmq.com/docs/confirms; examples/don-hang @ stage-3: outputs/stage-3/scripts/backend/duplicate-message.txt"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "stage-3 OrderEventsConsumer.SubjectFor: \"order.placed\" => \"order placed\", \"order.cancelled\", \"order.shipped\", \"order.refund-requested\", \"order.refunded\", \"order.refund-failed\"; default throws PoisonMessageException. Six keys, three of them refund keys, as the lesson says.",
+        "source": "examples/don-hang @ stage-3: DonHang.Notifications/OrderEventsConsumer.cs (SubjectFor)"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "OrderEventsConsumer only adds rows (NewEmail sets Status = \"pending\"); no IEmailSender use. NotificationSender.SendOneAsync: `await email.SendAsync(...)` then `notification.Status = \"sent\"`, saved later in queue.CompleteAsync; comment: \"(1) send the email, (2) mark the row sent, (3) save it in CompleteAsync ... at least once, never lost.\"",
+        "source": "examples/don-hang @ stage-3: DonHang.Notifications/OrderEventsConsumer.cs, NotificationSender.cs"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "scripts/backend/duplicate-message.sh: publish() posts `routing_key: \"order.shipped\"`, orderId 2, `properties: {message_id: $id, delivery_mode: 2}` to `http://rabbitmq:15672/api/exchanges/%2F/donhang.orders/publish`, prints `routed: \\(.routed)`; called twice with one $message_id; `sleep 2`; lists notifications since $started; counts inbox_messages with that id. Comment: \"as OutboxRelay would send it\" supports §7's reworded \"straight to RabbitMQ, the way the relay would\".",
+        "source": "examples/don-hang @ stage-3: scripts/backend/duplicate-message.sh"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Captured output at the tag, outputs/stage-3/scripts/backend/duplicate-message.txt: \"  routed: true\" twice, then under email jobs \"2 | order shipped\" (one line), then under inbox_messages count \"1\". Matches the lesson's expected result exactly.",
+        "source": "examples/don-hang @ stage-3: outputs/stage-3/scripts/backend/duplicate-message.txt"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "Lesson wording (§4) is conditional on the setup, not a ranking: ids kept in Redis make \"two separate writes\". EF Core transaction covers \"all changes in a single call to SaveChanges\" on one database connection (refs/efcore-docs transactions.md:17); a Redis write is outside it, so either write order leaves a crash window (id-first loses, effect-first repeats). Supported as written.",
+        "source": "refs/efcore-docs/entity-framework/core/saving/transactions.md"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-14T23:45:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation, round 2)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 1,
+        "kind": "term",
+        "text": "New in round 2 (changed bullet). The bullet now tells me when the relay sets `published_at`, which fixes the round-1 major, but never says what the relay is. I can only guess from the known term 'outbox' (messages saved to publish later) that the relay is what publishes outbox rows. It also points to 'the lesson before it', which is not a prereq, so I cannot look it up.",
+        "quote": "From the lesson before it, you also know that the relay sets `published_at` only after RabbitMQ's confirm, so a stop between the two publishes the row again.",
+        "fix": "Change 'the relay sets' to 'the relay, which publishes the outbox's unpublished rows, sets', so the bullet says what the relay does without needing a lesson I have not read."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "text": "New in round 2 (changed paragraph). The first sentence says the relay repeats a row when it stops 'between RabbitMQ's confirm and its commit', but the prereq bullet and the next sentence talk about recording `published_at`. I paused to check whether 'its commit' and 'records `published_at`' are the same step.",
+        "quote": "The relay publishes a row again when it stops between RabbitMQ's confirm and its commit.",
+        "fix": "Replace 'and its commit' with 'and recording `published_at`', matching the wording in 'Before you start' and in the next sentence."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

@@ -15,8 +15,8 @@ vocab: [image-pull-policy]
 example_tag: stage-2
 versions_used: [kubernetes, ghcr]
 content_version: 1
-status: approved
-approved_by: auto
+status: published
+approved_by: owner
 reviewed_at: "2026-10-04T00:24:10+07:00"
 ---
 

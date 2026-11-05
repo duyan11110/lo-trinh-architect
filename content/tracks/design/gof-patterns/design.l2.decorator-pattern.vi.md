@@ -15,8 +15,8 @@ vocab: [decorator-pattern]
 example_tag: stage-2
 versions_used: [dotnet, aspnetcore, git]
 content_version: 1
-status: approved
-approved_by: auto
+status: published
+approved_by: owner
 reviewed_at: "2026-09-29T14:28:17+07:00"
 ---
 

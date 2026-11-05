@@ -1,0 +1,321 @@
+{
+  "lesson": "design.l3.event-sourcing",
+  "stage": 3,
+  "questions": [
+    {
+      "id": "design.l3.event-sourcing.q1",
+      "type": "single",
+      "bloom": "understand",
+      "difficulty": 2,
+      "skills": ["design.event-sourcing.streams"],
+      "section_ref": 3,
+      "question": {
+        "en": "Suppose `Order` is moved to event sourcing. A use case then needs order 5's current status to check a rule. Where does that status come from?",
+        "vi": "Giả sử `Order` được chuyển sang event sourcing. Sau đó một use case cần trạng thái hiện tại của đơn 5 để kiểm tra một quy tắc. Trạng thái đó lấy từ đâu?"
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "A `status` column that the event store updates in place after each append.",
+          "vi": "Một cột `status` mà event store cập nhật đè lên sau mỗi lần nối thêm event."
+        },
+        {
+          "id": "b",
+          "en": "The `orders` row, while `order_status_history` keeps a record of each change beside it.",
+          "vi": "Dòng trong `orders`, còn `order_status_history` giữ bản ghi của từng thay đổi ngay bên cạnh.",
+          "misconception": "Keeping every change in a history table next to `orders` is already event sourcing."
+        },
+        {
+          "id": "c",
+          "en": "It is worked out from the events in order 5's stream, in the order they were appended.",
+          "vi": "Nó được tính ra từ các event trong event stream của đơn 5, theo đúng thứ tự chúng được nối thêm."
+        },
+        {
+          "id": "d",
+          "en": "The `notifications.order-events` queue in RabbitMQ, by reading back the messages sent for order 5.",
+          "vi": "Queue `notifications.order-events` trong RabbitMQ, bằng cách đọc lại các message đã gửi cho đơn 5.",
+          "misconception": "An event store is a message broker such as RabbitMQ that keeps its messages forever."
+        }
+      ],
+      "answer": ["c"],
+      "explanation": {
+        "en": {
+          "correct": "Event sourcing does not keep the current state as the record. The order is its stream of events, and the status exists only as the result of applying them in order.",
+          "a": "A column that always holds the latest status is how `orders` works today, so it feels like something the store would keep. But an event store only appends events and holds no state; a status column updated in place is exactly what event sourcing gives up.",
+          "b": "This is Đơn Hàng at stage-3, which already keeps every change, so it looks like event sourcing. But the use case still loads the `orders` row as the truth, and the history is a read model beside it.",
+          "d": "RabbitMQ already carries a message for order events, so it seems to have them all. But a message in a queue can be discarded once a consumer has handled it, and a queue cannot be asked for every event of order 5."
+        },
+        "vi": {
+          "correct": "Event sourcing không giữ trạng thái hiện tại làm bản ghi gốc. Đơn chính là event stream của nó, và trạng thái chỉ tồn tại như kết quả của việc áp các event đó theo thứ tự.",
+          "a": "Một cột luôn giữ trạng thái mới nhất là cách `orders` đang hoạt động, nên trông như thứ event store cũng sẽ giữ. Nhưng event store chỉ nối thêm event và không giữ trạng thái; một cột trạng thái bị cập nhật đè chính là điều event sourcing bỏ đi.",
+          "b": "Đây là Đơn Hàng ở stage-3, vốn đã giữ mọi thay đổi, nên trông giống event sourcing. Nhưng use case vẫn nạp dòng trong `orders` làm sự thật, và lịch sử chỉ là read model nằm bên cạnh.",
+          "d": "RabbitMQ đã chuyển message cho các event của đơn, nên trông như nó có đủ tất cả. Nhưng một message trong queue có thể bị bỏ đi khi consumer đã xử lý xong, và không thể hỏi một queue lấy mọi event của đơn 5."
+        }
+      }
+    },
+    {
+      "id": "design.l3.event-sourcing.q2",
+      "type": "order",
+      "bloom": "understand",
+      "difficulty": 2,
+      "skills": ["design.event-sourcing.streams"],
+      "section_ref": 4,
+      "question": {
+        "en": "In the stage-3 sample, order 5 is `paid` at version 2 and a caller cancels it, then saves it. Put these steps in the order they happen.",
+        "vi": "Trong sample ở stage-3, đơn 5 đang `paid` ở version 2 và một bên gọi hủy đơn rồi lưu nó. Sắp xếp các bước sau theo đúng thứ tự xảy ra."
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "The store appends `OrderCancelled` to the end of order 5's stream as version 3.",
+          "vi": "Event store nối `OrderCancelled` vào cuối event stream của đơn 5, thành version 3."
+        },
+        {
+          "id": "b",
+          "en": "`Cancel` checks that the status is neither `cancelled` nor `shipped`.",
+          "vi": "`Cancel` kiểm tra trạng thái không phải `cancelled` cũng không phải `shipped`."
+        },
+        {
+          "id": "c",
+          "en": "`MarkSaved` empties the order's list of new events.",
+          "vi": "`MarkSaved` làm rỗng danh sách event mới của đơn."
+        },
+        {
+          "id": "d",
+          "en": "`Apply` sets `Status` to `cancelled` and `Version` to 3.",
+          "vi": "`Apply` đặt `Status` thành `cancelled` và `Version` thành 3."
+        },
+        {
+          "id": "e",
+          "en": "`OrderCancelled` is added to `newEvents`.",
+          "vi": "`OrderCancelled` được thêm vào `newEvents`."
+        }
+      ],
+      "answer": ["b", "d", "e", "a", "c"],
+      "explanation": {
+        "en": {
+          "correct": "The rule runs first, so a refused cancel leaves no event. `Record` then applies the event to the order's fields and adds it to `newEvents`. The store appends those new events, and only after that does `MarkSaved` empty the list.",
+          "a": "Saving feels like the moment the cancel becomes real, so it is tempting to put the append before the order changes itself. But the store appends what is in `newEvents`, and the event gets there only after `Record` has applied it.",
+          "c": "Clearing a list sounds like tidying up before work starts. But `MarkSaved` is called by the store once the new events are appended; emptying the list earlier would leave the store nothing to append."
+        },
+        "vi": {
+          "correct": "Quy tắc chạy trước, nên một lần hủy bị từ chối không để lại event nào. Sau đó `Record` áp event vào các field của đơn và thêm nó vào `newEvents`. Event store nối các event mới đó, và chỉ sau đó `MarkSaved` mới làm rỗng danh sách.",
+          "a": "Lưu nghe như lúc việc hủy trở thành thật, nên dễ đặt bước nối thêm trước khi đơn tự thay đổi. Nhưng event store nối những gì có trong `newEvents`, và event chỉ vào đó sau khi `Record` đã áp nó.",
+          "c": "Làm rỗng một danh sách nghe như việc dọn dẹp trước khi bắt đầu. Nhưng `MarkSaved` được event store gọi khi các event mới đã được nối xong; làm rỗng sớm hơn thì event store không còn gì để nối."
+        }
+      }
+    },
+    {
+      "id": "design.l3.event-sourcing.q3",
+      "type": "multi",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["design.event-sourcing.streams"],
+      "section_ref": 5,
+      "question": {
+        "en": "In the sample, order 5 is now `cancelled` at version 3, and a caller calls `Ship(at)` on it. What follows? Select all that apply.",
+        "vi": "Trong sample, đơn 5 giờ đang `cancelled` ở version 3, và một bên gọi `Ship(at)` trên nó. Điều gì xảy ra tiếp? Chọn tất cả đáp án đúng."
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "`Ship` throws because the status is not `paid`, before `Record` is called.",
+          "vi": "`Ship` ném exception vì trạng thái không phải `paid`, trước khi `Record` được gọi."
+        },
+        {
+          "id": "b",
+          "en": "`Apply` first sets `Status` to `shipped`, and the failed rule then sets it back.",
+          "vi": "`Apply` đặt `Status` thành `shipped` trước, rồi quy tắc thất bại đặt nó trở lại như cũ."
+        },
+        {
+          "id": "c",
+          "en": "Order 5's stream still ends with `OrderCancelled` as version 3.",
+          "vi": "Event stream của đơn 5 vẫn kết thúc bằng `OrderCancelled` ở version 3."
+        },
+        {
+          "id": "d",
+          "en": "The store removes `OrderCancelled` so that the stream ends in a state that can be shipped.",
+          "vi": "Event store xóa `OrderCancelled` để event stream kết thúc ở một trạng thái giao được."
+        },
+        {
+          "id": "e",
+          "en": "`OrderShipped` goes into `newEvents` and is appended as a refused attempt.",
+          "vi": "`OrderShipped` vào `newEvents` và được nối thêm như một lần thử bị từ chối."
+        }
+      ],
+      "answer": ["a", "c"],
+      "explanation": {
+        "en": {
+          "correct": "`Ship` checks its rule against the current state and throws when the status is not `paid`. `Record` is never reached, so nothing is applied and nothing joins `newEvents`; the stream keeps its three events.",
+          "b": "Changing a field and then undoing it is one way to try a change, so it sounds plausible. But the sample checks the rule first; `Apply` runs only inside `Record`, which a failed rule never reaches.",
+          "d": "Getting the order back into a shippable state seems to need the cancel gone. But the event store only appends, and the sample's store has no method that changes or removes an event.",
+          "e": "An event store keeps what happened, so keeping the attempt sounds thorough. But a refused change did not happen: `Cancel` and `Ship` throw before anything is recorded, so a refusal leaves no event."
+        },
+        "vi": {
+          "correct": "`Ship` kiểm tra quy tắc với trạng thái hiện tại và ném exception khi trạng thái không phải `paid`. Không bao giờ tới được `Record`, nên không có gì được áp và không có gì vào `newEvents`; event stream giữ nguyên ba event.",
+          "b": "Đổi một field rồi hoàn tác là một cách thử thay đổi, nên nghe hợp lý. Nhưng sample kiểm tra quy tắc trước; `Apply` chỉ chạy bên trong `Record`, mà một quy tắc thất bại thì không bao giờ tới đó.",
+          "d": "Muốn đơn quay lại trạng thái giao được thì có vẻ phải bỏ việc hủy đi. Nhưng event store chỉ nối thêm, và event store của sample không có method nào sửa hay xóa một event.",
+          "e": "Event store giữ những gì đã xảy ra, nên giữ cả lần thử nghe có vẻ đầy đủ. Nhưng một thay đổi bị từ chối thì chưa hề xảy ra: `Cancel` và `Ship` ném exception trước khi ghi lại bất cứ gì, nên lần từ chối không để lại event nào."
+        }
+      }
+    },
+    {
+      "id": "design.l3.event-sourcing.q4",
+      "type": "truefalse",
+      "bloom": "analyze",
+      "difficulty": 4,
+      "skills": ["design.event-sourcing.streams"],
+      "section_ref": 6,
+      "question": {
+        "en": "At stage-3, a customer places a new order and then cancels it, so `outbox_messages` holds `order.placed` and `order.cancelled` for it. Statement: \"If that order's `orders` row were lost, the order could be rebuilt from these two rows.\"",
+        "vi": "Ở stage-3, một khách đặt một đơn mới rồi hủy nó, nên `outbox_messages` có `order.placed` và `order.cancelled` cho đơn đó. Nhận định: \"Nếu dòng `orders` của đơn đó bị mất, có thể dựng lại đơn từ hai dòng này.\""
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "True, because the outbox already holds every order event, so it can serve as the event store.",
+          "vi": "Đúng, vì outbox đã giữ mọi event của đơn, nên nó dùng được làm event store.",
+          "polarity": "true",
+          "misconception": "Đơn Hàng's `outbox_messages` already holds every order event, so it can serve as the event store."
+        },
+        {
+          "id": "b",
+          "en": "True, because each message is added in the same save as the order's change, so none can be missing.",
+          "vi": "Đúng, vì mỗi message được thêm trong cùng lần lưu với thay đổi của đơn, nên không thể thiếu message nào.",
+          "polarity": "true"
+        },
+        {
+          "id": "c",
+          "en": "False, because each message carries what other services need, such as the customer's email, and not the total or the products.",
+          "vi": "Sai, vì mỗi message chỉ mang thứ các service khác cần, như email của khách, chứ không có tổng tiền hay các sản phẩm.",
+          "polarity": "false"
+        },
+        {
+          "id": "d",
+          "en": "False, because cancelling records no event, so `order.cancelled` cannot come from the order itself.",
+          "vi": "Sai, vì việc hủy không ghi lại event nào, nên `order.cancelled` không thể đến từ chính đơn.",
+          "polarity": "false"
+        }
+      ],
+      "answer": ["c"],
+      "explanation": {
+        "en": {
+          "correct": "`NotifyCustomerOnOrderEvents` builds each message from the order's id, the customer's email and name, and the event's time. Nothing in either row says what the customer bought or what it cost, so the order cannot be worked out from them.",
+          "a": "The outbox gets a row for each event it handles, so it looks like a full record. But its rows are shaped for other services, and a change that records no event, such as `MarkPaid()`, adds no row at all.",
+          "b": "Saving the message with the change does keep the outbox in step with the order. But being in step is not enough: an event store must hold everything needed to work out the state, and these rows do not.",
+          "d": "The conclusion is right, but the reason is not. `Cancel` does record `OrderCancelled`, which is why the `order.cancelled` row exists; the row is still missing the order's contents."
+        },
+        "vi": {
+          "correct": "`NotifyCustomerOnOrderEvents` dựng mỗi message từ id của đơn, email và tên của khách, và thời điểm của event. Không dòng nào cho biết khách đã mua gì hay hết bao nhiêu, nên không thể tính ra đơn từ chúng.",
+          "a": "Outbox có một dòng cho mỗi event mà nó xử lý, nên trông như một bản ghi đầy đủ. Nhưng các dòng của nó được tạo theo hình dạng các service khác cần, và một thay đổi không ghi lại event nào, như `MarkPaid()`, không thêm dòng nào cả.",
+          "b": "Lưu message cùng thay đổi đúng là giữ outbox khớp với đơn. Nhưng khớp thôi chưa đủ: event store phải giữ mọi thứ cần để tính ra trạng thái, mà các dòng này thì không.",
+          "d": "Kết luận đúng nhưng lý do sai. `Cancel` có ghi lại `OrderCancelled`, chính vì vậy mới có dòng `order.cancelled`; dòng đó vẫn thiếu nội dung của đơn."
+        }
+      }
+    },
+    {
+      "id": "design.l3.event-sourcing.q5",
+      "type": "scenario",
+      "bloom": "evaluate",
+      "difficulty": 4,
+      "skills": ["design.event-sourcing.streams"],
+      "section_ref": 6,
+      "context": {
+        "en": "Đơn Hàng is at stage-3 and is maintained by a team of three. The team agrees to a pilot: in one new module, orders will be stored by event sourcing, so that the list of what happened to an order is the order itself and no row holds its current status. Every use case in the module must be able to load an order and check its rules, such as refusing to cancel a shipped order. Other services must keep receiving their messages as before. The team wants to reuse what Đơn Hàng already has wherever it truly fits.",
+        "vi": "Đơn Hàng đang ở stage-3 và do một nhóm ba người bảo trì. Nhóm đồng ý chạy thử: trong một module mới, đơn sẽ được lưu bằng event sourcing, để danh sách những gì đã xảy ra với một đơn chính là đơn đó và không dòng nào giữ trạng thái hiện tại của nó. Mọi use case trong module phải nạp được một đơn và kiểm tra các quy tắc của nó, như từ chối hủy một đơn đã giao. Các service khác phải tiếp tục nhận message như trước. Nhóm muốn tận dụng những gì Đơn Hàng đã có, ở những chỗ thật sự phù hợp."
+      },
+      "question": {
+        "en": "Where should the pilot keep its orders?",
+        "vi": "Bản chạy thử nên lưu các đơn ở đâu?"
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "Add the total and the products to each `order_status_history` row, and keep loading orders from `orders`.",
+          "vi": "Thêm tổng tiền và các sản phẩm vào mỗi dòng `order_status_history`, và vẫn nạp đơn từ `orders`.",
+          "misconception": "Keeping every change in a history table next to `orders` is already event sourcing."
+        },
+        {
+          "id": "b",
+          "en": "Use `outbox_messages` as the store, since each change to an order already adds a row there.",
+          "vi": "Dùng `outbox_messages` làm nơi lưu, vì mỗi thay đổi của đơn đã thêm một dòng vào đó.",
+          "misconception": "Đơn Hàng's `outbox_messages` already holds every order event, so it can serve as the event store."
+        },
+        {
+          "id": "c",
+          "en": "A new append-only store with one stream per order, each event holding the order's id, the customer's email and its time.",
+          "vi": "Một event store mới chỉ cho nối thêm, mỗi đơn một event stream, mỗi event giữ id của đơn, email của khách và thời điểm."
+        },
+        {
+          "id": "d",
+          "en": "A new append-only store with one stream per order, each event holding what is needed to work out the order.",
+          "vi": "Một event store mới chỉ cho nối thêm, mỗi đơn một event stream, mỗi event giữ đủ thứ cần để tính ra đơn."
+        }
+      ],
+      "answer": ["d"],
+      "explanation": {
+        "en": {
+          "correct": "The pilot needs the events to be the order, so they must be stored per order, in order, never changed, and complete enough to work out the state. None of the existing tables or queues was built for that, and a new store whose events lack the order's contents fails the last part; the outbox keeps sending messages to other services beside it.",
+          "a": "The history already has a row per event, so filling in the missing data looks like a short step. But orders would still be loaded from `orders`, which keeps the row as the truth and the history as a read model. This fits when all you need is a history screen beside a row-stored order.",
+          "b": "The outbox is filled in the same save as each change, which makes it look like a ready-made store. But its rows are shaped for other services, and `MarkPaid()` adds none. The outbox fits when other services need to hear about a change, which it keeps doing here.",
+          "c": "This has the right shape, append-only with one stream per order, and its events carry what the outbox messages already carry, so it looks easy to fill. But nothing in such events says what the customer bought or what it cost, so the order cannot be worked out from its stream. Events this thin fit when all you need is a message telling other services that something happened."
+        },
+        "vi": {
+          "correct": "Bản chạy thử cần các event chính là đơn, nên chúng phải được lưu theo từng đơn, đúng thứ tự, không bao giờ bị sửa, và đủ để tính ra trạng thái. Không bảng hay queue nào hiện có được làm cho việc đó, và một event store mới mà event thiếu nội dung của đơn thì hỏng ở điều kiện cuối; outbox vẫn tiếp tục gửi message cho các service khác bên cạnh.",
+          "a": "Lịch sử đã có một dòng cho mỗi event, nên bổ sung dữ liệu còn thiếu trông như chỉ một bước ngắn. Nhưng đơn vẫn được nạp từ `orders`, nên dòng đó vẫn là sự thật còn lịch sử vẫn là read model. Cách này hợp khi bạn chỉ cần một màn hình lịch sử bên cạnh một đơn được lưu theo dòng.",
+          "b": "Outbox được ghi trong cùng lần lưu với mỗi thay đổi, nên trông như một nơi lưu có sẵn. Nhưng các dòng của nó được tạo theo hình dạng các service khác cần, và `MarkPaid()` không thêm dòng nào. Outbox hợp khi các service khác cần được báo về một thay đổi, việc mà nó vẫn tiếp tục làm ở đây.",
+          "c": "Cách này đúng hình dạng, chỉ nối thêm và mỗi đơn một event stream, còn event mang đúng những gì message trong outbox đã mang, nên trông dễ ghi. Nhưng không gì trong các event đó cho biết khách đã mua gì hay hết bao nhiêu, nên không thể tính ra đơn từ event stream của nó. Event mỏng như vậy hợp khi bạn chỉ cần một message báo cho các service khác rằng có chuyện vừa xảy ra."
+        }
+      }
+    },
+    {
+      "id": "design.l3.event-sourcing.q6",
+      "type": "single",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["design.event-sourcing.streams"],
+      "section_ref": 5,
+      "question": {
+        "en": "The sample store receives, in this order: `OrderPlaced` for order 5, `OrderPlaced` for order 6, `OrderPaid` for order 5, `OrderPaid` for order 6, then `OrderCancelled` for order 5. Which statement is right?",
+        "vi": "Event store của sample lần lượt nhận: `OrderPlaced` cho đơn 5, `OrderPlaced` cho đơn 6, `OrderPaid` cho đơn 5, `OrderPaid` cho đơn 6, rồi `OrderCancelled` cho đơn 5. Nhận định nào đúng?"
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "`OrderCancelled` is version 3 of order 5's stream and the fifth entry in `all`.",
+          "vi": "`OrderCancelled` là version 3 trong event stream của đơn 5 và là mục thứ năm trong `all`."
+        },
+        {
+          "id": "b",
+          "en": "`OrderCancelled` is version 5, because a version counts every event the store holds.",
+          "vi": "`OrderCancelled` là version 5, vì version đếm mọi event mà event store đang giữ."
+        },
+        {
+          "id": "c",
+          "en": "`OrderCancelled` becomes version 2 of order 5's stream, in place of `OrderPaid`.",
+          "vi": "`OrderCancelled` trở thành version 2 trong event stream của đơn 5, thay chỗ `OrderPaid`."
+        },
+        {
+          "id": "d",
+          "en": "`all` keeps only the latest event of each order, so it now holds two entries.",
+          "vi": "`all` chỉ giữ event mới nhất của mỗi đơn, nên giờ nó có hai mục."
+        }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "An event's version is its position in its own order's stream, and order 5's stream now holds three events. `all` keeps every order's events in the order they were appended, so it holds five, with `OrderCancelled` last.",
+          "b": "The store does count events in `all`, so a single running number seems natural. But a version belongs to one stream: order 6's events do not move order 5's numbers.",
+          "c": "Overwriting the old status is how `orders` handles a cancel, so replacing the last event looks familiar. But the store only appends to the end of a stream; `OrderPaid` stays as version 2.",
+          "d": "Keeping only the latest is what a table of current state does, which makes it sound reasonable. But `all` keeps every event, and the store never changes or removes one."
+        },
+        "vi": {
+          "correct": "Version của một event là vị trí của nó trong event stream của chính đơn đó, và event stream của đơn 5 giờ có ba event. `all` giữ event của mọi đơn theo thứ tự được nối thêm, nên nó có năm mục, `OrderCancelled` ở cuối.",
+          "b": "Event store có đếm các event trong `all`, nên một số đếm chung trông tự nhiên. Nhưng version thuộc về một event stream: các event của đơn 6 không làm thay đổi số của đơn 5.",
+          "c": "Ghi đè trạng thái cũ là cách `orders` xử lý việc hủy, nên thay event cuối trông quen thuộc. Nhưng event store chỉ nối thêm vào cuối event stream; `OrderPaid` vẫn là version 2.",
+          "d": "Chỉ giữ cái mới nhất là việc của một bảng lưu trạng thái hiện tại, nên nghe hợp lý. Nhưng `all` giữ mọi event, và event store không bao giờ sửa hay xóa event nào."
+        }
+      }
+    }
+  ]
+}

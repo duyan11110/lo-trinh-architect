@@ -1,0 +1,142 @@
+{
+  "id": "backend.l3.graceful-degradation",
+  "technical": {
+    "reviewed_at": "2026-10-16T21:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "not-needed",
+        "evidence": "Definition of the lesson's own vocab term, identical to track.yaml outline item 1 and the glossary entry; nothing version-dependent to source.",
+        "source": "content/tracks/backend/track.yaml (backend.l3.graceful-degradation outline item 1)"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Program.cs @ stage-2 L75-80: comment \"Redis is left out on purpose\", then AddHealthChecks().AddDbContextCheck<DonHangDbContext>(tags: [\"ready\"]); grep for health/AddCheck finds no other check. L123-124: MapHealthChecks(\"/health/live\", Predicate = _ => false) and \"/health/ready\" with Predicate = check => check.Tags.Contains(\"ready\"). No mail-server check anywhere.",
+        "source": "examples/don-hang @ stage-2: DonHang.Api/Program.cs"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "\"By default: The `DbContextHealthCheck` calls EF Core's `CanConnectAsync` method. You can customize what operation is run when checking health by using `AddDbContextCheck` method overloads.\" (monikerRange '>= aspnetcore-3.1', ms.date 02/25/2026)",
+        "source": "refs/aspnetcore-docs/aspnetcore/host-and-deploy/health-checks.md L187-189 (Entity Framework Core DbContext probe)"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "\"The following StatusCodes assignments are the default values used by the middleware\": [HealthStatus.Healthy] = Status200OK, [HealthStatus.Degraded] = Status200OK, [HealthStatus.Unhealthy] = Status503ServiceUnavailable. Captured outputs/stage-2/scripts/k8s/health.txt shows 200 OK Healthy and, for api-no-db, 503 Service Unavailable.",
+        "source": "refs/aspnetcore-docs/aspnetcore/host-and-deploy/health-checks.md L140-142 + HealthChecksSample/Snippets/Program.cs L144-154"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "probes.md: \"If the readiness probe returns a failed state, the EndpointSlice controller removes the Pod's IP address from the EndpointSlices of all Services that match the Pod.\" Restarts are tied to liveness: \"Liveness probes determine when to restart a container.\" api.yaml @ stage-2 liveness hits /health/live, which runs no check.",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/workloads/pods/probes.md L44, L77-80; deploy/k8s/api.yaml @ stage-2"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "ProductCache.cs @ stage-2 L71 `catch (Exception ex) when (ex is RedisException or RedisTimeoutException)`, L73 logger.LogWarning(...), L74 `return null;`. No other catch in GetAsync, so other exceptions propagate.",
+        "source": "examples/don-hang @ stage-2: DonHang.Infrastructure/ProductCache.cs L61-76"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "L28-29 GetAsync; null -> under the per-key lock GetAsync again (L38-39), then L41 `inner.FindAsync(id); // cache miss: one query`. ProductsController @ stage-2: only single-product reads go through IProductRepository. Round 3: s5 now omits the second Redis try (\"FindAsync ... treats as a miss: it calls inner.FindAsync, one PostgreSQL query\"); still true, since with Redis down the second try also returns null.",
+        "source": "examples/don-hang @ stage-2: DonHang.Infrastructure/ProductCache.cs L25-49; DonHang.Api/Controllers/ProductsController.cs"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Claim narrowed to repo facts (round 2). Round 1 git show stage-2: ServiceCollectionExtensions.cs L36 `options.BacklogPolicy = BacklogPolicy.FailFast;`, api-configmap.yaml and docker-compose.yml `ConnectionStrings__Redis: \"redis:6379,abortConnect=false\"`. Round 2: outputs/stage-2/scripts/k8s/configmap.txt L2 `ConnectionStrings__Redis=redis:6379,abortConnect=false`. No library behaviour is asserted any more, so no docs evidence is needed.",
+        "source": "examples/don-hang @ stage-2: DonHang.Infrastructure/ServiceCollectionExtensions.cs L36; deploy/k8s/api-configmap.yaml; outputs/stage-2/scripts/k8s/configmap.txt"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "QueuedNotifier.Send @ stage-2 only calls `db.Notifications.Add(new Notification { Order = order, Channel = \"email\", Subject = subject, Status = \"pending\", CreatedAt = now, NextAttemptAt = now })`; the class takes only DonHangDbContext, no email sender.",
+        "source": "examples/don-hang @ stage-2: DonHang.Infrastructure/QueuedNotifier.cs"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "outputs/stage-2/scripts/backend/email-retry.txt: \"mailpit is stopped: every send fails\" / \"== POST /api/v1/orders as customer 1\" / \"  -> 201\" / attempts 1-4 \"next attempt in 2/4/8/16 s\" / \"failed on attempt 5; giving up\" / \"failed | 5 | t\".",
+        "source": "examples/don-hang @ stage-2: outputs/stage-2/scripts/backend/email-retry.txt"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "NotificationSender.cs @ stage-2: `MaxAttempts = 5`; RecordFailure: `Attempts++; if (Attempts >= MaxAttempts) { Status = \"failed\"; ... return; }`, never picked up again. email-retry.sh: \"about 40 s in all\". Round 3 wording (s4 node \"lost if still down after 5 attempts\", summary 4 \"an outage outlasting five attempts (about 40 s) loses them\") matches.",
+        "source": "examples/don-hang @ stage-2: DonHang.Api/Jobs/NotificationSender.cs; scripts/backend/email-retry.sh"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "api.yaml @ stage-2: `replicas: 2`, readinessProbe httpGet path /health/ready port 8080. redis.yaml: Deployment redis `replicas: 1`, Service redis port 6379. api-configmap.yaml: `ConnectionStrings__Redis: \"redis:6379,abortConnect=false\"` (same for every api Pod via envFrom).",
+        "source": "examples/don-hang @ stage-2: deploy/k8s/api.yaml, deploy/k8s/redis.yaml, deploy/k8s/api-configmap.yaml"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Reworded s6 symptom (every request through the Service fails although PostgreSQL is up) follows from claim 12 (both api Pods use the one redis:6379) and probes.md: a failed readiness probe removes \"the Pod's IP address from the EndpointSlices of all Services that match the Pod\". A shared dependency in the ready check fails every Pod's probe together, leaving Service api with no endpoints.",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/workloads/pods/probes.md L77-80; deploy/k8s @ stage-2"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "Mechanism supported by code and run: ProductCache L41 sends every miss to inner.FindAsync, and cache-aside.txt shows the hit costs \"queries PostgreSQL ran for it: 0\" while the Redis-stopped read costs 1. Now limited to single-product reads (claim 7). \"Safe only while PostgreSQL can carry it\" is a conditional judgement, worded with its condition.",
+        "source": "examples/don-hang @ stage-2: ProductCache.cs; outputs/stage-2/scripts/backend/cache-aside.txt"
+      },
+      {
+        "n": 15,
+        "verdict": "not-needed",
+        "evidence": "Design judgement with its condition stated (\"when the empty result is a wrong answer\"); the code part (ProductCache catches only Redis errors and returns the real product via PostgreSQL) is covered by claims 6-7.",
+        "source": "examples/don-hang @ stage-2: DonHang.Infrastructure/ProductCache.cs"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "cache-aside.sh @ stage-2: `redis DEL product:3`, get_product_3 twice (\"cache miss\", \"cache hit\"), then `docker compose stop redis`, get_product_3, `docker compose start redis`, `docker compose up --wait redis`. get_product_3 prints `-> %{http_code}` and \"queries PostgreSQL ran for it: N\" (counts 'FROM products' in api log). scripts/up.sh exists at stage-2.",
+        "source": "examples/don-hang @ stage-2: scripts/backend/cache-aside.sh"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "cache-aside.txt: three times `{\"id\":3,\"name\":\"Tai nghe\",\"priceVnd\":890000}  -> 200`; \"queries PostgreSQL ran for it: 1\", then \"0\", then (\"with the redis container stopped\") \"1\".",
+        "source": "examples/don-hang @ stage-2: outputs/stage-2/scripts/backend/cache-aside.txt"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "ProductCache.cs L18 `private static readonly TimeSpan Ttl = TimeSpan.FromMinutes(5);` used in SetAsync `StringSetAsync(key, json, Ttl)`; UpdatePriceAsync L56-57 saves then `RemoveAsync($\"product:{id}\")`.",
+        "source": "examples/don-hang @ stage-2: DonHang.Infrastructure/ProductCache.cs L18, 54-59, 78-89"
+      },
+      {
+        "n": 19,
+        "verdict": "verified",
+        "evidence": "payments-down.txt: \"payments is stopped\" / \"POST /api/v1/orders/10/refund as customer 1\" / \"-> 202\" / \"status refunding\" / \"messages waiting in payments.refund-requests: 1\" / \"payments is back\" / \"status cancelled\" / \"the refund row: refunded\". Round 3 (targeted) opened: en.md s4 diagram + prose, s5, s8; meta claims 7, 10, 11, self_check.notes. No quiz change listed; no technical issue was open after round 2.",
+        "source": "examples/don-hang: outputs/stage-3/scripts/backend/payments-down.txt"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-16T21:30:00+07:00",
+    "reviewer": "claude-opus-5-5 (review-junior, prompt 05, targeted re-review round 3)",
+    "issues": [],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

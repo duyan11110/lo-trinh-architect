@@ -1,0 +1,141 @@
+{
+  "id": "devops.l3.configuration-drift",
+  "technical": {
+    "reviewed_at": "2026-10-08T18:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Round 2: lesson now says \"Refresh — by default, the first step of `tofu plan`\" (section 3) and \"By default, `tofu plan` begins with a refresh\" (section 4). tofu plan docs: by default it \"Reads the current state of any already-existing remote objects to make sure that the OpenTofu state is up-to-date\" then \"Compares the current configuration to the prior state\"; -refresh=false \"Disables the default behavior of synchronizing the OpenTofu state with remote objects\".",
+        "source": "https://opentofu.org/docs/cli/commands/plan/"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Real run outputs/stage-3/scripts/devops/tofu-drift.txt lines 5, 13, 22: \"# module.platform.kubernetes_namespace_v1.donhang will be updated in-place\", \"- \\\"owner\\\" = \\\"by-hand\\\" -> null\", \"Plan: 0 to add, 1 to change, 0 to destroy.\" Module main.tf sets labels = local.pod_security_labels; provider pinned 3.3.0 in modules/donhang-platform/main.tf.",
+        "source": "examples/don-hang outputs/stage-3/scripts/devops/tofu-drift.txt; deploy/tofu/modules/donhang-platform/main.tf"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "tofu plan docs, Refresh-only mode: \"creates a plan whose goal is only to update the OpenTofu state and any root module output values to match changes made to remote objects outside of OpenTofu.\" Captured run line 26: \"# module.platform.kubernetes_namespace_v1.donhang has changed\" with \"+ \\\"owner\\\" = \\\"by-hand\\\"\" and no Plan: line of actions.",
+        "source": "https://opentofu.org/docs/cli/commands/plan/; outputs/stage-3/scripts/devops/tofu-drift.txt"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "tofu refresh docs: \"reads the current settings from all managed remote objects and updates the OpenTofu state to match.\" \"This won't modify your real remote objects, but it will modify the OpenTofu state.\" It is \"effectively an alias for\" `tofu apply -refresh-only -auto-approve`. A normal plan \"Compares the current configuration to the prior state\", and the files still lack owner.",
+        "source": "https://opentofu.org/docs/cli/commands/refresh/; https://opentofu.org/docs/cli/commands/plan/"
+      },
+      {
+        "n": 5,
+        "verdict": "unverified",
+        "evidence": "Round 2: wording now \"OpenTofu reads and changes infrastructure only while you run a command such as `plan` or `apply`\", as suggested in round 1. Re-fetched core workflow page: only \"This core workflow is a loop; the next time you want to make changes, you start the process over from the beginning\" and apply \"will display a plan for confirmation before proceeding to change any infrastructure\". No sentence states 'only while a command runs'. Behavior claim, not number/syntax: not blocking.",
+        "source": "https://opentofu.org/docs/intro/core-workflow/"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Controllers: \"In Kubernetes, controllers are control loops that watch the state of your cluster, then make or request changes where needed. Each controller tries to move the current cluster state closer to the desired state.\" ReplicaSet: \"fulfills its purpose by creating and deleting Pods as needed to reach the desired number.\" \"a Deployment is a higher-level concept that manages ReplicaSets\".",
+        "source": "https://kubernetes.io/docs/concepts/architecture/controller/; https://kubernetes.io/docs/concepts/workloads/controllers/replicaset/"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "tofu plan docs, -detailed-exitcode: \"0 = Succeeded with empty diff (no changes)\", \"1 = Error\", \"2 = Succeeded with non-empty diff (changes present)\". Captured run: \"exit code: 2\" (line 23) and \"tofu plan -detailed-exitcode: exit code 0\" (line 56). The added definition of exit code (number handed back to the shell) is definitional.",
+        "source": "https://opentofu.org/docs/cli/commands/plan/; outputs/stage-3/scripts/devops/tofu-drift.txt"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Round 2: lesson section 4 now \"Any plain `tofu apply` of this layer, even one made for an unrelated change, would also remove the label\"; quiz q1 c and q5 correct say \"any plain apply\". apply docs: without a saved plan \"OpenTofu automatically creates a new execution plan as if you had run tofu plan\".",
+        "source": "https://opentofu.org/docs/cli/commands/apply/"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "deploy/tofu/envs/staging/platform/main.tf lines 26-37: module \"platform\" { source = \"../../../modules/donhang-platform\" ... pod_security_enforce = \"baseline\" }. modules/donhang-platform/main.tf declares only resource kubernetes_namespace_v1.donhang and kubernetes_secret_v1.sealing_key (name \"sealing-key\"). staging/platform/backend.tf declares no resource.",
+        "source": "examples/don-hang deploy/tofu/envs/staging/platform/main.tf; deploy/tofu/modules/donhang-platform/main.tf"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "modules/donhang-platform/main.tf: labels = local.pod_security_labels; locals { \"pod-security.kubernetes.io/enforce\" = var.pod_security_enforce, \"pod-security.kubernetes.io/warn\" = \"restricted\", \"pod-security.kubernetes.io/audit\" = \"restricted\" }. No owner key.",
+        "source": "examples/don-hang deploy/tofu/modules/donhang-platform/main.tf lines 17-22, 47-53"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "tofu-drift.sh line 6: tofu_platform() { scripts/devops/tofu-env.sh staging platform \"$@\"; }; line 11 kubectl label namespace donhang owner=by-hand; line 18 plan -detailed-exitcode ... || status=$?; line 27 plan -refresh-only; line 33 apply -auto-approve; line 35 final plan -detailed-exitcode. Lesson block lines 8-27 matches the file.",
+        "source": "examples/don-hang scripts/devops/tofu-drift.sh"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Execution: tofu-drift.sh line 4 is `set -euo pipefail` (lesson now says so); captured run prints \"exit code: 2\" after `tofu_platform plan -detailed-exitcode ... || status=$?` and continues to \"== tofu plan -refresh-only\" and \"== tofu apply\", so the non-zero exit did not stop the script. GNU Bash manual page returned HTTP 429 again in round 2; no doc quote obtained.",
+        "source": "examples/don-hang scripts/devops/tofu-drift.sh line 4; outputs/stage-3/scripts/devops/tofu-drift.txt lines 4-25"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Kubernetes Annotations page: \"Annotations, like labels, are key/value maps\", shown under \"metadata\": { \"annotations\": … }. Captured run lines 41-51: \"# module.platform.kubernetes_secret_v1.sealing_key has changed\" with only \"+ annotations = {}\" under metadata. tofu-drift.sh touches no Secret.",
+        "source": "https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/; outputs/stage-3/scripts/devops/tofu-drift.txt"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "apply docs: -auto-approve \"Skips interactive approval of plan before applying.\" Captured run line 54: \"Apply complete! Resources: 0 added, 1 changed, 0 destroyed.\"; line 55 \"labels now:\" with audit, enforce=baseline, warn and kubernetes.io/metadata.name — no owner. Lesson output block now reproduces line 55 verbatim.",
+        "source": "https://opentofu.org/docs/cli/commands/apply/; outputs/stage-3/scripts/devops/tofu-drift.txt"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "deploy/tofu/envs/production/platform/main.tf lines 29-30: module \"platform\" { source = \"../../../modules/donhang-platform\". Plan compares configuration with refreshed state (plan docs); captured run shows exit 0 when object and files agree (line 56). Not executed with owner added to the files.",
+        "source": "examples/don-hang deploy/tofu/envs/production/platform/main.tf; https://opentofu.org/docs/cli/commands/plan/"
+      },
+      {
+        "n": 16,
+        "verdict": "not-needed",
+        "evidence": "Opinion with its condition stated in the lesson: section 7 frames it as \"the team decides the owner label is right and should stay\"; the script comment (tofu-drift.sh lines 30-31) says the same. Ledger records the opposing view.",
+        "source": "examples/don-hang scripts/devops/tofu-drift.sh lines 30-31"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "kubectl label reference: \"Update the labels on a resource.\" Usage: \"kubectl label [--overwrite] (-f FILENAME | TYPE NAME) KEY_1=VAL_1 ...\". Captured run line 2: \"namespace/donhang labeled\".",
+        "source": "https://kubernetes.io/docs/reference/kubectl/generated/kubectl_label/; outputs/stage-3/scripts/devops/tofu-drift.txt"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-08T19:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation, targeted re-review round 2)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "term",
+        "text": "New in round 2: 'part of a `||` list' is shell grammar I was never taught, and `$?`, `-u` and `pipefail` in `set -euo pipefail` stay unexplained. From C# I can guess `||` runs the right side only when the left fails, so the point (the 2 is kept, the script goes on) still gets through.",
+        "quote": "its `-e` stops the script at the first command that exits with a nonzero code, unless that command is part of a `||` list. So `status=0` and `|| status=$?` keep the 2 without stopping it.",
+        "fix": "Replace 'unless that command is part of a `||` list' with 'unless it is followed by `||`, which runs the right-hand command only when the left one fails; `$?` holds the exit code just returned'."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "`||` list / `$?` (shell syntax, minor)"
+      ],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

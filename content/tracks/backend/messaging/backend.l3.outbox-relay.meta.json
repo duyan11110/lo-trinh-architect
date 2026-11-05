@@ -1,0 +1,158 @@
+{
+  "id": "backend.l3.outbox-relay",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-10-14T20:00:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "At stage-3 DonHang.Api registers OutboxRelay<DonHangDbContext> with exchange donhang.orders (AddOutboxRelay); OutboxRelay derives from BackgroundService, so it runs as a hosted service in the API's process.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Api/Program.cs:43-48; DonHang.Messaging/OutboxRelay.cs:12-14",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 2,
+      "text": "Each tick (PeriodicTimer, 1 s) opens a transaction and claims rows with SELECT … WHERE published_at IS NULL ORDER BY created_at LIMIT 20 FOR UPDATE SKIP LOCKED.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Messaging/OutboxRelay.cs:16-17,21-22,47-48,74-83",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 3,
+      "text": "FOR UPDATE locks the returned rows until the transaction ends; SKIP LOCKED skips rows another transaction has locked, so two copies of the API do not claim the same row at the same time.",
+      "kind": "behavior",
+      "version_key": "postgresql",
+      "source_hint": "PostgreSQL 17 docs: SELECT > The Locking Clause (SKIP LOCKED)",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 4,
+      "text": "RelayDueAsync sets PublishedAt only after await publisher.PublishAsync returns (lines 58-59); the finally block calls SaveChangesAsync and CommitAsync, so rows set before a failing publish are stored as published and the exception then propagates.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Messaging/OutboxRelay.cs:51-69",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 5,
+      "text": "Confirms are enabled per channel (CreateChannelOptions); with confirmations and tracking on, awaited BasicPublishAsync completes once the broker confirms, throws if it refuses the message, and a publish while the connection is down throws.",
+      "kind": "behavior",
+      "version_key": "rabbitmq_client",
+      "source_hint": "RabbitMQ .NET client 7.x guide: Publisher Confirms (CreateChannelOptions, publisher confirmation tracking); examples/don-hang @ stage-3: RabbitMqPublisher.cs:16-20,48-50",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 6,
+      "text": "With publisher confirms on, RabbitMQ answers each publish once the queues the message is routed to have accepted it.",
+      "kind": "behavior",
+      "version_key": "rabbitmq",
+      "source_hint": "RabbitMQ docs: Consumer Acknowledgements and Publisher Confirms > Publisher Confirms / When Will Published Messages Be Confirmed by the Broker",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 7,
+      "text": "Without publisher confirms, RabbitMQ never acknowledges a publish, so a returned call says nothing about whether the broker kept the message.",
+      "kind": "behavior",
+      "version_key": "rabbitmq",
+      "source_hint": "RabbitMQ docs: Consumer Acknowledgements and Publisher Confirms (Publisher Confirms motivation); Reliability Guide > Publishers",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 8,
+      "text": "Exchange donhang.orders is declared Topic, durable: true (RabbitMqPublisher.cs:51); DonHang.Notifications declares notifications.order-events durable (RabbitMqTopology.cs:25); every message gets Persistent = true (RabbitMqPublisher.cs:28).",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Messaging/RabbitMqPublisher.cs:24-29,51; DonHang.Notifications/RabbitMqTopology.cs:23-26",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 9,
+      "text": "Durable exchanges and queues survive a broker restart; a confirmed message that RabbitMQ routed to a durable queue (persistent, or any message in a quorum queue) survives a restart of the broker.",
+      "kind": "behavior",
+      "version_key": "rabbitmq",
+      "source_hint": "RabbitMQ docs: Queues > Durability; Exchanges > Durability; Publishers > Message Durability; Quorum Queues",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 10,
+      "text": "broker-down.sh at stage-3: with RabbitMQ stopped, POST /api/v1/orders returns 201, the row reads 'order.placed | not published', the log reads 'Relaying outbox messages failed (...); trying again in 1 s'; after restart the row reads 'published' and the notification 'sent'.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: scripts/backend/broker-down.sh; outputs/stage-3/scripts/backend/broker-down.txt",
+      "needs_verification": true,
+      "section": 7
+    },
+    {
+      "n": 11,
+      "text": "ExecuteAsync catches exceptions from RelayDueAsync (unless stopping), logs one warning without stack trace and retries on the next 1 s tick; there is no backoff and no attempt limit for outbox rows.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Messaging/OutboxRelay.cs:19-35",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 12,
+      "text": "If RabbitMQ is down, line 47 (connection.GetAsync) cannot open a connection, or line 48 (CreateChannelAsync) cannot open a channel on the one that dropped, so the first PublishAsync of a tick throws and the claimed rows stay unpublished.",
+      "kind": "behavior",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Messaging/RabbitMqPublisher.cs:43-50; RabbitMqConnection.cs:27; OutboxRelay.cs:37-42 (comment)",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 13,
+      "text": "If the process dies before COMMIT, PostgreSQL rolls back the open transaction when the session ends and releases its row locks, so published_at stays NULL and a later tick publishes the row again.",
+      "kind": "behavior",
+      "version_key": "postgresql",
+      "source_hint": "PostgreSQL 17 docs: Tutorial > Transactions; Explicit Locking > Row-Level Locks (held until transaction end); OutboxRelay.cs:41-42",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 14,
+      "text": "RabbitMqPublisher sets MessageId to the outbox row's Id (line 26), so a republished row's copies carry the same MessageId.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Messaging/RabbitMqPublisher.cs:24-29",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 15,
+      "text": "The outbox with a confirm-then-commit relay gives at-least-once delivery to the queues bound to the exchange: a confirmed message is not lost from them, but a row may be published more than once, so receivers must expect duplicates.",
+      "kind": "behavior",
+      "version_key": "rabbitmq",
+      "source_hint": "RabbitMQ docs: Publishers (republishing unconfirmed messages); Confirms (unroutable messages); prereq backend.l2.at-least-once-jobs",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 16,
+      "text": "The channel is opened on first use and reused while IsOpen; ExchangeDeclareAsync with the same settings changes nothing if the exchange exists.",
+      "kind": "behavior",
+      "version_key": "rabbitmq",
+      "source_hint": "examples/don-hang @ stage-3: RabbitMqPublisher.cs:40-53; RabbitMQ docs: Exchanges (declaration is idempotent with equivalent attributes)",
+      "needs_verification": true,
+      "section": 5
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [1, 2, 3, 4, 5],
+    "outline_items_missing": [],
+    "beyond_scope": []
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1575,
+    "notes": "apply-review 2026-10-14: confirm/durability/at-least-once now conditioned on routing to a bound durable queue (§3,§4,§6,summary 3); claims 5,6,7,9,12,15 per suggested_text (15 now behavior). Junior: channel glossed, tick defined, BasicPublishAsync↔PublishAsync, TDbContext, Topic, skip 55-57 moved up, §5 para split, Notifications/row. Quiz q2/q4/q6 left to /quiz."
+  },
+  "open_questions": [],
+  "repo_changes_needed": []
+}

@@ -15,8 +15,8 @@ vocab: [api-server, kubectl, kubeconfig]
 example_tag: stage-2
 versions_used: [kubernetes, kind]
 content_version: 1
-status: approved
-approved_by: auto
+status: published
+approved_by: owner
 reviewed_at: "2026-10-03T18:21:48+07:00"
 ---
 

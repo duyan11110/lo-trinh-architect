@@ -1,0 +1,170 @@
+{
+  "id": "k8s.l3.control-plane-ha",
+  "technical": {
+    "reviewed_at": "2026-10-20T21:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Execution at stage-3: kind-config.yaml lists one `role: control-plane` and two `role: worker` nodes; capture control-plane-ha.txt lines 1-3: \"$ docker pause donhang-control-plane / $ kubectl get nodes --request-timeout=10s / failed\". Docker not running on the review host, so not re-run; the committed capture is the execution evidence.",
+        "source": "examples/don-hang@stage-3 deploy/k8s/kind-config.yaml; outputs/stage-3/scripts/k8s/control-plane-ha.txt lines 1-3; scripts/k8s/control-plane-ha.sh lines 30-34"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "refs glossary/kubelet.md: \"ensures that the containers described in those PodSpecs are running and healthy.\" glossary/kube-proxy.md: \"kube-proxy maintains network rules on nodes. These network rules allow network communication to your Pods...\" Capture line 5 with the control plane paused: \"echo-ip-...-... saw 172.22.0.3\". Round 2 addition: network-lessons.sh line 39 comment \"from donhang-lb-client, a container on Docker's network kind\"; line 42 lb_get runs `docker exec donhang-lb-client wget`.",
+        "source": "refs/kubernetes-website docs/reference/glossary/kubelet.md, kube-proxy.md; outputs/stage-3/scripts/k8s/control-plane-ha.txt line 5; scripts/lib/network-lessons.sh lines 39-42"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "refs glossary/kube-apiserver.md: \"The API server is the front end for the Kubernetes control plane.\" glossary/etcd.md: \"Consistent and highly-available key value store used as Kubernetes' backing store for all cluster data.\" Capture line 3: `kubectl get nodes` prints `failed` with the only control-plane node paused.",
+        "source": "refs/kubernetes-website docs/reference/glossary/kube-apiserver.md, etcd.md"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "kind Configuration > Nodes: \"Multiple `control-plane` nodes may be specified in order to test a \"high availability\" control plane.\" kubeadm ha-topology.md: \"Each control plane node runs an instance of the kube-apiserver, kube-scheduler, and kube-controller-manager\" and \"This is the default topology in kubeadm. A local etcd member is created automatically on control plane nodes\". glossary/kube-controller-manager.md: \"Control plane component that runs controller processes.\"",
+        "source": "https://kind.sigs.k8s.io/docs/user/configuration/ ; refs/kubernetes-website docs/setup/production-environment/tools/kubeadm/ha-topology.md; glossary/kube-controller-manager.md"
+      },
+      {
+        "n": 5,
+        "verdict": "unverified",
+        "evidence": "Partly supported: capture lines 14-19 list `donhang-ha-external-load-balancer` and \"the kubeconfig's API server: https://127.0.0.1:...\". Re-fetched kind Configuration in round 2: it has \"Multiple `control-plane` nodes may be specified...\" and \"By default the API server listens on a random open port\" but no mention of a load balancer for the control plane (WebFetch: \"The page doesn't mention a load balancer for the control plane\"). Docker unavailable here, so `docker port` could not be run.",
+        "source": "https://kind.sigs.k8s.io/docs/user/configuration/ ; outputs/stage-3/scripts/k8s/control-plane-ha.txt lines 14-19"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "kubeadm high-availability.md, \"Create load balancer for kube-apiserver\": \"Create a kube-apiserver load balancer with a name that resolves to DNS.\" ... \"Make sure the address of the load balancer always matches the address of kubeadm's ControlPlaneEndpoint.\"",
+        "source": "refs/kubernetes-website docs/setup/production-environment/tools/kubeadm/high-availability.md"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "etcd v3.6 FAQ: \"An etcd cluster needs a majority of nodes, a quorum, to agree on updates to the cluster state.\" and a majority \"must agree on a proposal before it can be committed to the cluster\". (WebFetch summary; wording quoted as returned.)",
+        "source": "https://etcd.io/docs/v3.6/faq/"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "etcd v3.6 FAQ, 'What is failure tolerance?' table (Cluster Size / Majority / Failure Tolerance): 3/2/1, 4/3/1, 5/3/2. \"An etcd cluster operates so long as a member quorum can be established.\"",
+        "source": "https://etcd.io/docs/v3.6/faq/"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Execution capture lines 21-26: \"$ docker pause donhang-ha-control-plane2 / $ kubectl --kubeconfig secrets/donhang-ha.kubeconfig get nodes / NAME / donhang-ha-control-plane / donhang-ha-control-plane2 / donhang-ha-control-plane3\". With 3 members, majority 2 (etcd FAQ table), so etcd still serves the stored Node objects.",
+        "source": "outputs/stage-3/scripts/k8s/control-plane-ha.txt lines 21-26; https://etcd.io/docs/v3.6/faq/"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Claim reworded in round 1 to a statement about the script, which the source settles: control-plane-ha.sh lines 62-63 comment \"The load balancer stops sending requests to the paused API server once its health checks fail, a few seconds later.\"; lines 65-69 `for try in $(seq 10); do ... sleep 3; done`. The lesson now attributes the cause to the comment, not to kind's documented behaviour.",
+        "source": "examples/don-hang@stage-3 scripts/k8s/control-plane-ha.sh lines 59-69"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Ledger text now equals the round-1 suggested_text. etcd v3.6 FAQ: \"Requests that do not require consensus (e.g., serialized reads) can be processed by any cluster member.\" api-concepts.md: a list with resourceVersion unset is \"Most recent ... must be consistent (in detail: served from etcd via a quorum read)\". So a member without quorum cannot serve the consistent data the API server asks for. Capture lines 28-31: \"failed (three tries)\", 1 API server running.",
+        "source": "https://etcd.io/docs/v3.6/faq/ ; refs/kubernetes-website docs/reference/using-api/api-concepts.md; outputs/stage-3/scripts/k8s/control-plane-ha.txt lines 28-31"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "configure-upgrade-etcd.md: \"You should run etcd as a cluster with an odd number of members.\" kubeadm high-availability.md: \"Having an odd number of control plane nodes can help with leader selection in the case of machine or zone failure.\" Round 2: section 4 and summary item 5 now carry the stacked-etcd condition (\"whose etcd members run on its own nodes\", \"with one member per node\").",
+        "source": "refs/kubernetes-website docs/tasks/administer-cluster/configure-upgrade-etcd.md; docs/setup/production-environment/tools/kubeadm/high-availability.md"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "kubectl reference, global flags: \"--kubeconfig string: Path to the kubeconfig file to use for CLI requests.\" \"--request-timeout string Default: \"0\": The length of time to wait before giving up on a single server request. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h).\" Script line 13: `ha() { command kubectl --kubeconfig \"$ha_config\" --request-timeout=15s \"$@\"; }`.",
+        "source": "refs/kubernetes-website docs/reference/kubectl/kubectl.md"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "crictl.md: \"`crictl` is a command-line interface for CRI-compatible container runtimes.\" glossary/cri.md: \"The main protocol for the communication between the kubelet and Container Runtime.\" Execution: capture line 31 \"API server containers running on donhang-ha-control-plane: 1\" from `crictl ps --name kube-apiserver --state running -q | wc -l` (script line 83). The docs do not document --name/--state/-q; flag meanings rest on the execution result.",
+        "source": "refs/kubernetes-website docs/tasks/debug/debug-cluster/crictl.md, docs/reference/glossary/cri.md; outputs/stage-3/scripts/k8s/control-plane-ha.txt line 31"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "Ledger text now equals the round-1 suggested_text. Docker CLI reference docker_pause.yaml: \"Pause all processes within one or more containers\"; Engine API v1.48: \"Use the freezer cgroup to suspend all processes in a container.\" kind Quick Start: \"kind runs a local Kubernetes cluster by using Docker containers as 'nodes'.\"",
+        "source": "refs/docker-docs data/cli/engine/docker_pause.yaml; _vendor/github.com/moby/moby/api/docs/v1.48.yaml; https://kind.sigs.k8s.io/docs/user/quick-start/"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "git show stage-3:deploy/k8s/kind-ha-config.yaml: three `- role: control-plane` entries, no worker, each `image: kindest/node:v1.34.11@sha256:44e222ee...d67d`; stage-3:deploy/k8s/kind-config.yaml uses the same image string.",
+        "source": "examples/don-hang@stage-3 deploy/k8s/kind-ha-config.yaml, deploy/k8s/kind-config.yaml"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "Script lines 12-22: `ha_config=secrets/donhang-ha.kubeconfig`; cleanup() unpauses every node in `paused`, runs `kind delete cluster --name donhang-ha` if it exists, removes the kubeconfig; `trap cleanup EXIT`. Lines 86-89 unpause and delete on the normal path.",
+        "source": "examples/don-hang@stage-3 scripts/k8s/control-plane-ha.sh lines 10-22, 86-89"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "kind Configuration > Networking > API Server (fetched round 2): \"By default the API server listens on a random open port.\" \"You may choose a specific port but probably don't need to in most cases.\" kind-ha-config.yaml sets no networking.apiServerPort, so the default applies.",
+        "source": "https://kind.sigs.k8s.io/docs/user/configuration/ ; examples/don-hang@stage-3 deploy/k8s/kind-ha-config.yaml"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "Carried from round 1. Claim 5 is still unverified in the allowed docs: kind Configuration (re-fetched) does not mention a control-plane load balancer, and no capture line shows that the kubeconfig port maps to the external load balancer container. Section 5, section 4 (\"writes its address into the kubeconfig\") and quiz q5 option b depend on it; current support is the container name and 127.0.0.1 address in the capture.",
+        "quote": "The kubeconfig's address is a port on your own machine that leads to the load balancer container",
+        "fix": "Proceed with the open repo_changes_needed entry (prompt 08): have control-plane-ha.sh also print `docker port donhang-ha-external-load-balancer` (port masked like the kubeconfig's) so the capture shows the mapping; then cite that capture line in claim 5. Until then keep the text; no rewrite needed."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "accuracy",
+        "text": "q3 explanation for option a (changed this round) states as fact that retrying is what made `get nodes` work with one node paused. Neither the capture nor the lesson shows any retry happening: the capture prints only the successful listing, and section 5 says only that the first requests \"can fail\".",
+        "quote": "With one node paused, retrying was exactly what made `get nodes` work again, so it looks like the same fix.",
+        "fix": "EN: \"With one node paused, `get nodes` worked through the load balancer, so waiting for it to skip the paused API servers looks like enough here too.\" VI: \"Khi một node bị pause, `get nodes` vẫn chạy qua load balancer, nên chờ nó bỏ qua các API server bị pause trông như cũng đủ ở đây.\" Keep the rest of the explanation."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-20T22:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior reader, prompt 05, round 2 targeted re-review)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "term",
+        "text": "New in round 2 text. I know \"commit\" only as a Git snapshot; here it means etcd accepting a change. Core concepts and the paragraph before use \"accepts a change\", so switching words made me stop and check whether this is a different step.",
+        "quote": "so it can neither commit a change nor confirm the latest data the API server needs",
+        "fix": "Replace \"commit a change\" with \"accept a change\", the wording Core concepts uses."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "text": "New in round 2 (q3 explanation a). It says retrying is what made `get nodes` work with one node paused, but section 5 only says the first requests \"can fail\" and the capture shows no retry. I would wonder whether a retry actually happened in the run I read.",
+        "quote": "With one node paused, retrying was exactly what made `get nodes` work again, so it looks like the same fix.",
+        "fix": "Say what the lesson showed: \"With one node paused, `get nodes` worked through the load balancer, so waiting for it to skip the paused API servers looks like enough here too.\""
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

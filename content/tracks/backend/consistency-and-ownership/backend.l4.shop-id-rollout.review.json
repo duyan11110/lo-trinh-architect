@@ -1,0 +1,172 @@
+{
+  "id": "backend.l4.shop-id-rollout",
+  "technical": {
+    "reviewed_at": "2026-10-28T23:59:30+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Round 2 (unchanged claim). Rollout doc lines 3-6: \"Trạng thái: kế hoạch, chưa làm ở stage-4: không có migration hay code nào dưới đây trong repo. Thực hiện ADR 0013 ... Mỗi lần phát hành để lại một schema mà code của lần phát hành trước vẫn chạy được, nên quay lui là deploy lại phiên bản trước.\" Round 1: tag stage-4 = master = 828fdeb; round 2 read the same file from the submodule checkout (git commands needed approval).",
+        "source": "examples/don-hang docs/design/multi-shop-data-rollout.md @ stage-4, lines 1-6"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Rollout doc lines 21-31: \"Tạo `shops`, thêm cửa hàng hôm nay làm cửa hàng 1\"; \"Thêm `shop_id integer NOT NULL DEFAULT 1`\"; \"Khóa ngoại tới `shops` thêm với `NOT VALID` ... rồi `VALIDATE CONSTRAINT` trong một migration riêng\"; \"`CREATE INDEX CONCURRENTLY`, ngoài transaction (`suppressTransaction: true`), với `SET lock_timeout`\"; \"Index unique mới `customers (shop_id, email)` tạo cùng cách; index unique cũ trên `email` vẫn giữ.\" Lesson block 1 (lines 19-34) matches the file verbatim.",
+        "source": "examples/don-hang docs/design/multi-shop-data-rollout.md @ stage-4, lines 19-31"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Rollout doc lines 33-34: \"Quay lui: code trước release 1 không biết các cột mới, mọi dòng nó ghi nhận default 1.\"",
+        "source": "examples/don-hang docs/design/multi-shop-data-rollout.md @ stage-4, lines 33-34"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Claim text now equals round-1 suggested_text. ALTER TABLE Notes: \"When a column is added with ADD COLUMN and a non-volatile DEFAULT is specified, the default is evaluated at the time of the statement and the result stored in the table's metadata. That value will be used for the column for all existing rows. ... In neither case is a rewrite of the table required.\" Description: \"An ACCESS EXCLUSIVE lock is acquired unless explicitly noted.\" \"Briefly\" follows from no per-row work.",
+        "source": "https://www.postgresql.org/docs/17/sql-altertable.html (Description; Notes)"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "ALTER TABLE: NOT VALID — \"The constraint will still be enforced against subsequent inserts or updates ... But the database will not assume that the constraint holds for all rows in the table, until it is validated by using the VALIDATE CONSTRAINT option.\" Notes: \"validation acquires only a SHARE UPDATE EXCLUSIVE lock on the table being altered.\" Explicit locking: SHARE UPDATE EXCLUSIVE does not conflict with ROW EXCLUSIVE, which INSERT/UPDATE/DELETE take.",
+        "source": "https://www.postgresql.org/docs/17/sql-altertable.html; https://www.postgresql.org/docs/17/explicit-locking.html"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "CREATE INDEX: CONCURRENTLY builds \"without taking any locks that prevent concurrent inserts, updates, or deletes\"; \"CREATE INDEX CONCURRENTLY cannot\" run in a transaction block. lock_timeout: \"Abort any statement that waits longer than the specified amount of time while attempting to acquire a lock\". EF Core (refs/efcore-docs managing.md:208): \"passing `suppressTransaction: true` to `migrationBuilder.Sql`\". §4's revised \"bounds how long queries queue behind it ... aborts and can be retried\" is consistent.",
+        "source": "postgresql.org/docs/17/sql-createindex.html; /runtime-config-client.html; refs/efcore-docs/entity-framework/core/managing-schemas/migrations/managing.md"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Rollout doc lines 38-43: \"Access token mang cửa hàng của người gọi (claim `shop_id`, Keycloak thêm vào); API và Payments lấy cửa hàng từ đó, không từ tham số của client.\" \"Code ghi `shop_id` vào mọi dòng mới và lọc mọi truy vấn theo nó.\" \"Message `order.*` và `payment.*` thêm thuộc tính tùy chọn `shopId`; Payments và Notifications lưu `shopId` nhận được, thiếu thì dùng 1, vì message dạng cũ còn trong outbox và hàng đợi.\"",
+        "source": "examples/don-hang docs/design/multi-shop-data-rollout.md @ stage-4, lines 36-43"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Rollout doc lines 44-49: \"Khi mọi Pod đã chạy code release 2, một migration riêng bỏ default của `shop_id` và bỏ index unique cũ trên `email`.\" \"Quay lui: trước bước 4, deploy lại release 1 vẫn chạy (default còn). Sau bước 4, chỉ quay lui về release 2.\" Lesson block 2 (lines 36-49) matches the file verbatim.",
+        "source": "examples/don-hang docs/design/multi-shop-data-rollout.md @ stage-4, lines 44-49"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "5.2: \"When a new row is created and no values are specified for some of the columns, those columns will be filled with their respective default values.\" \"If no default value is declared explicitly, the default value is the null value.\" 5.5.2: \"A not-null constraint simply specifies that a column must not assume the null value.\"",
+        "source": "https://www.postgresql.org/docs/17/ddl-default.html; https://www.postgresql.org/docs/17/ddl-constraints.html"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Rollout doc lines 53-67: \"Mỗi request đặt cửa hàng của nó bằng `SET LOCAL app.shop_id`\"; policy \"`shop_id = current_setting('app.shop_id', true)::integer`\"; \"Mỗi service chuyển sang role PostgreSQL riêng, không phải superuser, không `BYPASSRLS`\"; \"Quay lui: tắt row-level security trên bảng và trả connection string về role cũ; code release 3 vẫn chạy vì nó vẫn lọc theo `shop_id`.\"",
+        "source": "examples/don-hang docs/design/multi-shop-data-rollout.md @ stage-4, lines 51-67"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "13.3.2: FOR UPDATE \"is also acquired by ... an UPDATE that modifies the values of certain columns\"; FOR NO KEY UPDATE \"is also acquired by any UPDATE that does not acquire a FOR UPDATE lock.\" Both block other UPDATE/DELETE of the row. \"Row-level locks are released at transaction end or during savepoint rollback, just like table-level locks.\"",
+        "source": "https://www.postgresql.org/docs/17/explicit-locking.html (13.3.2 Row-Level Locks)"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "ALTER TABLE: \"SET NOT NULL may only be applied to a column provided none of the records in the table contain a NULL value for the column. Ordinarily this is checked during the ALTER TABLE by scanning the entire table; however, if a valid CHECK constraint exists ... the table scan is skipped.\" SET NOT NULL is not among the subforms with a reduced lock, so \"An ACCESS EXCLUSIVE lock is acquired unless explicitly noted.\"",
+        "source": "https://www.postgresql.org/docs/17/sql-altertable.html"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Round 2 fetch, 5.9: \"Superusers and roles with the BYPASSRLS attribute always bypass the row security system when accessing a table. Table owners normally bypass row security as well, though a table owner can choose to be subject to row security with ALTER TABLE ... FORCE ROW LEVEL SECURITY.\" Repo (round 1): docker-compose.yml:70 `POSTGRES_USER: donhang`; db/tenancy/row-level-security.sql:5 \"donhang owns the tables and is a superuser\".",
+        "source": "https://www.postgresql.org/docs/17/ddl-rowsecurity.html; examples/don-hang docker-compose.yml, db/tenancy/row-level-security.sql @ stage-4"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "9.28.1 current_setting: \"If there is no such setting, current_setting throws an error unless missing_ok is supplied and is true (in which case NULL is returned).\" With NULL, `shop_id = NULL` is never true, so the USING clause admits no row. Repo db/tenancy/row-level-security.sql:20-22 states the same.",
+        "source": "https://www.postgresql.org/docs/17/functions-admin.html; examples/don-hang db/tenancy/row-level-security.sql"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "Claim now equals round-1 suggested_text; version_key kubernetes, `kubernetes` in versions_used. Repo: base/migrate-hook.yaml `sync-wave: \"1\"`, base/api.yaml `sync-wave: \"2\"`, `replicas: 2`, no `strategy`. Argo CD: \"ArgoCD will start deploying from the lowest number and finish with the highest number\". k8s Deployment: maxUnavailable \"rounding down ... The default value is 25%\", maxSurge \"rounding up. The default value is 25%\" → 0 and 1 for 2 replicas.",
+        "source": "argo-cd.readthedocs.io/en/stable/user-guide/sync-waves/; refs/kubernetes-website/content/en/docs/concepts/workloads/controllers/deployment.md:1204,1216"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "Rollout doc lines 71-74: \"Kế hoạch giả định mỗi tài khoản Keycloak thuộc một cửa hàng. Nếu một khách mua ở nhiều cửa hàng bằng một tài khoản ..., cửa hàng của request phải lấy từ nơi khác, và release 2 phải xem lại.\"",
+        "source": "examples/don-hang docs/design/multi-shop-data-rollout.md @ stage-4, lines 69-74"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "Opinion, now conditioned as round-1 suggested_text (\"the restarted version writes shop_id\"); §7 says \"the version started afterwards already writes `shop_id`, so no Pod inserts without it\". Supported by 5.2/5.5.2 (claim 9) and rollout doc lines 33-34, 48-49, 69-74.",
+        "source": "https://www.postgresql.org/docs/17/ddl-default.html; rollout doc @ stage-4"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "Rollout doc lines 10-17 table: `donhang` → \"`customers`, `orders`, `order_items`, `order_status_history` (Ordering); `products` (Catalog)\"; `donhang_payments` → `payments`; `donhang_notifications` → `notifications`; outbox/inbox: \"cửa hàng nằm trong thân message\". \"Bảng `shops` nằm trong `donhang` ... Payments và Notifications lưu `shop_id` như một con số, không có khóa ngoại tới database khác.\"",
+        "source": "examples/don-hang docs/design/multi-shop-data-rollout.md @ stage-4, lines 8-17"
+      },
+      {
+        "n": 19,
+        "verdict": "verified",
+        "evidence": "SET: \"The effects of SET LOCAL last only till the end of the current transaction, whether committed or not.\" 19.16: \"Custom options have two-part names: an extension name, then a dot, then the parameter name proper\"; \"PostgreSQL will accept a setting for any two-part parameter name.\" 9.28.1: current_setting returns the current value of the setting (see claim 14).",
+        "source": "https://www.postgresql.org/docs/17/sql-set.html; https://www.postgresql.org/docs/17/runtime-config-custom.html; https://www.postgresql.org/docs/17/functions-admin.html"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "New in round 2 (changed text). \"must not own the tables\" is stronger than the docs: 5.9 says owners \"normally\" bypass RLS, \"though a table owner can choose to be subject to row security with ALTER TABLE ... FORCE ROW LEVEL SECURITY\". The rollout doc (lines 58-59) lists only \"không phải superuser, không `BYPASSRLS`\"; the owner condition is the lesson's inference, yet §11 line 5 presents it as part of the plan.",
+        "quote": "Table owners normally skip policies too, so the new role must not own the tables either.",
+        "fix": "§5: \"Table owners normally skip policies too, so the new role should not own the tables (or the tables need `FORCE ROW LEVEL SECURITY`).\" §11 line 5 may keep \"own no tables\"; claim 13 already covers the owner rule."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-28T23:59:45+07:00",
+    "reviewer": "claude-opus-5-5 (review-junior, round 2)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "term",
+        "text": "New in round 2 (changed text). §4 now uses `SET LOCAL app.shop_id` and the diagram node \"roles without BYPASSRLS\", but both are only explained in §5. Reading §4 I can follow \"sets its shop\", yet I cannot narrate node P until §5. Not stuck for long, since the definitions come one section later.",
+        "quote": "Release 3 starts with code in which each request sets its shop with `SET LOCAL app.shop_id`.",
+        "fix": "Move the sentence \"`app.shop_id` is a named setting on the database connection; `SET LOCAL` gives it a value only until the current transaction ends\" from §5 to right after this sentence in §4."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "gap",
+        "text": "New in round 2 (changed text). \"Table owners\" is new to me: I guess the owner is the role that created the tables, but the text does not say which role owns them today, so I cannot tell whether this condition is already met or is a separate change. Summary line 5 repeats \"own no tables\".",
+        "quote": "Table owners normally skip policies too, so the new role must not own the tables either.",
+        "fix": "Add a clause after \"Table owners\": \"(the role that created the tables, `donhang` today)\"."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "table owner"
+      ],
+      "skipped_steps": [
+        "`SET LOCAL app.shop_id` and `BYPASSRLS` used in §4 and the diagram before §5 explains them"
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

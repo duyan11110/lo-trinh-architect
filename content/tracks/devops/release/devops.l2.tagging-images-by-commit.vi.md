@@ -15,8 +15,8 @@ vocab: []
 example_tag: stage-2
 versions_used: [github_actions, docker, ghcr]
 content_version: 1
-status: approved
-approved_by: auto
+status: published
+approved_by: owner
 reviewed_at: "2026-10-03T06:46:48+07:00"
 ---
 

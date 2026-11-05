@@ -1,0 +1,218 @@
+{
+  "id": "backend.l4.service-level-indicators",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-10-29T16:00:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "The Grafana dashboard 'Đơn Hàng API' has panels 'Requests per second, by status code', '5xx responses per second' and 'p95 response time'; the p95 panel is histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket[5m]))) over every endpoint.",
+      "kind": "fact",
+      "source_hint": "deploy/monitoring/grafana/dashboards/donhang-api.json lines 3, 20, 64, 108, 144 @ stage-4",
+      "needs_verification": false,
+      "section": 2
+    },
+    {
+      "n": 2,
+      "text": "An SLI is a measured ratio of good events to all valid events, such as the share of POST /api/v1/orders requests not answered with a 5xx (glossary; outline item 1).",
+      "kind": "fact",
+      "source_hint": "content/glossary.yaml service-level-indicator; outline item 1",
+      "needs_verification": false,
+      "section": 3
+    },
+    {
+      "n": 3,
+      "text": "UseHttpMetrics is the first middleware in the API pipeline, so later ones, including ExceptionHandlingMiddleware that turns an exception into a 500, run inside it; it counts every request except /metrics with its final status code and duration.",
+      "kind": "fact",
+      "source_hint": "DonHang.Api/Program.cs lines 190-203 @ stage-4",
+      "needs_verification": false,
+      "section": 4
+    },
+    {
+      "n": 4,
+      "text": "prometheus-net.AspNetCore's HTTP metrics: counter http_requests_received_total and histogram http_request_duration_seconds, labelled code, method and endpoint (the route template, e.g. api/v1/orders).",
+      "kind": "behavior",
+      "source_hint": "prometheus-net README, ASP.NET Core HTTP request metrics; docs/design/slo.md lines 8-10 @ stage-4",
+      "version_key": "prometheus_net",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 5,
+      "text": "A Prometheus histogram's _bucket series with label le counts every observation less than or equal to that bound (cumulative); the _count series counts all observations.",
+      "kind": "behavior",
+      "source_hint": "Prometheus docs, Metric types: Histogram; Histograms and summaries",
+      "version_key": "prometheus",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 6,
+      "text": "increase(v[range]) gives how much a counter grew over the range; it is extrapolated from the samples in the range and may return non-integer results even for counters.",
+      "kind": "behavior",
+      "source_hint": "Prometheus docs, Querying: Functions, increase()",
+      "version_key": "prometheus",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 7,
+      "text": "Requests that fail before reaching the API, at Caddy (the lab's reverse proxy in front of api) or at the cluster's Gateway, are not counted by the SLIs.",
+      "kind": "fact",
+      "source_hint": "docs/design/slo.md line 12; docker-compose.yml caddy service (line 215 comment); STAGE.md staging Gateway @ stage-4",
+      "needs_verification": false,
+      "section": 4
+    },
+    {
+      "n": 8,
+      "text": "slo.md SLIs: S1 POST api/v1/orders and api/v2/orders not 5xx out of every POST to them; S2 same requests within bucket le=\"0.512\"; S3 the two product GETs not 5xx, catalog-reads 503 bad; S4 POST refund within le=\"2.048\".",
+      "kind": "fact",
+      "source_hint": "docs/design/slo.md lines 22-27 @ stage-4",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 9,
+      "text": "2 seconds is not a bucket bound of http_request_duration_seconds; the nearest bounds are 1.024 and 2.048 (prometheus-net default buckets double from 0.001 s).",
+      "kind": "number",
+      "source_hint": "docs/design/slo.md lines 29-30 @ stage-4; prometheus-net source HttpRequestDurationMiddleware default buckets (ExponentialBuckets(0.001, 2, 16))",
+      "version_key": "prometheus_net",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 10,
+      "text": "S4 counts against 2.048, slightly looser than YC-7; an exact 2-second count needs its own bucket at 2 s, and stage-4 does not change the buckets.",
+      "kind": "fact",
+      "source_hint": "docs/design/slo.md lines 29-32 @ stage-4",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 11,
+      "text": "YC-7: a customer's refund request is received and answered within 2 seconds, even when the payment gateway does not answer or fails.",
+      "kind": "fact",
+      "source_hint": "docs/team/refund-requirements.md lines 43-44 @ stage-4",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 12,
+      "text": "slo.md: 429 from the per-customer orders limit and other 4xx are not bad (correct answers to a wrong or excessive request); 503 from catalog-reads is bad (a valid request refused for lack of room, seen as an error).",
+      "kind": "fact",
+      "source_hint": "docs/design/slo.md lines 34-37 @ stage-4",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 13,
+      "text": "The orders policy is a fixed window of 10 orders per customer (1 minute in Program.cs, 10 s in the lab via RateLimiting__Orders__Window); refusals become 429. The catalog-reads concurrency limiter (20 running, 5 queued) refuses with 503.",
+      "kind": "fact",
+      "source_hint": "DonHang.Api/Program.cs lines 135-182; docker-compose.yml lines 195-198 @ stage-4",
+      "version_key": "aspnetcore",
+      "needs_verification": false,
+      "section": 8
+    },
+    {
+      "n": 14,
+      "text": "slo-report.sh: promql sends one query to /api/v1/query and prints its value (0 if empty); sli queries round(sum(increase(...[1h]))) for good and total; awk prints the ratio, n/a when total is 0; report uses $orders for S1/S2, $products for S3, $refund for S4, as slo.md does.",
+      "kind": "fact",
+      "source_hint": "scripts/backend/slo-report.sh lines 12-16, 27-42 @ stage-4; docs/design/slo.md lines 22-27, 45-55 @ stage-4",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 15,
+      "text": "The lab's Prometheus keeps no long history, so slo-report.sh reads a 1-hour window.",
+      "kind": "fact",
+      "source_hint": "docs/design/slo.md lines 13-15 @ stage-4",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 16,
+      "text": "In a PromQL label matcher, =~ reads the value as a pattern (an RE2 regular expression, where braces are special) and = matches it exactly; the braces in $products are escaped because of the =~ matcher.",
+      "kind": "syntax",
+      "source_hint": "Prometheus docs, Querying basics: Time series selectors, label matchers; scripts/backend/slo-report.sh lines 28-29 @ stage-4",
+      "version_key": "prometheus",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 17,
+      "text": "histogram_quantile estimates a percentile from bucket counts, only as precisely as the bucket bounds allow; it does not count requests above a threshold.",
+      "kind": "behavior",
+      "source_hint": "Prometheus docs, Querying: Functions, histogram_quantile(); devops.l2.histograms-and-percentiles summary line 4",
+      "version_key": "prometheus",
+      "needs_verification": true,
+      "section": 8
+    },
+    {
+      "n": 18,
+      "text": "CPU and memory measure how hard the process works, not whether answers were right or in time; they help find why after an SLI shows that service dropped.",
+      "kind": "opinion",
+      "source_hint": "outline misconception 1",
+      "needs_verification": false,
+      "section": 6
+    },
+    {
+      "n": 19,
+      "text": "When product reads far outnumber orders, slow orders hardly move a p95 computed over every endpoint together.",
+      "kind": "opinion",
+      "source_hint": "follows from claim 1 (sum by le over all endpoints) and claim 17",
+      "needs_verification": false,
+      "section": 8
+    },
+    {
+      "n": 20,
+      "text": "Counting in front of the API (Caddy, Gateway) is worth its cost when failures there are a real share of what customers meet; slo.md does not use such metrics.",
+      "kind": "opinion",
+      "source_hint": "docs/design/slo.md lines 8-12 @ stage-4",
+      "needs_verification": false,
+      "section": 6
+    },
+    {
+      "n": 21,
+      "text": "If a 429 limit is wrong for customers, change the limit rather than counting 429 as bad in S1.",
+      "kind": "opinion",
+      "source_hint": "docs/design/slo.md lines 34-36 @ stage-4",
+      "needs_verification": false,
+      "section": 7
+    },
+    {
+      "n": 22,
+      "text": "slo-report.sh runs on the host with the lab started with COMPOSE_PROFILES=monitoring; it places 2 orders and product reads, reports, stops db while 4 orders get 500, starts db again, places 2 more (201) and reports again.",
+      "kind": "fact",
+      "source_hint": "scripts/backend/slo-report.sh lines 2-3, 50-85; outputs/stage-4/scripts/backend/slo-report.txt lines 10-16 @ stage-4",
+      "needs_verification": false,
+      "section": 9
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [1, 2, 3, 4, 5, 6],
+    "outline_items_missing": [],
+    "beyond_scope": ["Why increase() is wrapped in round() (claim 6), one clause, to explain the quoted code."]
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1930,
+    "notes": "apply-review r1: claims 13, 15 rephrased; claim 23 removed with its Try it sentence; claim 14 reworded; first-middleware step added; claim 16 now =~ vs =. r2 (junior): §5 'regular expression' replaced by 'a pattern, like 5.., in which braces have a special meaning' (claim 16 text aligned); §8 dropped 'though the API had little work to do'."
+  },
+  "open_questions": [
+    "Former claim 23: if the code=\"500\" series for POST orders first appears inside the hour, increase() may read 0 and S1's ratio not drop on a fresh lab. Not run this session; Try it now stops at the 500/201 answers."
+  ],
+  "repo_changes_needed": [
+    {
+      "lesson": "backend.l4.service-level-indicators",
+      "need": "prompt 08: make the POST orders code=\"500\" series exist before the first report, so a lesson can promise that S1's ratio drops.",
+      "suggested_path": "scripts/backend/slo-report.sh"
+    },
+    {
+      "lesson": "backend.l4.service-level-indicators",
+      "need": "prompt 08: lines 13-15 say the lab Prometheus keeps data only since its last start; Compose keeps the anonymous volume across restarts, so data is lost only when the container is removed (e.g. docker compose down).",
+      "suggested_path": "docs/design/slo.md"
+    }
+  ]
+}

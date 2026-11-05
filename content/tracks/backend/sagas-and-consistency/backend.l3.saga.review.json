@@ -1,0 +1,124 @@
+{
+  "id": "backend.l3.saga",
+  "technical": {
+    "reviewed_at": "2026-10-14T23:59:50+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Round 2: lesson now says 'At stage-2 the refund existed only as a design: refund-design.md first planned to save the refund row, the order's new status and the email in one transaction in donhang.' Matches refund-design.md@stage-2 'Trạng thái: đề xuất, chưa làm' and STAGE.md (stage-2 design 'is built as a saga' at stage-3). Ownership part: refund-design.md 'bảng payments chỉ nằm trong cơ sở dữ liệu donhang_payments'.",
+        "source": "examples/don-hang: STAGE.md:161-166; docs/design/refund-design.md:19-24, 67-68; refund-design.md@stage-2 lines 1-12 as quoted in management.l2.design-doc.en.md:68-81"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "OrderService.RequestRefundAsync: 'order.RequestRefund(); await events.DispatchAsync(order); await repository.SaveChangesAsync();'. Entities.cs RequestRefund: 'Status = \"refunding\"; domainEvents.Add(new OrderRefundRequested(...))'. NotifyCustomerOnOrderEvents.cs:21 'HandleAsync(OrderRefundRequested domainEvent) => AddMessage(\"order.refund-requested\", domainEvent)'. Read from the submodule working tree (git show at the tag was not permitted in this session).",
+        "source": "examples/don-hang: DonHang.Domain/OrderService.cs:82-95; DonHang.Domain/Entities.cs:150-156; DonHang.Domain/NotifyCustomerOnOrderEvents.cs:21"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "OrdersController.Refund: 'var order = await orderService.RequestRefundAsync(id); return Accepted(ToDto(order));'. Captured output: '\"status\":\"refunding\"' then '-> 202'. refund-design.md step 1: 'rồi trả 202 Accepted. Request không chờ ai khác (YC-7).'",
+        "source": "examples/don-hang: DonHang.Api/Controllers/OrdersController.cs:122-135; outputs/stage-3/scripts/backend/refund-saga.txt:1-3; docs/design/refund-design.md:28-31"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "RFC 9110 §15.3.3: 'The 202 (Accepted) status code indicates that the request has been accepted for processing, but the processing has not been completed.' (grep in refs/rfc/rfc9110.txt).",
+        "source": "refs/rfc/rfc9110.txt:6982-6989 (RFC 9110 section 15.3.3)"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "RefundRequestedConsumer.cs:90-94 'db.InboxMessages.Add(new InboxMessage { MessageId = id }); db.Payments.Add(NewRefund(charge, request)); ... await db.SaveChangesAsync();'. NewRefund: 'Kind = \"refund\", Status = \"pending\", AmountVnd = charge.AmountVnd'. No gateway client is injected into the class (constructor: connection, scopeFactory, logger).",
+        "source": "examples/don-hang: DonHang.Payments/RefundRequestedConsumer.cs:14-16, 80-115"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "EF Core docs: 'all changes in a single call to SaveChanges are applied in a transaction. If any of the changes fail, then the transaction is rolled back and none of the changes are applied to the database.' Code: catch '(DbUpdateException ex) when (Inbox.IsDuplicate(ex) || IsSecondRefund(ex))' logs only; Inbox.IsDuplicate checks 'PK_inbox_messages'; index 'payments_one_refund_per_order' IsUnique filter kind='refund'; OnReceivedAsync then BasicAckAsync.",
+        "source": "refs/efcore-docs/entity-framework/core/saving/transactions.md:17; DonHang.Payments/RefundRequestedConsumer.cs:57-60, 96-100; DonHang.Messaging/Inbox.cs:12-14; DonHang.Payments/PaymentsDbContext.cs:17, 37"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "RefundSender.SendDueAsync: 'BeginTransactionAsync' ... ClaimDueAsync ('status = ''pending'' ... FOR UPDATE SKIP LOCKED') ... 'gateway.RefundAsync(refund, ...)' ... 'if (message is not null) db.OutboxMessages.Add(message);' ... 'SaveChangesAsync' ... 'CommitAsync'. RecordResult on Refunded: 'refund.Status = \"refunded\"; ... return Message(\"payment.refunded\", ...)'. Registered as AddHostedService<RefundSender>.",
+        "source": "examples/don-hang: DonHang.Payments/RefundSender.cs:44-97; DonHang.Payments/Program.cs:41"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "PaymentEventsConsumer.HandleAsync: 'db.InboxMessages.Add(new InboxMessage { MessageId = id }); ... if (routingKey == \"payment.refunded\") await orders.CompleteRefundAsync(message.OrderId);' with db and orders from the same scope. OrderService.CompleteRefundAsync: 'order.CompleteRefund(); await events.DispatchAsync(order); await repository.SaveChangesAsync();'. Entities.cs: 'Status = \"cancelled\"; domainEvents.Add(new OrderRefunded(...))'; NotifyCustomerOnOrderEvents.cs:23 'order.refunded'.",
+        "source": "examples/don-hang: DonHang.Api/Messaging/PaymentEventsConsumer.cs:85-115; DonHang.Domain/OrderService.cs:97-107; DonHang.Domain/Entities.cs:158-166; DonHang.Domain/NotifyCustomerOnOrderEvents.cs:23"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "OrderEventsConsumer subjects: '\"order.refund-requested\" => \"refund requested\"', '\"order.refunded\" => \"order refunded\"'. Captured output: 'anh.tran@example.com | refund requested | sent' and 'anh.tran@example.com | order refunded | sent'.",
+        "source": "examples/don-hang: DonHang.Notifications/OrderEventsConsumer.cs:122-123; outputs/stage-3/scripts/backend/refund-saga.txt:15-17"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Outbox rows join the step's one SaveChangesAsync (IOutbox in NotifyCustomerOnOrderEvents; RefundSender adds db.OutboxMessages inside its transaction); relays: AddOutboxRelay<DonHangDbContext>, AddOutboxRelay<PaymentsDbContext>; OutboxRelay.cs:59 'message.PublishedAt = DateTimeOffset.UtcNow'. Round 2 part: RefundSender ClaimDueAsync selects status = 'pending' rows (FOR UPDATE SKIP LOCKED); no message between step 2 and step 3.",
+        "source": "examples/don-hang: DonHang.Api/Program.cs:43-48; DonHang.Payments/Program.cs:33-36; DonHang.Payments/RefundSender.cs:44-79; DonHang.Messaging/OutboxRelay.cs:59"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Entities.cs: 'public void RequestRefund()' (:150) and CompleteRefund (:161), called via OrderService.RequestRefundAsync/CompleteRefundAsync. Grep '(?i)saga|masstransit|wolverine|nservicebus' over docker-compose*.yml, Directory.Packages.props, *.csproj: no matches. STAGE.md: 'the shared project DonHang.Messaging (outbox, relay, inbox), a quorum queue with a dead-letter queue per service.'",
+        "source": "examples/don-hang: DonHang.Domain/Entities.cs:150-166; docker-compose.yml; Directory.Packages.props; STAGE.md:22-24"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "PostgreSQL 17 COMMIT: 'All changes made by the transaction become visible to others and are guaranteed to be durable if a crash occurs.' ROLLBACK: 'rolls back the current transaction' and 'Issuing ROLLBACK outside of a transaction block emits a warning and otherwise has no effect.' (WebFetch summaries).",
+        "source": "https://www.postgresql.org/docs/17/sql-commit.html; https://www.postgresql.org/docs/17/sql-rollback.html"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "refund-design.md step 5: 'thử lại sau 1 phút, rồi 2, 4, 8 phút, tối đa 1 giờ giữa hai lần, trong 24 giờ kể từ requested_at'; RefundSettings GiveUpAfter = TimeSpan.FromHours(24). PaymentEventsConsumer: 'else if (routingKey == \"payment.refund-failed\") await orders.FailRefundAsync(...)'; Entities.FailRefund: 'Status = \"paid\"'. refund-declined.txt (stage-3): 'refund-requested | refunding', 'refund-failed | paid', 'now: paid'.",
+        "source": "examples/don-hang: docs/design/refund-design.md:45-50; DonHang.Payments/RefundSender.cs:7-14; DonHang.Api/Messaging/PaymentEventsConsumer.cs:107-110; DonHang.Domain/Entities.cs:168-177; outputs/stage-3/scripts/backend/refund-declined.txt"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "refund-saga.sh:24 'curl -sS -w '\\n  -> %{http_code}\\n' -X POST \"$base/orders/1/refund\" -H \"Authorization: Bearer $token\"'; :17 token for anh.tran@example.com; :29 'wait_for_status 1 cancelled'; scripts/lib/refunds.sh:11-12 '# wait_for_status <order id> <status>: up to 60 s, until the order has it.'",
+        "source": "examples/don-hang: scripts/backend/refund-saga.sh:7-29; scripts/lib/refunds.sh:11-15"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "Output block = refund-saga.txt. Script: 'SELECT routing_key, published_at IS NOT NULL AS published FROM outbox_messages'; columns 'kind, status, amount_vnd, method, requested_by, attempts'. Round 3 wording 't ... so the message has reached RabbitMQ': OutboxRelay.RelayDueAsync sets 'message.PublishedAt = DateTimeOffset.UtcNow' right after 'await publisher.PublishAsync(message, ...)'; comment: 'set published_at only after RabbitMQ has confirmed it'.",
+        "source": "examples/don-hang: scripts/backend/refund-saga.sh:30-52; outputs/stage-3/scripts/backend/refund-saga.txt:1-17; DonHang.Messaging/OutboxRelay.cs:37-61"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "Opinion grounded in the system's design doc: 'Nhưng khi cổng lỗi hoặc chậm, khách chờ rồi nhận lỗi, và yêu cầu không được ghi lại. Điều đó trái YC-7, nên phương án này bị loại'; stated as this design's rule. Round 3 (targeted): only change is section 5 't' sentence; opened OutboxRelay.cs (working tree, git show not permitted) and meta claim 15. Round 2 had no technical issues; none carried, none new.",
+        "source": "examples/don-hang: docs/design/refund-design.md:28-31, 76-80; DonHang.Messaging/OutboxRelay.cs:37-61"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-15T00:10:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior reader, prompt 05, round 3 targeted re-review)",
+    "issues": [],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

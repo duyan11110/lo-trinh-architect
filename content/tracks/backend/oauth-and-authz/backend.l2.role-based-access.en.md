@@ -15,8 +15,8 @@ vocab: [rbac]
 example_tag: stage-2
 versions_used: [aspnetcore, keycloak, oauth2, jwt]
 content_version: 1
-status: approved
-approved_by: auto
+status: published
+approved_by: owner
 reviewed_at: "2026-09-28T12:25:13+07:00"
 ---
 

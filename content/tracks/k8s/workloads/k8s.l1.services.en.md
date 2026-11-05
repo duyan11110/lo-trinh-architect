@@ -15,8 +15,8 @@ vocab: [k8s-service]
 example_tag: stage-2
 versions_used: [kubernetes]
 content_version: 1
-status: approved
-approved_by: auto
+status: published
+approved_by: owner
 reviewed_at: "2026-10-03T22:47:03+07:00"
 ---
 

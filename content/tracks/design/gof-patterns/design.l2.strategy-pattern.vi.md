@@ -15,8 +15,8 @@ vocab: [design-pattern, strategy-pattern]
 example_tag: stage-2
 versions_used: [dotnet]
 content_version: 1
-status: approved
-approved_by: auto
+status: published
+approved_by: owner
 reviewed_at: "2026-09-29T20:52:37+07:00"
 ---
 

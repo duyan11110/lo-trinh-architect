@@ -1,0 +1,201 @@
+{
+  "lesson": "backend.l3.cross-shard-queries",
+  "stage": 3,
+  "questions": [
+    {
+      "id": "backend.l3.cross-shard-queries.q1",
+      "type": "multi",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["backend.data.sharding"],
+      "section_ref": 3,
+      "question": {
+        "en": "In the lab, orders sit on two shards by `customer_id % 2`. Which of these reads have to ask both shards? Select all that apply.",
+        "vi": "Trong lab, các đơn nằm trên hai shard theo `customer_id % 2`. Những lần đọc nào dưới đây phải hỏi cả hai shard? Chọn tất cả đáp án đúng."
+      },
+      "options": [
+        { "id": "a", "en": "The 30 newest orders of all customers, for a staff screen.", "vi": "30 đơn mới nhất của mọi khách, cho một màn hình nhân viên." },
+        { "id": "b", "en": "Customer 7's 3 newest orders, for their order history.", "vi": "3 đơn mới nhất của khách 7, cho lịch sử đơn của họ." },
+        { "id": "c", "en": "The order with id 199971, looked up by its id alone.", "vi": "Đơn có id 199971, tra chỉ bằng id của nó." },
+        { "id": "d", "en": "Every order customer 8 placed with status `new`.", "vi": "Mọi đơn có status `new` mà khách 8 đã đặt." },
+        { "id": "e", "en": "Every order placed in the last hour, by any customer.", "vi": "Mọi đơn được đặt trong một giờ qua, của bất kỳ khách nào." }
+      ],
+      "answer": ["a", "c", "e"],
+      "explanation": {
+        "en": {
+          "correct": "Only a query that contains the shard key, `customer_id`, can be sent to one shard. The newest orders of all customers, an order looked up by its id, and the last hour's orders name no customer, so any shard may hold them and each needs a scatter-gather.",
+          "b": "This one reads many rows, so it can feel like a broad query. But it names customer 7, and `7 % 2 = 1` picks shard 1 alone; the output shows all three orders coming from shard 1.",
+          "d": "A filter on `status` matches orders of many customers on both shards, so it looks like a query over all rows. But the query also names customer 8, and every order of customer 8 lives on shard 0, so shard 0 alone can answer."
+        },
+        "vi": {
+          "correct": "Chỉ truy vấn có chứa shard key, `customer_id`, mới gửi được tới một shard. Các đơn mới nhất của mọi khách, một đơn tra theo id, và các đơn trong một giờ qua đều không nêu khách nào, nên shard nào cũng có thể giữ chúng và mỗi truy vấn cần một scatter-gather.",
+          "b": "Truy vấn này đọc nhiều dòng, nên dễ có cảm giác là truy vấn rộng. Nhưng nó nêu khách 7, và `7 % 2 = 1` chỉ ra đúng shard 1; output cho thấy cả ba đơn đều đến từ shard 1.",
+          "d": "Lọc theo `status` khớp với đơn của nhiều khách trên cả hai shard, nên trông như truy vấn trên mọi dòng. Nhưng truy vấn còn nêu khách 8, và mọi đơn của khách 8 nằm ở shard 0, nên chỉ cần shard 0 trả lời."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.cross-shard-queries.q2",
+      "type": "single",
+      "bloom": "understand",
+      "difficulty": 2,
+      "skills": ["backend.data.sharding"],
+      "section_ref": 4,
+      "question": {
+        "en": "A staff screen needs the 30 newest orders of all customers from the two lab shards. A teammate asks each shard for its 15 newest and merges them. What is wrong with that?",
+        "vi": "Một màn hình nhân viên cần 30 đơn mới nhất của mọi khách từ hai shard trong lab. Một đồng đội hỏi mỗi shard 15 đơn mới nhất rồi gộp lại. Cách đó sai ở đâu?"
+      },
+      "options": [
+        { "id": "a", "en": "Nothing, since two shards each giving 15 rows add up to exactly the 30 the screen shows.", "vi": "Không sai gì, vì hai shard mỗi shard 15 dòng cộng lại đúng 30 dòng màn hình cần.", "misconception": "To get the 10 newest orders from 2 shards, I take the 5 newest from each." },
+        { "id": "b", "en": "Most of the true 30 newest may sit on one shard, and its 15 rows would leave some of them out.", "vi": "Phần lớn trong 30 đơn mới nhất thật có thể nằm ở một shard, và 15 dòng của shard đó sẽ bỏ sót một số đơn." },
+        { "id": "c", "en": "The merge cannot sort rows that came from two databases, so the 30 come out in shard order.", "vi": "Bước gộp không sắp xếp được các dòng đến từ hai database, nên 30 dòng ra theo thứ tự shard." },
+        { "id": "d", "en": "Asking for 15 rows makes each shard skip its sort, so the rows it returns are not its newest.", "vi": "Hỏi 15 dòng làm mỗi shard bỏ bước sắp xếp, nên các dòng nó trả về không phải đơn mới nhất của nó." }
+      ],
+      "answer": ["b"],
+      "explanation": {
+        "en": {
+          "correct": "Nothing says how the newest orders are spread over the shards; in the lab the 30 newest split 10 and 20. Each shard must return all 30 rows so the merge sees every candidate, then it keeps the 30 newest.",
+          "a": "Splitting the count evenly gives the right number of rows, so it feels correct. But the right number is not the right rows: in the lab, 15 from each shard kept 5 older orders from shard 0 and dropped 5 newer ones from shard 1.",
+          "c": "Rows from two databases do arrive as separate lists, so sorting them can seem impossible. But `Merge` puts the lists together in the caller's code and sorts them by `PlacedAt` and `Id`; the problem is which rows reached the merge.",
+          "d": "A smaller limit does change what each shard returns, so it is easy to blame the shard's query. But each shard still sorts its own orders newest first and returns its top rows; those are its newest, just not enough of them."
+        },
+        "vi": {
+          "correct": "Không có gì cho biết các đơn mới nhất trải trên các shard thế nào; trong lab, 30 đơn mới nhất chia 10 và 20. Mỗi shard phải trả đủ 30 dòng để bước gộp thấy mọi ứng viên, rồi giữ 30 đơn mới nhất.",
+          "a": "Chia đều số dòng cho ra đúng số lượng, nên nghe có vẻ đúng. Nhưng đúng số lượng chưa phải đúng dòng: trong lab, lấy 15 từ mỗi shard giữ lại 5 đơn cũ hơn từ shard 0 và bỏ mất 5 đơn mới hơn từ shard 1.",
+          "c": "Dòng từ hai database đúng là về thành các danh sách riêng, nên có vẻ như không sắp xếp chung được. Nhưng `Merge` ghép các danh sách trong code của bên gọi và sắp theo `PlacedAt` rồi `Id`; vấn đề nằm ở những dòng nào tới được bước gộp.",
+          "d": "Giới hạn nhỏ hơn đúng là đổi kết quả mỗi shard trả về, nên dễ đổ lỗi cho truy vấn trên shard. Nhưng mỗi shard vẫn sắp các đơn của nó từ mới tới cũ và trả các dòng đầu; đó là đơn mới nhất của nó, chỉ là không đủ số lượng."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.cross-shard-queries.q3",
+      "type": "order",
+      "bloom": "understand",
+      "difficulty": 2,
+      "skills": ["backend.data.sharding"],
+      "section_ref": 5,
+      "question": {
+        "en": "`LatestAcrossShardsAsync` is asked for the 30 newest orders of all customers. Put its steps in the order they happen.",
+        "vi": "`LatestAcrossShardsAsync` được gọi để lấy 30 đơn mới nhất của mọi khách. Sắp các bước của nó theo đúng thứ tự diễn ra."
+      },
+      "options": [
+        { "id": "a", "en": "`Merge` flattens the lists, sorts them newest first and keeps 30.", "vi": "`Merge` gộp các danh sách thành một, sắp từ mới tới cũ và giữ 30 dòng." },
+        { "id": "b", "en": "The loop starts one `LatestOnShardAsync` per shard without awaiting it.", "vi": "Vòng lặp khởi động một `LatestOnShardAsync` cho mỗi shard mà không await nó." },
+        { "id": "c", "en": "`Task.WhenAll` completes once the slowest shard has answered.", "vi": "`Task.WhenAll` hoàn tất khi shard chậm nhất đã trả lời." },
+        { "id": "d", "en": "Each shard sorts its own orders newest first and returns its top 30.", "vi": "Mỗi shard sắp các đơn của nó từ mới tới cũ và trả 30 đơn đầu." }
+      ],
+      "answer": ["b", "d", "c", "a"],
+      "explanation": {
+        "en": {
+          "correct": "The scatter starts every shard query before waiting on any, so the shards work together. Each shard returns its own newest 30, `Task.WhenAll` waits until the last of them has answered, and only then can `Merge` do the gather."
+        },
+        "vi": {
+          "correct": "Bước scatter khởi động mọi truy vấn shard trước khi chờ bất kỳ truy vấn nào, nên các shard làm việc cùng lúc. Mỗi shard trả 30 đơn mới nhất của nó, `Task.WhenAll` chờ tới khi shard cuối cùng trả lời, và chỉ khi đó `Merge` mới làm bước gather."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.cross-shard-queries.q4",
+      "type": "truefalse",
+      "bloom": "analyze",
+      "difficulty": 4,
+      "skills": ["backend.data.sharding"],
+      "section_ref": 5,
+      "question": {
+        "en": "Statement: with shard 1 unreachable, `LatestAcrossShardsAsync(30, …)` still returns a list, built from shard 0's 30 newest orders.",
+        "vi": "Nhận định: khi không kết nối được shard 1, `LatestAcrossShardsAsync(30, …)` vẫn trả về một danh sách, lấy từ 30 đơn mới nhất của shard 0."
+      },
+      "options": [
+        { "id": "a", "en": "True, because shard 0 still answers, and its newest orders are a correct answer from the shards that are up.", "vi": "Đúng, vì shard 0 vẫn trả lời, và các đơn mới nhất của nó là câu trả lời đúng từ các shard còn chạy.", "polarity": "true", "misconception": "If one shard is down, a query over all shards still gives a correct answer from the others." },
+        { "id": "b", "en": "True, because `Merge` keeps up to `count` orders from whatever lists it gets, so one list is enough.", "vi": "Đúng, vì `Merge` giữ tối đa `count` đơn từ bất kỳ danh sách nào nó nhận, nên một danh sách là đủ.", "polarity": "true" },
+        { "id": "c", "en": "False, because the call ends in an error and hands back no list at all, not even a short one.", "vi": "Sai, vì lời gọi kết thúc bằng một lỗi và không trả về danh sách nào cả, kể cả một danh sách ngắn.", "polarity": "false" },
+        { "id": "d", "en": "False, because the call returns an empty list, which tells the caller that one of the shards was down.", "vi": "Sai, vì lời gọi trả về danh sách rỗng, qua đó báo cho bên gọi biết có một shard bị sập.", "polarity": "false" }
+      ],
+      "answer": ["c"],
+      "explanation": {
+        "en": {
+          "correct": "`Task.WhenAll` completes only when every shard query has completed, and if any of them throws, the `await` throws too. So a failed shard fails the whole call instead of returning a shorter list.",
+          "a": "Shard 0's rows are real orders, so a list of them seems better than nothing. But it would quietly lack every order of odd customer ids while still looking complete; that is why this method fails instead.",
+          "b": "`Merge` does work on any number of lists, so a single list would merge fine. But `Merge` never runs here: the `await` on `Task.WhenAll` throws first, before any merging.",
+          "d": "The statement is false, but not for this reason. No list comes back at all, empty or not; the call throws, and the caller sees an error rather than zero orders."
+        },
+        "vi": {
+          "correct": "`Task.WhenAll` chỉ hoàn tất khi mọi truy vấn shard đã hoàn tất, và nếu bất kỳ truy vấn nào ném lỗi thì `await` cũng ném lỗi. Vì vậy một shard lỗi làm cả lời gọi thất bại, thay vì trả về một danh sách ngắn hơn.",
+          "a": "Các dòng của shard 0 là đơn thật, nên một danh sách gồm chúng có vẻ hơn là không có gì. Nhưng nó sẽ lặng lẽ thiếu mọi đơn của các id khách lẻ mà vẫn trông như đầy đủ; chính vì vậy phương thức này thất bại thay vì trả về.",
+          "b": "`Merge` đúng là chạy được với bất kỳ số danh sách nào, nên một danh sách vẫn gộp được. Nhưng ở đây `Merge` không bao giờ chạy: `await` trên `Task.WhenAll` ném lỗi trước, trước khi gộp gì cả.",
+          "d": "Nhận định là sai, nhưng không vì lý do này. Không có danh sách nào được trả về, rỗng hay không; lời gọi ném lỗi, và bên gọi thấy một lỗi chứ không phải không đơn nào."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.cross-shard-queries.q5",
+      "type": "scenario",
+      "bloom": "evaluate",
+      "difficulty": 5,
+      "skills": ["backend.data.sharding"],
+      "section_ref": 4,
+      "context": {
+        "en": "A lab version of Đơn Hàng keeps orders on four shards by `customer_id % 4`. The most common read is still one customer's order history, and it goes to one shard. A new staff screen shows the 30 newest orders of all customers, and every staff member's screen reloads it every few seconds. It is a scatter-gather over all four shards. When one shard is busy, the screen is slow for everyone, and when shard 2 was down for a while, the screen showed only an error.",
+        "vi": "Một phiên bản thử nghiệm của Đơn Hàng giữ các đơn trên bốn shard theo `customer_id % 4`. Lần đọc phổ biến nhất vẫn là lịch sử đơn của một khách, và nó đi tới một shard. Một màn hình nhân viên mới hiển thị 30 đơn mới nhất của mọi khách, và màn hình của mỗi nhân viên tải lại nó vài giây một lần. Đó là một scatter-gather trên cả bốn shard. Khi một shard bận, màn hình chậm với mọi người, và khi shard 2 bị sập một lúc, màn hình chỉ hiện lỗi."
+      },
+      "question": {
+        "en": "What should the team do about the staff screen?",
+        "vi": "Nhóm nên làm gì với màn hình nhân viên?"
+      },
+      "options": [
+        { "id": "a", "en": "Serve the screen from a read model of the newest orders in its own database, filled by messages from every shard.", "vi": "Phục vụ màn hình từ một read model chứa các đơn mới nhất, đặt trong database riêng và được điền bằng message từ mọi shard." },
+        { "id": "b", "en": "Re-shard orders by the order's own `id % 4`, so the newest orders spread evenly over the shards.", "vi": "Sharding lại các đơn theo `id % 4` của chính đơn, để các đơn mới nhất trải đều trên các shard." },
+        { "id": "c", "en": "Skip any shard that fails during the scatter, so the screen always shows a list of recent orders.", "vi": "Bỏ qua shard nào lỗi trong bước scatter, để màn hình luôn hiện một danh sách đơn gần đây.", "misconception": "If one shard is down, a query over all shards still gives a correct answer from the others." },
+        { "id": "d", "en": "Ask each shard for its 8 newest instead of 30, so every shard does a quarter of the work.", "vi": "Hỏi mỗi shard 8 đơn mới nhất thay vì 30, để mỗi shard chỉ làm một phần tư công việc.", "misconception": "To get the 10 newest orders from 2 shards, I take the 5 newest from each." }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "When a query without the shard key runs often, look at the reads. Here most of them, the customer histories, use the key and only this frequent screen does not, so the screen gets its own read model, and it no longer waits for the slowest shard or fails with one.",
+          "b": "An even spread sounds like it helps a query about all customers. But the newest orders still name no shard key, so the screen remains a scatter-gather, and the customer history would turn into one too. A new key is the better move when most reads lack the current key.",
+          "c": "A screen that always shows something looks friendlier than an error. But while a shard is down, the list quietly lacks that shard's orders and still looks complete. It is right only when everyone reading the list accepts that some orders may be missing from it.",
+          "d": "Less work per shard sounds like a faster screen. But nothing says the newest orders are split evenly, so 8 from each can leave out true newest ones, and the screen still waits for the slowest shard. It would hold only when something guaranteed an even split, and nothing here does."
+        },
+        "vi": {
+          "correct": "Khi một truy vấn không có shard key chạy thường xuyên, hãy nhìn vào các lần đọc. Ở đây phần lớn chúng, tức lịch sử đơn của khách, dùng key, chỉ riêng màn hình chạy thường xuyên này thì không, nên màn hình có read model riêng, và nó không còn chờ shard chậm nhất hay thất bại theo một shard.",
+          "b": "Trải đều nghe như giúp được một truy vấn về mọi khách. Nhưng các đơn mới nhất vẫn không nêu shard key, nên màn hình vẫn là một scatter-gather, và lịch sử đơn của khách cũng thành scatter-gather. Đổi key là hướng tốt hơn khi phần lớn các lần đọc thiếu key hiện tại.",
+          "c": "Màn hình luôn hiện gì đó trông thân thiện hơn một lỗi. Nhưng khi một shard sập, danh sách lặng lẽ thiếu đơn của shard đó mà vẫn trông như đầy đủ. Cách này chỉ đúng khi mọi người đọc danh sách chấp nhận rằng có thể thiếu một số đơn.",
+          "d": "Mỗi shard làm ít hơn nghe như màn hình nhanh hơn. Nhưng không có gì cho biết các đơn mới nhất chia đều, nên 8 đơn từ mỗi shard có thể bỏ sót đơn mới nhất thật, và màn hình vẫn chờ shard chậm nhất. Cách này chỉ đúng khi có gì đó bảo đảm chia đều, mà ở đây không có."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.cross-shard-queries.q6",
+      "type": "single",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["backend.data.sharding"],
+      "section_ref": 6,
+      "question": {
+        "en": "In the two-shard lab, a staff tool must cancel one order of customer 7 and one of customer 8, both or neither. What does that change take?",
+        "vi": "Trong lab hai shard, một công cụ nhân viên phải hủy một đơn của khách 7 và một đơn của khách 8, hoặc cả hai hoặc không đơn nào. Thay đổi đó cần gì?"
+      },
+      "options": [
+        { "id": "a", "en": "One transaction, as before, since a transaction covers every row its statements change.", "vi": "Một transaction như trước, vì một transaction bao mọi dòng mà các câu lệnh của nó thay đổi.", "misconception": "Two orders on different shards can still be updated in one transaction, as before." },
+        { "id": "b", "en": "A transaction on each shard, and a compensating action if one commits and the other fails.", "vi": "Một transaction trên mỗi shard, và một hành động bù nếu một bên commit còn bên kia thất bại." },
+        { "id": "c", "en": "A transaction on each shard, since the second rolls back by itself if the first one fails.", "vi": "Một transaction trên mỗi shard, vì transaction thứ hai tự rollback nếu transaction thứ nhất thất bại." },
+        { "id": "d", "en": "A scatter-gather that sends the cancel to both shards, so both commit together.", "vi": "Một scatter-gather gửi lệnh hủy tới cả hai shard, để cả hai cùng commit." }
+      ],
+      "answer": ["b"],
+      "explanation": {
+        "en": {
+          "correct": "Customer 7's order is on shard 1 and customer 8's on shard 0, two databases. A transaction belongs to one connection and a connection reaches one database, so it takes two transactions, and keeping them consistent needs the tools of a change across services, such as a saga with a compensating action.",
+          "a": "Before sharding, both orders sat in one database, so one transaction was enough. Now a transaction runs on one connection to one shard, and the other customer's order is simply not in that database.",
+          "c": "Two transactions on the same task can feel linked. But each shard is a separate database that knows nothing of the other's transaction, so one can commit while the other fails, and nothing undoes the first by itself.",
+          "d": "Sending the same thing to every shard is how a query without the shard key reads, so it is tempting to reuse it. But a scatter-gather only merges answers; each shard still runs its own transaction, and one can commit while the other fails."
+        },
+        "vi": {
+          "correct": "Đơn của khách 7 nằm ở shard 1 và đơn của khách 8 ở shard 0, là hai database. Một transaction thuộc về một kết nối và một kết nối chỉ tới một database, nên cần hai transaction, và để giữ chúng nhất quán cần các công cụ dành cho thay đổi xuyên service, như một saga có hành động bù.",
+          "a": "Trước khi sharding, hai đơn nằm trong một database, nên một transaction là đủ. Giờ một transaction chạy trên một kết nối tới một shard, và đơn của khách còn lại đơn giản là không có trong database đó.",
+          "c": "Hai transaction phục vụ cùng một việc dễ khiến ta nghĩ chúng gắn với nhau. Nhưng mỗi shard là một database riêng, không biết gì về transaction bên kia, nên một bên có thể commit trong khi bên kia thất bại, và không gì tự hoàn tác bên đã commit.",
+          "d": "Gửi cùng một thứ tới mọi shard là cách một truy vấn không có shard key đọc dữ liệu, nên dễ muốn dùng lại. Nhưng scatter-gather chỉ gộp các câu trả lời; mỗi shard vẫn chạy transaction riêng, và một bên có thể commit trong khi bên kia thất bại."
+        }
+      }
+    }
+  ]
+}

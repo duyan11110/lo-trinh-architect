@@ -1,0 +1,141 @@
+{
+  "id": "backend.l4.expand-and-contract",
+  "technical": {
+    "reviewed_at": "2026-10-28T23:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Argo CD Sync Phases and Waves: \"First Argo CD determines the number of the first wave to apply. This is the first number where any resource is out-of-sync or unhealthy.\" ... \"It repeats this process until all phases and waves are in-sync and healthy.\" Sync hooks: \"If any of them fails the whole sync process will be marked as failed.\" Repo stage-4 envs/staging/migrate-hook.yaml: hook: Sync, sync-wave \"1\", hook-delete-policy BeforeHookCreation; envs/staging/api.yaml: sync-wave \"2\".",
+        "source": "https://argo-cd.readthedocs.io/en/stable/user-guide/sync-waves/ ; examples/don-hang deploy/gitops/config-repo/envs/staging/{migrate-hook,api}.yaml @ stage-4"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "EF Core Applying Migrations, Bundles: \"As with dotnet ef database update or Update-Database, migrations are applied to the database only if they have not been already applied. For example, running the same bundle again does nothing, since there are no new migrations to apply\". Repo stage-4: DonHang.Api/Dockerfile builds `dotnet ef migrations bundle ... --output /bundle/efbundle`, ENTRYPOINT [\"./efbundle\"]; hook args only `--connection` (no target migration).",
+        "source": "https://learn.microsoft.com/ef/core/managing-schemas/migrations/applying ; DonHang.Api/Dockerfile @ stage-4"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Round 2. K8s Deployments: \"\"RollingUpdate\" is the default value.\" maxUnavailable rounds down, maxSurge rounds up, default 25% each. Repo api.yaml @ stage-4: replicas: 2, no strategy field -> maxSurge 1, maxUnavailable 0: one new Pod added, then one old removed, repeated. Claim and lesson §4/mermaid/§8/§11/q1 now say \"one at a time\" (round 1 suggested_text applied).",
+        "source": "https://kubernetes.io/docs/concepts/workloads/controllers/deployment/ (Strategy) ; envs/staging/api.yaml @ stage-4"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "EF docs: rolling back requires passing a target: \"To roll the database back, pass the migration that should remain applied.\" The staging hook passes only `--connection`, so the reverted (older) bundle applies nothing it lacks and runs no Down; efbundle \"<MIGRATION> ... Defaults to the last migration\". Revert changes only the manifests in Git (image tags of api and hook, api.yaml lines 38-41 comment). Applied migrations therefore stay.",
+        "source": "https://learn.microsoft.com/ef/core/managing-schemas/migrations/applying (efbundle) ; envs/staging/migrate-hook.yaml, api.yaml @ stage-4"
+      },
+      {
+        "n": 5,
+        "verdict": "not-needed",
+        "evidence": "Definitional: the two definitions match outline items 2-3 of the track.yaml entry word for word in substance; no external fact is asserted."
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Round 2. refs efcore managing.md:40: \"MyContextModelSnapshot.cs--A snapshot of your current model. Used to determine what changed when adding the next migration.\" index.md:14: \"EF Core compares the current model against a snapshot of the old model to determine the differences, and generates migration source files\". Repo PaymentsAndNotificationsLeaveOrdering.cs @ stage-4 lines 8-13: DropTable calls scaffolded then deleted by hand; Up empty; \"records the new model in DonHangDbContextModelSnapshot\".",
+        "source": "refs/efcore-docs/entity-framework/core/managing-schemas/migrations/{managing,index}.md ; PaymentsAndNotificationsLeaveOrdering.cs @ stage-4"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "DropOldNotificationsTable.cs @ stage-4 lines 8-9: \"At stage-3 Notifications got its own table (expand)\". docker-compose.yml: Notifications connection \"Database=donhang_notifications\"; DonHang.Notifications/Program.cs line 13: \"donhang_notifications, which no other service opens\"; ADR 0002 separates Notifications into its own service.",
+        "source": "examples/don-hang DropOldNotificationsTable.cs @ stage-4; docker-compose.yml; DonHang.Notifications/Program.cs"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "extract-code DropOldNotificationsTable.cs --tag stage-4 lines 8-12: \"The contract step for the email jobs, step 2 of ADR 0008 ... the api that ran before this release no longer reads or writes it: an old api Pod still serving while this migration runs cannot fail on a missing table.\" Line 21: `migrationBuilder.DropTable(name: \"notifications\");`. ADR 0008 step 2: \"Migration xóa `notifications` trước\".",
+        "source": "examples/don-hang DonHang.Infrastructure/Migrations/20261101090000_DropOldNotificationsTable.cs @ stage-4; docs/adr/0008-xoa-bang-cu-trong-donhang.md"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "ADR 0008: \"1. Dump hai bảng bằng `pg_dump -Fc --table`\" ... \"3. Migration xóa `payments` sau khi kế toán xác nhận đã đối chiếu xong với `donhang_payments`\". scripts/backend/drop-old-notifications.sh: \"Step 1 of ADR 0008: both old tables go into one custom-format dump\", `pg_dump ... --format custom --table notifications --table payments`. Migration line 14: \"The old `payments` table stays until accounting confirms (step 3).\"",
+        "source": "examples/don-hang docs/adr/0008-xoa-bang-cu-trong-donhang.md; scripts/backend/drop-old-notifications.sh; DropOldNotificationsTable.cs @ stage-4"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Round 2. refs efcore managing.md:38: main migrations file \"Contains the operations necessary to apply the migration (in `Up`) and to revert it (in `Down`).\" applying.md: \"To roll the database back, pass the migration that should remain applied.\" DropOldNotificationsTable.cs @ stage-4 lines 24-45: Down runs CREATE TABLE notifications and CREATE INDEX, no INSERT; comment: \"the rows are in the dump, and pg_restore --data-only puts them back.\"",
+        "source": "refs/efcore-docs/entity-framework/core/managing-schemas/migrations/managing.md ; DropOldNotificationsTable.cs @ stage-4"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "PostgreSQL 17 ALTER TABLE: \"The RENAME forms change the name of ... the name of an individual column in a table ... There is no effect on the stored data.\" Synopsis: `RENAME [ COLUMN ] column_name TO new_column_name`. After the rename no column carries the old name, so a statement naming it references a column that does not exist. Not executed: Docker engine was not running on the review host.",
+        "source": "https://www.postgresql.org/docs/17/sql-altertable.html"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Hook is one Pod in wave 1 running efbundle with no target; EF docs: a bundle run applies every migration not yet applied (\"Executing this new bundle applies these two new migrations\"). Argo: next wave only once the current one is in-sync and healthy (claim 1). So all migrations of a release finish before the wave-2 Deployment change is applied.",
+        "source": "https://learn.microsoft.com/ef/core/managing-schemas/migrations/applying ; https://argo-cd.readthedocs.io/en/stable/user-guide/sync-waves/ ; envs/staging/migrate-hook.yaml @ stage-4"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Opinion derived from verified claims 1, 3, 4 and 12: one-step change breaks old Pods during rollout and after revert; stop-migrate-start avoids side-by-side versions but leaves the revert problem; expand and contract costs extra releases. Each cell is conditioned on the change being incompatible (table header)."
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "ADR 0008 Bối cảnh: \"Không code nào đọc hay ghi chúng.\" Ý kiến đã nhận: \"bảng `payments` chỉ bị xóa sau khi kế toán xác nhận (bước 3)\"; \"họ chưa kiểm bản chép sang `donhang_payments`\".",
+        "source": "examples/don-hang docs/adr/0008-xoa-bang-cu-trong-donhang.md lines 10-12, 44-49"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "Round 2. Recipe now: nullable contact_email + code writing both; copy once no older Pod is left; move reads; drop email in a release whose previous version no longer touches it. Checked against claims 1, 3, 4, 12: pre-dual-write Pods insert NULL into a nullable column (no failure); rows written after the copy are filled by dual-writing code; revert to any release before contract finds email intact; contract is conditioned on the previous version not touching email. db/schema.sql @ stage-4: email text NOT NULL UNIQUE.",
+        "source": "lesson §4, §7; examples/don-hang db/schema.sql @ stage-4"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "Round 2, new claim. Derived from verified claims 1, 3, 12: expand's migration runs in wave 1 before any new Pod, so code that needs the new shape finds it; old Pods lose nothing they use; a revert to the previous release meets only an added shape. Only removal breaks a running version, so only contract needs a later release. Consistent with §8 bullet 3 and q4/q5. Documents opened this round: refs efcore managing.md, index.md; K8s Deployments; repo files @ stage-4.",
+        "source": "lesson §4, §5, §8; DropOldNotificationsTable.cs @ stage-4 lines 8-12"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-28T23:50:00+07:00",
+    "reviewer": "review-junior (claude-opus-5-5)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "gap",
+        "text": "New in round 2. I follow the order now, but not why `contact_email` must be nullable, or how the copy runs (a migration in the next release?). I guessed: the oldest Pods insert customers without it, so a required column would make their inserts fail.",
+        "quote": "Expand instead: add `contact_email` as a nullable column, and release code that writes both columns.",
+        "fix": "Add a half-sentence after \"as a nullable column\": \"so the old Pods, which do not know it, can still insert customers\"."
+      },
+      {
+        "severity": "minor",
+        "section": "backend.l4.expand-and-contract.q3",
+        "kind": "quiz",
+        "text": "New in round 2. Reworded c no longer copies section 7, but it is the longest, most careful option and ends with almost the section 4 phrase \"once no version that might still run uses it\". I could pick it by recognition without reasoning about the old Pods.",
+        "quote": "remove `email` only once no release that might still run reads or writes it.",
+        "fix": "Shorten c to about the length of a, b and d, e.g. \"Add `contact_email` beside `email`, and drop `email` only in a release after the code stops using it.\" (en and vi)."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [
+        "§7: why `contact_email` is added as nullable, and how the later copy is run, is left to the reader"
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

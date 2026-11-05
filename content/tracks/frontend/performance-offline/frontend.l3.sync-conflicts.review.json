@@ -1,0 +1,136 @@
+{
+  "id": "frontend.l3.sync-conflicts",
+  "technical": {
+    "reviewed_at": "2026-10-20T23:45:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "db/seed.sql:8 `(3, 'Tai nghe', 890000)`. ProductsController.cs: `[Authorize(Policy = \"StaffOnly\")] [HttpPatch(\"{id:int}\")] UpdatePrice` with comment `PATCH /api/v1/products/3 {\"priceVnd\": 950000}, staff only`. ProductCache.UpdatePriceAsync: `var product = await inner.UpdatePriceAsync(id, priceVnd); if (product is not null) await RemoveAsync($\"product:{id}\");`.",
+        "source": "examples/don-hang: db/seed.sql, DonHang.Api/Controllers/ProductsController.cs:50-61, DonHang.Catalog/ProductCache.cs:54-59 (working tree; git show was blocked by permissions)"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "create_order_screen.dart:66 `final items = [OrderItemRequest(productId: product.id, quantity: quantity, unitPriceVnd: product.priceVnd)];` then QueuedOrder(... items). queue_sync.dart:51-54 selects `if (order.status == QueuedOrderStatus.waiting && order.subject == subject) order` and _send passes `order.items` to createOrder.",
+        "source": "examples/don-hang: DonHang.App/lib/screens/create_order_screen.dart, lib/offline/queue_sync.dart"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "OrdersController.cs:47-49 `request.Items.Select(i => new RequestedItem(i.ProductId, i.Quantity))`; RequestedItem.cs `public sealed record RequestedItem(int ProductId, int Quantity);`; OrderService.cs:35 `var price = await prices.CurrentPriceAsync(item.ProductId) ?? throw ...`.",
+        "source": "examples/don-hang: DonHang.Api/Controllers/OrdersController.cs, DonHang.Domain/RequestedItem.cs, DonHang.Domain/OrderService.cs"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "OrderService.cs:35-36 throws `new ArgumentException($\"product {item.ProductId} does not exist\")` inside the loop, before `repository.AddAsync` (l.41) and `SaveChangesAsync` (l.50). ExceptionHandlingMiddleware.cs:29-32 `catch (ArgumentException ex) ... WriteProblemAsync(context, StatusCodes.Status400BadRequest, \"Invalid request\", ex.Message)`.",
+        "source": "examples/don-hang: DonHang.Domain/OrderService.cs:28-41, DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs:29-33"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "OrdersController.ToDto: `order.Items.Select(i => new OrderItemDto(i.ProductId, i.Quantity, i.UnitPrice.Amount))`; Dtos.cs:15 `OrderItemDto(int ProductId, int Quantity, int UnitPriceVnd)`; models.dart OrderResult.fromJson reads `json['items']` into `OrderItemRequest.fromJson`.",
+        "source": "examples/don-hang: DonHang.Api/Controllers/OrdersController.cs:177-182, DonHang.Api/Dtos.cs:15, DonHang.App/lib/models.dart:42-60"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "order_queue.dart:40-43 `bool get priceChanged { final charged = result; return charged != null && totalVnd(charged.items) != totalVnd(items); }`; models.dart:71-75 `total += item.quantity * item.unitPriceVnd;`.",
+        "source": "examples/don-hang: DonHang.App/lib/offline/order_queue.dart:37-43, lib/models.dart:70-77"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "status_banner.dart:7 `enum StatusTone { info, success, warning, error }`; l.11-12 doc `colored by what it means, with at most one action.`; l.22-25 optional `actionLabel`/`onAction`. queued_orders_screen.dart:80-93: rejected → StatusTone.error, l10n.remove, queue.remove; sent → priceChanged ? queuedPriceChanged(...) : queuedSent(...), warning : success. app_en.arb:74 `you saw {seen} VND, the order costs {charged} VND.`",
+        "source": "examples/don-hang (working tree; git show blocked by permissions): DonHang.App/lib/design/components/status_banner.dart:7-25, lib/screens/queued_orders_screen.dart:72-95, lib/l10n/app_en.arb:74"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "queued_orders_screen.dart:96 (in the lesson excerpt) `final queue = ref.read(orderQueueProvider.notifier);`. order_queue.dart:89-90 `void remove(String idempotencyKey) => _save([for (final order in state) if (order.idempotencyKey != idempotencyKey) order]);`. Only callers: rejected banner onAction and _open (sent banner). sendNow selects status == waiting only; _replace keeps other entries.",
+        "source": "examples/don-hang: DonHang.App/lib/offline/order_queue.dart:87-107, lib/screens/queued_orders_screen.dart:94-102, lib/offline/queue_sync.dart:51-54"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "OrderService.cs:20-25: `var earlier = await repository.FindByIdempotencyKeyAsync(idempotencyKey); if (earlier is not null && earlier.CustomerId != customerId) throw ...; if (earlier is not null) return (earlier, Created: false);` — the stored order is returned before any price lookup, and ToDto serialises its stored UnitPrice.",
+        "source": "examples/don-hang: DonHang.Domain/OrderService.cs:11-26"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Ran `flutter test test/queue_sync_test.dart` (Flutter 3.47.2) in DonHang.App: 8 tests listed, ends `00:02 +8: All tests passed!`. Step 2 not executed (would modify the repo); by inspection only l.158 `expect(..priceChanged, isTrue)` and l.192 depend on priceChanged. matcher 0.12.20 `_IsTrue.describe` → `description.add('true')`, so the failure reads `Expected: true` / `Actual: <false>`.",
+        "source": "examples/don-hang/DonHang.App/test/queue_sync_test.dart:83-197; Pub cache matcher-0.12.20/lib/src/core_matchers.dart:66-72"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "queue_sync_test.dart:192 `find.textContaining('the price changed: you saw 2,000 VND, the order costs 2,400 VND')` with `locale: const Locale('en')`; stored item 2 × 1000 (l.61), answer `created(44, unitPriceVnd: 1200)` with quantity 2 (l.47-50). The test passes in the unmodified run, so the rendered text matches.",
+        "source": "examples/don-hang/DonHang.App/test/queue_sync_test.dart:47-62, 175-197; lib/l10n/app_en.arb:74"
+      },
+      {
+        "n": 12,
+        "verdict": "not-needed",
+        "evidence": "Design position stated with its condition (\"because the price is the server's rule\") and matching the code: OrderService takes prices from IProductPrices and the app shows queuedPriceChanged. No external source decides it.",
+        "source": "examples/don-hang: DonHang.Domain/OrderService.cs:28-38; DonHang.App/lib/screens/queued_orders_screen.dart:86-93"
+      },
+      {
+        "n": 13,
+        "verdict": "not-needed",
+        "evidence": "Conditioned judgement (one editor → the last write is that person's latest decision; two deciders → the late write can carry the older value). Follows from the lesson's own definition of last-write-wins; no version-dependent behaviour.",
+        "source": "lesson §4, §6"
+      },
+      {
+        "n": 14,
+        "verdict": "not-needed",
+        "evidence": "Follows directly from the lesson's own definition of sync conflict (offline copy vs. server data changed since); definitional, needs no external source.",
+        "source": "lesson §3, §6"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "queued_orders_screen.dart:86-93 sent + priceChanged → `l10n.queuedPriceChanged(result!.id, totalVnd(order.items), totalVnd(result.items))`, `tone: StatusTone.warning`; app_en.arb:74 `but the price changed: you saw {seen} VND, the order costs {charged} VND.` 'Higher' holds for the lesson's case (price raised 890,000 → 950,000); the code shows any difference.",
+        "source": "examples/don-hang: DonHang.App/lib/screens/queued_orders_screen.dart:86-93, lib/l10n/app_en.arb:74"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 3,
+        "kind": "accuracy",
+        "text": "New sentence (apply-review r1) makes a claim about Git behaviour that is not in the claims ledger. It is broadly true of a merge conflict (Git stops and leaves the file for the user to resolve), but strategy options such as `-X ours` resolve conflicting hunks without asking, so 'stopped and asked' is not universal.",
+        "quote": "Unlike a Git conflict, nobody is stopped and asked to choose; a rule decides.",
+        "fix": "Either add a claim (version_key git, source git-merge docs) or soften to: \"Unlike a typical Git merge conflict, where Git stops for you to choose, here nobody is asked; a rule decides.\""
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-20T23:55:00+07:00",
+    "reviewer": "review-junior (claude-opus-5-5)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "text": "New in round 2. The paragraph before says the customer chooses only the product and the quantity, never the price. Then the last-write-wins paragraph says two people decide about the same price. I stopped: is the customer deciding a price or not? I guessed it means 'in the imagined API that stores the app's price', but the sentence does not say so.",
+        "quote": "Here two people decide about the same price, so last-write-wins does not suit it.",
+        "fix": "Make the condition explicit: \"In that API two people would decide about the same price, the staff member in Catalog and the customer through the app's copy, so last-write-wins does not suit it.\""
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}
