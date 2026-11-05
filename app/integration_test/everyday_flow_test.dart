@@ -36,6 +36,9 @@ void main() {
     );
     await runEverydayFlow(tester, db);
     await runReviewNextDay(tester, clock);
+    // Unmount first: open query streams keep the web (WASM worker) database
+    // from closing.
+    await tester.pumpWidget(const SizedBox.shrink());
     await db.close();
   });
 }

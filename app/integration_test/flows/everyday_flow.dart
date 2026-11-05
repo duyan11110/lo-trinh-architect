@@ -42,9 +42,9 @@ Future<void> pumpUntilFound(
 Future<void> _tap(WidgetTester tester, Finder finder) async {
   await pumpUntilFound(tester, finder);
   await tester.ensureVisible(finder.first);
-  await tester.pumpAndSettle();
+  await settle(tester);
   await tester.tap(finder.first);
-  await tester.pumpAndSettle();
+  await settle(tester);
 }
 
 /// Answers [q] with its key, or with a wrong option when [wrong].
@@ -85,7 +85,7 @@ Future<void> answerQuestion(
       );
       await pumpUntilFound(tester, field);
       await tester.enterText(field, wrong ? 'zzz' : q.answer.first);
-      await tester.pumpAndSettle();
+      await settle(tester);
   }
 }
 
@@ -103,20 +103,31 @@ Future<EverydayFlowResult> runEverydayFlow(
   final quiz = content.quizzes[lessonId]!;
   final n = quiz.questions.length;
 
-  // Read to the end: Summary in view → read; the action bar appears.
-  final scrollable = find
-      .descendant(
-        of: find.byType(LessonScreen),
-        matching: find.byWidgetPredicate(
-          (w) => w is Scrollable && w.axisDirection == AxisDirection.down,
-        ),
-      )
-      .first;
-  await pumpUntilFound(tester, scrollable);
-  final position = tester.state<ScrollableState>(scrollable).position;
-  position.jumpTo(position.maxScrollExtent);
-  await tester.pumpAndSettle();
-  await _tap(tester, find.text('Làm quiz · $n câu'));
+  // Read to the end: Summary in view → read; the action bar appears. In a
+  // wide window (a real browser) S3 also shows the TOC column, a second
+  // vertical scrollable: the lesson body is the one with the longest extent.
+  final scrollables = find.descendant(
+    of: find.byType(LessonScreen),
+    matching: find.byWidgetPredicate(
+      (w) => w is Scrollable && w.axisDirection == AxisDirection.down,
+    ),
+  );
+  await pumpUntilFound(tester, scrollables);
+  await settle(tester);
+  final position = [
+    for (final e in scrollables.evaluate())
+      (e as StatefulElement).state as ScrollableState,
+  ].map((s) => s.position).reduce(
+    (a, b) => b.maxScrollExtent > a.maxScrollExtent ? b : a,
+  );
+  // The extent grows as lazily built sections lay out: jump until the end
+  // stays the end.
+  final takeQuiz = find.text('Làm quiz · $n câu');
+  for (var i = 0; i < 20 && takeQuiz.evaluate().isEmpty; i++) {
+    position.jumpTo(position.maxScrollExtent);
+    await settle(tester);
+  }
+  await _tap(tester, takeQuiz);
 
   // S4: every question right except the first `single` (or the first one).
   await pumpUntilFound(tester, find.byType(QuizScreen));
@@ -176,3 +187,11 @@ Future<void> runReviewNextDay(WidgetTester tester, FixedClock clock) async {
   await pumpUntilFound(tester, find.text('Ôn hôm nay'));
   expect(find.text('1 câu'), findsOneWidget);
 }
+
+/// `pumpAndSettle` that fails within 15 s (real time in a browser) instead of
+/// hanging the driver when something keeps animating.
+Future<void> settle(WidgetTester tester) => tester.pumpAndSettle(
+  const Duration(milliseconds: 100),
+  EnginePhase.sendSemanticsUpdate,
+  const Duration(seconds: 15),
+);

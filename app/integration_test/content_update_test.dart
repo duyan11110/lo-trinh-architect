@@ -48,6 +48,9 @@ void main() {
       bundled: bundled,
       v1: parseContent(bundled).meta.contentVersion,
     );
+    // Unmount first: open query streams keep the web (WASM worker) database
+    // from closing.
+    await tester.pumpWidget(const SizedBox.shrink());
     await db.close();
   });
 }
