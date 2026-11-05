@@ -16,7 +16,7 @@ example_tag: stage-3
 versions_used: [postgresql, dotnet, npgsql]
 content_version: 1
 status: published
-approved_by: auto
+approved_by: owner
 reviewed_at: "2026-10-20T05:49:53+07:00"
 ---
 

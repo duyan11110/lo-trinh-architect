@@ -16,7 +16,7 @@ example_tag: stage-1
 versions_used: [dotnet, efcore, git]
 content_version: 1
 status: published
-approved_by: auto
+approved_by: owner
 reviewed_at: "2026-09-29T23:30:15+07:00"
 ---
 

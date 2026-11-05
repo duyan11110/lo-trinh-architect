@@ -16,7 +16,7 @@ example_tag: stage-3
 versions_used: [efcore, npgsql_efcore, aspnetcore, git, shell]
 content_version: 1
 status: published
-approved_by: auto
+approved_by: owner
 reviewed_at: "2026-10-08T11:41:16+07:00"
 ---
 

@@ -16,7 +16,7 @@ example_tag: stage-4
 versions_used: [kubernetes, gateway_api, traefik, argocd, git, postgresql, npgsql]
 content_version: 1
 status: published
-approved_by: auto
+approved_by: owner
 reviewed_at: "2026-10-27T06:37:11+07:00"
 ---
 

@@ -16,7 +16,7 @@ example_tag: stage-3
 versions_used: [caddy, gateway_api]
 content_version: 1
 status: published
-approved_by: auto
+approved_by: owner
 reviewed_at: "2026-10-29T11:59:43+07:00"
 ---
 

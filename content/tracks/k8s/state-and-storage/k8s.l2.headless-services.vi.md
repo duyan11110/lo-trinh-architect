@@ -16,7 +16,7 @@ example_tag: stage-3
 versions_used: [kubernetes, kind, rabbitmq, argocd]
 content_version: 1
 status: published
-approved_by: auto
+approved_by: owner
 reviewed_at: "2026-10-15T11:00:30+07:00"
 ---
 

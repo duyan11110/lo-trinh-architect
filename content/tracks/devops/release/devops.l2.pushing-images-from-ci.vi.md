@@ -16,7 +16,7 @@ example_tag: stage-2
 versions_used: [github_actions, docker, ghcr]
 content_version: 1
 status: published
-approved_by: auto
+approved_by: owner
 reviewed_at: "2026-10-03T06:14:45+07:00"
 ---
 

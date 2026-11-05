@@ -16,7 +16,7 @@ example_tag: stage-3
 versions_used: [dotnet, aspnetcore, npgsql_efcore, postgresql, redis, prometheus_net, docker, kubernetes]
 content_version: 1
 status: published
-approved_by: auto
+approved_by: owner
 reviewed_at: "2026-10-19T21:34:56+07:00"
 ---
 

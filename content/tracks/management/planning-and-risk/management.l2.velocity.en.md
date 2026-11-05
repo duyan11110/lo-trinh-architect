@@ -16,7 +16,7 @@ example_tag: stage-1
 versions_used: [scrum]
 content_version: 1
 status: published
-approved_by: auto
+approved_by: owner
 reviewed_at: "2026-09-29T16:35:53+07:00"
 ---
 
