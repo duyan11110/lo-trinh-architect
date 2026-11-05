@@ -15,7 +15,7 @@ vocab: [publisher-confirm]
 example_tag: stage-3
 versions_used: [dotnet, efcore, postgresql, rabbitmq, rabbitmq_client]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-11-05T09:23:55+07:00"
 ---
