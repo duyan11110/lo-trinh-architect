@@ -15,9 +15,9 @@ vocab: [publisher-confirm]
 example_tag: stage-3
 versions_used: [dotnet, efcore, postgresql, rabbitmq, rabbitmq_client]
 content_version: 1
-status: published
+status: approved
 approved_by: auto
-reviewed_at: "2026-10-14T09:04:50+07:00"
+reviewed_at: "2026-11-05T09:23:55+07:00"
 ---
 
 ## Bạn cần biết trước
@@ -50,12 +50,12 @@ sequenceDiagram
   participant P as PostgreSQL
   participant B as RabbitMqPublisher
   participant M as RabbitMQ
-  R->>P: begin; claim ≤ 20 rows FOR UPDATE SKIP LOCKED
+  R->>P: begin, then claim ≤ 20 rows FOR UPDATE SKIP LOCKED
   loop each claimed row
     R->>B: PublishAsync(message)
     B->>M: publish to donhang.orders
     M-->>B: publisher confirm
-    B-->>R: returns; PublishedAt = now
+    B-->>R: returns, then PublishedAt = now
   end
   R->>P: SaveChangesAsync, then commit
 ```
