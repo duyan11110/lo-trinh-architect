@@ -7,7 +7,7 @@ mà không hỏi (DECISIONS.md thắng khi có nghi ngờ). Skill `/autopilot` t
 - [ ] Máy có: Docker Desktop đang chạy, Flutter stable, .NET 10 SDK, Node ≥ 20, git, `claude` đã đăng nhập, `gh auth login` (để tạo repo `don-hang` và mở PR).
 - [ ] Tạo repo `duyan11110/lo-trinh-architect` (public), push bộ thiết kế này lên `main`.
 - [ ] Settings → Pages → Source: **GitHub Actions**.
-- [ ] (tùy chọn, có thể sau) keystore + 4 secret; PAT `AUTO_PUSH_TOKEN` để CI commit `dist/`.
+- [ ] (tùy chọn, có thể sau) keystore + 4 secret. (CI không commit `dist/` nữa — chỉ artifact, DECISIONS.md §3; không cần PAT `AUTO_PUSH_TOKEN`.)
 - [ ] Mở Claude Code tại gốc repo, gõ `/autopilot`.
 
 ## Bước 1 — Khởi tạo (agent, ~1 giờ)
