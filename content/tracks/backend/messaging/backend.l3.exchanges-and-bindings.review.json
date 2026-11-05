@@ -1,0 +1,155 @@
+{
+  "id": "backend.l3.exchanges-and-bindings",
+  "technical": {
+    "reviewed_at": "2026-10-14T19:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "NotifyCustomerOnOrderEvents.cs:21 HandleAsync(OrderRefundRequested) => AddMessage(\"order.refund-requested\", ...); OrderEventsConsumer.cs:122 \"order.refund-requested\" => \"refund requested\"; RefundRequestedConsumer.cs:47 BasicConsumeAsync(RabbitMqTopology.Queue = payments.refund-requests). outputs/stage-3/scripts/backend/trace-refund.txt: 'donhang-api: publish order.refund-requested' -> 'donhang-notifications: process notifications.order-events' and 'donhang-payments: process payments.refund-requests' -> 'refund attempt'.",
+        "source": "examples/don-hang @ stage-3: DonHang.Domain/NotifyCustomerOnOrderEvents.cs; DonHang.Notifications/OrderEventsConsumer.cs; DonHang.Payments/RefundRequestedConsumer.cs; outputs/stage-3/scripts/backend/trace-refund.txt"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Publishers (4.1): \"In AMQP 0-9-1, publishers publish to exchanges.\" ... \"Successfully routed messages are stored in queues.\" Exchanges (4.1): \"exchanges are the entities where publishers publish messages that are then routed to a set of queues or streams.\" \"An initially declared exchange is an empty named routing table.\" Fanout section: \"route a copy of every message ... to every queue\". Round 2: the reworded s3 exchange bullet ('keeps none of them and passes a copy of each to the queues whose bindings match') stays within this.",
+        "source": "https://www.rabbitmq.com/docs/4.1/publishers ; https://www.rabbitmq.com/docs/4.1/exchanges"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "outputs/stage-3/scripts/backend/rabbitmq-topology.txt: '  donhang.orders  type=topic durable=true'; '  donhang.orders --[order.*]--> notifications.order-events'; '  donhang.orders --[order.refund-requested]--> payments.refund-requests' (only two bindings on donhang.orders). Source: Notifications/RabbitMqTopology.cs:23,27 and Payments/RabbitMqTopology.cs:29 (git show stage-3).",
+        "source": "examples/don-hang @ stage-3: outputs/stage-3/scripts/backend/rabbitmq-topology.txt:2,15-16"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Exchanges (RabbitMQ 4.1), Topic: \"the keys are separated into segments by `.`\"; wildcards \"`*` for exactly one segment and `#` for zero or more (including multiple) segments\". Tutorial 5: routing key \"must be a list of words, delimited by dots\".",
+        "source": "https://www.rabbitmq.com/docs/4.1/exchanges ; https://www.rabbitmq.com/tutorials/tutorial-five-dotnet"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Run output (rabbitmq-topology.txt:19-24), demo exchange bound with order.*: 'order.placed -> routed: true', 'order.refund-requested -> routed: true', 'order -> routed: false', 'order.placed.again -> routed: false', 'invoice.created -> routed: false'. Docs 4.1: \"regions.na.cities.*\" matches \"regions.na.cities.toronto\" but not \"regions.na.cities\" (* = exactly one segment); order.cancelled/order.shipped follow from the same rule.",
+        "source": "examples/don-hang @ stage-3: outputs/stage-3/scripts/backend/rabbitmq-topology.txt; https://www.rabbitmq.com/docs/4.1/exchanges"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Tutorial 5 (Topics): when a binding uses neither * nor #, \"the topic exchange will behave just like a `direct` one.\" Exchanges 4.1, Direct: \"a binding (routing) key of \"abc\" will match \"abc\" and \"abc\" only.\"",
+        "source": "https://www.rabbitmq.com/tutorials/tutorial-five-dotnet ; https://www.rabbitmq.com/docs/4.1/exchanges"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "AMQP concepts: \"Topic exchanges route messages to one or many queues\"; \"a copy of the message is delivered to all N queues\". Exchanges 4.1 fanout: \"route a copy of every message ... to every queue\". Execution: trace-refund.txt shows one 'publish order.refund-requested' processed by both notifications.order-events and payments.refund-requests.",
+        "source": "https://www.rabbitmq.com/tutorials/amqp-concepts ; examples/don-hang outputs/stage-3/scripts/backend/trace-refund.txt"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Grep of examples/don-hang for 'notifications.order-events': matches only in DonHang.Notifications, DonHang.Payments (comment), scripts/, deploy/monitoring and outputs/ — none in DonHang.Api or DonHang.Messaging. Payments/RabbitMqTopology.cs:29 binds its own queue: QueueBindAsync(Queue, OrdersExchange, \"order.refund-requested\").",
+        "source": "examples/don-hang @ stage-3 (working tree = stage-3 for the files checked by git show)"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Publishers (4.1): when a message cannot be routed and mandatory is false (the default), \"the message is discarded or republished to an alternate exchange, if any.\" Tutorial 5: messages matching no binding \"will be lost\". Execution: rabbitmq-topology.txt:27 'invoice.created -> routed: false' on donhang.orders.",
+        "source": "https://www.rabbitmq.com/docs/4.1/publishers ; outputs/stage-3/scripts/backend/rabbitmq-topology.txt:27"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "OrderEventsConsumer.cs:50 'await RabbitMqTopology.DeclareAsync(channel, stoppingToken);' precedes :55 BasicConsumeAsync; ConsumeAsync is re-entered by the retry loop (lines 26-38) on each reconnect. RefundRequestedConsumer.cs:42 DeclareAsync precedes :47 BasicConsumeAsync.",
+        "source": "examples/don-hang @ stage-3: DonHang.Notifications/OrderEventsConsumer.cs; DonHang.Payments/RefundRequestedConsumer.cs"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "RabbitMqTopology.cs @ stage-3: 11 OrdersExchange = \"donhang.orders\", 12 Queue, 13-14 dead-letter names, 23 ExchangeDeclareAsync(OrdersExchange, ExchangeType.Topic, durable: true, ...), 25 QueueDeclareAsync(Queue, durable, exclusive, autoDelete, ...), 26 arguments: QueueArguments(), 27 QueueBindAsync(Queue, OrdersExchange, \"order.*\", ...). Round 2 s5 line refs (11-12, 13-14, 23, 25, 26, 27) all match. DeclareAsync takes IChannel; .NET guide: channels are opened on a connection and protocol operations go through them.",
+        "source": "examples/don-hang @ stage-3: DonHang.Notifications/RabbitMqTopology.cs; https://www.rabbitmq.com/client-libraries/dotnet-api-guide"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Queues (4.1): \"The declaration will have no effect if the queue does already exist and its attributes are the same as those in the declaration.\" For the exchange: donhang.orders is declared identically by Notifications, Payments and RabbitMqPublisher on every connect, and the stage-3 run shows one donhang.orders, type=topic, routing normally. Round 2: the sentence moved to s4 keeps the 'with the same settings' condition.",
+        "source": "https://www.rabbitmq.com/docs/4.1/queues ; examples/don-hang @ stage-3 outputs/stage-3/scripts/backend/rabbitmq-topology.txt"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": ".NET API guide (client 7.0): \"await channel.BasicPublishAsync(exchangeName, routingKey, false, props, messageBodyBytes);\". Repo pins RabbitMQ.Client 7.2.2 (Directory.Packages.props:34); `dotnet build DonHang.Messaging.csproj` → \"Build succeeded. 0 Warning(s) 0 Error(s)\" with RabbitMqPublisher.cs:36 BasicPublishAsync(exchange, message.RoutingKey, mandatory: false, properties, body, cancellationToken).",
+        "source": "https://www.rabbitmq.com/client-libraries/dotnet-api-guide ; local dotnet build"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "RabbitMqPublisher.cs:8 'public sealed class RabbitMqPublisher(RabbitMqConnection connection, string exchange)'; DonHang.Api/Program.cs:48 'builder.Services.AddOutboxRelay<DonHangDbContext>(exchange: \"donhang.orders\");'; MessagingServiceCollectionExtensions.cs:23 'new RabbitMqPublisher(provider.GetRequiredService<RabbitMqConnection>(), exchange)'.",
+        "source": "examples/don-hang @ stage-3"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "NotifyCustomerOnOrderEvents.cs:11-13 implements IDomainEventHandler<OrderPlaced/OrderCancelled/OrderShipped/OrderRefundRequested/...>; :15 \"order.placed\", :17 \"order.cancelled\", :19 \"order.shipped\", :21 \"order.refund-requested\"; :34 outbox.Add(routingKey, new OrderMessage(...)). Supports round-2 s5 wording 'the class that turns each recorded domain event into a message to publish and names the key after the event'; the outbox step is correctly deferred.",
+        "source": "examples/don-hang @ stage-3: DonHang.Domain/NotifyCustomerOnOrderEvents.cs"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "Publishers (4.1): with mandatory false (the default) an unroutable message \"is discarded or republished to an alternate exchange, if any\"; only when mandatory is set \"the message will be returned to it\". .NET guide: \"If a message is published with the \"mandatory\" flag set, but cannot be delivered, the broker will return it to the sending client\".",
+        "source": "https://www.rabbitmq.com/docs/4.1/publishers ; https://www.rabbitmq.com/client-libraries/dotnet-api-guide"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "HTTP API reference 4.1, exchange publish: \"`routed` will be true if the message was sent to at least one queue.\" Script lines 12-17 publish via api \"exchanges/%2F/$1/publish\" and print 'routed: \\(.routed)'; output lines 14-27 match every value in Try it. Lesson names no HTTP verb, so the docs' PUT vs the script's -X POST is not at issue. Round 2 opened: changed s3-s7 of .en.md, NotifyCustomerOnOrderEvents.cs, RabbitMqTopology.cs, rabbitmq-topology.sh, http-api-reference 4.1; refs/ has no RabbitMQ docs.",
+        "source": "https://www.rabbitmq.com/docs/4.1/http-api-reference ; examples/don-hang @ stage-3: scripts/backend/rabbitmq-topology.sh:12-17"
+      },
+      {
+        "n": 18,
+        "verdict": "not-needed",
+        "evidence": "Opinion framed as an analogy in Connections ('a binding is a downstream context choosing...'); consistent with Payments/RabbitMqTopology.cs:16-18 comment ('Payments binds its own queue ... DonHang.Api publishes that event without knowing which service acts on it'). No documentary fact to verify.",
+        "source": "examples/don-hang @ stage-3: DonHang.Payments/RabbitMqTopology.cs"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-14T20:00:00+07:00",
+    "reviewer": "review-junior (claude-opus-5-5)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "quote": "Fill in its first argument: `await open.BasicPublishAsync(___, message.RoutingKey, mandatory: false, properties,`",
+        "text": "Carried from round 1 (the q3 half of the old quiz issue; the q4 half is fixed). The section 5 block prints this exact line with `exchange` in the blank, and the prose says 'BasicPublishAsync takes an exchange and a routing key'. I can fill the blank by matching the line, without understanding why no queue appears.",
+        "fix": "Ask for something the reader must reason out, e.g. 'Which of the publish call's arguments would have to change for the message to reach payments.refund-requests as well?' with 'none' as the answer, instead of copying the visible argument."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "code",
+        "quote": "It is chosen by `NotifyCustomerOnOrderEvents` in `DonHang.Domain`, the class that turns each recorded domain event into a message to publish and names the key after the event",
+        "text": "The new sentence tells me what the class does, which unblocks me. But its name says it notifies customers, while the lesson's own example is `order.refund-requested`, which Payments acts on. I paused to wonder whether Payments' messages come from somewhere else.",
+        "fix": "Add a short clause such as 'despite its name, it produces every order message, including the refund requests Payments reads'."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "publisher confirms, span, traceparent, relay (code comments, explicitly deferred to later lessons)"
+      ],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

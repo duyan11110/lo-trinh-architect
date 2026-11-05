@@ -1,0 +1,137 @@
+{
+  "id": "backend.l3.rebalancing-shards",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-10-20T14:00:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "Rebalancing moves rows between shards when a shard is added or one has grown too large, and every row must stay findable while it moves.",
+      "kind": "fact",
+      "source_hint": "General sharding definition; outline item 1",
+      "needs_verification": false,
+      "section": 3
+    },
+    {
+      "n": 2,
+      "text": "For consecutive ids, (id % 4, id % 5) repeats every 20 ids and matches only for id mod 20 in 0-3; of the 16 movers in each 20, 4 (id % 5 = 4) go to new shard 4 and 12 to another old shard: 80% move, 60% between old shards.",
+      "kind": "fact",
+      "source_hint": "Arithmetic (lcm(4,5)=20); confirmed by outputs/stage-3/scripts/backend/rebalance-shards.txt (160000 of 200000, 80.0)",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 3,
+      "text": "With a shard map, the bucket is key % 64 and a table row per bucket names the shard; adding a shard reassigns some rows of the map, and only orders in reassigned buckets change shard.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3 db/sharding/rebalance.sql lines 13-26",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 4,
+      "text": "77 % 64 = 13 and 13 % 4 = 1, so with the initial map (bucket % 4) order 77 is in bucket 13 on shard 1, which is not among buckets 0-11 moved to shard 4.",
+      "kind": "fact",
+      "source_hint": "Arithmetic; rebalance.sql lines 19-20, 26",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 5,
+      "text": "Every read and write looks up the shard map before choosing a connection, so the map is a dependency of every request; if no copy of it can be read, no request can be routed.",
+      "kind": "opinion",
+      "source_hint": "Follows from the design (outline item 5); condition: the map is the only source of bucket-to-shard placement",
+      "needs_verification": false,
+      "section": 4
+    },
+    {
+      "n": 6,
+      "text": "While a bucket moves, its writes go only to the old shard until the map row changes, every write the old shard took after the copy must also reach the new shard before the switch, then writes go only to the new shard; writes on both shards give two versions.",
+      "kind": "opinion",
+      "source_hint": "Outline item 5 and misconception 2; general reasoning about copy-then-switch",
+      "needs_verification": false,
+      "section": 4
+    },
+    {
+      "n": 7,
+      "text": "The bucket count is fixed when the map is created: every key's bucket is computed from it, so changing 64 moves many keys to another bucket, as changing % 4 to % 5 does. Each bucket lives whole on one shard, so 64 buckets fill at most 64 shards.",
+      "kind": "fact",
+      "source_hint": "Outline item 6; rebalance.sql shard_map has bucket as primary key (one shard per bucket)",
+      "needs_verification": false,
+      "section": 4
+    },
+    {
+      "n": 8,
+      "text": "Đơn Hàng is not sharded at stage-3; rebalance.sql only counts (comment lines 1-4: 'Nothing is moved: each query only counts') and uses the order id as the key.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3 db/sharding/rebalance.sql lines 1-4; STAGE.md",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 9,
+      "text": "In PostgreSQL, count(*) FILTER (WHERE cond) counts only rows satisfying cond; % on integers returns the remainder; round(numeric, 1) rounds to one decimal.",
+      "kind": "syntax",
+      "source_hint": "PostgreSQL 17 docs: 4.2.7 Aggregate Expressions (FILTER); 9.3 Mathematical Functions and Operators",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 10,
+      "text": "CREATE TEMP TABLE creates a temporary table; generate_series(0, 63) yields 64 rows 0-63; the INSERT assigns bucket b to shard b % 4, 16 buckets per shard; UPDATE ... WHERE bucket < 12 moves buckets 0-11, three from each old shard.",
+      "kind": "syntax",
+      "source_hint": "PostgreSQL 17 docs: SQL CREATE TABLE (TEMPORARY); 9.25 Set Returning Functions; rebalance.sql lines 15-26; output 'INSERT 0 64', 'UPDATE 12'",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 11,
+      "text": "rebalance-shards.sh @ stage-3: builds donhang_perf if missing, runs in the lab container; lines 11-13 run rebalance.sql with psql against host db. --echo-queries prints each query; --no-psqlrc skips ~/.psqlrc, ON_ERROR_STOP=on stops at first error, footer=off drops the row-count footer.",
+      "kind": "behavior",
+      "source_hint": "examples/don-hang @ stage-3 scripts/backend/rebalance-shards.sh; PostgreSQL 17 docs: psql (--echo-queries, --no-psqlrc, ON_ERROR_STOP, pset footer)",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 12,
+      "text": "rebalance-shards.sh output @ stage-3: % 4 to % 5 moves 160000 of 200000 orders (80.0); the map moves 37500 (18.8); the per-shard query after the excerpt (lines 34-41) shows shards 0-3 hold 13 buckets / 40625 orders each, shard 4 holds 12 / 37500.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3 outputs/stage-3/scripts/backend/rebalance-shards.txt",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 13,
+      "text": "donhang_perf's 200,000 orders have consecutive ids, so each of the 64 buckets holds 3,125 orders (13 x 3125 = 40625, 12 x 3125 = 37500); 10 more buckets would move 31,250 orders.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3 db/perf/fill.sql (generate_series ids); arithmetic matches rebalance-shards.txt",
+      "needs_verification": true,
+      "section": 7
+    },
+    {
+      "n": 14,
+      "text": "Keeping a cached copy of the shard map near the code that reads it is one option, if the copy is refreshed when a bucket moves.",
+      "kind": "opinion",
+      "source_hint": "Condition stated (refresh on move); related lesson backend.l2.cache-aside",
+      "needs_verification": false,
+      "section": 8
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [1, 2, 3, 4, 5, 6],
+    "outline_items_missing": [],
+    "beyond_scope": []
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1340,
+    "notes": "apply-review: s4 explains 4-in-20 and the 4/12 split of movers; write rule adds catching up post-copy writes before the switch (claim 6, no procedure, depth_notes); 'no copy of it'; names buckets 0-11; why 64 is fixed. s5: third table credited to a query after the excerpt (8-41 would exceed 25 lines); other psql options explained. s6 points to the rule. Quiz q2 asks cut-off 8, q3 refers to the rule. Cut one redundant s4 sentence."
+  },
+  "open_questions": [],
+  "repo_changes_needed": []
+}

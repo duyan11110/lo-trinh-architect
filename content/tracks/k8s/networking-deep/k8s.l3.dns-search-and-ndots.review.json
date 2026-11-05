@@ -1,0 +1,135 @@
+{
+  "id": "k8s.l3.dns-search-and-ndots",
+  "technical": {
+    "reviewed_at": "2026-10-20T00:20:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "refs mirror, verbatim: \"\\\"Default\\\" is not the default DNS policy. If `dnsPolicy` is not explicitly specified, then \\\"ClusterFirst\\\" is used.\"",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/services-networking/dns-pod-service.md (Pod's DNS Policy, note)"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "refs mirror: \"kubelet configures this file for each Pod\" with example \"search <namespace>.svc.cluster.local svc.cluster.local cluster.local / options ndots:5\". Capture at stage-3 (outputs/stage-3/scripts/k8s/dns-search.txt): \"search network-lessons.svc.cluster.local svc.cluster.local cluster.local\", \"nameserver 10.96.0.10\", \"options ndots:5\" — no host search domains on donhang.",
+        "source": "refs/kubernetes-website/.../dns-pod-service.md (Namespaces of Services); examples/don-hang stage-3:outputs/stage-3/scripts/k8s/dns-search.txt lines 1-4"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Execution only (resolv.conf(5) is not a docs root). Fewer than ndots: capture lines 6-11 show the three search domains in search-line order, then example.com. as written. At least ndots: Pod dns-ndots (same image caddy:2.10.0, ndots:1) looking up one-dot example.com logs only \"example.com. NOERROR\" (lines 17-24), so it was tried as written first. The fallback clause is gone from the claim and from section 4.",
+        "source": "examples/don-hang stage-3:outputs/stage-3/scripts/k8s/dns-search.txt lines 6-11, 17-24"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Execution: capture for `getent ahostsv4 example.com.` lists exactly one type A query, \"example.com. NOERROR\"; no search-domain name appears. Evidence is by execution on donhang only (resolv.conf(5) not a docs root).",
+        "source": "examples/don-hang stage-3:outputs/stage-3/scripts/k8s/dns-search.txt lines 13-15"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Capture: \"example.com.network-lessons.svc.cluster.local. NXDOMAIN / example.com.svc.cluster.local. NXDOMAIN / example.com.cluster.local. NXDOMAIN / example.com. NOERROR\". Script line 29 keeps only `$1 == \"A\"` and de-duplicates (`!seen[$0]++`).",
+        "source": "examples/don-hang stage-3:outputs/stage-3/scripts/k8s/dns-search.txt; stage-3:scripts/k8s/dns-search.sh line 29"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "coredns.io kubernetes plugin: \"It will handle all queries in that zone\"; without fallthrough NXDOMAIN is the final answer (Corefile has fallthrough only for in-addr.arpa ip6.arpa). k8s refs: \"forward: Any queries that are not within the Kubernetes cluster domain are forwarded to predefined resolvers (/etc/resolv.conf).\" coredns.io forward: \"sending all others requests to the servers defined in /etc/resolv.conf\".",
+        "source": "https://coredns.io/plugins/kubernetes/ ; https://coredns.io/plugins/forward/ ; refs/kubernetes-website/.../dns-custom-nameservers.md line 125"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "refs: \"A query for `data.prod` returns the intended result, because it specifies the namespace.\" and \"a query for just `data` may be expanded to `data.test.svc.cluster.local`.\" First search entry on donhang is network-lessons.svc.cluster.local (capture line 2); capture line 32: \"(resolves to echo-ip's cluster IP)\".",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/services-networking/dns-pod-service.md lines 34-45; examples/don-hang stage-3:outputs/stage-3/scripts/k8s/dns-search.txt"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Round 3 recheck of changed s5 wording. dns-search.sh line 16 inserts `log` after `errors`; line 19 trap removes it on EXIT; lookup runs `getent ahostsv4`; queries() keeps only `$1 == \"A\"` and de-duplicates (`!seen[$0]++`). A records are IPv4 addresses, so s5 \"the queries for IPv4 addresses ... each once, with their answers\" matches the code. `show` (network-lessons.sh line 5) echoes the command, then runs it.",
+        "source": "examples/don-hang stage-3:scripts/k8s/dns-search.sh lines 11-40; stage-3:scripts/lib/network-lessons.sh line 5"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "coredns.io log plugin: \"By just using _log_ you dump all queries (and parts for the reply) on standard output.\" getent ahostsv4: getent(1) is not a docs root; supported by execution only — the getent call in the client Pod produced the logged queries to 10.96.0.10 (capture lines 6-11).",
+        "source": "https://coredns.io/plugins/log/ ; examples/don-hang stage-3:outputs/stage-3/scripts/k8s/dns-search.txt"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "dns-config-pod.yaml lines 11-14: `dnsConfig: options: - name: ndots value: \"1\"`, no dnsPolicy. Capture: \"options ndots:1\" then \"queries CoreDNS logged: example.com. NOERROR\".",
+        "source": "examples/don-hang stage-3:deploy/k8s/lessons/dns-config-pod.yaml; stage-3:outputs/stage-3/scripts/k8s/dns-search.txt lines 17-24"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "refs: \"options ... The contents in this property will be merged to the options generated from the specified DNS policy.\" API ref PodDNSConfig.options: \"Resolution options given in Options will override those that appear in the base DNSPolicy.\" PodDNSConfigOption: `value` — type string.",
+        "source": "refs/kubernetes-website/.../dns-pod-service.md lines 325-328; refs/kubernetes-website/content/en/docs/reference/kubernetes-api/core/pod-v1.md lines 2203-2228"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Narrowed claim no longer says what happens after the first try. First try as written: same resolver, same ndots:1 Pod, one-dot example.com went out as written first (capture lines 17-24); dots alone decide the order. Leaves the cluster: k8s refs \"forward: Any queries that are not within the Kubernetes cluster domain are forwarded to predefined resolvers (/etc/resolv.conf).\" echo-ip.network-lessons. is not under cluster.local. Not captured for this exact name.",
+        "source": "examples/don-hang stage-3:outputs/stage-3/scripts/k8s/dns-search.txt lines 17-24; refs/kubernetes-website/content/en/docs/tasks/administer-cluster/dns-custom-nameservers.md line 125"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Conditioned recommendation (\"When a Pod mostly calls outside names\"); each supporting fact is captured: final dot → one query, ndots:1 → one query for example.com, short name echo-ip resolves (capture lines 13-15, 17-24, 32). Not opinion-as-fact.",
+        "source": "examples/don-hang stage-3:outputs/stage-3/scripts/k8s/dns-search.txt"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "refs: \"`Default`: The Pod inherits the name resolution configuration from the node that the Pods run on.\" Capture for dns-node: \"nameserver 192.168.65.254\", \"options ndots:0\", no search line; \"getent hosts echo-ip\" → \"(no address)\"; client → \"(resolves to echo-ip's cluster IP)\".",
+        "source": "refs/kubernetes-website/.../dns-pod-service.md line 251; examples/don-hang stage-3:outputs/stage-3/scripts/k8s/dns-search.txt lines 26-32"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "coredns.io cache: \"cache enables a frontend cache\"; \"`disable` disable the success or denial cache for the listed ZONES.\" Captured Corefile on donhang: \"cache 30 { disable success cluster.local / disable denial cluster.local }\", supporting section 5 \"does not cache answers under cluster.local\" and section 6 \"disable denial cluster.local\". A cache inside CoreDNS only answers queries that reached CoreDNS.",
+        "source": "https://coredns.io/plugins/cache/ ; examples/don-hang stage-3:outputs/stage-3/scripts/k8s/coredns.txt (Corefile, lines 27-30)"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "refs, verbatim: \"reload: Allows automatic reload of a changed Corefile. After you edit the ConfigMap configuration, allow two minutes for your changes to take effect.\" Section 7 now says \"can also take up to two minutes\", matching. The script waits until each CoreDNS Pod logs before looking up. Round 3 opened: lesson s5, meta claim 8, stage-3 dns-search.sh lines 20-40.",
+        "source": "refs/kubernetes-website/content/en/docs/tasks/administer-cluster/dns-custom-nameservers.md lines 130-131; examples/don-hang stage-3:scripts/k8s/dns-search.sh lines 10-12, 50-57"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-20T00:40:00+07:00",
+    "reviewer": "review-junior (prompt 05), round 3 targeted re-review",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "gap",
+        "text": "Carried from round 2: I still do not learn what happens to a one-dot Service name with ndots 1 after the first try leaves the cluster, so 'moves the cost' is half-explained. I can read the cost as 'one query that leaves the cluster', which is enough to follow the paragraph.",
+        "quote": "With one dot, that name is now tried as written first, and that query leaves the cluster.",
+        "fix": "Add a few words naming the cost itself, e.g. '…leaves the cluster: one query the short name never sends', without saying what happens after it."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [
+        "With one dot, that name is now tried as written first, and that query leaves the cluster."
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

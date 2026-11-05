@@ -1,0 +1,112 @@
+{
+  "id": "design.l3.domain-events",
+  "technical": {
+    "reviewed_at": "2026-10-08T14:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "git show/extract-code needed approval this session. Validated stage-2 blocks: design.l2.domain-model (OrderService.cs tag=stage-2 lines=36-49) CancelOrderAsync `order.Cancel(); notifier.Send(order, \"order cancelled\"); await repository.SaveChangesAsync();`; design.l2.status-changes-through-methods (lines=51-61) ShipOrderAsync `order.Ship(); notifier.Send(order, \"order shipped\"); await repository.SaveChangesAsync();`.",
+        "source": "examples/don-hang @ stage-2: DonHang.Domain/OrderService.cs:36-61 (via validated blocks in design.l2.domain-model.en.md:84-98, design.l2.status-changes-through-methods.en.md:92-103)"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Validated stage-2 block QueuedNotifier.cs tag=stage-2 lines=9-24: `public sealed class QueuedNotifier(DonHangDbContext db) : INotifier { public void Send(Order order, string subject) { ... db.Notifications.Add(new Notification { ... }); } }`; stage-2 OrderService comment: \"The notifier only adds a pending email job next to the order; this one SaveChangesAsync then writes both in one transaction\". Round 2: ledger section now 2, where s2 asserts it.",
+        "source": "examples/don-hang @ stage-2: DonHang.Infrastructure/QueuedNotifier.cs:9-24 (via backend.l2.database-job-queue.en.md:76-109)"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Entities.cs:47-50 `private readonly List<IDomainEvent> domainEvents = [];` `public IReadOnlyList<IDomainEvent> DomainEvents => domainEvents.AsReadOnly();` `public void ClearDomainEvents() => domainEvents.Clear();`. No `event` member, no notifier/handler field. Round 2 (s3 now names ClearDomainEvents(), defers its caller to the next lesson): IDomainEventHandler.cs:53 `order.ClearDomainEvents();` (dispatcher), plus OrderTests.cs:171, 184.",
+        "source": "examples/don-hang: DonHang.Domain/Entities.cs:29-178; DonHang.Domain/IDomainEventHandler.cs:53"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Entities.cs:121-133: `if (Status == \"cancelled\") throw new OrderStatusException(...)`, same for \"shipped\", \"paid\", \"refunding\"; then `Status = \"cancelled\";` then `domainEvents.Add(new OrderCancelled(this, DateTimeOffset.UtcNow));`. No other call in the method. Lesson block lines=121-133 matches character for character.",
+        "source": "examples/don-hang: DonHang.Domain/Entities.cs:121-133"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "DomainEvents.cs:9-13 `public interface IDomainEvent { Order Order { get; } DateTimeOffset OccurredAt { get; } }`; lines 15, 17, 19 OrderPlaced/OrderCancelled/OrderShipped and 23, 25, 27 OrderRefundRequested/OrderRefunded/OrderRefundFailed, each `public sealed record X(Order Order, DateTimeOffset OccurredAt) : IDomainEvent;`. Lesson block lines=3-19 matches exactly.",
+        "source": "examples/don-hang: DonHang.Domain/DomainEvents.cs:1-28"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Entities.cs:78-88 public ctor ends `domainEvents.Add(new OrderPlaced(this, placedAt));` and never sets Id. EfOrderRepository.cs:40-45 `order.Id = await db.Database.SqlQuery<int>($\"SELECT nextval(pg_get_serial_sequence('orders', 'id'))::int AS \\\"Value\\\"\").SingleAsync(); await db.Orders.AddAsync(order);`. OrderService.cs:40-49: new Order -> AddAsync -> DispatchAsync -> SaveChangesAsync.",
+        "source": "examples/don-hang: DonHang.Domain/Entities.cs:78-88; DonHang.Infrastructure/EfOrderRepository.cs:35-46; DonHang.Domain/OrderService.cs:40-51"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "OrderTests.cs:168-176 Cancel_NewOrder_RecordsOrderCancelled: `NewOrder(); order.ClearDomainEvents(); order.Cancel(); Assert.IsType<OrderCancelled>(Assert.Single(order.DomainEvents));`. 179-189 Cancel_ShippedOrder_RecordsNothing: `NewOrder(); MarkPaid(); Ship(); ClearDomainEvents(); Assert.Throws<OrderStatusException>(order.Cancel); Assert.Empty(order.DomainEvents);`. No fake in either.",
+        "source": "examples/don-hang: DonHang.Tests/Domain/OrderTests.cs:167-189"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Events index.md:24 \"the event handlers are invoked synchronously when an event is raised\"; Using Delegates :48 \"all three methods are called in order\"; \"When any of the methods throws an exception that isn't caught within the method, that exception is passed to the caller of the delegate. No subsequent methods in the invocation list are called.\"; :38 \"When a delegate is constructed to wrap an instance method, the delegate references both the instance and the method.\"",
+        "source": "refs/dotnet-docs/docs/csharp/programming-guide/events/index.md:24; refs/dotnet-docs/docs/csharp/programming-guide/delegates/using-delegates.md:38,48"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "OrderEvents.cs: `namespace DonHang.Samples.Design;` `public sealed class OrderEvents { public event Action<int>? OrderPlaced; public void Place(int orderId) { ... OrderPlaced?.Invoke(orderId); } }`, in samples/, separate from Order in DonHang.Domain.",
+        "source": "examples/don-hang: samples/DonHang.Samples/Samples/Design/OrderEvents.cs:1-16"
+      },
+      {
+        "n": 10,
+        "verdict": "not-needed",
+        "evidence": "Design guidance, labelled opinion in the ledger; s6 argues it from its own consequence (a name tied to one reaction becomes false once a second reaction is added). No pinned-version behaviour; matches outline misconception 3.",
+        "source": "content/tracks/design/track.yaml (design.l3.domain-events misconceptions)"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "OrderCancelled holds `Order Order` (DomainEvents.cs:17). OrderMessage.cs:8 `public sealed record OrderMessage(int OrderId, string CustomerEmail, string CustomerName, DateTimeOffset OccurredAt);` is the body of order.* messages, a separate type holding the order id and time. Round 2: ledger now says \"a separate DTO holding values such as the order id (OrderMessage)\", matching s6 incl. the new clause \"needs only a few values such as the order id and the time\".",
+        "source": "examples/don-hang: DonHang.Domain/OrderMessage.cs:1-8; DonHang.Domain/DomainEvents.cs:17"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "git-grep docs: \"<tree>… Instead of searching tracked files in the working tree, search blobs in the given trees.\"; \"-n … Prefix the line number to matching lines.\"; synopsis `[<tree>…] [--] [<pathspec>…]`. Could not run git this session; Grep of DonHang.Domain working tree: `domainEvents.Add` only in Entities.cs at 87, 132, 142, 155, 165, 176 (six). `Status = ` at 71 (private ctor), 86, 113 (MarkPaid, no Add), 127, 141, 154, 164, 175.",
+        "source": "https://git-scm.com/docs/git-grep ; examples/don-hang: DonHang.Domain/Entities.cs:69-177"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "OrderService.cs:59-68 CancelOrderAsync: `order.Cancel(); await events.DispatchAsync(order); await repository.SaveChangesAsync(); return order;`; ctor has no notifier. Round 2 (new s4 sentence \"reactions are written once, in classes outside every use case\"): ServiceCollectionExtensions.cs:30-41 registers IDomainEventHandler<OrderCancelled> etc. to NotifyCustomerOnOrderEvents and RecordOrderStatusHistory, both classes outside OrderService.",
+        "source": "examples/don-hang: DonHang.Domain/OrderService.cs:7-9,59-68; DonHang.Infrastructure/ServiceCollectionExtensions.cs:30-41"
+      },
+      {
+        "n": 14,
+        "verdict": "not-needed",
+        "evidence": "Conditional reasoning in s6 resting on claim 8. Round 2 targeted re-review found no issues; opened: refs events/index.md, delegates/using-delegates.md; examples/don-hang Entities.cs, IDomainEventHandler.cs, ServiceCollectionExtensions.cs, OrderMessage.cs (round 1 also: git-grep docs, OrderService.cs, OrderTests.cs, DomainEvents.cs).",
+        "source": "claim 8: refs/dotnet-docs/docs/csharp/programming-guide/events/index.md:24"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-08T15:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation, prompt 05; round 2 targeted re-review)",
+    "issues": [],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

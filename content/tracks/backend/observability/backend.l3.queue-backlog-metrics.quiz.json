@@ -1,0 +1,229 @@
+{
+  "lesson": "backend.l3.queue-backlog-metrics",
+  "stage": 3,
+  "questions": [
+    {
+      "id": "backend.l3.queue-backlog-metrics.q1",
+      "type": "single",
+      "bloom": "understand",
+      "difficulty": 2,
+      "skills": ["backend.observability.signals"],
+      "section_ref": 4,
+      "question": {
+        "en": "At `stage-3`, Notifications has stopped and customers keep placing orders through `POST /api/v1/orders`. What happens to the api's p95 and `5xx` panels, and why?",
+        "vi": "Ở `stage-3`, Notifications đã dừng và khách hàng vẫn tiếp tục đặt hàng qua `POST /api/v1/orders`. Panel p95 và `5xx` của api thay đổi thế nào, và vì sao?"
+      },
+      "options": [
+        { "id": "a", "en": "They stay where they were, because the request ends once the order and its outbox row are saved.", "vi": "Chúng giữ nguyên như trước, vì request kết thúc ngay khi order và dòng outbox của nó đã được lưu." },
+        { "id": "b", "en": "`5xx` climbs, because the api cannot publish an order message while Notifications is down.", "vi": "`5xx` tăng lên, vì api không publish được message của order khi Notifications đang sập." },
+        { "id": "c", "en": "p95 creeps up, because each request now waits a little longer for Notifications to answer.", "vi": "p95 tăng dần, vì giờ mỗi request phải chờ Notifications trả lời lâu hơn một chút." },
+        { "id": "d", "en": "They stay flat, which shows that the order emails are still going out on time.", "vi": "Chúng nằm yên, điều đó cho thấy email đơn hàng vẫn được gửi đúng lúc.", "misconception": "If the API's dashboard looks healthy, every part of Đơn Hàng is working." }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "The api saves the order and its outbox row in one transaction and answers; the relay publishes to RabbitMQ later, and RabbitMQ keeps the message until Notifications takes it. No step of the request waits for Notifications, so its rate, errors and p95 do not change.",
+          "b": "Something has to receive the message, so a stopped receiver sounds like a failed publish. But the relay publishes to RabbitMQ, not to Notifications, and it does so after the request has already answered `201`.",
+          "c": "A missing service often makes callers slower, so a rising p95 sounds plausible. But nothing in `POST /api/v1/orders` calls Notifications; the request is done before the message is even published.",
+          "d": "The panels are indeed flat, so it is tempting to read them as \"all is well\". But they count only the api's own requests; the emails are waiting in `notifications.order-events`, which no api panel measures."
+        },
+        "vi": {
+          "correct": "Api lưu order và dòng outbox của nó trong một transaction rồi trả lời; relay publish sang RabbitMQ sau đó, và RabbitMQ giữ message cho tới khi Notifications lấy nó. Không bước nào của request chờ Notifications, nên tốc độ request, lỗi và p95 của nó không đổi.",
+          "b": "Phải có ai đó nhận message, nên bên nhận dừng thì nghe như publish thất bại. Nhưng relay publish sang RabbitMQ chứ không sang Notifications, và nó làm việc đó sau khi request đã trả `201`.",
+          "c": "Một service vắng mặt thường làm bên gọi chậm đi, nên p95 tăng nghe có lý. Nhưng `POST /api/v1/orders` không gọi Notifications ở bước nào; request đã xong trước cả khi message được publish.",
+          "d": "Các panel đúng là nằm yên, nên dễ đọc chúng thành \"mọi thứ ổn\". Nhưng chúng chỉ đếm request của chính api; email đang chờ trong `notifications.order-events`, nơi không panel nào của api đo tới."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.queue-backlog-metrics.q2",
+      "type": "truefalse",
+      "bloom": "analyze",
+      "difficulty": 4,
+      "skills": ["backend.observability.signals"],
+      "section_ref": 6,
+      "question": {
+        "en": "Statement: `docker compose ps` lists `notifications` as running, so order messages are not piling up in `notifications.order-events`.",
+        "vi": "Nhận định: `docker compose ps` liệt kê `notifications` là đang chạy, nên message đơn hàng không bị dồn lại trong `notifications.order-events`."
+      },
+      "options": [
+        { "id": "a", "en": "True, because a running consumer takes every message off its queue as soon as the message arrives.", "vi": "Đúng, vì một consumer đang chạy sẽ lấy mọi message ra khỏi queue của nó ngay khi message tới.", "misconception": "Notifications is fine as long as its container is running.", "polarity": "true" },
+        { "id": "b", "en": "True, because if Notifications fell behind, the api's `5xx` panel would be the first to rise.", "vi": "Đúng, vì nếu Notifications bị tụt lại, panel `5xx` của api sẽ là panel tăng đầu tiên.", "misconception": "If the API's dashboard looks healthy, every part of Đơn Hàng is working.", "polarity": "true" },
+        { "id": "c", "en": "False, because a running consumer can still fall behind; only the queue's waiting count shows it.", "vi": "Sai, vì một consumer đang chạy vẫn có thể bị tụt lại; chỉ số message đang chờ trong queue cho thấy điều đó.", "polarity": "false" },
+        { "id": "d", "en": "False, because messages for a running consumer wait in `notifications.order-events.dead` instead.", "vi": "Sai, vì message dành cho một consumer đang chạy sẽ chờ trong `notifications.order-events.dead` thay vào đó.", "polarity": "false" }
+      ],
+      "answer": ["c"],
+      "explanation": {
+        "en": {
+          "correct": "A running container says nothing about how fast it takes messages. A slow consumer makes the waiting count rise more gently than a stopped one, but it still rises, and only the queue's count shows it.",
+          "a": "A stopped container is the case the lesson's situation starts from, so \"running\" can feel like the all-clear. But a consumer that handles messages slower than they arrive is running too, and its queue still grows.",
+          "b": "The `5xx` panel is the usual first place to look for trouble. But the api answers `201` without waiting for Notifications; `queue-backlog.sh` shows `0` errors even with Notifications stopped.",
+          "d": "The statement is false, but not for this reason. `notifications.order-events.dead` holds messages Notifications could not handle; messages waiting for a slow consumer stay in `notifications.order-events`."
+        },
+        "vi": {
+          "correct": "Container đang chạy không nói gì về việc nó lấy message nhanh đến đâu. Consumer chậm làm số message đang chờ tăng nhẹ hơn so với consumer đã dừng, nhưng nó vẫn tăng, và chỉ số đếm của queue cho thấy điều đó.",
+          "a": "Container đã dừng là tình huống mà bài bắt đầu, nên \"đang chạy\" có vẻ như là dấu hiệu ổn. Nhưng một consumer xử lý message chậm hơn tốc độ message tới cũng đang chạy, và queue của nó vẫn dài ra.",
+          "b": "Panel `5xx` là chỗ quen thuộc để tìm sự cố trước tiên. Nhưng api trả `201` mà không chờ Notifications; `queue-backlog.sh` cho thấy `0` lỗi ngay cả khi Notifications đã dừng.",
+          "d": "Nhận định là sai, nhưng không phải vì lý do này. `notifications.order-events.dead` giữ những message Notifications không xử lý được; message chờ một consumer chậm vẫn nằm trong `notifications.order-events`."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.queue-backlog-metrics.q3",
+      "type": "multi",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["backend.observability.signals", "devops.monitoring.dashboards"],
+      "section_ref": 5,
+      "question": {
+        "en": "You run `scripts/backend/queue-backlog.sh`, which stops `notifications` and places five orders. Which statements about what it shows are correct? Select all that apply.",
+        "vi": "Bạn chạy `scripts/backend/queue-backlog.sh`, script dừng `notifications` rồi đặt năm đơn hàng. Những nhận định nào về những gì nó cho thấy là đúng? Chọn tất cả đáp án đúng."
+      },
+      "options": [
+        { "id": "a", "en": "All five orders return `201`, although Notifications is stopped.", "vi": "Cả năm đơn hàng đều trả `201`, dù Notifications đã dừng." },
+        { "id": "b", "en": "The waiting count reaches `5`, one message for each order placed.", "vi": "Số message đang chờ lên tới `5`, mỗi đơn hàng một message." },
+        { "id": "c", "en": "The api's `5xx` count grows by `5`, one for each order whose email could not be sent.", "vi": "Số `5xx` của api tăng `5`, mỗi đơn hàng không gửi được email thì thêm một.", "misconception": "If the API's dashboard looks healthy, every part of Đơn Hàng is working." },
+        { "id": "d", "en": "Once Notifications starts again, the waiting count falls back to `0`.", "vi": "Khi Notifications chạy lại, số message đang chờ giảm về `0`." },
+        { "id": "e", "en": "The waiting count comes from the api's `/metrics`, since the api's relay published the five messages.", "vi": "Số message đang chờ lấy từ `/metrics` của api, vì relay của api đã publish năm message đó." }
+      ],
+      "answer": ["a", "b", "d"],
+      "explanation": {
+        "en": {
+          "correct": "The api answers every order without waiting for Notifications, so all five return `201` and the `5xx` count does not move. Each order adds one message to `notifications.order-events`, so the count reaches `5`, and it falls back to `0` once the consumer takes them.",
+          "c": "An email that is not sent feels like a failure, so a rise in errors seems natural. But the api's request was already finished; the script prints `0` for `5xx` while the five emails wait.",
+          "e": "The relay does run in the api, so the api seems the natural source. But the number of messages in a queue belongs to RabbitMQ, and Prometheus scrapes it from RabbitMQ's plugin on port `15692`, in a job of its own."
+        },
+        "vi": {
+          "correct": "Api trả lời mọi đơn hàng mà không chờ Notifications, nên cả năm đều trả `201` và số `5xx` không đổi. Mỗi đơn hàng thêm một message vào `notifications.order-events`, nên số đếm lên tới `5`, rồi giảm về `0` khi consumer lấy chúng đi.",
+          "c": "Email không được gửi có vẻ là một lỗi, nên số lỗi tăng nghe hợp lý. Nhưng request của api đã xong từ trước; script in `0` cho `5xx` trong khi năm email đang chờ.",
+          "e": "Relay đúng là chạy trong api, nên api có vẻ là nguồn tự nhiên. Nhưng số message trong một queue là của RabbitMQ, và Prometheus scrape nó từ plugin của RabbitMQ ở port `15692`, bằng một job riêng."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.queue-backlog-metrics.q4",
+      "type": "fill",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["devops.monitoring.dashboards"],
+      "section_ref": 5,
+      "question": {
+        "en": "In `deploy/monitoring/prometheus.yml` at `stage-3`, the `rabbitmq` job must get one series per queue, not the numbers of all queues added together. Together with `family: [queue_coarse_metrics]`, which path does it scrape? Complete the line: `metrics_path: ___`",
+        "vi": "Trong `deploy/monitoring/prometheus.yml` ở `stage-3`, job `rabbitmq` phải nhận được một series cho mỗi queue, chứ không phải số của mọi queue cộng lại. Cùng với `family: [queue_coarse_metrics]`, nó scrape path nào? Điền vào dòng: `metrics_path: ___`"
+      },
+      "answer": ["/metrics/detailed"],
+      "answer_regex": "^\\s*/metrics/detailed\\s*$",
+      "explanation": {
+        "en": {
+          "correct": "On its default path, `/metrics`, the plugin adds the numbers of all queues together. `/metrics/detailed` with the `queue_coarse_metrics` family returns one series per queue, with the queue's name in the `queue` label, so a panel can pick `notifications.order-events` alone."
+        },
+        "vi": {
+          "correct": "Ở path mặc định, `/metrics`, plugin cộng số của mọi queue lại với nhau. `/metrics/detailed` với family `queue_coarse_metrics` trả về một series cho mỗi queue, có tên queue trong label `queue`, nên một panel có thể chọn riêng `notifications.order-events`."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.queue-backlog-metrics.q5",
+      "type": "single",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["backend.observability.signals"],
+      "section_ref": 3,
+      "question": {
+        "en": "Notifications has been handed 3 messages from `notifications.order-events` and has not acknowledged them yet; 4 more wait, not handed to anyone. What do the two gauges show for that queue?",
+        "vi": "Notifications đã được giao 3 message từ `notifications.order-events` và chưa acknowledge chúng; 4 message khác đang chờ, chưa giao cho ai. Hai gauge cho thấy gì với queue đó?"
+      },
+      "options": [
+        { "id": "a", "en": "`rabbitmq_detailed_queue_messages_ready` is `4`; `rabbitmq_detailed_queue_messages` is `4`.", "vi": "`rabbitmq_detailed_queue_messages_ready` là `4`; `rabbitmq_detailed_queue_messages` là `4`." },
+        { "id": "b", "en": "`rabbitmq_detailed_queue_messages_ready` is `7`; `rabbitmq_detailed_queue_messages` is `4`.", "vi": "`rabbitmq_detailed_queue_messages_ready` là `7`; `rabbitmq_detailed_queue_messages` là `4`." },
+        { "id": "c", "en": "`rabbitmq_detailed_queue_messages_ready` is `4`; `rabbitmq_detailed_queue_messages` is `7`.", "vi": "`rabbitmq_detailed_queue_messages_ready` là `4`; `rabbitmq_detailed_queue_messages` là `7`." },
+        { "id": "d", "en": "`rabbitmq_detailed_queue_messages_ready` is `3`; `rabbitmq_detailed_queue_messages` is `7`.", "vi": "`rabbitmq_detailed_queue_messages_ready` là `3`; `rabbitmq_detailed_queue_messages` là `7`." }
+      ],
+      "answer": ["c"],
+      "explanation": {
+        "en": {
+          "correct": "`messages_ready` counts only messages not yet handed to a consumer: the 4 waiting. `messages` counts all of them, ready plus handed out and not yet acknowledged: 4 + 3 = 7.",
+          "b": "Both names describe messages in the queue, so they are easy to swap. But \"ready\" means not yet handed to a consumer, which is the smaller group here; the total is the larger one.",
+          "a": "Once a message is handed to Notifications it can feel like it has left the queue. But until Notifications acknowledges it, it still counts in `rabbitmq_detailed_queue_messages`.",
+          "d": "The 3 handed-out messages are the ones in motion, so \"ready\" can sound like \"being handled\". But ready means waiting for delivery, so those 3 are exactly the ones it leaves out."
+        },
+        "vi": {
+          "correct": "`messages_ready` chỉ đếm message chưa giao cho consumer nào: 4 message đang chờ. `messages` đếm tất cả, gồm message sẵn sàng cộng message đã giao nhưng chưa acknowledge: 4 + 3 = 7.",
+          "b": "Cả hai tên đều nói về message trong queue, nên dễ bị đảo cho nhau. Nhưng \"ready\" nghĩa là chưa giao cho consumer, ở đây là nhóm nhỏ hơn; tổng số mới là nhóm lớn hơn.",
+          "a": "Khi một message đã giao cho Notifications, có cảm giác nó đã rời khỏi queue. Nhưng cho tới khi Notifications acknowledge nó, nó vẫn được tính trong `rabbitmq_detailed_queue_messages`.",
+          "d": "3 message đã giao là những message đang được xử lý, nên \"ready\" có thể nghe như \"đang được xử lý\". Nhưng ready nghĩa là đang chờ được giao, nên 3 message đó chính là phần nó không tính."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.queue-backlog-metrics.q6",
+      "type": "scenario",
+      "bloom": "evaluate",
+      "difficulty": 4,
+      "skills": ["devops.monitoring.dashboards"],
+      "section_ref": 6,
+      "context": {
+        "en": "A teammate builds a panel for `notifications.order-events` on a second dashboard. Its query is `rate(rabbitmq_detailed_queue_messages_ready{queue=\"notifications.order-events\"}[5m])`. During a sale, orders arrive in a burst and the backlog grows to a few hundred messages. Notifications keeps running and slowly works it off over the next half hour. All that time the teammate's panel shows values above zero, and they tell the team that the queue is still filling up.",
+        "vi": "Một đồng đội làm một panel cho `notifications.order-events` trên một dashboard thứ hai. Query của nó là `rate(rabbitmq_detailed_queue_messages_ready{queue=\"notifications.order-events\"}[5m])`. Trong một đợt khuyến mãi, đơn hàng tới dồn dập và số message tồn lên tới vài trăm. Notifications vẫn chạy và xử lý dần trong nửa giờ sau đó. Suốt thời gian đó panel của đồng đội luôn hiện giá trị lớn hơn 0, và họ báo với nhóm rằng queue vẫn đang đầy thêm."
+      },
+      "question": {
+        "en": "What do you suggest?",
+        "vi": "Bạn đề xuất gì?"
+      },
+      "options": [
+        { "id": "a", "en": "Draw the gauge as it is, without `rate()`, so the line falls as Notifications catches up.", "vi": "Vẽ gauge đúng như giá trị của nó, không dùng `rate()`, để đường đồ thị giảm xuống khi Notifications bắt kịp." },
+        { "id": "b", "en": "Keep `rate()`: the backlog is a counter, and its per-second growth is the number to watch.", "vi": "Giữ `rate()`: số message tồn là một counter, và tốc độ tăng mỗi giây của nó là con số cần theo dõi.", "misconception": "The number of messages in a queue is a counter, so I should read it with `rate()`." },
+        { "id": "c", "en": "Scrape `/metrics` instead of `/metrics/detailed`, so the panel shows all queues added together.", "vi": "Scrape `/metrics` thay cho `/metrics/detailed`, để panel cho thấy mọi queue cộng lại." },
+        { "id": "d", "en": "Drop the panel and check that the `notifications` container is running, since it kept running.", "vi": "Bỏ panel đi và kiểm tra container `notifications` có đang chạy không, vì nó vẫn chạy suốt.", "misconception": "Notifications is fine as long as its container is running." }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "The number of messages waiting is a gauge: it falls each time Notifications takes a message, and its current value is the answer. When the series drops, `rate()` assumes a counter restarted from zero and counts the new value as growth, so every fall reads as an increase; the plain gauge would have shown the backlog shrinking.",
+          "b": "Messages do arrive at a rate, so a per-second view sounds right. But the count falls every time the consumer takes a message, which a counter never does. `rate()` is the right choice when the series is a counter, such as the api's `http_requests_received_total`.",
+          "c": "A wider view can seem to give more context. But `/metrics` mixes this queue's backlog with every other queue's, so you lose the one number you care about. It would fit only when you want the broker's total and not one queue.",
+          "d": "Whether the container runs is a fair first check when the waiting line only rises, to tell a stopped consumer from a slow one. But here it was running the whole time, and a running container says nothing about whether the backlog is shrinking."
+        },
+        "vi": {
+          "correct": "Số message đang chờ là một gauge: nó giảm mỗi lần Notifications lấy một message, và giá trị hiện tại của nó chính là câu trả lời. Khi series giảm, `rate()` cho rằng counter đã bắt đầu lại từ 0 và tính giá trị mới là phần tăng, nên mỗi lần giảm đều bị đọc thành tăng; gauge vẽ nguyên giá trị sẽ cho thấy số message tồn đang giảm.",
+          "b": "Message đúng là tới theo một tốc độ, nên nhìn theo từng giây nghe hợp lý. Nhưng số đếm giảm mỗi lần consumer lấy một message, điều mà counter không bao giờ làm. `rate()` là lựa chọn đúng khi series là một counter, như `http_requests_received_total` của api.",
+          "c": "Nhìn rộng hơn có vẻ cho thêm bối cảnh. Nhưng `/metrics` trộn số message tồn của queue này với mọi queue khác, nên bạn mất đúng con số mình cần. Nó chỉ hợp khi bạn muốn tổng của cả broker chứ không phải một queue.",
+          "d": "Container có chạy hay không là một bước kiểm tra hợp lý khi đường số message đang chờ chỉ tăng, để phân biệt consumer đã dừng với consumer chậm. Nhưng ở đây nó chạy suốt, và container đang chạy không nói gì về việc số message tồn có đang giảm hay không."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.queue-backlog-metrics.q7",
+      "type": "single",
+      "bloom": "analyze",
+      "difficulty": 4,
+      "skills": ["backend.observability.signals", "devops.monitoring.dashboards"],
+      "section_ref": 5,
+      "question": {
+        "en": "For the past hour, the \"Dead-lettered order messages\" panel shows `1`, and \"Order emails waiting in RabbitMQ\" stays flat at `0`. What does this tell you?",
+        "vi": "Trong một giờ qua, panel \"Dead-lettered order messages\" hiện `1`, còn \"Order emails waiting in RabbitMQ\" nằm yên ở `0`. Điều này cho bạn biết gì?"
+      },
+      "options": [
+        { "id": "a", "en": "Nothing needs a look: the value is small and steady, and only a line that keeps rising is a problem.", "vi": "Không cần xem gì: giá trị nhỏ và ổn định, và chỉ đường đồ thị cứ tăng mãi mới là vấn đề." },
+        { "id": "b", "en": "Notifications keeps up with new orders, but one message it could not handle waits for a person.", "vi": "Notifications vẫn theo kịp đơn hàng mới, nhưng có một message nó không xử lý được đang chờ một người xem." },
+        { "id": "c", "en": "Notifications has stopped, since a message is sitting in a queue instead of being handled.", "vi": "Notifications đã dừng, vì có một message nằm trong queue thay vì được xử lý." },
+        { "id": "d", "en": "The message will go back to `notifications.order-events` by itself once the consumer is idle.", "vi": "Message đó sẽ tự quay lại `notifications.order-events` khi consumer rảnh." }
+      ],
+      "answer": ["b"],
+      "explanation": {
+        "en": {
+          "correct": "A waiting count of `0` means Notifications takes new messages as they arrive. The dead-letter queue holds a message it could not handle, and nothing retries it on its own, so any value above zero is a reason for a person to look.",
+          "a": "\"Rising means trouble\" is the right way to read the waiting panel, so it is natural to reuse it. But messages in `notifications.order-events.dead` wait until someone handles them; there, a single one already needs a look.",
+          "c": "A stopped consumer does leave messages sitting in a queue. But that would show in the waiting panel, which is at `0`; the message here sits in the dead-letter queue because Notifications could not handle it.",
+          "d": "Queues usually empty once the consumer catches up, so this can feel like the same case. But nothing moves a dead-lettered message back on its own; it stays until a person deals with it."
+        },
+        "vi": {
+          "correct": "Số message đang chờ bằng `0` nghĩa là Notifications lấy message mới ngay khi chúng tới. Dead-letter queue giữ một message mà nó không xử lý được, và không có gì tự thử lại message đó, nên bất kỳ giá trị nào lớn hơn 0 đều là lý do để một người vào xem.",
+          "a": "\"Tăng mãi là có chuyện\" là cách đọc đúng cho panel số message đang chờ, nên dễ áp dụng lại ở đây. Nhưng message trong `notifications.order-events.dead` chờ tới khi có người xử lý; ở đó, chỉ một message thôi cũng cần xem.",
+          "c": "Consumer đã dừng đúng là để message nằm lại trong queue. Nhưng điều đó sẽ hiện ở panel số message đang chờ, mà panel đó đang ở `0`; message ở đây nằm trong dead-letter queue vì Notifications không xử lý được nó.",
+          "d": "Queue thường vơi đi khi consumer bắt kịp, nên trường hợp này có vẻ giống vậy. Nhưng không có gì tự đưa một message đã vào dead-letter queue quay lại; nó nằm đó cho tới khi một người xử lý."
+        }
+      }
+    }
+  ]
+}

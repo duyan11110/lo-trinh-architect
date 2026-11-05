@@ -1,0 +1,147 @@
+{
+  "id": "backend.l3.timeouts",
+  "technical": {
+    "reviewed_at": "2026-10-16T17:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "MailService.cs @ 4.18.0, Timeout: \"Gets or sets the timeout for network streaming operations, in milliseconds.\" Remarks: \"Gets or sets the underlying socket stream's ReadTimeout and WriteTimeout values.\" MailKit/Net/NetworkStream.cs @ 4.18.0, ReadAsync: \"using (var timeout = new CancellationTokenSource (readTimeout))\" ... \"throw new TimeoutException ($\\\"Operation timed out after {readTimeout} milliseconds\\\", ex);\"",
+        "source": "https://github.com/jstedfast/MailKit/blob/4.18.0/MailKit/MailService.cs ; https://github.com/jstedfast/MailKit/blob/4.18.0/MailKit/Net/NetworkStream.cs"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "MailService.cs @ 4.18.0: ConnectNetworkAsync calls SocketUtils.ConnectAsync (host, port, LocalEndPoint, Timeout, cancellationToken), so connect is bounded by Timeout. SmtpClient.cs @ 4.18.0 Timeout setter: \"Stream.WriteTimeout = value;\" \"Stream.ReadTimeout = value;\" — per stream read/write, not one total for SendAsync, so slow-but-answered steps can exceed it in total. Round 2: ledger section now 4, matching the sentence.",
+        "source": "https://github.com/jstedfast/MailKit/blob/4.18.0/MailKit/MailService.cs ; https://github.com/jstedfast/MailKit/blob/4.18.0/MailKit/Net/Smtp/SmtpClient.cs"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "git -C examples/don-hang show stage-2:DonHang.Infrastructure/MailKitEmailSender.cs: line 28 \"using var client = new SmtpClient { Timeout = 10_000 };\"; line 30 ConnectAsync(..., cancellationToken); line 31 SendAsync(message, cancellationToken); line 32 DisconnectAsync(quit: true, cancellationToken). Lesson excerpt lines 18-34 matches character-for-character.",
+        "source": "examples/don-hang @ stage-2: DonHang.Infrastructure/MailKitEmailSender.cs"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "SmtpClient.cs @ 4.18.0, Disconnect param quit: \"If set to true, a QUIT command will be issued in order to disconnect cleanly.\" Code: \"if (quit) { try { Stream.SendCommand (\\\"QUIT\\\\r\\\\n\\\", cancellationToken); } catch (OperationCanceledException) {} ...\"",
+        "source": "https://raw.githubusercontent.com/jstedfast/MailKit/refs/tags/4.18.0/MailKit/Net/Smtp/SmtpClient.cs (redirect target of github.com/jstedfast/MailKit/raw/...)"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "NotificationSender.cs @ stage-2 lines 65-81: SendOneAsync awaits email.SendAsync(..., stoppingToken); \"catch (Exception ex) when (!stoppingToken.IsCancellationRequested) { RecordFailure(notification, ex); }\"; line 88 \"notification.Attempts++;\".",
+        "source": "examples/don-hang @ stage-2: DonHang.Api/Jobs/NotificationSender.cs"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "\"The cancellation token is triggered when IHostedService.StopAsync is called.\" and \"StopAsync(CancellationToken) is triggered when the host is performing a graceful shutdown.\" NotificationSender passes stoppingToken unchanged (no linked/timeout source) at stage-2 lines 32, 56, 72.",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/host/hosted-services.md lines 60, 98"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "NotificationSender.cs @ stage-2: line 14 \"private const int BatchSize = 10;\"; line 53 \"var due = await queue.ClaimDueAsync(BatchSize, stoppingToken);\"; lines 54-57 foreach awaiting SendOneAsync; line 58 \"await queue.CompleteAsync(stoppingToken);\" after the loop. Lesson excerpt lines 47-59 matches.",
+        "source": "examples/don-hang @ stage-2: DonHang.Api/Jobs/NotificationSender.cs"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Follows directly from the sequential `await SendOneAsync(...)` inside `foreach (var notification in due)` (stage-2 lines 54-57): the next iteration cannot start until the awaited send has thrown or completed.",
+        "source": "examples/don-hang @ stage-2: DonHang.Api/Jobs/NotificationSender.cs lines 54-57"
+      },
+      {
+        "n": 9,
+        "verdict": "unverified",
+        "evidence": "Round 2: text now equals the round-1 suggested_text. MailKit part verified: NetworkStream.ReadAsync @ 4.18.0 disconnects the socket, then throws TimeoutException. Server-side part (a server that had the whole email may still deliver it) still has no allowed source: versions.yaml lists no SMTP standard and refs/rfc holds none. Kind behavior, not number/syntax, so it does not block approval.",
+        "source": "refs/rfc (rfc6265, 9110-9112 only); https://github.com/jstedfast/MailKit/blob/4.18.0/MailKit/Net/NetworkStream.cs"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "docker-compose.yml @ stage-2 line 112: ConnectionStrings__Redis: \"redis:6379,abortConnect=false\". ServiceCollectionExtensions.cs @ stage-2 lines 33-38: ConfigurationOptions.Parse(redisConfiguration); options.BacklogPolicy = BacklogPolicy.FailFast; ConnectionMultiplexer.Connect(options). `git grep -i timeout stage-2` finds no Redis timeout setting.",
+        "source": "examples/don-hang @ stage-2: docker-compose.yml, DonHang.Infrastructure/ServiceCollectionExtensions.cs"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Configuration table: \"connectTimeout={int} | ConnectTimeout | 5000 | Timeout (ms) for connect operations\"; \"syncTimeout={int} | SyncTimeout | 5000 | Time (ms) to allow for synchronous operations\"; \"asyncTimeout={int} | AsyncTimeout | SyncTimeout | Time (ms) to allow for asynchronous operations\". (Lesson correctly states no values.)",
+        "source": "https://stackexchange.github.io/StackExchange.Redis/Configuration (301 → https://seredis.dev/Configuration)"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "docker-compose.yml @ stage-2 line 111: \"Host=db;Database=donhang;Username=donhang;Password=${POSTGRES_PASSWORD}\" — no Timeout/Command Timeout. Npgsql docs: Timeout \"The time to wait (in seconds) while trying to establish a connection...\" (default 15); Command Timeout \"The time to wait (in seconds) while trying to execute a command...\" (default 30). No CommandTimeout in stage-2 code (git grep).",
+        "source": "https://www.npgsql.org/doc/connection-string-parameters.html"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "MailKit Timeout \"in milliseconds\" (MailService.cs); StackExchange.Redis connectTimeout/syncTimeout/asyncTimeout \"(ms)\" (seredis.dev/Configuration); Npgsql Timeout/Command Timeout \"(in seconds)\" (connection-string-parameters). Names, counts and units differ per library as claimed; round-2 section-3 definition (\"often more than one\") matches.",
+        "source": "MailKit MailService.cs @ 4.18.0; https://seredis.dev/Configuration; https://www.npgsql.org/doc/connection-string-parameters.html"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "Supported as a generalisation: Npgsql Command Timeout \"Set to zero for infinity.\" (a client can wait without end); MailKit SmtpClient.cs @ 4.18.0 \"int timeout = 2 * 60 * 1000;\" (the library default is the lower-level limit). Round 2: section 4 now names both lower levels and says neither can be counted on to be short; the contradicting section-7 sentence was replaced (claim 20).",
+        "source": "https://www.npgsql.org/doc/connection-string-parameters.html; https://github.com/jstedfast/MailKit/blob/4.18.0/MailKit/Net/Smtp/SmtpClient.cs"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "Trade-off stated with both sides and grounded in the code: sequential await in SendDueAsync (stage-2 lines 54-57) makes each stuck send's wait add to every later row; a timeout below a call's normal answer time fails that call by construction.",
+        "source": "examples/don-hang @ stage-2: DonHang.Api/Jobs/NotificationSender.cs"
+      },
+      {
+        "n": 16,
+        "verdict": "not-needed",
+        "evidence": "Definitional: a default is by definition what applies when the app sets nothing, and a library ships one value for all its users; that its documentation gives the value is shown for all three libraries by claims 11-13. No version-dependent behaviour asserted."
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "scripts/backend/email-retry.sh @ stage-2: line 3 \"Runs on the host\"; line 14 \"docker compose stop mailpit\"; line 15 trap ... \"docker compose start mailpit\" EXIT; lines 19-22 POST /api/v1/orders with anh.tran token; lines 31-35 poll while status = pending; lines 37-38 grep failure log lines; line 42 \"SELECT status, attempts, sent_at IS NULL AS never_sent\".",
+        "source": "examples/don-hang @ stage-2: scripts/backend/email-retry.sh"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "outputs/stage-2/scripts/backend/email-retry.txt: \"-> 201\"; \"failed on attempt 1; next attempt in 2 s\" ... \"attempt 4; next attempt in 16 s\"; \"failed on attempt 5; giving up\"; \"failed | 5 | t\". Lesson's expected result matches; `t` is the never_sent column (sent_at IS NULL), as the lesson now says.",
+        "source": "examples/don-hang @ stage-2: outputs/stage-2/scripts/backend/email-retry.txt"
+      },
+      {
+        "n": 19,
+        "verdict": "verified",
+        "evidence": "Docker API docs: \"Use the cgroups freezer to suspend all processes in a container.\" MailKit @ 4.18.0 bounds connect (SocketUtils.ConnectAsync(..., Timeout, ...)) and each read (ReadAsync throws TimeoutException after ReadTimeout), so a paused Mailpit makes each attempt throw after about 10 s; NotificationSender.cs lines 77-80 route it to RecordFailure. A stopped container runs no process to accept or hold the connection, so step 1 fails without a timeout. Not executed.",
+        "source": "refs/docker-docs/_vendor/github.com/moby/moby/api/docs/v1.35.yaml:5565; MailKit MailService.cs, Net/NetworkStream.cs @ 4.18.0"
+      },
+      {
+        "n": 20,
+        "verdict": "verified",
+        "evidence": "SmtpClient.cs @ 4.18.0: \"int timeout = 2 * 60 * 1000;\"; Connect(string host, ...): \"stream.WriteTimeout = timeout;\" \"stream.ReadTimeout = timeout;\". With no Timeout line the default (2 min) still ends each connect/read, only later. Round-2 documents opened: SmtpClient.cs @ 4.18.0 (raw); round-1 MailService.cs, NetworkStream.cs, seredis.dev/Configuration, npgsql connection-string-parameters, refs hosted-services.md.",
+        "source": "https://raw.githubusercontent.com/jstedfast/MailKit/refs/tags/4.18.0/MailKit/Net/Smtp/SmtpClient.cs"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-16T18:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (review-junior, round 2 targeted)",
+    "issues": [],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

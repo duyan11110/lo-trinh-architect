@@ -15,8 +15,8 @@ vocab: [container-orchestrator, kubernetes]
 example_tag: stage-1
 versions_used: [docker, kubernetes]
 content_version: 1
-status: approved
-approved_by: auto
+status: published
+approved_by: owner
 reviewed_at: "2026-10-03T17:13:58+07:00"
 ---
 

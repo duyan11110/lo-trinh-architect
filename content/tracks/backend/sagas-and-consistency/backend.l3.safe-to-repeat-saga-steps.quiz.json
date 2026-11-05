@@ -1,0 +1,202 @@
+{
+  "lesson": "backend.l3.safe-to-repeat-saga-steps",
+  "stage": 3,
+  "questions": [
+    {
+      "id": "backend.l3.safe-to-repeat-saga-steps.q1",
+      "type": "order",
+      "bloom": "understand",
+      "difficulty": 2,
+      "skills": ["backend.sagas.steps"],
+      "section_ref": 4,
+      "question": {
+        "en": "Refund row 9 for order 10 is due. The first call to the gateway gets no answer in time; a call in a later round gets `200`. Put what happens in order.",
+        "vi": "Dòng refund 9 của đơn 10 đã đến hạn. Lần gọi cổng thanh toán đầu tiên không có trả lời kịp; một lần gọi ở vòng sau nhận `200`. Sắp xếp những gì xảy ra theo đúng thứ tự."
+      },
+      "options": [
+        { "id": "a", "en": "Row 9 becomes `refunded`, and a `payment.refunded` outbox row is saved in the same transaction.", "vi": "Dòng 9 thành `refunded`, và một dòng outbox `payment.refunded` được lưu trong cùng transaction." },
+        { "id": "b", "en": "`RefundSender` claims due rows, row 9 among them, with `FOR UPDATE SKIP LOCKED`.", "vi": "`RefundSender` nhận các dòng đến hạn, trong đó có dòng 9, bằng `FOR UPDATE SKIP LOCKED`." },
+        { "id": "c", "en": "In a later round, a call with the same key, `refund-9`, gets `200` back.", "vi": "Ở một vòng sau, lần gọi với cùng key `refund-9` nhận về `200`." },
+        { "id": "d", "en": "Row 9 stays `pending`, `attempts` goes up by one and `next_attempt_at` moves later.", "vi": "Dòng 9 vẫn `pending`, `attempts` tăng một và `next_attempt_at` lùi về sau." },
+        { "id": "e", "en": "`GatewayRefundClient` sends `POST v1/refunds` with key `refund-9`, and no answer arrives in time.", "vi": "`GatewayRefundClient` gửi `POST v1/refunds` với key `refund-9`, và không có trả lời kịp." }
+      ],
+      "answer": ["b", "e", "d", "c", "a"],
+      "explanation": {
+        "en": {
+          "correct": "`RefundSender` first claims the row, then asks `GatewayRefundClient`, which calls with `refund-9`. No answer means try again later, so the row stays `pending` with a later `next_attempt_at`. The later call carries the same key, and only its `200` lets the row become `refunded` with its outbox row."
+        },
+        "vi": {
+          "correct": "`RefundSender` nhận dòng trước, rồi nhờ `GatewayRefundClient` gọi với `refund-9`. Không có trả lời nghĩa là thử lại sau, nên dòng vẫn `pending` với `next_attempt_at` muộn hơn. Lần gọi sau mang cùng key, và chỉ khi nhận `200` thì dòng mới thành `refunded` kèm dòng outbox."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.safe-to-repeat-saga-steps.q2",
+      "type": "single",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["backend.sagas.steps"],
+      "section_ref": 5,
+      "question": {
+        "en": "Order 10's refund was requested two hours ago. On this round, the gateway answers the call for row 9 with `503`. What happens to row 9?",
+        "vi": "Yêu cầu hoàn tiền của đơn 10 được gửi cách đây hai giờ. Ở vòng này, cổng thanh toán trả lời lần gọi cho dòng 9 bằng `503`. Dòng 9 sẽ ra sao?"
+      },
+      "options": [
+        { "id": "a", "en": "It becomes `failed` with the reason `the gateway answered 503`, and a `payment.refund-failed` outbox row is saved.", "vi": "Nó thành `failed` với lý do `the gateway answered 503`, và một dòng outbox `payment.refund-failed` được lưu." },
+        { "id": "b", "en": "It stays `pending`, `attempts` goes up by one, `next_attempt_at` moves later, and no message is saved.", "vi": "Nó vẫn `pending`, `attempts` tăng một, `next_attempt_at` lùi về sau, và không message nào được lưu." },
+        { "id": "c", "en": "Its status is set to the gateway's own answer, so every reader of `payments.status` sees what the gateway said.", "vi": "Status của nó được đặt bằng chính câu trả lời của cổng, để ai đọc `payments.status` cũng thấy cổng đã nói gì.", "misconception": "The gateway's own status names can be stored as they are; translating them is extra work." },
+        { "id": "d", "en": "It stays `pending`, and `RefundSender` calls the gateway again at once in the same round.", "vi": "Nó vẫn `pending`, và `RefundSender` gọi lại cổng ngay trong cùng vòng đó." }
+      ],
+      "answer": ["b"],
+      "explanation": {
+        "en": {
+          "correct": "Only a success status and `422` end the question; `503` becomes `TryAgainLater`. Two hours is far less than the 24-hour give-up time, so `RecordResult` keeps the row `pending`, schedules the next try with backoff and returns `null`.",
+          "a": "An error status sounds like a failure, so `failed` seems natural. But `failed` comes only from a refusal (`422`) or from a try-again-later answer after the give-up time, and two hours is well inside it. With a `422`, or with this `503` more than 24 hours after the request, this would be right.",
+          "c": "Keeping the gateway's answer looks like keeping more information. But `GatewayRefundClient` turns every answer into one of three outcomes, and the row only ever holds `pending`, `refunded` or `failed`. The gateway's words would otherwise spread into every reader of `payments.status`.",
+          "d": "Calling again quickly seems to get the refund done sooner. But try again later moves `next_attempt_at` later with exponential backoff, and `RefundSender` picks up only rows whose `next_attempt_at` has passed. The row waits for a later round."
+        },
+        "vi": {
+          "correct": "Chỉ status thành công và `422` mới chốt kết quả; `503` thành `TryAgainLater`. Hai giờ còn xa mốc bỏ cuộc 24 giờ, nên `RecordResult` giữ dòng ở `pending`, hẹn lần thử sau bằng backoff và trả về `null`.",
+          "a": "Status lỗi nghe như thất bại, nên `failed` có vẻ hợp lý. Nhưng `failed` chỉ đến từ lời từ chối (`422`) hoặc từ kết quả thử lại sau khi đã quá mốc bỏ cuộc, và hai giờ vẫn còn trong mốc đó. Với `422`, hoặc với `503` này khi đã quá 24 giờ kể từ lúc yêu cầu, đáp án này mới đúng.",
+          "c": "Giữ nguyên câu trả lời của cổng trông như giữ được nhiều thông tin hơn. Nhưng `GatewayRefundClient` biến mọi câu trả lời thành một trong ba kết quả, và dòng chỉ chứa `pending`, `refunded` hoặc `failed`. Nếu không, từ ngữ của cổng sẽ lan vào mọi chỗ đọc `payments.status`.",
+          "d": "Gọi lại ngay có vẻ giúp hoàn tiền nhanh hơn. Nhưng thử lại sau sẽ lùi `next_attempt_at` bằng exponential backoff, và `RefundSender` chỉ nhận dòng có `next_attempt_at` đã qua. Dòng phải chờ một vòng sau."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.safe-to-repeat-saga-steps.q3",
+      "type": "truefalse",
+      "bloom": "analyze",
+      "difficulty": 4,
+      "skills": ["backend.sagas.steps"],
+      "section_ref": 6,
+      "question": {
+        "en": "Statement: after a call for row 9 gets no answer in time, Payments could send the next call with a new key, `refund-9-2`, without any risk of refunding order 10 twice.",
+        "vi": "Nhận định: sau khi một lần gọi cho dòng 9 không có trả lời kịp, Payments có thể gửi lần gọi tiếp với key mới `refund-9-2` mà không có nguy cơ hoàn tiền đơn 10 hai lần."
+      },
+      "options": [
+        { "id": "a", "en": "True, because no answer in time means the gateway never handled the call, so no refund happened.", "vi": "Đúng, vì không có trả lời kịp nghĩa là cổng chưa từng xử lý lần gọi, nên chưa có lần hoàn tiền nào.", "misconception": "A timeout from the gateway means no refund happened, so a new request with a new key is safe.", "polarity": "true" },
+        { "id": "b", "en": "True, because `fake-gateway` keeps at most one refund per order, whatever key the call carries.", "vi": "Đúng, vì `fake-gateway` giữ tối đa một lần hoàn tiền cho mỗi đơn, bất kể lần gọi mang key nào.", "polarity": "true" },
+        { "id": "c", "en": "False, because the gateway may have refunded and lost only its answer; a new key makes it refund again.", "vi": "Sai, vì cổng có thể đã hoàn tiền và chỉ mất câu trả lời; key mới khiến nó hoàn tiền thêm lần nữa.", "polarity": "false" },
+        { "id": "d", "en": "False, because a call with no answer in time ends row 9 as `failed`, so no next call is made.", "vi": "Sai, vì lần gọi không có trả lời kịp sẽ kết thúc dòng 9 ở `failed`, nên không có lần gọi tiếp.", "polarity": "false" }
+      ],
+      "answer": ["c"],
+      "explanation": {
+        "en": {
+          "correct": "No answer in time only says the answer did not arrive; the gateway may already have refunded. With the same key, `refund-9`, the gateway returns its first answer and refunds nothing more. A new key looks like a second refund, and the gateway would list two refunds for order 10.",
+          "a": "With no answer, assuming nothing happened feels like the cautious reading. But the call may have arrived and the refund may have happened, with only the answer lost on the way back. The statement is false exactly because you cannot tell which.",
+          "b": "If the gateway refused a second refund for an order, the key would not matter, so this sounds plausible. But the gateway recognises a repeat only by its key: a new key is a new request, and it can list two refunds for order 10.",
+          "d": "Ending the row seems the careful move after an unclear call. But no answer in time becomes try again later: the row stays `pending` and is called again in a later round. Only a refusal, or try again later after the give-up time, ends it as `failed`."
+        },
+        "vi": {
+          "correct": "Không có trả lời kịp chỉ cho biết câu trả lời chưa tới; cổng có thể đã hoàn tiền rồi. Với cùng key `refund-9`, cổng trả lại câu trả lời lần đầu và không hoàn thêm. Key mới trông như một lần hoàn tiền thứ hai, và cổng sẽ ghi hai lần hoàn tiền cho đơn 10.",
+          "a": "Không có trả lời thì cho rằng chưa có gì xảy ra nghe như cách đọc thận trọng. Nhưng lần gọi có thể đã tới và tiền có thể đã được hoàn, chỉ có câu trả lời bị mất trên đường về. Nhận định sai chính vì bạn không biết được là trường hợp nào.",
+          "b": "Nếu cổng từ chối lần hoàn tiền thứ hai cho một đơn thì key không quan trọng, nên điều này nghe hợp lý. Nhưng cổng chỉ nhận ra lần gọi lặp nhờ key: key mới là một yêu cầu mới, và cổng có thể ghi hai lần hoàn tiền cho đơn 10.",
+          "d": "Kết thúc dòng có vẻ là bước cẩn thận sau một lần gọi không rõ kết quả. Nhưng không có trả lời kịp thành thử lại sau: dòng vẫn `pending` và được gọi lại ở vòng sau. Chỉ lời từ chối, hoặc thử lại sau khi đã quá mốc bỏ cuộc, mới kết thúc dòng ở `failed`."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.safe-to-repeat-saga-steps.q4",
+      "type": "multi",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["backend.sagas.steps"],
+      "section_ref": 5,
+      "question": {
+        "en": "Reviewing `RefundAsync` and `RecordResult` at stage-3, a teammate asks how a refund row is handled. Which statements match the code? Select all that apply.",
+        "vi": "Khi xem `RefundAsync` và `RecordResult` ở stage-3, một đồng nghiệp hỏi một dòng refund được xử lý thế nào. Những nhận định nào khớp với code? Chọn tất cả đáp án đúng."
+      },
+      "options": [
+        { "id": "a", "en": "Every attempt for one row sends the same `Idempotency-Key`, because `IdempotencyKeyFor` uses only the row's id.", "vi": "Mọi lần thử cho một dòng đều gửi cùng `Idempotency-Key`, vì `IdempotencyKeyFor` chỉ dùng id của dòng." },
+        { "id": "b", "en": "A `422` answer marks the row `failed` right away, even on its first attempt.", "vi": "Câu trả lời `422` đánh dấu dòng `failed` ngay, kể cả ở lần thử đầu tiên." },
+        { "id": "c", "en": "Only a refusal marks a row `failed`; missing answers keep it `pending` until the gateway answers, which is the safer choice.", "vi": "Chỉ lời từ chối mới đánh dấu dòng `failed`; không có trả lời thì dòng cứ `pending` tới khi cổng trả lời, như vậy an toàn hơn.", "misconception": "Retrying a refund forever is safer than ever marking it failed." },
+        { "id": "d", "en": "A broken connection to the gateway throws `HttpRequestException`, which marks the row `failed` at once.", "vi": "Kết nối tới cổng bị đứt sẽ ném `HttpRequestException`, làm dòng bị đánh dấu `failed` ngay." },
+        { "id": "e", "en": "After a try-again-later answer two hours into the refund, no outbox row is written for that row in that round.", "vi": "Sau một kết quả thử lại sau, hai giờ kể từ khi yêu cầu hoàn tiền, không có dòng outbox nào được ghi cho dòng đó trong vòng ấy." }
+      ],
+      "answer": ["a", "b", "e"],
+      "explanation": {
+        "en": {
+          "correct": "`IdempotencyKeyFor` returns `refund-` plus the row's id, so the key never depends on the attempt. `RecordResult` marks the row `failed` when the outcome is `Refused`, whatever the time. Otherwise, before the give-up time, it sets a later `NextAttemptAt` and returns `null`, so no message moves the saga on.",
+          "c": "Never giving up looks safe because a `pending` row is never refunded twice. But the `if` also ends the row once `now - refund.RequestedAt >= settings.GiveUpAfter`, by default 24 hours. Without it the order would stay `refunding` and could not ship.",
+          "d": "A broken connection is a clear error, so ending the row seems reasonable. But the `catch` for `HttpRequestException` returns `TryAgainLater`: the call may simply be repeated later, safely, with the same key."
+        },
+        "vi": {
+          "correct": "`IdempotencyKeyFor` trả về `refund-` cộng id của dòng, nên key không bao giờ phụ thuộc lần thử. `RecordResult` đánh dấu dòng `failed` khi kết quả là `Refused`, bất kể thời gian. Nếu không, trước mốc bỏ cuộc, nó đặt `NextAttemptAt` muộn hơn và trả về `null`, nên không message nào đẩy saga đi tiếp.",
+          "c": "Không bao giờ bỏ cuộc trông an toàn vì dòng `pending` không bao giờ bị hoàn tiền hai lần. Nhưng câu `if` còn kết thúc dòng khi `now - refund.RequestedAt >= settings.GiveUpAfter`, mặc định 24 giờ. Thiếu nó, đơn sẽ kẹt ở `refunding` và không giao được.",
+          "d": "Đứt kết nối là lỗi rõ ràng, nên kết thúc dòng có vẻ hợp lý. Nhưng khối `catch` cho `HttpRequestException` trả về `TryAgainLater`: lần gọi chỉ cần lặp lại sau, một cách an toàn, với cùng key."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.safe-to-repeat-saga-steps.q5",
+      "type": "scenario",
+      "bloom": "evaluate",
+      "difficulty": 4,
+      "skills": ["backend.sagas.steps"],
+      "section_ref": 6,
+      "context": {
+        "en": "It is stage-3. The payment gateway has been unreachable for 20 hours. Customer 1's refund for order 10 is still `pending`, its `attempts` keeps growing, and order 10 says `refunding`. A teammate worries that marking the row `failed` at the give-up time might be wrong if the gateway comes back the next day. They propose raising `GiveUpAfter` so far that refunds are, in practice, retried forever. The refund requirements ask for automatic retries for at least 24 hours before staff take over.",
+        "vi": "Đang ở stage-3. Cổng thanh toán đã không liên lạc được 20 giờ. Yêu cầu hoàn tiền của khách hàng 1 cho đơn 10 vẫn `pending`, `attempts` cứ tăng, và đơn 10 hiện `refunding`. Một đồng nghiệp lo rằng đánh dấu dòng `failed` khi tới mốc bỏ cuộc có thể sai nếu hôm sau cổng chạy lại. Họ đề xuất tăng `GiveUpAfter` lớn tới mức trên thực tế refund được thử lại mãi mãi. Yêu cầu về hoàn tiền đòi tự động thử lại ít nhất 24 giờ trước khi nhân viên tiếp quản."
+      },
+      "question": {
+        "en": "Which response to the teammate fits best?",
+        "vi": "Cách đáp lại đồng nghiệp nào phù hợp nhất?"
+      },
+      "options": [
+        { "id": "a", "en": "Keep the 24-hour give-up time: the row then ends `failed`, the compensation moves order 10 back to `paid`, and staff take over.", "vi": "Giữ mốc bỏ cuộc 24 giờ: khi đó dòng kết thúc ở `failed`, phần bù đưa đơn 10 về `paid`, và nhân viên tiếp quản." },
+        { "id": "b", "en": "Agree: while the row stays `pending` nothing is lost, and the refund completes whenever the gateway returns.", "vi": "Đồng ý: khi dòng còn `pending` thì không mất gì, và refund sẽ hoàn tất bất cứ khi nào cổng chạy lại.", "misconception": "Retrying a refund forever is safer than ever marking it failed." },
+        { "id": "c", "en": "Mark the row `failed` now, after 20 hours, so the customer hears about the problem sooner.", "vi": "Đánh dấu dòng `failed` ngay bây giờ, sau 20 giờ, để khách hàng sớm biết có vấn đề." },
+        { "id": "d", "en": "Save a new refund row for order 10, with a new key, so the next call starts fresh once the gateway is back.", "vi": "Lưu một dòng refund mới cho đơn 10, với key mới, để lần gọi tiếp bắt đầu lại từ đầu khi cổng chạy lại.", "misconception": "A timeout from the gateway means no refund happened, so a new request with a new key is safe." }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "While the row is `pending`, order 10 stays `refunding`: it cannot ship and the customer hears nothing more. The 24-hour give-up time meets the requirement for automatic retries, then hands the refund to people through the compensation, where it shows up in `GET /api/v1/refunds?status=failed`.",
+          "b": "Retrying forever looks safe because the same key never refunds twice. But the order is stuck at `refunding` for as long as the gateway is away, and nobody is told. It would fit only when a stuck order costs nothing and no one has to take over.",
+          "c": "Telling the customer sooner sounds kind, and 20 hours is already long. But the requirements ask for at least 24 hours of automatic retries, and the gateway may still answer within them. A shorter give-up time would fit only when the requirements ask for one.",
+          "d": "A fresh start sounds tidy after so many failures. But some earlier call may have reached the gateway and refunded, with only its answer lost. A new key would then refund order 10 twice. A new key is harmless only when no earlier call can have reached the gateway, and a missing answer never proves that."
+        },
+        "vi": {
+          "correct": "Khi dòng còn `pending`, đơn 10 vẫn `refunding`: không giao được và khách không nghe thêm gì. Mốc bỏ cuộc 24 giờ đáp ứng yêu cầu tự động thử lại, rồi chuyển refund cho con người qua phần bù, nơi nó hiện trong `GET /api/v1/refunds?status=failed`.",
+          "b": "Thử lại mãi mãi trông an toàn vì cùng key không bao giờ hoàn tiền hai lần. Nhưng đơn kẹt ở `refunding` suốt thời gian cổng vắng mặt, và không ai được báo. Cách này chỉ hợp khi đơn bị kẹt không gây thiệt hại gì và không ai phải tiếp quản.",
+          "c": "Báo khách sớm hơn nghe chu đáo, và 20 giờ đã là lâu. Nhưng yêu cầu đòi tự động thử lại ít nhất 24 giờ, và cổng vẫn có thể trả lời trong khoảng đó. Mốc bỏ cuộc ngắn hơn chỉ hợp khi yêu cầu cho phép như vậy.",
+          "d": "Bắt đầu lại từ đầu nghe gọn gàng sau nhiều lần thất bại. Nhưng có thể một lần gọi trước đã tới cổng và đã hoàn tiền, chỉ mất câu trả lời. Khi đó key mới sẽ hoàn tiền đơn 10 hai lần. Key mới chỉ vô hại khi chắc chắn chưa lần gọi nào tới được cổng, mà việc không có trả lời không bao giờ chứng minh được điều đó."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.safe-to-repeat-saga-steps.q6",
+      "type": "single",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["backend.sagas.steps"],
+      "section_ref": 3,
+      "question": {
+        "en": "`fake-gateway` starts refusing some refunds with `409` and a JSON field `state` set to `rejected`, instead of `422`. With today's code these rows keep being retried. Where does the fix belong?",
+        "vi": "`fake-gateway` bắt đầu từ chối một số refund bằng `409` và trường JSON `state` có giá trị `rejected`, thay vì `422`. Với code hiện tại, các dòng này cứ bị thử lại. Nên sửa ở đâu?"
+      },
+      "options": [
+        { "id": "a", "en": "Only in `GatewayRefundClient`: turn this answer into refused, so `RecordResult` and `payments.status` stay as they are.", "vi": "Chỉ trong `GatewayRefundClient`: biến câu trả lời này thành refused, để `RecordResult` và `payments.status` giữ nguyên." },
+        { "id": "b", "en": "Add `rejected` as a new value of `payments.status`, then handle it in `RecordResult` and in the queries.", "vi": "Thêm `rejected` làm giá trị mới của `payments.status`, rồi xử lý nó trong `RecordResult` và trong các query.", "misconception": "The gateway's own status names can be stored as they are; translating them is extra work." },
+        { "id": "c", "en": "In `RecordResult`: check for status code `409` there and mark the row `failed` when it appears.", "vi": "Trong `RecordResult`: kiểm tra status code `409` ở đó và đánh dấu dòng `failed` khi gặp nó." },
+        { "id": "d", "en": "Nowhere: `409` is an error status, so it already becomes refused and ends the row as `failed`.", "vi": "Không cần sửa: `409` là status lỗi, nên nó đã thành refused và kết thúc dòng ở `failed`." }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "`GatewayRefundClient` is the only class that knows the gateway's status codes and JSON, and it gives the rest of Payments just three outcomes. Teaching it that this answer means refused fixes the problem in one class; the row still only holds `pending`, `refunded` or `failed`.",
+          "b": "Storing the gateway's word keeps what it said, so it feels faithful. But then the gateway's language spreads into `RecordResult`, queries and every reader of `payments.status`. A new gateway answer would force changes in many places instead of in one class.",
+          "c": "`RecordResult` is where rows become `failed`, so checking there looks direct. But `RecordResult` sees only the three outcomes, not status codes; putting `409` there leaks the gateway's details past the class meant to hold them.",
+          "d": "`409` is an error, so it is easy to assume it counts as a refusal. But `RefundAsync` treats only `422` as refused; every other non-success status returns `TryAgainLater`. That is why these rows keep being retried."
+        },
+        "vi": {
+          "correct": "`GatewayRefundClient` là class duy nhất biết status code và JSON của cổng, và nó chỉ đưa cho phần còn lại của Payments ba kết quả. Dạy nó rằng câu trả lời này nghĩa là refused sẽ sửa vấn đề trong một class; dòng vẫn chỉ chứa `pending`, `refunded` hoặc `failed`.",
+          "b": "Lưu nguyên từ của cổng giữ được điều cổng đã nói, nên có vẻ trung thực. Nhưng khi đó ngôn ngữ của cổng lan vào `RecordResult`, các query và mọi chỗ đọc `payments.status`. Một câu trả lời mới của cổng sẽ buộc sửa nhiều chỗ thay vì một class.",
+          "c": "`RecordResult` là nơi dòng thành `failed`, nên kiểm tra ở đó trông trực tiếp. Nhưng `RecordResult` chỉ thấy ba kết quả, không thấy status code; đặt `409` ở đó làm chi tiết của cổng lọt ra ngoài class vốn để giữ chúng.",
+          "d": "`409` là lỗi, nên dễ cho rằng nó được tính là từ chối. Nhưng `RefundAsync` chỉ coi `422` là refused; mọi status không thành công khác trả về `TryAgainLater`. Đó là lý do các dòng này cứ bị thử lại."
+        }
+      }
+    }
+  ]
+}

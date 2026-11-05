@@ -1,0 +1,227 @@
+{
+  "id": "devops.l3.deploying-by-commit",
+  "technical": {
+    "reviewed_at": "2026-10-08T21:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "auto_sync (release-3.1): 'Argo CD has the ability to automatically sync an application when it detects differences'; 'An automated sync will only be performed if the application is OutOfSync.'; 'By default, changes that are made to the live cluster will not trigger automated sync.'; 'Automated sync will only attempt one synchronization per unique combination of commit SHA1 and application parameters.' staging-manual.yaml @ stage-3:5-6 'No sync policy: Argo CD only compares, and syncs when someone asks.'",
+        "source": "https://argo-cd.readthedocs.io/en/release-3.1/user-guide/auto_sync/ ; examples/don-hang @ stage-3 deploy/gitops/lessons/staging-manual.yaml"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "core_concepts: Target state 'The desired state of an application, as represented by files in a Git repository.'; Refresh 'Compare the latest code in Git with the live state. Figure out what is different.' The auto_sync page does not mention registries or images (checked). A registry is neither side of the comparison, so a pushed tag no manifest names changes no sync status.",
+        "source": "https://argo-cd.readthedocs.io/en/release-3.1/core_concepts/ ; https://argo-cd.readthedocs.io/en/release-3.1/user-guide/auto_sync/"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "release.yml @ stage-3 (tools/extract-code): 'Runs when a version tag such as v1.0.0 is pushed. It builds nothing: the images ci.yml pushed for the tagged commit get the version as a second tag'; on.push.tags ['v*.*.*']; loop over donhang-api donhang-migrate ...: docker pull \"$name:sha-$commit\"; docker tag ... \"$name:$version\"; docker push \"$name:$version\".",
+        "source": "examples/don-hang @ stage-3 .github/workflows/release.yml"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "envs/staging/api.yaml @ stage-3 'image: ghcr.io/duyan11110/donhang-api:sha-bb184243e4cafed6ae833ca61710608366214aa5'; migrate-hook.yaml 'image: ghcr.io/duyan11110/donhang-migrate:sha-bb18...14aa5' with comment 'Always the same tag as the api in api.yaml.' gitops-deploy.sh:10 default from= that tag; :22 perl edits both files; captured output '2 files changed'.",
+        "source": "examples/don-hang @ stage-3 deploy/gitops/config-repo/envs/staging/api.yaml, migrate-hook.yaml; scripts/devops/gitops-deploy.sh"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "gitops.sh @ stage-3: 'The Git server listens only inside the cluster; a port-forward makes it reachable as localhost:13000 from here'; kubectl wrapper '--context kind-donhang-staging'; config_commit pushes '... main'. gitops-repo.sh: git init -b main, default_branch main. gitops-deploy.sh:3 'Runs on the host'. staging-auto.yaml:12 'targetRevision: main'.",
+        "source": "examples/don-hang @ stage-3 scripts/lib/gitops.sh; scripts/devops/gitops-repo.sh; scripts/devops/gitops-deploy.sh"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "auto_sync: interval from timeout.reconciliation, 'defaults to 120s with added jitter of 60s for a maximum period of 3 minutes.' annotations-and-labels: argocd.argoproj.io/refresh, Application, normal/hard, 'Indicates that app needs to be refreshed. Removed by application controller after app is refreshed.' core_concepts defines Refresh (compare) separately from Sync (apply). gitops.sh app_refresh sets refresh=normal.",
+        "source": "https://argo-cd.readthedocs.io/en/release-3.1/user-guide/annotations-and-labels/ ; https://argo-cd.readthedocs.io/en/release-3.1/core_concepts/"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "sync-waves: 'Hooks and resources are assigned to wave 0 by default.'; 'ArgoCD will start deploying from the lowest number and finish with the highest number.'; Sync hook 'at the same time as the application of the manifests'. Repo @ stage-3: migrate-hook.yaml hook Sync, wave \"1\"; api.yaml wave \"2\". k8s deployment.md:167 rollout 'triggered if and only if the Deployment's Pod template ... is changed'; images.md:150-152 non-latest tag -> IfNotPresent.",
+        "source": "https://argo-cd.readthedocs.io/en/release-3.1/user-guide/sync-waves/ ; refs/kubernetes-website/.../controllers/deployment.md, containers/images.md"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "staging-auto.yaml @ stage-3:1-2 'It has the same name, so applying it changes that Application instead of adding one.'; lines 3-16 identical to staging-manual.yaml:7-20 (name staging, ns argocd, same source/destination); 21-24 syncPolicy/automated/selfHeal: false/prune: false. Code block 1 equals extract-code output line for line.",
+        "source": "examples/don-hang @ stage-3 deploy/gitops/lessons/staging-auto.yaml, staging-manual.yaml"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "auto_sync: 'By default, changes that are made to the live cluster will not trigger automated sync.'; 'By default (and as a safety mechanism), automated sync will not delete resources' when no longer defined in Git. staging-auto.yaml sets selfHeal: false and prune: false explicitly.",
+        "source": "https://argo-cd.readthedocs.io/en/release-3.1/user-guide/auto_sync/"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Block 2 = gitops-deploy.sh @ stage-3 lines 13-35 verbatim. 14 kubectl apply (the only apply; helpers use annotate/get/rollout/port-forward); 22 perl on api.yaml + migrate-hook.yaml; 24 config_commit; 25 app_refresh (annotate only); 26 app_wait_sync waits for Succeeded/Failed/Error of that revision, 27 app_wait Synced Healthy at it; config_head --verify = rev-parse --verify HEAD; 28 rollout status; 29 sort | uniq -c, api.yaml replicas: 2.",
+        "source": "examples/don-hang @ stage-3 scripts/devops/gitops-deploy.sh; scripts/lib/gitops.sh; deploy/gitops/config-repo/envs/staging/api.yaml"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "gitops.sh @ stage-3: 'config_commit <script name> <message>: commit what changed in the working clone, authored by the script that changed it, and push it to the server.'; git -c user.name=\"$who\" -c user.email=lab@donhang.example commit; git_auth push. Captured log line 'gitops-deploy.sh: Deploy api 1.0.0 to staging' under format '%h %ad %an: %s'.",
+        "source": "examples/don-hang @ stage-3 scripts/lib/gitops.sh; outputs/stage-3/scripts/devops/gitops-deploy.txt"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "git-commit COMMIT INFORMATION: author info 'is taken from the following environment variables, if set: GIT_AUTHOR_NAME ...'; otherwise 'from the configuration items user.name and user.email'; --author: 'Override the commit author.' Execution: config_commit sets user.name to a script name and the captured log shows that name as author, with no check.",
+        "source": "https://git-scm.com/docs/git-commit ; outputs/stage-3/scripts/devops/gitops-deploy.txt"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "outputs/stage-3/scripts/devops/gitops-deploy.txt @ stage-3 (extract-code) equals the lesson's output block line for line: 'application.argoproj.io/staging'; '2 files changed, 2 insertions(+), 2 deletions(-)'; 'staging: Synced, Healthy'; '      2 ghcr.io/duyan11110/donhang-api:1.0.0'; deploy commit above 'gitops-repo.sh: Staging and production as Đơn Hàng runs them'. git log default order is newest first.",
+        "source": "examples/don-hang @ stage-3 outputs/stage-3/scripts/devops/gitops-deploy.txt"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "unstable.regex @ stage-3:97-102 '# Stage-3 GitOps scripts: commits of the config repository (made on every run) and their dates'; '^\\K[0-9a-f]{7}(?= [0-9]{4}-)' masks the short id; '^[0-9a-f]{7} \\K[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}(?= )' masks date and time.",
+        "source": "examples/don-hang @ stage-3 outputs/unstable.regex"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "images.md:146-147 omitted imagePullPolicy with ':latest' -> 'automatically set to Always'; :155-156 'The value of imagePullPolicy of the container is always set when the object is first created, and is not updated if the image's tag or digest later changes.' Lesson hedges 'depending on what its node already has and on the pull policy'. Unchanged manifest -> no Git/live difference -> no automated sync (auto_sync).",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/containers/images.md ; https://argo-cd.readthedocs.io/en/release-3.1/user-guide/auto_sync/"
+      },
+      {
+        "n": 16,
+        "verdict": "not-needed",
+        "evidence": "Recommendation whose premise is stated in the lesson (with automated sync, a push to envs/staging changes what staging runs); premise rests on claims 1, 11. Opened: Argo CD release-3.1 auto_sync, core_concepts, sync-waves, annotations-and-labels; git-scm git-commit; refs k8s images.md, deployment.md.",
+        "source": "claims 1, 11"
+      },
+      {
+        "n": 17,
+        "verdict": "not-needed",
+        "evidence": "Hedged ('would') description of the usual pipeline shape, from outline item 4 and the gitops-deploy.sh:18 comment 'What CI would do after pushing the image'; how CI makes that commit is excluded by depth_notes and not taught.",
+        "source": "track.yaml outline item 4; scripts/devops/gitops-deploy.sh @ stage-3"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 2,
+        "kind": "accuracy",
+        "text": "release.yml does not run 'when a version is released': it runs when a version tag v*.*.* is pushed, and it is the workflow that then creates the GitHub release (release.yml:4 'Runs when a version tag such as v1.0.0 is pushed'; last step 'gh release create'). Cause and effect are reversed.",
+        "quote": "`release.yml`, the workflow that runs when a version is released,",
+        "fix": "Replace with: \"`release.yml`, the workflow that runs when a version tag such as `v1.0.0` is pushed,\"."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "Non sequitur: that Git does not check the author name means the log's author column cannot be trusted to say who deployed; it is not why whoever can push decides what staging runs (that follows from automated sync, whatever name the commit carries).",
+        "quote": "Git does not check that name, so whoever can push to `envs/staging` decides what staging runs, and the repository needs the protection you would give the cluster.",
+        "fix": "Replace with: \"Git does not check that name, so the column shows who a commit says it is from, not who pushed it. And whoever can push to `envs/staging` decides what staging runs, so the repository needs the protection you would give the cluster.\""
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "accuracy",
+        "text": "The precondition is incomplete: gitops-first-sync.sh @ stage-3:3 says 'scripts/devops/argocd-install.sh and gitops-repo.sh come first'. A learner who has not run first-sync has most likely not run those either, and first-sync then fails.",
+        "quote": "If you have not run `scripts/devops/gitops-first-sync.sh` in an earlier lesson, run it first.",
+        "fix": "Replace with: \"If you have not run `scripts/devops/argocd-install.sh`, `scripts/devops/gitops-repo.sh` and `scripts/devops/gitops-first-sync.sh` in earlier lessons, run them first, in that order.\""
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-08T22:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "term",
+        "text": "Line 22 runs `perl`, a program I have never seen named. The prose tells me what the line does (replaces the sha- tag with 1.0.0 in both files), so I can follow, but I do not know what perl is or why it, not a shell command I know, does the edit.",
+        "quote": "perl -pi -e \"s/:\\Q$from\\E\\$/:$to/\" \"$config_repo/envs/staging/api.yaml\" \"$config_repo/envs/staging/migrate-hook.yaml\"",
+        "fix": "In 'Line 22 replaces the `sha-` tag with `1.0.0` in both files', add 'using perl, a text-editing program run from the shell,' after 'Line 22'."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "code",
+        "text": "The excerpt uses `$from`, `$to` and `$config_repo`, which are set in lines 1–12, outside the block. I have to guess that $from is the current sha- tag, $to is 1.0.0 and $config_repo is a local copy of the config repository.",
+        "quote": "echo \"== deploy $to: one commit to envs/staging\"",
+        "fix": "Add one sentence before 'Line 22 replaces…': '`$from` and `$to`, set earlier in the script, hold the current `sha-` tag and `1.0.0`; `$config_repo` is a local clone of the config repository.'"
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "term",
+        "text": "Line 11 of staging-auto.yaml points at `gitea.git.svc`. The word gitea appears nowhere in the prose; only later, in §4, does 'the Git server runs inside your donhang-staging cluster' let me guess that this is that server.",
+        "quote": "repoURL: http://gitea.git.svc:3000/donhang/donhang-config.git",
+        "fix": "After 'Lines 3–16 match `staging-manual.yaml`', add: 'line 11 is the address of the Git server inside the cluster that holds the config repository.'"
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "gap",
+        "text": "The 'so' joins two ideas I could not link: Git not checking the author name tells me the log may lie about who deployed, but the reason whoever can push decides what staging runs is that a commit is the deploy. I re-read it to separate them.",
+        "quote": "Git does not check that name, so whoever can push to `envs/staging` decides what staging runs, and the repository needs the protection you would give the cluster.",
+        "fix": "Split into two sentences: 'Git does not check that name, so the column says who a commit claims to be from. Since a commit is the deploy, whoever can push to `envs/staging` decides what staging runs, …'"
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "text": "The lesson presents 'CI needs push rights, not cluster credentials' as the payoff and the situation's question asks how to avoid a command against the cluster, but no sentence says why cluster credentials in CI are worse than push rights to Git. I take it on trust.",
+        "quote": "CI needs the right to push to the config repository, not credentials for the cluster.",
+        "fix": "Add one sentence after this one saying what is gained, tied to pull-based deployment: e.g. that the only thing able to change the cluster is the agent inside it, and every change it makes is a commit in `git log`."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "length",
+        "text": "The third paragraph of §4 holds the reread interval, refresh vs sync, OutOfSync, the automated-sync trigger and the whole wave order. I had to read it twice to keep 'refresh' (compare only) apart from 'sync'.",
+        "quote": "Argo CD rereads the folder on its own at a regular interval, or at once when asked to refresh; a refresh only rereads Git and compares, it does not sync.",
+        "fix": "Start a new paragraph at 'With automated sync, a difference that comes from a new commit starts a sync', so detection and the sync it starts are two short paragraphs."
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "example",
+        "text": "Try it assumes the lab from earlier lessons exists. The text does not say what gitops-first-sync.sh needs or sets up, so if I skipped those lessons I would not know whether the donhang-staging cluster, Argo CD and the Git server must already be running.",
+        "quote": "If you have not run `scripts/devops/gitops-first-sync.sh` in an earlier lesson, run it first.",
+        "fix": "In the same sentence, name the lesson(s) whose scripts must have run, so the reader knows which steps to go back to."
+      },
+      {
+        "severity": "minor",
+        "section": "quiz",
+        "kind": "quiz",
+        "text": "q5 option d does not say whether deploy commits stop. I read it as 'keep commits, but sync by hand'; the explanation then says the sync 'finds nothing new', which confused me until its last sentence. I could still pick a, but the explanation made me doubt my reading.",
+        "quote": "But a push to `ghcr.io` changes nothing in Git, so such a sync finds nothing new, and asking for it is again a command against the cluster.",
+        "fix": "Make option d explicit, e.g. 'Remove the sync policy, keep the deploy commits, and have someone ask Argo CD for a sync after each one', and drop 'such a sync finds nothing new' from its explanation."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "perl (gitops-deploy.sh line 22)",
+        "gitea (repoURL in staging-auto.yaml line 11)"
+      ],
+      "skipped_steps": [
+        "§5: 'Git does not check that name, so whoever can push … decides what staging runs' links two unrelated reasons",
+        "§4: why CI holding cluster credentials is worse than CI holding push rights to Git is never said",
+        "§5: what `$from`, `$to`, `$config_repo` hold (set outside the excerpt)"
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

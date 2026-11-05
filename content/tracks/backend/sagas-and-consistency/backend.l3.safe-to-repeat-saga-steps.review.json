@@ -1,0 +1,145 @@
+{
+  "id": "backend.l3.safe-to-repeat-saga-steps",
+  "technical": {
+    "reviewed_at": "2026-10-14T23:59:45+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "gateway-down.sh posts POST /api/v1/orders/10/refund as anh.tran@example.com (seed.sql: customer 1; order (10, 1, ..., 'paid')); captured output: \"-> 202\". refund-design.md step 1: API moves the order to refunding, writes order.refund-requested to the outbox, returns 202; step 3: Payments writes a pending refund row; step 4: a background job calls the gateway.",
+        "source": "examples/don-hang: scripts/backend/gateway-down.sh:21-25; outputs/stage-3/scripts/backend/gateway-down.txt:2-3; db/seed.sql:17,33; docs/design/refund-design.md steps 1,3,4"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "RefundSender : BackgroundService; Tick = TimeSpan.FromSeconds(2); BatchSize = 10; SendDueAsync calls BeginTransactionAsync, then ClaimDueAsync: \"WHERE kind = 'refund' AND status = 'pending' AND next_attempt_at <= {now} ... LIMIT {BatchSize} FOR UPDATE SKIP LOCKED\". refund-design.md step 4: \"cùng cách với NotificationSender: hai giây một lần ... FOR UPDATE SKIP LOCKED\". Round 2: PaymentsDbContext.cs:7 and docker-compose.yml:367 confirm the database is donhang_payments.",
+        "source": "examples/don-hang: DonHang.Payments/RefundSender.cs:20-24, 44-79; docs/design/refund-design.md step 4; docker-compose.yml:367"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "PostgreSQL 17, SELECT, The Locking Clause: \"With SKIP LOCKED, any selected rows that cannot be immediately locked are skipped.\" and \"... can be used to avoid lock contention with multiple consumers accessing a queue-like table.\"",
+        "source": "https://www.postgresql.org/docs/17/sql-select.html (The Locking Clause)"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "RefundAsync: IsSuccessStatusCode -> Refunded; StatusCode == UnprocessableEntity -> Refused with ReadReasonAsync; other status -> TryAgainLater \"the gateway answered {code}\"; catch HttpRequestException / TimeoutRejectedException / BrokenCircuitException -> TryAgainLater. Round 2: section 4 now says 'any other status, a broken connection or no answer in time', matching this list.",
+        "source": "examples/don-hang: DonHang.Payments/GatewayRefundClient.cs:59-94"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": ".NET docs, HttpClient: \"You can use the HttpResponseMessage.IsSuccessStatusCode property to evaluate these codes as well, which ensures that the response status code is within the range 200-299\".",
+        "source": "refs/dotnet-docs/docs/fundamentals/networking/http/httpclient.md:280"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Polly timeout strategy: \"If the execution is canceled by the timeout strategy, it throws a TimeoutRejectedException.\" Polly circuit breaker: \"Once the strategy opens the circuit, every subsequent call will be shortcut with a BrokenCircuitException.\" Program.cs adds AddCircuitBreaker (FailureRatio, MinimumThroughput, SamplingDuration, BreakDuration from GatewaySettings) then AddTimeout to this HttpClient.",
+        "source": "https://www.pollydocs.org/strategies/timeout.html; https://www.pollydocs.org/strategies/circuit-breaker.html; DonHang.Payments/Program.cs:100-127; DonHang.Payments/GatewayRefundClient.cs:26-36"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "GatewayRefundClient.cs:51 \"public static string IdempotencyKeyFor(Payment refund) => $\\\"refund-{refund.Id}\\\";\"; line 65 request.Headers.Add(\"Idempotency-Key\", IdempotencyKeyFor(refund)). RefundSenderTests.IdempotencyKeyFor_IsRefundAndTheRowId: Assert.Equal(\"refund-9\", first) and the same key after refund.Attempts = 3.",
+        "source": "examples/don-hang: DonHang.Payments/GatewayRefundClient.cs:48-51,65; DonHang.Tests/Payments/RefundSenderTests.cs:109-119"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "fake-gateway/Program.cs: \"A key seen before gets the answer it got then, and nothing is refunded again.\" lock(answers){ if (!answers.TryGetValue(key, out var answer)) { answer = Decide(key, body); answers[key] = answer; } return answer; }; Decide adds to refunds only on a new key; MapGet(\"/v1/refunds\") returns refunds.ToArray().",
+        "source": "examples/don-hang: fake-gateway/Program.cs:36-39, 55-83, 89-100"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Decide: Results.Ok(new { refundId = refund.RefundId, status = \"refunded\" }); refusals Results.UnprocessableEntity(new { reason = ... }). In DonHang.Payments the only Status assignments are \"pending\" (RefundRequestedConsumer.cs:107), \"refunded\" (RefundSender.cs:93), \"failed\" (RefundSender.cs:101).",
+        "source": "examples/don-hang: fake-gateway/Program.cs:89-100; DonHang.Payments/RefundSender.cs:88-112; DonHang.Payments/RefundRequestedConsumer.cs:107"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "RecordResult: refund.Attempts++; not Refunded, not Refused, before GiveUpAfter -> var delay = NextDelay(refund.Attempts); refund.NextAttemptAt = now + delay; LogWarning(\"... attempt {Attempt} failed ...\"); return null. Test RecordResult_TryAgainLater_StaysPendingAndWaits asserts Null(message) and (\"pending\", 1).",
+        "source": "examples/don-hang: DonHang.Payments/RefundSender.cs:88-112; DonHang.Tests/Payments/RefundSenderTests.cs:54-65"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "RefundSettings: FirstRetryDelay = TimeSpan.FromMinutes(1); MaxRetryDelay = TimeSpan.FromHours(1); GiveUpAfter = TimeSpan.FromHours(24). BackoffDelay: FirstRetryDelay * Math.Pow(2, attempts - 1), capped at MaxRetryDelay. Test BackoffDelay_DoublesUpToOneHour: InlineData (1,1), (2,2), (4,8), (7,60), (20,60).",
+        "source": "examples/don-hang: DonHang.Payments/RefundSender.cs:9-14,114-121; DonHang.Tests/Payments/RefundSenderTests.cs:78-87"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "NextDelay: backoff * (0.5 + Random.Shared.NextDouble() * 0.5) -> [backoff/2, backoff). BackoffDelay(1) = 1 min by default, so the first wait is at most 1 minute. Test NextDelay_IsBetweenHalfAndAllOfTheBackoff: Assert.InRange(delay, backoff / 2, backoff); RecordResult_TryAgainLater_StaysPendingAndWaits: InRange now+30s .. now+1min.",
+        "source": "examples/don-hang: DonHang.Payments/RefundSender.cs:123-132; DonHang.Tests/Payments/RefundSenderTests.cs:54-65,94-107"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "RefundSender.cs:91-96 Refunded -> Status = \"refunded\", return Message(\"payment.refunded\", ...); :99 \"if (result.Outcome == RefundOutcome.Refused || now - refund.RequestedAt >= settings.GiveUpAfter)\" -> Status = \"failed\", Message(\"payment.refund-failed\", ...). SendDueAsync adds the message to OutboxMessages, then SaveChangesAsync and CommitAsync of one transaction (:49-64). Tests RecordResult_Refunded_MarksRefundedAndAnnouncesIt, RecordResult_TryAgainLaterAfter24Hours_GivesUp.",
+        "source": "examples/don-hang: DonHang.Payments/RefundSender.cs:44-65, 88-105; DonHang.Tests/Payments/RefundSenderTests.cs:27-38, 67-76"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "Entities.cs Ship(): \"if (Status == \\\"refunding\\\") throw new OrderStatusException(Id, \\\"refund-in-progress\\\", ...)\". RequestRefund sets Status = \"refunding\"; the order leaves refunding only via the refunded/refund-failed handlers. refund-design.md step 2: during refunding, cancel and ship are refused with 409.",
+        "source": "examples/don-hang: DonHang.Domain/Entities.cs:135-176; docs/design/refund-design.md step 2"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "refund-requirements.md: \"YC-9: Một đơn không bao giờ được hoàn tiền hai lần, kể cả khi việc gửi sang cổng thanh toán phải thử lại.\" \"YC-10: Khi cổng thanh toán lỗi, yêu cầu được gửi lại tự động trong ít nhất 24 giờ trước khi chuyển cho nhân viên xử lý.\"",
+        "source": "examples/don-hang: docs/team/refund-requirements.md:47-50"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "Captured output: \"-> 202\" / \"pending | 3\" / \"for order 10: attempt 1 failed (...); next attempt in ... s\" (x3, attempts 1-3) / \"fake-gateway is back\" / \"refunded | ...\" / \"[{\\\"orderId\\\":10,\\\"amountVnd\\\":1730000}]\". Script stops fake-gateway first and starts it after pending | 3.",
+        "source": "examples/don-hang: scripts/backend/gateway-down.sh; outputs/stage-3/scripts/backend/gateway-down.txt"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "docker-compose.yml (payments): Refunds__FirstRetryDelay: \"00:00:02\" and Refunds__MaxRetryDelay: \"00:00:10\". GiveUpAfter is not overridden; the lesson only says the waits are shortened, which matches.",
+        "source": "examples/don-hang: docker-compose.yml:374-375"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "Opinion is conditioned (\"when a saga step calls an outside service that may act without answering\") and matches the project's own design: refund-design.md step 4 \"Gửi lại sau lỗi mạng dùng đúng key đó, nên cổng không hoàn tiền lần hai (YC-9)\"; step 5 bounds retries at 24 h then failed + payment.refund-failed (YC-10).",
+        "source": "examples/don-hang: docs/design/refund-design.md steps 4-5; docs/team/refund-requirements.md YC-9, YC-10"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "New in round 2 (changed text). The circuit does not open after 'many' failed calls: Program.cs takes FailureRatio, MinimumThroughput and SamplingDuration from GatewaySettings, defaults 0.5, 3 and 1 minute, so two failures out of three calls within a minute can open it. 'many' overstates the threshold.",
+        "quote": "the other refuses to call the gateway for a while after many failed calls.",
+        "fix": "Replace with: \"the other refuses to call the gateway for a while once too many of its recent calls have failed.\""
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-14T23:59:59+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation, round 2 targeted)",
+    "issues": [],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

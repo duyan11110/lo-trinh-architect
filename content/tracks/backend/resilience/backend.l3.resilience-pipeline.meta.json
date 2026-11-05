@@ -1,0 +1,188 @@
+{
+  "id": "backend.l3.resilience-pipeline",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-10-16T04:14:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "Program.cs @ stage-3 lines 102-106: AddHttpClient<GatewayRefundClient> registers the typed HttpClient with BaseAddress and a Bearer Authorization header from GatewaySettings; GatewayRefundClient receives that HttpClient in its primary constructor.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Payments/Program.cs lines 100-106; DonHang.Payments/GatewayRefundClient.cs line 46",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 2,
+      "text": "Program.cs @ stage-3 lines 107-125: AddResilienceHandler(\"gateway\", ...) adds AddCircuitBreaker first (line 113; counts how calls end, OnOpened: no calls for BreakDuration) and AddTimeout(gateway.Timeout) second (line 124); the pipeline has no retry strategy.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Payments/Program.cs lines 89-125",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 3,
+      "text": "GatewaySettings.Timeout defaults to 10 s; Program.cs binds section \"Gateway\", and the env var Gateway__Timeout: \"00:00:03\" in docker-compose.yml (payments) sets Gateway:Timeout, so the lab's pipeline timeout is 3 s.",
+      "kind": "behavior",
+      "source_hint": "examples/don-hang @ stage-3: GatewayRefundClient.cs line 27; Program.cs line 27; docker-compose.yml line 379; Microsoft Learn: Configuration in .NET, environment variables ('__' replaces ':')",
+      "needs_verification": true,
+      "section": 5,
+      "version_key": "dotnet"
+    },
+    {
+      "n": 4,
+      "text": "AddResilienceHandler (Microsoft.Extensions.Http.Resilience) on an IHttpClientBuilder takes a handler name and a delegate configuring a ResiliencePipelineBuilder<HttpResponseMessage>; every request sent by that HttpClient runs through the pipeline, and its response or exception comes back through it.",
+      "kind": "behavior",
+      "source_hint": "Microsoft Learn: Build resilient HTTP apps (core/resilience/http-resilience), 'Custom resilience handler' / AddResilienceHandler",
+      "version_key": "http_resilience",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 5,
+      "text": "Strategies in a resilience pipeline execute in the order they are configured; the first added is the outermost: a request meets it first on the way out and its outcome last on the way back, so it sees each inner execution and its outcome.",
+      "kind": "behavior",
+      "source_hint": "Microsoft Learn: core/resilience index, 'Build a resilience pipeline' (order is important); Polly docs: Resilience pipelines",
+      "version_key": "polly",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 6,
+      "text": "Polly's timeout strategy (AddTimeout with a TimeSpan) cancels an execution that exceeds the timeout and throws TimeoutRejectedException, not System.TimeoutException.",
+      "kind": "behavior",
+      "source_hint": "Polly docs: Timeout strategy; Microsoft Learn http-resilience note on TimeoutRejectedException",
+      "version_key": "polly",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 7,
+      "text": "GatewayRefundClient.RefundAsync @ stage-3 lines 66-85: only http.SendAsync (line 68) calls the gateway; HttpRequestException, TimeoutRejectedException and BrokenCircuitException are each caught and returned as TryAgainLater; TimeoutRejectedException's reason is 'the gateway did not answer in time'.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Payments/GatewayRefundClient.cs lines 59-86",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 8,
+      "text": "On TryAgainLater, RefundSender records a failed attempt (attempts++, new next_attempt_at) and continues with the next claimed row; it handles claimed rows one after another.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Payments/RefundSender.cs SendDueAsync foreach, RecordResult",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 9,
+      "text": "AddStandardResilienceHandler chains five strategies, outermost to innermost: rate limiter, total timeout (30 s), retry (max 3 retries, exponential backoff, jitter), circuit breaker, attempt timeout (10 s); these are default options that overloads let you customize.",
+      "kind": "number",
+      "source_hint": "Microsoft Learn: core/resilience/http-resilience, 'Standard resilience handler defaults' table",
+      "version_key": "http_resilience",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 10,
+      "text": "By default the standard resilience handler retries requests for all HTTP methods, including POST; DisableFor or DisableForUnsafeHttpMethods turns retries off for chosen methods.",
+      "kind": "behavior",
+      "source_hint": "Microsoft Learn: core/resilience/http-resilience, 'Disable retries for a given list of HTTP methods'",
+      "version_key": "http_resilience",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 11,
+      "text": "With 3 retries, one execution makes up to 4 calls (one initial attempt plus three retries); so each RefundSender attempt through the standard handler could reach the gateway up to 4 times.",
+      "kind": "number",
+      "source_hint": "Microsoft Learn: core/resilience index, ExecuteAsync example ('executed four times'); standard handler defaults table",
+      "version_key": "http_resilience",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 12,
+      "text": "In the standard handler the total timeout, added before (outside) the retry, limits the request including retry attempts; the attempt timeout, added after (inside) it, limits each attempt.",
+      "kind": "behavior",
+      "source_hint": "Microsoft Learn: core/resilience/http-resilience, 'Standard resilience handler defaults' (Total timeout, Attempt timeout rows)",
+      "version_key": "http_resilience",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 13,
+      "text": "Program.cs comment lines 89-97 @ stage-3: no retry strategy, unlike AddStandardResilienceHandler, because RefundSender already tries each refund again on a later round and retries in both places would multiply the calls.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Payments/Program.cs lines 89-97",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 14,
+      "text": "The standard resilience handler fits a client whose caller does not retry and whose requests are safe to repeat; when the caller already retries, a custom pipeline without retry fits better.",
+      "kind": "opinion",
+      "needs_verification": false,
+      "section": 6
+    },
+    {
+      "n": 15,
+      "text": "Retries in two layers multiply gateway calls during an outage; the refund Idempotency-Key prevents a second refund but not the extra load on a recovering gateway.",
+      "kind": "opinion",
+      "needs_verification": false,
+      "section": 6
+    },
+    {
+      "n": 16,
+      "text": "gateway-slow.sh @ stage-3 sets fake-gateway's delay to 6 s, requests a refund of order 10, prints 'attempt 1: the gateway did not answer in time', status pending, one gateway refund for the row, then after delay 0 status refunded and still one refund.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: scripts/backend/gateway-slow.sh; outputs/stage-3/scripts/backend/gateway-slow.txt",
+      "needs_verification": true,
+      "section": 7
+    },
+    {
+      "n": 17,
+      "text": "Payments references Microsoft.Extensions.Http.Resilience (10.10.0 in Directory.Packages.props, from stage-3); Polly.Core comes with it as a dependency.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: Directory.Packages.props lines 15-18; content/versions.yaml http_resilience, polly",
+      "version_key": "http_resilience",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 18,
+      "text": "Payments' Program.cs registers OpenTelemetry tracing with AddHttpClientInstrumentation and a ParentBasedSampler/TraceIdRatioBasedSampler (Telemetry:SampleRatio, default 0.1), so sampled traces include outgoing HttpClient calls, GatewayRefundClient's too.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Payments/Program.cs lines 61-75",
+      "needs_verification": true,
+      "section": 8
+    },
+    {
+      "n": 19,
+      "text": "Each pipeline strategy wrapping the call and adding work before and after it is the same idea as the Decorator pattern at class level.",
+      "kind": "opinion",
+      "needs_verification": false,
+      "section": 8
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "outline_items_missing": [],
+    "beyond_scope": [
+      "names the first strategy (AddCircuitBreaker) only by its method and position, deferring it to backend.l3.circuit-breaker, because the stage-3 pipeline adds it before the timeout",
+      "misconception 3 uses the standard handler's total vs attempt timeout as the example of order"
+    ]
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1478,
+    "notes": "apply-review: 'fixed'->'default settings you can change' (c9); 'at most one call'; c18 sampled traces; plain-words clause for first strategy (c2); fake-gateway explained; diagram labels/return path fixed; outermost sentence (c5); Gateway__Timeout binding (c3); two timeouts in Core concepts. Cut equal unrequested prose in s4-s6. Quiz q5 left to /quiz."
+  }
+}

@@ -1,0 +1,129 @@
+{
+  "id": "design.l3.stream-concurrency",
+  "technical": {
+    "reviewed_at": "2026-10-15T18:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "EventSourcedOrder.cs @ stage-3: \"public int LoadedVersion => Version - newEvents.Count;\". FromEvents applies stored events via Apply (not Record), so newEvents stays empty after replay and LoadedVersion == Version.",
+        "source": "examples/don-hang @ stage-3: samples/DonHang.Samples/Samples/Design/EventSourcing/EventSourcedOrder.cs (LoadedVersion, FromEvents)"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "InMemoryEventStore.cs @ stage-3: \"Append(order.Id, order.LoadedVersion, order.NewEvents); order.MarkSaved();\" and EventSourcedOrder.cs: \"public void MarkSaved() => newEvents.Clear();\". A throw from Append skips MarkSaved.",
+        "source": "examples/don-hang @ stage-3: InMemoryEventStore.cs (Save); EventSourcedOrder.cs (MarkSaved)"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "InMemoryEventStore.cs lines 25-29 @ stage-3: \"if (stream.Count != expectedVersion) throw new StreamConcurrencyException(...); stream.AddRange(events); all.AddRange(events);\" — the throw precedes both AddRange calls. Lesson code block matches source (tools/validate exit 0).",
+        "source": "examples/don-hang @ stage-3: samples/DonHang.Samples/Samples/Design/EventSourcing/InMemoryEventStore.cs:13-30"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "EventSourcedOrder.cs @ stage-3: Apply ends with \"Version++;\" after the switch, for every event type; FromEvents starts from \"new EventSourcedOrder()\" (Version default 0) and applies each stream event once. So Version after replay = stream.Count.",
+        "source": "examples/don-hang @ stage-3: EventSourcedOrder.cs (Version, FromEvents, Apply)"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "EventSourcedOrder.cs @ stage-3: Cancel throws only \"if (Status is \\\"cancelled\\\" or \\\"shipped\\\")\"; Ship throws \"if (Status != \\\"paid\\\")\"; both then call Record, which calls Apply (Version++) and adds to newEvents, so Version 3, LoadedVersion 3-1 = 2.",
+        "source": "examples/don-hang @ stage-3: EventSourcedOrder.cs (Cancel, Ship, Record)"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "EventSourcingTests.cs:40-60 @ stage-3 matches the claim line by line. Executed: dotnet test samples/DonHang.Samples.Tests --filter FullyQualifiedName~TwoWriters_SecondAppendIsRefused → \"Passed!  - Failed: 0, Passed: 1, Skipped: 0, Total: 1\".",
+        "source": "examples/don-hang @ stage-3: samples/DonHang.Samples.Tests/EventSourcingTests.cs:40-60; dotnet test run 2026-10-15"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "DonHangDbContext.cs:73-77, marked \"lesson: backend.l2.optimistic-concurrency\" (that lesson's example_tag is stage-2): \"IsRowVersion() on a uint makes the Npgsql provider map Version to PostgreSQL's xmin column\"; \"e.Property(o => o.Version).IsRowVersion();\". Npgsql docs (round-1 WebFetch): \"You can map a `uint` property to the PostgreSQL `xmin` system column\" with `.IsRowVersion();`.",
+        "source": "examples/don-hang: DonHang.Infrastructure/DonHangDbContext.cs:73-77; Migrations/20260927103157_AddOrderVersionToken.cs; https://www.npgsql.org/efcore/modeling/concurrency.html"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "EF Core concurrency.md: \"optimistic concurrency takes no locks\"; \"in addition to the `PersonId` in the WHERE clause, EF Core has added a condition for `Version` as well\". Source comment DonHangDbContext.cs:75-76: \"EF Core then adds \\\"AND xmin = <value it read>\\\" to the WHERE of every UPDATE of an order.\"",
+        "source": "refs/efcore-docs/entity-framework/core/saving/concurrency.md; examples/don-hang: DonHang.Infrastructure/DonHangDbContext.cs:75-76"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "EventSourcedOrder.cs @ stage-3: Apply only assigns fields in a switch (\"case OrderShipped: Status = \\\"shipped\\\"; break;\") and throws nothing; the comment: \"Applying an event only sets fields. It checks no rule and never throws\". Last event applied sets Status.",
+        "source": "examples/don-hang @ stage-3: EventSourcedOrder.cs (Apply)"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Append compares only stream.Count with expectedVersion; after A's save stream.Count is 3, so Append(5, 3, ...) passes and AddRange appends OrderShipped. writerB.NewEvents is not cleared because Save threw before MarkSaved.",
+        "source": "examples/don-hang @ stage-3: InMemoryEventStore.cs (Append, Save)"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "InMemoryEventStore.cs @ stage-3: fields are only \"streams\" and \"all\"; Load is \"=> EventSourcedOrder.FromEvents(ReadStream(orderId))\", Save calls Append then MarkSaved; no lock statement, no lock field, nothing held between calls. The only conditional throw is the version check in Append.",
+        "source": "examples/don-hang @ stage-3: InMemoryEventStore.cs"
+      },
+      {
+        "n": 12,
+        "verdict": "not-needed",
+        "evidence": "Design reasoning that follows from claims 9-10 (store checks only the version; re-appending would pass and replay would apply OrderShipped after OrderCancelled) and from the source comment \"so no change is made on top of a stale state\". The lesson shows the reasoning instead of asserting a rule.",
+        "source": "examples/don-hang @ stage-3: InMemoryEventStore.cs:13-16; outline item 5"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "scripts/design/event-sourcing.sh @ stage-3: \"# Runs on the host: it needs dotnet\"; \"dotnet run --project samples/DonHang.Samples --verbosity quiet -- event-sourcing\". outputs/stage-3/scripts/design/event-sourcing.txt:5-8 shows the header and exactly the three lines quoted in Try it; EventSourcingDemo.cs prints them.",
+        "source": "examples/don-hang: scripts/design/event-sourcing.sh @ stage-3; outputs/stage-3/scripts/design/event-sourcing.txt:5-8; EventSourcingDemo.cs @ stage-3"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "InMemoryEventStore.cs:54-55 @ stage-3: \": Exception($\\\"order {orderId}: expected version {expectedVersion}, but the stream is at version {actualVersion}\\\")\". Captured output: \"refused (order 5: expected version 2, but the stream is at version 3)\". Round 2, zero issues: reread changed s4-s6, quiz q3-q5, DonHangDbContext.cs:73-77, EventSourcingTests.cs.",
+        "source": "examples/don-hang @ stage-3: InMemoryEventStore.cs:54-55; outputs/stage-3/scripts/design/event-sourcing.txt:7"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-15T19:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (review-junior, prompt 05, round 2)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "gap",
+        "text": "New in round 2. \"marked as saved\" names a step the lesson never shows: I only know that `Save` clears the new events after `Append` returns. I guess \"marked as saved\" means \"its new events are cleared\", but I had to stop and check.",
+        "quote": "So a refused save leaves the order's new events in place, and the order is not marked as saved.",
+        "fix": "Replace \"and the order is not marked as saved\" with \"and they are not cleared\", or say once that clearing the new events is what marks the order as saved."
+      },
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "style",
+        "text": "New in round 2. The added clause follows a colon that already follows a colon, so the sentence reads as three chained statements and I had to re-read it to see which part explains which.",
+        "quote": "the stream would say a cancelled order was shipped: the lost update again, in event form: the cancel is still stored, but replay ends on `shipped`, so its effect is lost.",
+        "fix": "End the sentence after \"in event form.\" and start a new one: \"The cancel is still stored, but replay ends on `shipped`, so its effect is lost.\""
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

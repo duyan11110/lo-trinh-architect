@@ -15,8 +15,8 @@ vocab: [transaction-script]
 example_tag: stage-1
 versions_used: [dotnet, efcore, git]
 content_version: 1
-status: approved
-approved_by: auto
+status: published
+approved_by: owner
 reviewed_at: "2026-09-30T21:20:20+07:00"
 ---
 

@@ -1,0 +1,223 @@
+{
+  "lesson": "backend.l3.trace-context-propagation",
+  "stage": 3,
+  "questions": [
+    {
+      "id": "backend.l3.trace-context-propagation.q1",
+      "type": "single",
+      "bloom": "understand",
+      "difficulty": 2,
+      "skills": ["backend.observability.tracing"],
+      "section_ref": 3,
+      "question": {
+        "en": "Payments' refund call to the gateway carries `traceparent: 00-T-S-01`, where T is 32 hex digits and S is 16. What is S?",
+        "vi": "Lời gọi hoàn tiền từ Payments tới gateway mang `traceparent: 00-T-S-01`, trong đó T là 32 chữ số hex và S là 16. S là gì?"
+      },
+      "options": [
+        { "id": "a", "en": "The id of the span `HttpClient` started in Payments for this call, which the gateway makes its span's parent.", "vi": "Id của span mà `HttpClient` bắt đầu trong Payments cho lời gọi này, được gateway lấy làm cha cho span của nó." },
+        { "id": "b", "en": "The id of the span the gateway will start for this request, chosen in advance by Payments.", "vi": "Id của span mà gateway sẽ bắt đầu cho request này, được Payments chọn trước." },
+        { "id": "c", "en": "The id of the first span of the refund's trace, the api's request span, which every later span names.", "vi": "Id của span đầu tiên trong trace của lần hoàn tiền, tức span request của api, được mọi span sau đó nêu tên." },
+        { "id": "d", "en": "A new trace id for the gateway's own trace, which Tempo links to the refund's trace T afterwards.", "vi": "Một trace id mới cho trace riêng của gateway, được Tempo nối với trace T của lần hoàn tiền sau đó.", "misconception": "Each service creates its own trace id, and the ids get linked later." }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "The third part of `traceparent` is the parent span id: the sender's span that made the call. Here that is the span `HttpClient` started for the outgoing call, and the gateway records it as the parent of its request span.",
+          "b": "The header travels toward the gateway's span, so it can seem to describe that span. But the gateway starts its own span with its own id; S names the caller's span, which becomes the parent.",
+          "c": "The api's request span is where the refund's trace began, so it can seem to be the one every span points to. But each span names the span that called it; the gateway's span names Payments' call, not the api's span.",
+          "d": "Two processes producing two ids sounds natural, so a later link seems needed. But the gateway reuses T from the header, and Tempo never merges two trace ids into one trace afterwards; S is a span id inside trace T, not a second trace id."
+        },
+        "vi": {
+          "correct": "Phần thứ ba của `traceparent` là parent span id: span của bên gửi đã thực hiện lời gọi. Ở đây đó là span mà `HttpClient` bắt đầu cho lời gọi đi ra, và gateway ghi nó làm cha của span request.",
+          "b": "Header đi về phía span của gateway, nên có vẻ nó mô tả span đó. Nhưng gateway bắt đầu span riêng với id riêng; S chỉ span của bên gọi, span này trở thành cha.",
+          "c": "Span request của api là nơi trace của lần hoàn tiền bắt đầu, nên có vẻ mọi span đều trỏ về nó. Nhưng mỗi span nêu tên span đã gọi nó; span của gateway nêu lời gọi của Payments, không phải span của api.",
+          "d": "Hai process tạo ra hai id nghe tự nhiên, nên có vẻ cần nối chúng lại sau. Nhưng gateway dùng lại T từ header, và Tempo không bao giờ gộp hai trace id thành một trace về sau; S là một span id trong trace T, không phải trace id thứ hai."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.trace-context-propagation.q2",
+      "type": "truefalse",
+      "bloom": "analyze",
+      "difficulty": 4,
+      "skills": ["backend.observability.tracing"],
+      "section_ref": 6,
+      "question": {
+        "en": "Statement: two customers ask for refunds in the same second. In Tempo, the gateway's span for one refund may end up nested under Payments' call for the other refund.",
+        "vi": "Nhận định: hai khách hàng yêu cầu hoàn tiền trong cùng một giây. Trong Tempo, span của gateway cho lần hoàn tiền này có thể nằm dưới lời gọi của Payments cho lần hoàn tiền kia."
+      },
+      "options": [
+        { "id": "a", "en": "True, because Tempo joins spans from different services by their times, and the two calls overlap in time.", "vi": "Đúng, vì Tempo ghép span từ các service khác nhau theo thời gian, và hai lời gọi trùng nhau về thời gian.", "misconception": "Tempo puts spans from different services into one trace by matching their times.", "polarity": "true" },
+        { "id": "b", "en": "True, because Payments and the gateway export their spans separately, so Tempo cannot tell which call a gateway span belongs to.", "vi": "Đúng, vì Payments và gateway xuất span riêng rẽ, nên Tempo không biết span nào của gateway thuộc về lời gọi nào.", "polarity": "true" },
+        { "id": "c", "en": "False, because each gateway span carries the trace id and parent span id from its own call's `traceparent`.", "vi": "Sai, vì mỗi span của gateway mang trace id và parent span id lấy từ `traceparent` của chính lời gọi đó.", "polarity": "false" },
+        { "id": "d", "en": "False, because Payments sends its calls to the gateway one at a time, so two refund calls never overlap.", "vi": "Sai, vì Payments gửi lời gọi tới gateway lần lượt từng cái, nên hai lời gọi hoàn tiền không bao giờ trùng thời gian.", "polarity": "false" }
+      ],
+      "answer": ["c"],
+      "explanation": {
+        "en": {
+          "correct": "Tempo files every span under the trace id it carries, and the gateway took that id and its parent from the `traceparent` of the call it received. Each call carries its own refund's ids, so timing plays no part in where a span lands.",
+          "a": "Spans of one request happen at about the same time, so matching by time seems to be how they are joined. But Tempo groups by trace id; two requests in the same instant still show as two separate traces.",
+          "b": "Each service does export on its own, so Tempo seems to have nothing to pair them with. But the pairing was settled before export: each gateway span already carries the ids its call's header gave it.",
+          "d": "The statement is false, but not for this reason. The lesson says nothing about Payments sending calls one at a time; even if two calls overlap, each span carries its own call's ids."
+        },
+        "vi": {
+          "correct": "Tempo xếp mọi span theo trace id mà span đó mang, và gateway lấy id đó cùng span cha từ `traceparent` của lời gọi nó nhận. Mỗi lời gọi mang id của đúng lần hoàn tiền của nó, nên thời gian không quyết định span nằm ở đâu.",
+          "a": "Các span của một request xảy ra gần cùng lúc, nên có vẻ chúng được ghép theo thời gian. Nhưng Tempo gom theo trace id; hai request cùng một thời điểm vẫn hiện thành hai trace riêng.",
+          "b": "Mỗi service đúng là xuất span riêng, nên có vẻ Tempo không có gì để ghép. Nhưng việc ghép đã xong trước khi xuất: mỗi span của gateway đã mang sẵn các id mà header của lời gọi đưa cho nó.",
+          "d": "Nhận định là sai, nhưng không phải vì lý do này. Bài không nói Payments gửi lời gọi lần lượt; kể cả khi hai lời gọi trùng thời gian, mỗi span vẫn mang id của lời gọi của nó."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.trace-context-propagation.q3",
+      "type": "order",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["backend.observability.tracing"],
+      "section_ref": 4,
+      "question": {
+        "en": "`GatewayRefundClient` calls `SendAsync` for a refund. Put the steps that end with the gateway's span nested under Payments' call in order.",
+        "vi": "`GatewayRefundClient` gọi `SendAsync` cho một lần hoàn tiền. Sắp xếp các bước dẫn tới việc span của gateway nằm dưới lời gọi của Payments theo đúng thứ tự."
+      },
+      "options": [
+        { "id": "a", "en": "The gateway's ASP.NET Core starts its request span with trace id T and parent S", "vi": "ASP.NET Core của gateway bắt đầu span request với trace id T và cha S" },
+        { "id": "b", "en": "Grafana shows the gateway's span nested under Payments' `POST` span", "vi": "Grafana hiển thị span của gateway nằm dưới span `POST` của Payments" },
+        { "id": "c", "en": "`HttpClient` writes T and S into a `traceparent` header on the request", "vi": "`HttpClient` ghi T và S vào header `traceparent` của request" },
+        { "id": "d", "en": "`HttpClient` starts a span for the outgoing call, with trace id T and span id S", "vi": "`HttpClient` bắt đầu một span cho lời gọi đi ra, với trace id T và span id S" }
+      ],
+      "answer": ["d", "c", "a", "b"],
+      "explanation": {
+        "en": {
+          "correct": "The call's span must exist before its ids can be written, and `HttpClient` writes them into `traceparent` before the request leaves. The gateway reads the header as it starts its request span. Both services export their spans, Tempo files them under T, and Grafana nests the gateway's span under S."
+        },
+        "vi": {
+          "correct": "Span của lời gọi phải có trước thì id của nó mới được ghi, và `HttpClient` ghi chúng vào `traceparent` trước khi request rời đi. Gateway đọc header khi bắt đầu span request. Cả hai service xuất span của mình, Tempo xếp chúng dưới T, và Grafana đặt span của gateway dưới S."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.trace-context-propagation.q4",
+      "type": "single",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["backend.observability.tracing"],
+      "section_ref": 5,
+      "question": {
+        "en": "A teammate reads `RefundAsync` at `stage-3`, sees only `Idempotency-Key` added, and asks where the gateway call's `traceparent` comes from. What do you answer?",
+        "vi": "Một đồng đội đọc `RefundAsync` ở `stage-3`, chỉ thấy `Idempotency-Key` được thêm, và hỏi `traceparent` của lời gọi tới gateway đến từ đâu. Bạn trả lời gì?"
+      },
+      "options": [
+        { "id": "a", "en": "`HttpClient` writes it on each request from whatever span is current, so `RefundAsync` never has to.", "vi": "`HttpClient` ghi nó vào mỗi request từ span đang là span hiện tại, nên `RefundAsync` không bao giờ phải làm." },
+        { "id": "b", "en": "From the client's default headers in `Program.cs`, set once like the `Authorization` header.", "vi": "Từ các header mặc định của client trong `Program.cs`, được đặt một lần giống header `Authorization`." },
+        { "id": "c", "en": "The gateway's ASP.NET Core asks Tempo for the trace that is open at the moment the request arrives.", "vi": "ASP.NET Core của gateway hỏi Tempo trace nào đang mở vào lúc request tới." },
+        { "id": "d", "en": "Nowhere yet: `RefundAsync` needs a trace id parameter and must add the header itself.", "vi": "Chưa có ở đâu cả: `RefundAsync` cần một tham số trace id và phải tự thêm header.", "misconception": "Passing the trace along means adding a trace id parameter to every method and endpoint." }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "`HttpClient` writes `traceparent` on each outgoing call from the span current at that moment, so `GatewayRefundClient` never touches the header. The instrumentation in `Program.cs` records the call's span.",
+          "b": "`Authorization` does come from the default headers, so it is a fair place to look. But default headers are fixed values, while `traceparent` changes with every call; `HttpClient` writes it per request.",
+          "c": "Tempo sees every trace, so it can seem to be the one that knows the current trace. But Tempo only stores spans after they are exported; the gateway learns T and S from the header itself.",
+          "d": "The class adds every other header by hand, so this one seems to need the same treatment. But .NET tracks the current span across `await`, and `HttpClient` writes the header from it; the gateway's span already nests under Payments' call."
+        },
+        "vi": {
+          "correct": "`HttpClient` ghi `traceparent` vào mỗi lời gọi đi ra, lấy từ span hiện tại lúc đó, nên `GatewayRefundClient` không bao giờ đụng tới header này. Instrumentation trong `Program.cs` ghi lại span của lời gọi.",
+          "b": "`Authorization` đúng là đến từ header mặc định, nên đây là chỗ hợp lý để tìm. Nhưng header mặc định là giá trị cố định, còn `traceparent` đổi theo mỗi lời gọi; `HttpClient` ghi nó cho từng request.",
+          "c": "Tempo thấy mọi trace, nên có vẻ nó là nơi biết trace hiện tại. Nhưng Tempo chỉ lưu span sau khi chúng được xuất; gateway biết T và S từ chính header.",
+          "d": "Class này tự thêm mọi header khác, nên có vẻ header này cũng phải vậy. Nhưng .NET theo dõi span hiện tại qua `await`, và `HttpClient` ghi header từ span đó; span của gateway đã nằm dưới lời gọi của Payments rồi."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.trace-context-propagation.q5",
+      "type": "scenario",
+      "bloom": "evaluate",
+      "difficulty": 4,
+      "skills": ["backend.observability.tracing"],
+      "section_ref": 4,
+      "context": {
+        "en": "At `stage-3`, Payments' `Program.cs` already turns on `AddHttpClientInstrumentation()`, and the gateway's span nests under the refund's trace. The team of two now adds a second class to Payments that calls the gateway over `HttpClient` to check a refund's status. They want those calls to appear in the refund's trace in Tempo, and they want to touch as little code as possible, since every change to Payments needs a rebuild and a review.",
+        "vi": "Ở `stage-3`, `Program.cs` của Payments đã bật `AddHttpClientInstrumentation()`, và span của gateway đã nằm trong trace của lần hoàn tiền. Nhóm hai người giờ thêm vào Payments một class thứ hai gọi gateway qua `HttpClient` để kiểm tra trạng thái hoàn tiền. Họ muốn các lời gọi đó hiện trong trace của lần hoàn tiền trên Tempo, và muốn đụng vào càng ít code càng tốt, vì mỗi thay đổi ở Payments cần build lại và review."
+      },
+      "question": {
+        "en": "What should the new class do about tracing?",
+        "vi": "Class mới nên làm gì về tracing?"
+      },
+      "options": [
+        { "id": "a", "en": "Nothing trace-related: send through `HttpClient` like `GatewayRefundClient` and rely on it and the instrumentation already on.", "vi": "Không làm gì liên quan tới trace: gửi qua `HttpClient` như `GatewayRefundClient` và dựa vào nó cùng instrumentation đã bật." },
+        { "id": "b", "en": "Take a trace id parameter on each method, passed down from the handler, and send it to the gateway.", "vi": "Nhận một tham số trace id ở mỗi method, truyền xuống từ handler, rồi gửi nó tới gateway.", "misconception": "Passing the trace along means adding a trace id parameter to every method and endpoint." },
+        { "id": "c", "en": "Log the exact time of each call, so Tempo can place the gateway's spans next to the refund's spans.", "vi": "Ghi log thời điểm chính xác của mỗi lời gọi, để Tempo đặt span của gateway cạnh span của lần hoàn tiền.", "misconception": "Tempo puts spans from different services into one trace by matching their times." },
+        { "id": "d", "en": "Build a `traceparent` by hand from the current span's ids and add it to each request.", "vi": "Tự dựng `traceparent` từ id của span hiện tại và thêm nó vào mỗi request." }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "`HttpClient` writes `traceparent` on every call in Payments, and the instrumentation in `Program.cs` records every such call, not only `GatewayRefundClient`'s. The new class needs no tracing code, which is the smallest change.",
+          "b": "Carrying an id by hand through each layer feels like the safe way to keep it. But .NET already tracks the current span across `await`, and `HttpClient` writes the header from it; the parameter adds code to every layer for nothing. It would only help when nothing tracks the current span for you.",
+          "c": "Calls that happen together seem easy to pair by their times. But Tempo groups spans by the trace id they carry, not by time, so logged times put nothing into the trace. Times matter when you read a trace, not when spans are grouped.",
+          "d": "It would work, and it shows exactly what the header holds, so it can feel more certain. But here `HttpClient` already writes the same header, so this is extra code to keep correct. It fits only when the call does not go through `HttpClient`, so nothing writes the header for you."
+        },
+        "vi": {
+          "correct": "`HttpClient` ghi `traceparent` vào mọi lời gọi trong Payments, và instrumentation trong `Program.cs` ghi lại mọi lời gọi như vậy, không chỉ của `GatewayRefundClient`. Class mới không cần code tracing nào, và đó là thay đổi nhỏ nhất.",
+          "b": "Tự mang id qua từng tầng có vẻ là cách chắc chắn để giữ nó. Nhưng .NET đã theo dõi span hiện tại qua `await`, và `HttpClient` ghi header từ span đó; tham số này thêm code vào mọi tầng mà không được gì. Nó chỉ có ích khi không có gì theo dõi span hiện tại cho bạn.",
+          "c": "Các lời gọi xảy ra cùng lúc có vẻ dễ ghép theo thời gian. Nhưng Tempo gom span theo trace id mà chúng mang, không theo thời gian, nên thời điểm được ghi log không đưa gì vào trace. Thời gian có ích khi bạn đọc một trace, không phải khi span được gom.",
+          "d": "Cách này chạy được, và nó cho thấy rõ header chứa gì, nên có vẻ chắc chắn hơn. Nhưng ở đây `HttpClient` đã ghi đúng header đó, nên đây là code thừa phải giữ cho đúng. Nó chỉ hợp khi lời gọi không đi qua `HttpClient`, nên không có gì ghi header hộ bạn."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.trace-context-propagation.q6",
+      "type": "fill",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["backend.observability.tracing"],
+      "section_ref": 3,
+      "question": {
+        "en": "The gateway receives `traceparent: 00-5c1e0a7d93b24f6e8a0d71c4b29e3f58-9e2d4b7a1c6f0835-01`. Counting the dash-separated parts from 1, its ASP.NET Core makes part number ___ the parent of its request span.",
+        "vi": "Gateway nhận `traceparent: 00-5c1e0a7d93b24f6e8a0d71c4b29e3f58-9e2d4b7a1c6f0835-01`. Đếm các phần ngăn bởi dấu gạch ngang từ 1, ASP.NET Core của nó lấy phần số ___ làm cha cho span request."
+      },
+      "answer": ["3", "three"],
+      "answer_regex": "^\\s*(3|three|ba)\\s*$",
+      "explanation": {
+        "en": {
+          "correct": "`traceparent` is four parts joined by dashes: the version `00`, the 32-hex-digit trace id, the 16-hex-digit parent span id, then the flags `01`. The parent span id is part 3; the trace id in part 2 names the trace the span joins, not its parent."
+        },
+        "vi": {
+          "correct": "`traceparent` gồm bốn phần nối bằng dấu gạch ngang: version `00`, trace id 32 chữ số hex, parent span id 16 chữ số hex, rồi flags `01`. Parent span id là phần 3; trace id ở phần 2 chỉ trace mà span nhập vào, không phải span cha."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.trace-context-propagation.q7",
+      "type": "multi",
+      "bloom": "understand",
+      "difficulty": 2,
+      "skills": ["backend.observability.tracing"],
+      "section_ref": 5,
+      "question": {
+        "en": "`traceparent.sh` sends `GET /api/v1/products/3` with a `traceparent` it made up from random hex digits. Which statements about the api's span are true? Select all that apply.",
+        "vi": "`traceparent.sh` gửi `GET /api/v1/products/3` kèm một `traceparent` nó tự tạo từ các chữ số hex ngẫu nhiên. Những nhận định nào về span của api là đúng? Chọn tất cả đáp án đúng."
+      },
+      "options": [
+        { "id": "a", "en": "It carries the trace id from the header, although the api has never seen that id before.", "vi": "Nó mang trace id từ header, dù api chưa từng thấy id đó." },
+        { "id": "b", "en": "It names the header's span id as its parent, though no span with that id was ever exported.", "vi": "Nó nêu span id trong header làm cha của nó, dù chưa từng có span nào với id đó được xuất đi." },
+        { "id": "c", "en": "Sent without the header, the same request would start a new trace with a new trace id.", "vi": "Nếu gửi không kèm header, cùng request đó sẽ bắt đầu một trace mới với trace id mới." },
+        { "id": "d", "en": "It lands in that trace because it starts seconds after the script made up the id, close enough for Tempo to match.", "vi": "Nó nằm trong trace đó vì nó bắt đầu vài giây sau khi script tạo id, đủ gần để Tempo ghép lại.", "misconception": "Tempo puts spans from different services into one trace by matching their times." },
+        { "id": "e", "en": "It joins the header's trace only because the first `curl` put product 3 in Redis beforehand.", "vi": "Nó nhập vào trace của header chỉ vì lần `curl` đầu tiên đã đưa product 3 vào Redis từ trước." }
+      ],
+      "answer": ["a", "b", "c"],
+      "explanation": {
+        "en": {
+          "correct": "ASP.NET Core takes the trace id and parent span id from any incoming `traceparent`; it does not check whether that trace exists. With no header there is nothing to join, so it starts a new trace.",
+          "d": "The script runs both steps within seconds, so closeness in time looks like the link. But Tempo files the span under the trace id it carries, and the script looks the trace up by id only; it never compares times.",
+          "e": "The first `curl` is real and does come first, so it can look like a setup step for joining. But it only keeps the traced read from running SQL, so the trace stays one span; joining comes from the header alone."
+        },
+        "vi": {
+          "correct": "ASP.NET Core lấy trace id và parent span id từ bất kỳ `traceparent` nào gửi tới; nó không kiểm tra trace đó có tồn tại hay không. Không có header thì không có gì để nhập vào, nên nó bắt đầu một trace mới.",
+          "d": "Script chạy hai bước cách nhau vài giây, nên sự gần nhau về thời gian trông như mối nối. Nhưng Tempo xếp span theo trace id mà span mang, và script chỉ tìm trace theo id; nó không bao giờ so sánh thời gian.",
+          "e": "Lần `curl` đầu tiên là có thật và đúng là chạy trước, nên trông như một bước chuẩn bị để nhập trace. Nhưng nó chỉ giữ cho lần đọc được trace không chạy SQL, để trace chỉ có một span; việc nhập trace chỉ đến từ header."
+        }
+      }
+    }
+  ]
+}

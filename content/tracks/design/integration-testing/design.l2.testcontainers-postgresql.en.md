@@ -15,8 +15,8 @@ vocab: [testcontainers]
 example_tag: stage-2
 versions_used: [dotnet, efcore, postgresql, docker, testcontainers]
 content_version: 1
-status: approved
-approved_by: auto
+status: published
+approved_by: owner
 reviewed_at: "2026-10-01T21:03:10+07:00"
 ---
 

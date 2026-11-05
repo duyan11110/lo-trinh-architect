@@ -1,0 +1,164 @@
+{
+  "id": "devops.l3.remote-state-and-locking",
+  "technical": {
+    "reviewed_at": "2026-10-08T18:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Backend configuration page: \"By default, OpenTofu uses a backend called `local`, which stores state as a local file on disk.\" Local backend page: path \"defaults to \\\"terraform.tfstate\\\" relative to the root module\".",
+        "source": "https://opentofu.org/docs/language/settings/backends/configuration/ ; https://opentofu.org/docs/language/settings/backends/local/"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "pg backend page: table_name \"Name of the automatically-managed Postgres table, default to `states`.\"; schema_name \"Name of the automatically-managed Postgres schema, default to `terraform_remote_state`.\"; conn_str \"Postgres connection string; a `postgres://` URL\", with `PG_CONN_STR` also supported. backend.tf sets no table_name, so the table is `states` (tofu-db.sh queries staging_cluster.states successfully).",
+        "source": "https://opentofu.org/docs/language/settings/backends/pg/"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "pg backend page: \"The table is keyed by the workspace name.\" \"If workspaces are not in use, the name `default` is used.\" The table contains \"the OpenTofu state `data` as _text_\". JSON by execution: tofu-db.sh runs json_object_keys(data::json) and tofu-db.txt lists the keys; rows staging_cluster | default, staging_platform | default.",
+        "source": "https://opentofu.org/docs/language/settings/backends/pg/ ; examples/don-hang scripts/devops/tofu-db.sh, outputs/stage-3/scripts/devops/tofu-db.txt"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Locking page: \"If supported by your backend, OpenTofu will lock your state for all operations that could write state.\" pg page: \"Locking is supported using Postgres advisory locks.\" plan page, -lock=false: \"Don't hold a state lock during the operation.\" (so plan holds one by default). Execution: tofu-lock.txt shows a plan 15 s into an apply that is still waiting for its answer failing with \"Error acquiring the state lock\".",
+        "source": "https://opentofu.org/docs/language/state/locking/ ; https://opentofu.org/docs/cli/commands/plan/ ; outputs/stage-3/scripts/devops/tofu-lock.txt"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "plan/apply pages: -lock-timeout \"instructs OpenTofu to retry acquiring a lock for a period of time before returning an error.\" import page: \"`-lock-timeout=0s` - Duration to retry a state lock.\" Locking page: \"If state locking fails, OpenTofu will not continue.\" Execution: tofu-lock.txt, plain plan prints \"Error: Error acquiring the state lock\".",
+        "source": "https://opentofu.org/docs/cli/commands/apply/ ; https://opentofu.org/docs/cli/commands/import/ ; https://opentofu.org/docs/language/state/locking/"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "outputs/stage-3/scripts/devops/tofu-lock.txt contains exactly: \"Error: Error acquiring the state lock\", \"Error message: Workspace is already locked: default\", \"Plan: 0 to add, 1 to change, 0 to destroy.\", \"it waited about ... s, until terminal 1's apply ended\". The lesson's output block matches line for line.",
+        "source": "examples/don-hang outputs/stage-3/scripts/devops/tofu-lock.txt"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Encryption page: OpenTofu supports \"encrypting state and plan files at rest, both for local storage and when using a backend\"; \"The PBKDF2 key provider allows you to use a long passphrase as to generate a key for an encryption method such as AES-GCM.\"; state/plan blocks commented \"Encryption/decryption for state data\" / \"for plan data\". Execution (tofu-db.txt): row keys are encrypted_data/encryption_version, 0 rows contain PRIVATE KEY, so the backend received ciphertext.",
+        "source": "https://opentofu.org/docs/language/state/encryption/ ; outputs/stage-3/scripts/devops/tofu-db.txt"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Encryption page has no prose definition of `enforced`; its note gives a configuration with `enforced = true` in both `state` and `plan` blocks \"to prevent unencrypted data from being written in the absence of an environment variable\". That supports \"refuse to write either one unencrypted\".",
+        "source": "https://opentofu.org/docs/language/state/encryption/"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Encryption page: \"Once you enable encryption, OpenTofu cannot read your state file without the correct key.\" Round 2: the claim and the Think answer (section 7) now say only that a plan with a key from another passphrase cannot use staging's state; the earlier unsupported 'stops with an error, no fallback to an empty state' is gone.",
+        "source": "https://opentofu.org/docs/language/state/encryption/"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "tofu-db.txt, section '== what a row holds' (json_object_keys of the row's data): serial, lineage, meta, encrypted_data, encryption_version; count of rows LIKE '%PRIVATE KEY%' = 0. The reworded claim and section 6 no longer depend on an unencrypted row's `resources` key.",
+        "source": "examples/don-hang outputs/stage-3/scripts/devops/tofu-db.txt ; scripts/devops/tofu-db.sh"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Variables page: OpenTofu \"searches the environment of its own process for environment variables named `TF_VAR_` followed by the name of a declared variable\". tofu-env.sh: line 20 export PG_CONN_STR=\"postgres://donhang:${POSTGRES_PASSWORD}@localhost:5432/donhang_tofu?sslmode=disable\"; line 21 export TF_VAR_state_passphrase; line 24 dir=deploy/tofu/envs/$env/$1; line 36 tofu -chdir=\"$dir\" \"$@\" (after a quiet init).",
+        "source": "https://opentofu.org/docs/language/values/variables/ ; examples/don-hang scripts/devops/tofu-env.sh (working tree; git show at tag not permitted)"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "scripts/dev-secrets.sh lines 43-50: comment \"Lose it and no state written with it can be read again; it is in no backup.\"; appends TOFU_STATE_PASSPHRASE=$(openssl rand -hex 32) to .env when absent.",
+        "source": "examples/don-hang scripts/dev-secrets.sh"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "deploy/tofu/envs/staging/cluster/backend.tf lines 7-28 match the lesson's block character for character (backend \"pg\" schema_name \"staging_cluster\"; pbkdf2 from var.state_passphrase; aes_gcm; state and plan enforced = true). Compared against the submodule working tree (master); git show/extract-code at tag stage-3 was not permitted in this session.",
+        "source": "examples/don-hang deploy/tofu/envs/staging/cluster/backend.tf"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "scripts/devops/tofu-lock.sh: line 9 kubectl label namespace donhang owner=by-hand; line 15 (sleep 30; echo no) | ... apply in background; line 17 sleep 15; line 21 plan; line 27 plan -lock-timeout=60s. Lesson block = lines 11-28 verbatim (working tree; tag not resolvable via git in this session).",
+        "source": "examples/don-hang scripts/devops/tofu-lock.sh"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "tofu-db.sh prints \\dn, staging's rows, json_object_keys of a row, count of rows LIKE '%PRIVATE KEY%', and *.tfstate under deploy/tofu/envs or \"none\". tofu-db.txt: schemas include staging_cluster, staging_platform; count 0; \"none\". Matches the Try it expected result.",
+        "source": "examples/don-hang scripts/devops/tofu-db.sh ; outputs/stage-3/scripts/devops/tofu-db.txt"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "examples/don-hang/.gitignore lines 27-28: \"*.tfstate\" and \"*.tfstate.*\".",
+        "source": "examples/don-hang .gitignore"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "SELECT, The Locking Clause: \"To prevent the operation from waiting for other transactions to commit, use either the NOWAIT or SKIP LOCKED option. With NOWAIT, the statement reports an error, rather than waiting, if a selected row cannot be locked immediately.\"",
+        "source": "https://www.postgresql.org/docs/17/sql-select.html"
+      },
+      {
+        "n": 18,
+        "verdict": "not-needed",
+        "evidence": "Opinion with its condition (more than one person or machine applies) and an opposing view in the ledger; the lesson's section 6 rebuttal rests on facts verified in claims 4, 5 and 16 (no lock in Git, credentials in plain text).",
+        "source": "https://opentofu.org/docs/language/state/locking/"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "New in round 2. 'the backend names a server' contradicts section 5: Đơn Hàng's `backend \"pg\"` sets only `schema_name`; the server comes from PG_CONN_STR, which tofu-env.sh builds with localhost:5432. A reader may look for the server in backend.tf.",
+        "quote": "for a team, the backend names a server every teammate's machine can reach",
+        "fix": "Replace with: \"for a team, the backend connects to a server every teammate's machine can reach (section 5 shows where that connection is set).\""
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-08T19:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (prompt 05, junior reader, round 2 targeted re-review)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "style",
+        "text": "New in round 2, in the changed sentence. Section 4 says the backend 'names a server', but section 5 then says `backend \"pg\"` sets only `schema_name` and the server address is in PG_CONN_STR. I went back to backend.tf looking for a server name and found none.",
+        "quote": "for a team, the backend names a server every teammate's machine can reach",
+        "fix": "Replace 'the backend names a server' with 'the backend connects to a server', and add '(section 5 shows where that connection is set)'."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "gap",
+        "text": "Carried from round 1. I am still not told that an apply with nothing to change ends without asking for yes, so I cannot see why the label is needed for the demo to hold the lock.",
+        "quote": "so that the apply has a change to ask `yes` about",
+        "fix": "Add: 'with no changes, apply ends without asking for yes, so it would not hold the lock for 30 seconds'."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [
+        "so that the apply has a change to ask `yes` about"
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

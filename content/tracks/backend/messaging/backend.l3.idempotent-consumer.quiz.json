@@ -1,0 +1,316 @@
+{
+  "lesson": "backend.l3.idempotent-consumer",
+  "stage": 3,
+  "questions": [
+    {
+      "id": "backend.l3.idempotent-consumer.q1",
+      "type": "single",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["backend.messaging.consumers"],
+      "section_ref": 5,
+      "question": {
+        "en": "Order 2's `order.shipped` message, id M, was handled and acknowledged. After a relay restart, a second copy with the same id M reaches `HandleAsync`. What does the consumer do with it?",
+        "vi": "Message `order.shipped` của đơn 2, id M, đã được xử lý và xác nhận. Sau khi relay khởi động lại, bản thứ hai với cùng id M tới `HandleAsync`. Consumer làm gì với nó?"
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "It tries both inserts, PostgreSQL refuses the inbox row, nothing is saved, and the copy is acknowledged.",
+          "vi": "Nó thử cả hai lần insert, PostgreSQL từ chối dòng inbox, không có gì được lưu, và bản này được xác nhận."
+        },
+        {
+          "id": "b",
+          "en": "It first reads `inbox_messages`, finds M there, and returns before adding any row.",
+          "vi": "Trước tiên nó đọc `inbox_messages`, thấy M ở đó, và return trước khi thêm dòng nào."
+        },
+        {
+          "id": "c",
+          "en": "It saves a second `notifications` row; only the inbox row is refused, so two emails go out.",
+          "vi": "Nó lưu dòng `notifications` thứ hai; chỉ dòng inbox bị từ chối, nên hai email được gửi đi."
+        },
+        {
+          "id": "d",
+          "en": "It throws the duplicate key error, so the copy stays unacknowledged and comes back again.",
+          "vi": "Nó ném lỗi duplicate key ra ngoài, nên bản này vẫn chưa được xác nhận và lại quay về."
+        }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "The consumer adds the inbox row and the `notifications` row and saves them in one `SaveChangesAsync`. The primary key on `message_id` makes PostgreSQL refuse the inbox row, the whole transaction rolls back, and the catch treats the error as \"handled before\", so `HandleAsync` returns and the caller acknowledges.",
+          "b": "Checking first and inserting second is how many people would write it, so this is a fair guess. But the consumer never reads the table first: it lets the primary key refuse the second insert, which is the whole check.",
+          "c": "Seeing two separate rows can suggest two separate outcomes. But both rows are saved in one transaction, so when the inbox row is refused the `notifications` row is not saved either.",
+          "d": "An error inside `HandleAsync` usually does end in redelivery, as in the previous lesson. But this one error is caught by the `when (Inbox.IsDuplicate(ex))` filter, so `HandleAsync` returns normally and the copy is acknowledged."
+        },
+        "vi": {
+          "correct": "Consumer thêm dòng inbox và dòng `notifications` rồi lưu chúng trong một `SaveChangesAsync`. Primary key trên `message_id` khiến PostgreSQL từ chối dòng inbox, cả transaction bị rollback, và khối catch coi lỗi đó là \"đã xử lý rồi\", nên `HandleAsync` return và bên gọi xác nhận message.",
+          "b": "Kiểm tra trước rồi mới insert là cách nhiều người sẽ viết, nên đoán vậy là có lý. Nhưng consumer không bao giờ đọc bảng trước: nó để primary key từ chối lần insert thứ hai, và đó chính là toàn bộ phép kiểm tra.",
+          "c": "Thấy hai dòng riêng dễ nghĩ tới hai kết quả riêng. Nhưng cả hai dòng được lưu trong một transaction, nên khi dòng inbox bị từ chối thì dòng `notifications` cũng không được lưu.",
+          "d": "Một lỗi bên trong `HandleAsync` thường dẫn tới việc giao lại, như ở bài trước. Nhưng riêng lỗi này bị bộ lọc `when (Inbox.IsDuplicate(ex))` bắt lại, nên `HandleAsync` return bình thường và bản này được xác nhận."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.idempotent-consumer.q2",
+      "type": "truefalse",
+      "bloom": "analyze",
+      "difficulty": 4,
+      "skills": ["backend.messaging.consumers"],
+      "section_ref": 6,
+      "question": {
+        "en": "A teammate changes the consumer so it sends the email itself and, once sending succeeds, saves the message id in `inbox_messages`. Statement: a redeploy can now leave a customer with two identical emails for one message.",
+        "vi": "Một đồng nghiệp sửa consumer để nó tự gửi email và, khi gửi thành công, mới lưu message id vào `inbox_messages`. Nhận định: giờ một lần deploy lại có thể khiến một khách nhận hai email giống hệt nhau cho một message."
+      },
+      "options": [
+        {
+          "id": "a",
+          "polarity": "true",
+          "en": "True, because if the process stops after the email goes out but before the id is saved, the next copy finds no inbox row and sends again.",
+          "vi": "Đúng, vì nếu process dừng sau khi email đã đi nhưng trước khi id được lưu, bản kế tiếp không thấy dòng inbox nào và gửi lại lần nữa."
+        },
+        {
+          "id": "b",
+          "polarity": "true",
+          "en": "True, because RabbitMQ delivers every message twice, and the inbox no longer runs early enough to stop the second copy.",
+          "vi": "Đúng, vì RabbitMQ giao mọi message hai lần, và inbox không còn chạy đủ sớm để chặn bản thứ hai."
+        },
+        {
+          "id": "c",
+          "polarity": "false",
+          "en": "False, because the id is still saved after the send, so the next copy hits the duplicate key error and is skipped.",
+          "vi": "Sai, vì id vẫn được lưu sau khi gửi, nên bản kế tiếp gặp lỗi duplicate key và bị bỏ qua.",
+          "misconception": "Saving the message id after the email has been sent is just as safe."
+        },
+        {
+          "id": "d",
+          "polarity": "false",
+          "en": "False, because RabbitMQ drops a message whose id it has already delivered, so no second copy arrives.",
+          "vi": "Sai, vì RabbitMQ bỏ message có id mà nó đã giao rồi, nên không có bản thứ hai nào tới.",
+          "misconception": "RabbitMQ drops duplicate messages, so a consumer never sees the same one twice."
+        }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "The check holds only when the id and the effect commit together. Here the email leaves before the id is saved, so a stop between the two leaves no inbox row; the next copy is handled as new and sends the email again.",
+          "b": "The verdict is right, so this is tempting. The reason is wrong: RabbitMQ delivers a message again only when it is published again or its channel closes before the acknowledgement, not every time.",
+          "c": "The id is still saved, so the inbox looks as if it still protects the message. But it is saved only after the send; if the process stops in between, no id exists, and the next copy finds nothing to collide with.",
+          "d": "A broker that already tracks deliveries could plausibly drop repeats. But RabbitMQ does not compare message ids: two publishes are two messages, and spotting repeats is the receiver's job."
+        },
+        "vi": {
+          "correct": "Phép kiểm tra chỉ đứng vững khi id và kết quả được commit cùng nhau. Ở đây email đã đi trước khi id được lưu, nên process dừng giữa hai bước sẽ không để lại dòng inbox nào; bản kế tiếp được xử lý như message mới và gửi email lần nữa.",
+          "b": "Kết luận thì đúng, nên phương án này dễ bị chọn. Nhưng lý do sai: RabbitMQ chỉ giao lại một message khi nó được publish lại hoặc khi channel đóng trước lần xác nhận, không phải lần nào cũng vậy.",
+          "c": "Id vẫn được lưu, nên inbox trông như vẫn bảo vệ message. Nhưng nó chỉ được lưu sau khi gửi; nếu process dừng ở giữa, chưa có id nào, và bản kế tiếp không đụng phải gì cả.",
+          "d": "Một broker vốn đã theo dõi các lần giao thì có vẻ cũng có thể bỏ message lặp. Nhưng RabbitMQ không so sánh message id: hai lần publish là hai message, và nhận ra message lặp là việc của bên nhận."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.idempotent-consumer.q3",
+      "type": "order",
+      "bloom": "understand",
+      "difficulty": 2,
+      "skills": ["backend.messaging.consumers"],
+      "section_ref": 4,
+      "question": {
+        "en": "A copy of order 2's `order.shipped` message arrives with id M, which is already in `inbox_messages`. Put what happens to this copy in order.",
+        "vi": "Một bản của message `order.shipped` của đơn 2 tới với id M, mà M đã có trong `inbox_messages`. Sắp xếp những gì xảy ra với bản này theo đúng thứ tự."
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "PostgreSQL refuses the inbox row, and the transaction rolls back.",
+          "vi": "PostgreSQL từ chối dòng inbox, và transaction bị rollback."
+        },
+        {
+          "id": "b",
+          "en": "The caller acknowledges the copy.",
+          "vi": "Bên gọi xác nhận bản này."
+        },
+        {
+          "id": "c",
+          "en": "`HandleAsync` adds an inbox row for M and a `pending` email row.",
+          "vi": "`HandleAsync` thêm một dòng inbox cho M và một dòng email `pending`."
+        },
+        {
+          "id": "d",
+          "en": "The consumer logs that message M was handled before.",
+          "vi": "Consumer ghi log rằng message M đã được xử lý rồi."
+        },
+        {
+          "id": "e",
+          "en": "`SaveChangesAsync` sends both rows in one transaction.",
+          "vi": "`SaveChangesAsync` gửi cả hai dòng trong một transaction."
+        }
+      ],
+      "answer": ["c", "e", "a", "d", "b"],
+      "explanation": {
+        "en": {
+          "correct": "The consumer does not look for M first: it adds both rows and saves them together. PostgreSQL refuses the repeated primary key, so nothing is saved; the catch logs the skip, `HandleAsync` returns normally, and only then does the caller acknowledge."
+        },
+        "vi": {
+          "correct": "Consumer không tìm M trước: nó thêm cả hai dòng và lưu chúng cùng lúc. PostgreSQL từ chối primary key bị lặp, nên không có gì được lưu; khối catch ghi log việc bỏ qua, `HandleAsync` return bình thường, rồi bên gọi mới xác nhận."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.idempotent-consumer.q4",
+      "type": "multi",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["backend.messaging.consumers"],
+      "section_ref": 3,
+      "question": {
+        "en": "Order 2 was placed and later shipped. Its `order.placed` message arrived once, and its `order.shipped` outbox row was published twice. Which statements are true? Select all that apply.",
+        "vi": "Đơn 2 được đặt rồi sau đó được giao. Message `order.placed` của nó tới một lần, còn dòng outbox `order.shipped` của nó bị publish hai lần. Những nhận định nào đúng? Chọn tất cả các đáp án đúng."
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "Both copies of `order.shipped` carry the same message id, taken from the outbox row's id.",
+          "vi": "Cả hai bản `order.shipped` mang cùng một message id, lấy từ id của dòng outbox."
+        },
+        {
+          "id": "b",
+          "en": "The `order.placed` and `order.shipped` messages of order 2 carry different message ids.",
+          "vi": "Message `order.placed` và message `order.shipped` của đơn 2 mang message id khác nhau."
+        },
+        {
+          "id": "c",
+          "en": "Skipping any message whose order already has a `notifications` row would stop the repeat with no other effect.",
+          "vi": "Bỏ qua mọi message mà đơn của nó đã có dòng `notifications` sẽ chặn được bản lặp mà không gây ảnh hưởng gì khác.",
+          "misconception": "Skipping a message when its order already has a `notifications` row is enough to stop duplicates."
+        },
+        {
+          "id": "d",
+          "en": "RabbitMQ refuses the second publish, since a message with that id has already been routed.",
+          "vi": "RabbitMQ từ chối lần publish thứ hai, vì một message có id đó đã được route rồi.",
+          "misconception": "RabbitMQ drops duplicate messages, so a consumer never sees the same one twice."
+        },
+        {
+          "id": "e",
+          "en": "Afterwards `notifications` holds one \"order shipped\" row for order 2.",
+          "vi": "Sau đó `notifications` có một dòng \"order shipped\" cho đơn 2."
+        }
+      ],
+      "answer": ["a", "b", "e"],
+      "explanation": {
+        "en": {
+          "correct": "`OutboxRelay` sets the message id to the outbox row's id, so the two copies of one row share it and two different events get different ids. The second copy's inbox row is refused, so only one \"order shipped\" row is saved.",
+          "c": "Checking by order looks simpler than tracking ids. But one order produces several messages, each with its own email; this check would also skip the shipping email of every order that already had its \"order placed\" email.",
+          "d": "Expecting the broker to recognise a repeated id is natural. But RabbitMQ does not compare message ids when it routes or queues a message: both publishes are routed, and the consumer receives both."
+        },
+        "vi": {
+          "correct": "`OutboxRelay` đặt message id bằng id của dòng outbox, nên hai bản của một dòng có chung id, còn hai sự kiện khác nhau có id khác nhau. Dòng inbox của bản thứ hai bị từ chối, nên chỉ một dòng \"order shipped\" được lưu.",
+          "c": "Kiểm tra theo đơn trông đơn giản hơn theo dõi id. Nhưng một đơn sinh ra nhiều message, mỗi message có email riêng; cách kiểm tra này cũng sẽ bỏ qua email giao hàng của mọi đơn đã có email \"order placed\".",
+          "d": "Mong broker nhận ra một id bị lặp là điều tự nhiên. Nhưng RabbitMQ không so sánh message id khi route hay đưa message vào queue: cả hai lần publish đều được route, và consumer nhận cả hai."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.idempotent-consumer.q5",
+      "type": "single",
+      "bloom": "understand",
+      "difficulty": 2,
+      "skills": ["backend.messaging.consumers"],
+      "section_ref": 4,
+      "question": {
+        "en": "To keep `donhang_notifications` small, a teammate proposes keeping the handled message ids in Redis instead of `inbox_messages`. What does the consumer lose?",
+        "vi": "Để `donhang_notifications` gọn hơn, một đồng nghiệp đề xuất giữ các message id đã xử lý trong Redis thay vì `inbox_messages`. Consumer mất đi điều gì?"
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "The id and the email row can no longer be saved or refused together, so a stop at the wrong moment leaves one without the other.",
+          "vi": "Id và dòng email không còn được lưu hay bị từ chối cùng nhau, nên process dừng sai thời điểm sẽ để lại cái này mà thiếu cái kia."
+        },
+        {
+          "id": "b",
+          "en": "Nothing that matters: the check only needs to find the id again, wherever the id is kept.",
+          "vi": "Không mất gì đáng kể: phép kiểm tra chỉ cần tìm lại được id, dù id được giữ ở đâu."
+        },
+        {
+          "id": "c",
+          "en": "Only speed: it must now read Redis before each insert, which is slower but just as safe.",
+          "vi": "Chỉ mất tốc độ: giờ nó phải đọc Redis trước mỗi lần insert, chậm hơn nhưng an toàn như cũ."
+        },
+        {
+          "id": "d",
+          "en": "Its message ids: Redis cannot keep the outbox row's id, so the copies stop sharing one id.",
+          "vi": "Mất message id: Redis không giữ được id của dòng outbox, nên các bản không còn chung một id."
+        }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "The inbox works because its row and the `notifications` row commit in one transaction, so neither exists without the other. Another system cannot join that transaction, so a crash between the two writes leaves one without the other.",
+          "b": "Finding the id is indeed what the check looks like from outside. But what makes it safe is that the id and the effect are saved together; kept elsewhere, the id can exist without the email row, or the other way round.",
+          "c": "A read-then-write check does sound like the same logic, only slower. But it is no longer one transaction: a crash after one write and before the other still loses or repeats an email.",
+          "d": "Moving the ids can seem to change the ids themselves. But the message id comes from `OutboxRelay` and travels with the message; where the receiver stores it does not change its value."
+        },
+        "vi": {
+          "correct": "Inbox hoạt động được vì dòng của nó và dòng `notifications` được commit trong một transaction, nên không dòng nào tồn tại mà thiếu dòng kia. Một hệ thống khác không tham gia được transaction đó, nên một lần sập giữa hai lần ghi sẽ để lại dòng này mà thiếu dòng kia.",
+          "b": "Tìm lại được id đúng là hình dáng của phép kiểm tra khi nhìn từ ngoài. Nhưng điều làm nó an toàn là id và kết quả được lưu cùng nhau; giữ ở chỗ khác thì id có thể tồn tại mà không có dòng email, hoặc ngược lại.",
+          "c": "Kiểm tra bằng cách đọc rồi ghi nghe như cùng một logic, chỉ chậm hơn. Nhưng nó không còn là một transaction: một lần sập sau lần ghi này và trước lần ghi kia vẫn làm mất hoặc lặp một email.",
+          "d": "Chuyển chỗ lưu id dễ khiến ta nghĩ bản thân id cũng đổi. Nhưng message id do `OutboxRelay` đặt và đi kèm message; bên nhận lưu nó ở đâu không làm đổi giá trị của nó."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.idempotent-consumer.q6",
+      "type": "scenario",
+      "bloom": "evaluate",
+      "difficulty": 4,
+      "skills": ["backend.messaging.consumers"],
+      "section_ref": 4,
+      "context": {
+        "en": "Picture `OrderEventsConsumer` before it had an inbox: it saved one `pending` row for every message it received, then acknowledged. `DonHang.Api` and `DonHang.Notifications` are redeployed several times a week, and after some redeploys customers report two identical \"order shipped\" emails for one parcel. The product owner wants the duplicates gone, but a missing email is still worse than a duplicate one. Both services keep their data in PostgreSQL.",
+        "vi": "Hãy hình dung `OrderEventsConsumer` khi chưa có inbox: nó lưu một dòng `pending` cho mỗi message nhận được, rồi xác nhận. `DonHang.Api` và `DonHang.Notifications` được deploy lại vài lần mỗi tuần, và sau một số lần deploy, khách báo nhận hai email \"order shipped\" giống hệt nhau cho một kiện hàng. Product owner muốn hết email trùng, nhưng thiếu email vẫn tệ hơn email trùng. Cả hai service đều giữ dữ liệu trong PostgreSQL."
+      },
+      "question": {
+        "en": "Which change fits best?",
+        "vi": "Thay đổi nào phù hợp nhất?"
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "Save each message id in an `inbox_messages` table keyed on it, in the same save as the email row.",
+          "vi": "Lưu message id của mỗi message vào bảng `inbox_messages` lấy nó làm khóa, trong cùng lần lưu với dòng email."
+        },
+        {
+          "id": "b",
+          "en": "Skip a message when its order already has a `notifications` row, so one order never gets a second email.",
+          "vi": "Bỏ qua message khi đơn của nó đã có dòng `notifications`, để một đơn không bao giờ nhận email thứ hai.",
+          "misconception": "Skipping a message when its order already has a `notifications` row is enough to stop duplicates."
+        },
+        {
+          "id": "c",
+          "en": "Make the relay record `published_at` before it publishes, so no outbox row is ever published twice.",
+          "vi": "Cho relay ghi `published_at` trước khi publish, để không dòng outbox nào bị publish hai lần."
+        },
+        {
+          "id": "d",
+          "en": "Leave the consumer as it is and rely on RabbitMQ to drop a second message with the same id.",
+          "vi": "Giữ nguyên consumer và trông vào RabbitMQ để bỏ message thứ hai có cùng id.",
+          "misconception": "RabbitMQ drops duplicate messages, so a consumer never sees the same one twice."
+        }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "Repeats come from both the relay and redelivery, so the consumer must expect any message twice. An inbox row saved in the same transaction as the email row turns every copy after the first into a duplicate key error, and no message is lost on the way.",
+          "b": "One email per order sounds like exactly what customers want. But an order produces several messages, each with its own email, so this would also skip every shipping email after an \"order placed\" one. It fits only when each order produces a single message.",
+          "c": "Stopping repeats at their source looks cleaner than handling them later. But a relay stopped between recording and publishing would lose the message, and redelivery after a closed channel still repeats messages. It fits only when losing some emails is acceptable.",
+          "d": "Leaving the work to the broker would keep the consumer simple. But RabbitMQ does not compare message ids: two publishes are two messages, so nothing changes. It fits only when the broker in use promises to drop repeated ids, which RabbitMQ does not."
+        },
+        "vi": {
+          "correct": "Message lặp đến từ cả relay lẫn việc giao lại, nên consumer phải chờ sẵn mọi message tới hai lần. Một dòng inbox lưu trong cùng transaction với dòng email biến mọi bản sau bản đầu thành lỗi duplicate key, và không message nào bị mất dọc đường.",
+          "b": "Mỗi đơn một email nghe đúng là điều khách muốn. Nhưng một đơn sinh ra nhiều message, mỗi message có email riêng, nên cách này cũng bỏ qua mọi email giao hàng sau email \"order placed\". Chỉ hợp khi mỗi đơn chỉ sinh một message.",
+          "c": "Chặn message lặp ngay từ gốc trông gọn hơn xử lý về sau. Nhưng relay dừng giữa lúc ghi và lúc publish sẽ làm mất message, và việc giao lại sau khi channel đóng vẫn lặp message. Chỉ hợp khi chấp nhận được việc mất một số email.",
+          "d": "Để broker lo thì consumer giữ được đơn giản. Nhưng RabbitMQ không so sánh message id: hai lần publish là hai message, nên chẳng có gì thay đổi. Chỉ hợp khi broker đang dùng cam kết bỏ id bị lặp, mà RabbitMQ thì không."
+        }
+      }
+    }
+  ]
+}

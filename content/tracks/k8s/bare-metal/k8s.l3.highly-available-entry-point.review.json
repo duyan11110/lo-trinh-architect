@@ -1,0 +1,138 @@
+{
+  "id": "k8s.l3.highly-available-entry-point",
+  "technical": {
+    "reviewed_at": "2026-10-20T19:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Execution: `helm template traefik traefik-41.6.1.tgz --show-only templates/deployment.yaml` with no values renders `spec: replicas: 1`. apps/traefik.yaml valuesObject sets only providers, gateway, service, ports (no replicas). Capture outputs/stage-3/scripts/k8s/traefik-install.txt: `deployment.apps/traefik 1/1 1 1`. Staging is one node: deploy/tofu/envs/staging/cluster/main.tf 'the kind-cluster module with one node'.",
+        "source": "helm template of local chart cache traefik-41.6.1.tgz; don-hang deploy/gitops/config-repo/apps/traefik.yaml; outputs/stage-3/scripts/k8s/traefik-install.txt"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "metallb.io Layer 2: \"failover is automatic: the failed node is detected using memberlist\"; other nodes take over the IP; \"failover happens within a few seconds\"; during an unplanned failover the IPs may be unreachable until client caches refresh. Capture traefik-ha.txt: 'the address is announced by donhang-worker2' after pausing donhang-worker.",
+        "source": "https://metallb.io/concepts/layer2/ ; examples/don-hang/outputs/stage-3/scripts/k8s/traefik-ha.txt"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Round 2: section 3 now reads claim 3's round-1 suggested_text. kubernetes.io: \"if you select whenUnsatisfiable: DoNotSchedule, then maxSkew defines the maximum permitted difference between the number of matching pods in the target topology and the global minimum\"; domains are values of topologyKey. The bound is now conditioned on DoNotSchedule and stated per label value.",
+        "source": "https://kubernetes.io/docs/concepts/scheduling-eviction/topology-spread-constraints/ (Spread constraint definition)"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "kubernetes.io: \"DoNotSchedule (default) tells the scheduler not to schedule it.\" and \"The field whenUnsatisfiable: DoNotSchedule tells the scheduler to let the incoming Pod stay pending if the scheduler can't find a way to satisfy the constraint.\"",
+        "source": "https://kubernetes.io/docs/concepts/scheduling-eviction/topology-spread-constraints/"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Round 2: section 5 now says 'a label the kubelet sets on every node to its hostname, which in kind is the node's name'. Well-Known Labels, kubernetes.io/hostname: \"The Kubelet populates this label with the hostname of the node.\" Supports the revised wording.",
+        "source": "https://kubernetes.io/docs/reference/labels-annotations-taints/#kubernetesiohostname"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "refs topology-spread-constraints.md: \"Honor: nodes without taints, along with tainted nodes for which the incoming pod has a toleration, are included.\" and \"The nodeTaintsPolicy became beta in 1.26 and graduated to GA in 1.33.\" Feature gate NodeInclusionPolicyInPodTopologySpread: stable, locked, fromVersion 1.33. Well-Known Taints: control-plane NoSchedule taint applied by kubeadm. GA before pinned 1.34, so no maturity note needed.",
+        "source": "refs/kubernetes-website: concepts/scheduling-eviction/topology-spread-constraints.md L196-208; feature-gates/NodeInclusionPolicyInPodTopologySpread.md; reference/labels-annotations-taints"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "kubernetes.io: \"labelSelector is used to find matching Pods. Pods that match this label selector are counted...\" and \"Only the Pods holding the same namespace as the incoming Pod can be matching candidates.\" helm template traefik-41.6.1 with traefik-ha-values.yaml: Pod template labels include `app.kubernetes.io/name: traefik`.",
+        "source": "https://kubernetes.io/docs/concepts/scheduling-eviction/topology-spread-constraints/ ; helm template traefik-41.6.1 -f deploy/k8s/lessons/traefik-ha-values.yaml"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Execution: `helm template traefik-ha traefik-41.6.1.tgz -n ha-lessons -f deploy/k8s/lessons/traefik-ha-values.yaml` renders Deployment `replicas: 2`, Pod spec `topologySpreadConstraints` (maxSkew 1, kubernetes.io/hostname, DoNotSchedule, Honor, matchLabels app.kubernetes.io/name: traefik), container `resources.requests cpu: 200m memory: 128Mi`, IngressClass `traefik-ha` with is-default-class \"false\", Service `type: LoadBalancer`.",
+        "source": "helm template of local chart cache traefik-41.6.1.tgz"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Execution: rendered Service traefik-ha (helm template, chart 41.6.1 + traefik-ha-values.yaml) has `type: LoadBalancer` and no externalTrafficPolicy field. A Service without the field reads `Cluster` on donhang: outputs/stage-3/scripts/k8s/external-traffic-policy.txt `echo-loadbalancer 172.22.255.202 Cluster`. metallb.io Layer 2: traffic goes to one node and \"kube-proxy spreads it across the service's pods\".",
+        "source": "helm template traefik-41.6.1; examples/don-hang/outputs/stage-3/scripts/k8s/external-traffic-policy.txt; https://metallb.io/concepts/layer2/"
+      },
+      {
+        "n": 10,
+        "verdict": "unverified",
+        "evidence": "Carried from round 1 (section 4 wording unchanged). Node part supported: node-status \"Unknown if the node controller has not heard from the node in the last node-monitor-grace-period (default is 50 seconds)\". Pod part not found: Nodes, Node Status and Pod Lifecycle pages say nothing about Pods being marked not ready or removed from EndpointSlices when a node goes Unknown. Lab record (last failure ~52 s after pause) is consistent but not direct evidence.",
+        "source": "https://kubernetes.io/docs/reference/node/node-status/ ; https://kubernetes.io/docs/concepts/architecture/nodes/ ; https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Execution record: DECISIONS.md §3 (/repo-stage 3 F2): 'traefik-ha lỗi cuối ~52 s sau pause' while ARP failover measured 6-14 s for metallb-layer2; so failures continue after the address moved. Capture traefik-ha.txt ends with 20 successes and 'announced by donhang-worker2'. The lesson prints no timing numbers (capture masks them). Mechanism attribution rests on claim 10.",
+        "source": "DECISIONS.md §3 2026-10-06; examples/don-hang/outputs/stage-3/scripts/k8s/traefik-ha.txt; scripts/k8s/traefik-ha.sh lines 35-38"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "kubernetes.io: default constraints apply only if the Pod \"doesn't define any constraints\"; built-in defaults: `maxSkew: 3, topologyKey: kubernetes.io/hostname, whenUnsatisfiable: ScheduleAnyway` and zone maxSkew 5 ScheduleAnyway. Known limitations: \"There's no guarantee that the constraints remain satisfied when Pods are removed... You can use a tool such as the Descheduler to rebalance\". Lesson says the scheduler does not move running Pods, which this supports.",
+        "source": "https://kubernetes.io/docs/concepts/scheduling-eviction/topology-spread-constraints/ (Built-in default constraints; Known limitations)"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "metallb.io Layer 2: \"layer 2 does not implement a load balancer.\" MetalLB only answers ARP/NDP for the IP; traffic goes to that node and kube-proxy spreads it across the service's pods. With no ready Traefik Pod there is nothing for kube-proxy to send to; staging chart default renders one replica (claim 1).",
+        "source": "https://metallb.io/concepts/layer2/"
+      },
+      {
+        "n": 14,
+        "verdict": "not-needed",
+        "evidence": "Opinion stated with its condition ('while one replica is down, the other carries all the traffic'); the lesson frames it as a consequence, not a rule. No documentation needed."
+      },
+      {
+        "n": 15,
+        "verdict": "not-needed",
+        "evidence": "Definitional framing of what 'high availability' means in this lesson, supported by the lab outcome (failed > 0, then recovery); no source needed."
+      },
+      {
+        "n": 16,
+        "verdict": "rephrased",
+        "evidence": "refs manage-resources-containers.md: \"The kubelet also reserves at least the request amount of that system resource specifically for that container to use.\" and \"If the node where a Pod is running has enough of a resource available, it's possible (and allowed) for a container to use more resource than its request\". Ledger text matches; lesson section 4 says 'sets aside only the request', which inverts the documented 'at least'.",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/configuration/manage-resources-containers.md L20-30",
+        "suggested_text": "The kubelet sets aside at least the request; above it, a replica can use more only when its node has that resource free."
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "kind.sigs.k8s.io: \"kind is a tool for running local Kubernetes clusters using Docker container 'nodes'.\" Docker Engine API (refs/docker-docs, ContainerPause): \"Use the cgroups freezer to suspend all processes in a container.\" A frozen node container stops answering; lab capture shows READY Unknown after the pause.",
+        "source": "https://kind.sigs.k8s.io/ ; refs/docker-docs/_vendor/github.com/moby/moby/api/docs (ContainerPause); outputs/stage-3/scripts/k8s/traefik-ha.txt"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "New in round 2 (changed text). Docs say the kubelet reserves at least the request; 'only the request' states the opposite bound. The point the sentence needs (nothing above the request is guaranteed) survives with 'at least' (claim 16).",
+        "quote": "The kubelet sets aside only the request; above it, a replica gets spare room on its node only if other Pods leave some.",
+        "fix": "Replace with: 'The kubelet sets aside at least the request; above it, a replica can use more only when its node has that resource free.'"
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-20T20:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (prompt 05, junior reader, round 2 targeted re-review)",
+    "issues": [],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

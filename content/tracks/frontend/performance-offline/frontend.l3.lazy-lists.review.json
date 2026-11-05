@@ -1,0 +1,82 @@
+{
+  "id": "frontend.l3.lazy-lists",
+  "technical": {
+    "reviewed_at": "2026-10-22T10:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Cookbook: \"In contrast to the default `ListView` constructor, which requires creating all items at once, the `ListView.builder()` constructor creates items as they're scrolled onto the screen.\" ListView API doc (Flutter 3.47.2 SDK doc comment): \"constructing the [List] requires doing work for every child that could possibly be displayed in the list view instead of just those children that are actually visible.\" The children list is an argument expression, evaluated before the constructor call.",
+        "source": "refs/flutter-website/sites/docs/src/content/cookbook/lists/long-lists.md; api.flutter.dev ListView (doc comment in C:/Flutter/flutter/packages/flutter/lib/src/widgets/scroll_view.dart:971-974)"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "API doc: \"the builder is called only for those children that are actually visible.\" Viewport doc: \"The viewport has an area before and after the visible area to cache items that are about to become visible\" (the 'near'). perf: \"use the lazy builder methods ... only the visible portion of the screen is built\". Probe, stage-3 code, 360x400, 10 000 products: 9 ProductTile on stage, 14 built in total (skipOffstage: false); 'Product 100' 0 widgets even with skipOffstage: false.",
+        "source": "scroll_view.dart:1360-1362 (ListView.builder doc); rendering/viewport.dart:578; refs .../perf/best-practices.md 'Be lazy!'; flutter test probe in DonHang.App (Flutter 3.47.2)"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "API doc 'Child elements' lifecycle': \"When a child is scrolled out of view, the associated element subtree, states and render objects are destroyed. A new child at the same position in the list will be lazily recreated along with new elements, states and render objects when it is scrolled back.\" Probe: after drag(0,-30000) 'Product 1' built=0 (20 tiles built in total); after dragging back, 'Product 1' on stage=1. ProductTile is a StatelessWidget with no KeepAlive.",
+        "source": "C:/Flutter/flutter/packages/flutter/lib/src/widgets/scroll_view.dart:1091-1105 (api.flutter.dev ListView); stage-3 product_tile.dart; flutter test probe"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "GridView.builder API doc: \"This constructor is appropriate for grid views with a large (or infinite) number of children because the builder is called only for those children that are actually visible.\" Docs: \"you can build the items on demand as they scroll into view ... check out ListView.builder or GridView.builder.\" Probe at width 900 (grid branch): 18 on stage, 30 built of 10 000.",
+        "source": "scroll_view.dart:2020-2023 (api.flutter.dev GridView.builder); refs/flutter-website/sites/docs/src/content/ui/layout/scrolling/index.md; flutter test probe"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "git show stage-3:DonHang.App/lib/widgets/product_catalog.dart: l.10 `wideLayoutMinWidth = 600`, l.11 `columnWidth = 300`, l.30 `if (constraints.maxWidth < wideLayoutMinWidth)` -> `ListView.builder(itemCount: products.length, itemBuilder: ... _tile(...))`, l.36 `(constraints.maxWidth / columnWidth).floor()`, l.38-41 `SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: columns, mainAxisExtent: Sizes.gridRow)`; tokens.dart l.22 `static const double gridRow = 72;` (fixed row height). l.49 `_tile` below the excerpt.",
+        "source": "examples/don-hang @ stage-3: DonHang.App/lib/widgets/product_catalog.dart; DonHang.App/lib/design/tokens.dart"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "git show stage-3:DonHang.App/test/product_catalog_test.dart l.56-69: 10000 products, `SizedBox(width: 360, height: 400, child: ProductCatalog(products: many))`, `find.text('Product 1'), findsOneWidget`, `find.text('Product 10000'), findsNothing`, `tester.widgetList(find.byType(ProductTile)).length, lessThan(30)`. Round 2: both lesson code blocks re-checked against l.26-47 and l.52-70, still character for character.",
+        "source": "examples/don-hang @ stage-3: DonHang.App/test/product_catalog_test.dart"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "`flutter test test/product_catalog_test.dart` (Flutter 3.47.2; lib/ and test/ at submodule HEAD identical to stage-3, diff stage-3..HEAD in DonHang.App touches only pubspec.yaml/lock): last line `00:01 +4: All tests passed!`. Same tree with `expect(find.text('Product 100'), findsOneWidget)`: `Expected: exactly one matching candidate  Actual: _TextWidgetFinder:<Found 0 widgets with text \"Product 100\": []>`, test fails on that expect.",
+        "source": "flutter test run in examples/don-hang/DonHang.App + scratch probe test against the same package"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "finders.dart: `Finder text(String text, {... bool skipOffstage = true})`, byType same default; \"If the `skipOffstage` argument is true (the default), then this skips ...\". Release notes: \"children of a viewport that are currently not visible in the viewport are now considered off-stage. To find them in a test, specify `skipOffstage: false` on the Finder.\" Round-1 probe: 9 on stage vs 14 built at 360x400. Round 2: claim reworded; same evidence covers all three expects.",
+        "source": "C:/Flutter/flutter/packages/flutter_test/lib/src/finders.dart:106-124; refs .../release-notes-0.0.21-1.0.0.md:156; widgets/sliver.dart:1289-1306; probe"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Conditional recommendation, not a bare ranking. Factual premise supported: \"When you have a long list of items ... you can build the items on demand as they scroll into view. This provides a much more performant scrolling experience.\" Probe: 10 000 products -> 14 tiles built at 360x400, 30 at 900 wide; tile count follows the box, not itemCount. Round 2 re-read of changed s2/s5/s6/s7/s9 and quiz q3/q4/q5: no new issue; opened product_catalog.dart, product_catalog_test.dart, product_tile.dart, tokens.dart @ stage-3.",
+        "source": "refs/flutter-website/sites/docs/src/content/ui/layout/scrolling/index.md; flutter test probe"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-22T12:00:00+07:00",
+    "reviewer": "review-junior",
+    "issues": [],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

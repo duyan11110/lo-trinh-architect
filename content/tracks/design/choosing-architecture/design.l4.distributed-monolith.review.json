@@ -1,0 +1,117 @@
+{
+  "id": "design.l4.distributed-monolith",
+  "technical": {
+    "reviewed_at": "2026-10-27T22:15:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "tools/extract-code at stage-3: DonHang.Domain/OrderMessage.cs, DonHang.Notifications/OrderMessage.cs and DonHang.Payments/Messages.cs each declare `public sealed record OrderMessage(int OrderId, string CustomerEmail, string CustomerName, DateTimeOffset OccurredAt);`. Notifications' comment: \"This service keeps its own copy of the shape instead of referencing DonHang.Domain\".",
+        "source": "examples/don-hang @ stage-3: DonHang.Domain/OrderMessage.cs, DonHang.Notifications/OrderMessage.cs, DonHang.Payments/Messages.cs"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "envs/production/kustomization.yaml @ stage-3, `images:` has six entries (donhang-api, donhang-migrate, donhang-notifications, donhang-notifications-migrate, donhang-payments, donhang-payments-migrate), each with its own newTag and digest; all six newTag = sha-25158b4d4f7cb9a5c0b944f5ea8482221a24b4be.",
+        "source": "examples/don-hang @ stage-3: deploy/gitops/config-repo-kustomize/envs/production/kustomization.yaml"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Round 2. base/db.yaml: one StatefulSet `db` (postgres:17.6-alpine). base/db-backup.yaml lines 53-54: `for db in donhang donhang_notifications donhang_payments; do pg_dump -Fc -h db -U donhang -d \"$db\" ...`. The claim now names the backup CronJob, and Try it answer 3 says it must learn the new server.",
+        "source": "examples/don-hang @ stage-3: deploy/gitops/config-repo-kustomize/base/db.yaml, base/db-backup.yaml, base/payments.yaml"
+      },
+      {
+        "n": 4,
+        "verdict": "not-needed",
+        "evidence": "Definitional framing of the anti-pattern taken from outline items 1-2; the lesson presents it as the lesson's checklist, not as a cited fact about a product."
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "DonHang.Domain/OrderService.cs @ stage-3 lines 43-50: \"Its handlers add their rows (an outbox message, say) to the same DbContext first; this one SaveChangesAsync then writes the order and those rows in one transaction\". The API never calls Notifications; OrderEventsConsumer consumes the queue with autoAck: false. Placing an order waits on no consumer.",
+        "source": "examples/don-hang @ stage-3: DonHang.Domain/OrderService.cs, DonHang.Notifications/OrderEventsConsumer.cs"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Round 2. OrdersController.cs: `return Accepted(ToDto(order));`. RefundRequestedConsumer.HandleAsync comment: \"Nothing calls the gateway here; that is RefundSender's job, a moment later\". RefundSender.cs line 58: `gateway.RefundAsync(refund, stoppingToken)`. GatewayRefundClient.cs: \"Where the payment gateway is and the key it gives Đơn Hàng\"; the lesson's \"payment provider\" is a fair plain rendering.",
+        "source": "examples/don-hang @ stage-3: DonHang.Api/Controllers/OrdersController.cs, DonHang.Payments/RefundRequestedConsumer.cs, RefundSender.cs, GatewayRefundClient.cs"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "ProjectReference @ stage-3: Api -> Domain, Infrastructure, Catalog, Messaging; Infrastructure -> Domain, Catalog, Messaging; Notifications -> Messaging only; Payments -> Messaging only. ModuleBoundaryTests.MessagingUsesNoDonHangProject asserts DonHang.Messaging references no DonHang.* assembly.",
+        "source": "examples/don-hang @ stage-3: *.csproj; DonHang.Tests/Architecture/ModuleBoundaryTests.cs lines 72-81"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Round 2. PostgreSQL 17 docs: \"A database cluster is a collection of databases that is managed by a single instance of a running database server.\" Lesson now says the server stopping \"takes all three databases down at once, and every service's work that needs its database fails together\"; the consumers nack and requeue failed work (`BasicNackAsync(..., requeue: true)`).",
+        "source": "https://www.postgresql.org/docs/17/creating-cluster.html; examples/don-hang @ stage-3 base/db.yaml, DonHang.Payments/RefundRequestedConsumer.cs"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Kubernetes docs, kustomization fields table: \"images | ... | Each entry is to modify the name, tags and/or digest for one image without creating patches\". ci.yml @ stage-3: publish job matrix lists the six images and pushes each as `$name:sha-$GITHUB_SHA` (lines 211-256), so one commit yields all six.",
+        "source": "refs/kubernetes-website/content/en/docs/tasks/manage-kubernetes-objects/kustomization.md line 1031; examples/don-hang @ stage-3 .github/workflows/ci.yml"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Round 3. Section 5 now says both readers reject a message whose CustomerEmail is missing. Both Read() call `JsonSerializer.Deserialize<OrderMessage>(body, JsonSerializerOptions.Web)` and throw PoisonMessageException when `string.IsNullOrEmpty(message.CustomerEmail)` (RefundRequestedConsumer.cs line 126; OrderEventsConsumer.cs line 133). .NET docs: \"A missing property doesn't throw an exception, even for non-nullable properties\".",
+        "source": "refs/dotnet-docs/docs/standard/serialization/system-text-json/nullable-annotations.md; examples/don-hang @ stage-3 RefundRequestedConsumer.cs, OrderEventsConsumer.cs"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Round 3. ModuleBoundaryTests.cs @ stage-3 lines 56-72 match the block verbatim. Prose line refs now in the block's numbering: line 64 = `var referenced = ...GetReferencedAssemblies()`, lines 60-61 = the two [InlineData], line 72 = the DonHang.Messaging comment. `.Where(name => name.StartsWith(\"DonHang.\") && name != \"DonHang.Messaging\")` then `Assert.Empty(referenced)`: a DonHang.Shared reference would fail.",
+        "source": "examples/don-hang @ stage-3: DonHang.Tests/Architecture/ModuleBoundaryTests.cs (tools/extract-code --lines 56-72)"
+      },
+      {
+        "n": 12,
+        "verdict": "not-needed",
+        "evidence": "Round 2. Row 1 now reads \"yes, but every service's next build carries every change to `Order`, used or not\", consistent with section 4 and ci.yml (all six images built per commit, each promotable alone). What remains is a comparative judgement with its costs stated, not a product fact."
+      },
+      {
+        "n": 13,
+        "verdict": "not-needed",
+        "evidence": "Conditional recommendations (\"unless...\", \"if one does...\"), stated as choices with their conditions. Section 7's factual sentence now reads \"would reach all three in their next build\", consistent with claim 12."
+      },
+      {
+        "n": 14,
+        "verdict": "not-needed",
+        "evidence": "Definitional: a container places a process; it says nothing about code or release dependencies. Round 3 targeted re-check found no issues; opened: lesson sections 4, 5, 9; tools/extract-code ModuleBoundaryTests.cs 56-72 and DonHang.Payments/Messages.cs @ stage-3; RefundRequestedConsumer.cs and OrderEventsConsumer.cs @ stage-3; meta claims 10-13."
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-27T23:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (prompt 05, junior reader, round 3 targeted)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": "design.l4.distributed-monolith.q4",
+        "kind": "quiz",
+        "text": "Carried from round 2, narrowed again. Explanation d no longer says the lesson weighs joint releases against merging back, but it now says joint releases are \"what is left\" when no move works. Section 7 says the opposite path: if no move works, the split may not pay for itself and the next question is merging back. I cannot find \"living with joint releases\" anywhere in the lesson.",
+        "quote": "Joint releases are what is left only when no move of the knowledge removes the change in step, and the lesson asks that question first.",
+        "fix": "Replace the last sentence of explanation d with \"The lesson asks first whether moving the knowledge removes the change in step.\" Update vi to match."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

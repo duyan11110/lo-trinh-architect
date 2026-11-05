@@ -1,0 +1,178 @@
+{
+  "id": "backend.l3.rate-limiting",
+  "technical": {
+    "reviewed_at": "2026-10-19T15:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "rate-limit.md: \"Apply the [EnableRateLimiting] attribute to a controller, action method, or Razor Page.\" and \"enable the rate limiting middleware by calling UseRateLimiter\". Repo: OrdersController.cs line 34 [EnableRateLimiting(\"orders\")]; Program.cs 152 AddPolicy(\"orders\", ...), 210 UseRateLimiter().",
+        "source": "refs/aspnetcore-docs/aspnetcore/performance/rate-limit.md (lines 101, 497)"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "rate-limit.md: \"The AddFixedWindowLimiter method uses a fixed time window to limit requests. When the time window expires, a new time window starts and the request limit resets.\"",
+        "source": "refs/aspnetcore-docs/aspnetcore/performance/rate-limit.md (line 180)"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "rate-limit.md: \"When you enable queuing, if a request exceeds the rate limit, the system places it in a queue. The request waits in the queue until a permit becomes available or a timeout occurs.\" and QueueLimit \"set this to 0 to disable the queueing mechanism\". Program.cs: QueueLimit appears only for catalogReads (147, 165), never in the orders policy (150-161). Captured rate-limit.txt: the 11th order gets 429 at once.",
+        "source": "refs/aspnetcore-docs/aspnetcore/performance/rate-limit.md lines 192, 479; examples/don-hang DonHang.Api/Program.cs; outputs/stage-3/scripts/backend/rate-limit.txt"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "API reference RateLimiterOptions.RejectionStatusCode (aspnetcore-10.0): \"Gets or sets the default status code to set on the response when a request is rejected. Defaults to Status503ServiceUnavailable.\" rate-limit-samples.md: \"The default rejected status is 503 Service Unavailable.\"",
+        "source": "learn.microsoft.com/dotnet/api/microsoft.aspnetcore.ratelimiting.ratelimiteroptions.rejectionstatuscode?view=aspnetcore-10.0; refs/aspnetcore-docs/aspnetcore/performance/rate-limit-samples.md line 41"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "RejectionStatusCode remarks (aspnetcore-10.0): \"This status code will be set before OnRejected is called, so any status code set by OnRejected will 'win' over this default.\" Short-circuit confirmed by the repo test RateLimitTests: third order 429 and \"Assert.Equal(2, await db.Orders.CountAsync())\".",
+        "source": "learn.microsoft.com/dotnet/api/microsoft.aspnetcore.ratelimiting.ratelimiteroptions.rejectionstatuscode?view=aspnetcore-10.0; examples/don-hang DonHang.Tests/Integration/RateLimitTests.cs"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "rate-limit-samples.md: \"retryAfter can be used with the TokenBucketRateLimiter, Fixed Window Limiter, and Sliding Window Limiter because these algorithms are able to estimate when more permits are added. The ConcurrencyLimiter has no way of calculating when permits are available.\" Program.cs line 175 uses context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter); RateLimitTests asserts Retry-After present.",
+        "source": "refs/aspnetcore-docs/aspnetcore/performance/rate-limit-samples.md line 19"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "GetNoLimiter API ref: \"Defines a partition that will not have a rate limiter. This means any calls to AttemptAcquire ... or AcquireAsync ... will always succeed for the given partitionKey.\" rate-limit.md: \"Each distinct key creates and caches its own limiter\"; samples use options.AddPolicy(name, httpContext => RateLimitPartition...) and RateLimitPartition.GetFixedWindowLimiter(partitionKey, factory).",
+        "source": "learn.microsoft.com/dotnet/api/system.threading.ratelimiting.ratelimitpartition.getnolimiter?view=net-10.0; rate-limit.md lines 66, 398-405"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Program.cs 140: `var ordersLimit = new FixedWindowRateLimiterOptions { PermitLimit = 10, Window = TimeSpan.FromMinutes(1) };` 141 binds RateLimiting:Orders; 154 FindFirst(\"sub\"); 155 GetNoLimiter(\"signed-out\"). docker-compose.yml 198: RateLimiting__Orders__Window: \"00:00:10\". Read from the submodule working tree (git show denied by permissions); files last modified 2026-10-06, before refs/tags/stage-3 was written 2026-10-07.",
+        "source": "examples/don-hang DonHang.Api/Program.cs 135-161; docker-compose.yml 195-198"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Program.cs 177: StatusCode = StatusCodes.Status429TooManyRequests; 178: Headers.RetryAfter = ((int)Math.Ceiling(retryAfter.TotalSeconds)).ToString(); no assignment of RejectionStatusCode anywhere in Program.cs (Grep). Same working-tree caveat as claim 8.",
+        "source": "examples/don-hang DonHang.Api/Program.cs 168-181"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Program.cs 133 .WithExposedHeaders(\"Retry-After\"); 206 app.UseAuthentication(); 210 app.UseRateLimiter(); 211 app.UseAuthorization(). OrdersController.cs 33 [Authorize], 34 [EnableRateLimiting(\"orders\")].",
+        "source": "examples/don-hang DonHang.Api/Program.cs; DonHang.Api/Controllers/OrdersController.cs"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "cors.md: \"By default, the browser doesn't expose all of the response headers to the app.\" ... \"To make other headers available to the app, call WithExposedHeaders\". Retry-After is not in the listed simple response headers (Cache-Control, Content-Language, Content-Type, Expires, Last-Modified, Pragma).",
+        "source": "refs/aspnetcore-docs/aspnetcore/security/cors.md lines 251-264"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "proxy-load-balancer.md: \"Because an app receives a request from the proxy and not its true source ... the originating client IP address must also be forwarded in a header.\" XFF row: \"The last proxy's IP address ... are available as the remote IP address at the transport layer.\" Repo: no UseForwardedHeaders / ForwardedHeaders / ASPNETCORE_FORWARDEDHEADERS_ENABLED anywhere (Grep).",
+        "source": "refs/aspnetcore-docs/aspnetcore/host-and-deploy/proxy-load-balancer.md lines 22, 34"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "rate-limit.md: \"Each distinct key creates and caches its own limiter, so partitioning on unbounded user-controlled input can exhaust memory\" — the limiter state is an object in the process's memory; the docs describe no shared/distributed store. Program.cs 138-139 comment says the same.",
+        "source": "refs/aspnetcore-docs/aspnetcore/performance/rate-limit.md lines 400-402"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "deploy/k8s/api.yaml line 11 `replicas: 2`. The claim, and §4 as rewritten (\"as it will on a cluster with `replicas: 2`\"), no longer say that this manifest's image runs the stage-3 limiter.",
+        "source": "examples/don-hang deploy/k8s/api.yaml"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "rate-limit-samples.md: \"OnRejected uses OnRejectedContext to set the response status to 429 Too Many Requests. The default rejected status is 503 Service Unavailable.\" and \"Sets RateLimiterOptions.RejectionStatusCode to 429 Too Many Requests.\" rate-limit.md line 448: options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;",
+        "source": "refs/aspnetcore-docs/aspnetcore/performance/rate-limit-samples.md lines 41, 55; rate-limit.md lines 448, 464"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "RFC 9110 §15.6.4: \"The 503 (Service Unavailable) status code indicates that the server is currently unable to handle the request due to a temporary overload or scheduled maintenance\". §10.2.3: \"Servers send the Retry-After header field to indicate how long the user agent ought to wait before making a follow-up request.\" \"The Retry-After field value can be either an HTTP-date or a number of seconds to delay\".",
+        "source": "refs/rfc/rfc9110.txt lines 4801-4812, 7888-7892"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "prometheus-net README, ASP.NET Core HTTP request metrics: \"Total number of received HTTP requests.\" ... \"By default, metrics are collected separately for each response status code.\" Program.cs 195 app.UseHttpMetrics() is first in the pipeline.",
+        "source": "https://github.com/prometheus-net/prometheus-net (README)"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "OrdersController.cs 44-46: \"From stage-3 unitPriceVnd is still accepted ... but it is ignored: OrderService takes each price from Catalog.\"",
+        "source": "examples/don-hang DonHang.Api/Controllers/OrdersController.cs 43-51"
+      },
+      {
+        "n": 19,
+        "verdict": "verified",
+        "evidence": "outputs/stage-3/scripts/backend/rate-limit.txt: \"201 Created, 10 times\" / \"then: 429 Retry-After: ...\" / customer 2 \"201\" / customer 5 after the wait \"201\". Script: loop until non-201, one order as chau (customer 2), sleep \"$retry_after\", one more as khanh.",
+        "source": "examples/don-hang scripts/backend/rate-limit.sh; outputs/stage-3/scripts/backend/rate-limit.txt"
+      },
+      {
+        "n": 20,
+        "verdict": "not-needed",
+        "evidence": "Conditioned recommendation (\"when every request arrives through a reverse proxy that the api does not read client addresses from\"); its factual premise is claim 12, verified.",
+        "source": "lesson §6"
+      },
+      {
+        "n": 21,
+        "verdict": "not-needed",
+        "evidence": "Conditioned judgement (\"acceptable when the limit only has to stop one customer from flooding the api, not count exactly\"); its factual premise is claim 13, verified.",
+        "source": "lesson §6"
+      },
+      {
+        "n": 22,
+        "verdict": "verified",
+        "evidence": "RFC 7519 §4.1.2 (WebFetch summary): \"The \\\"sub\\\" (subject) claim identifies the principal that is the subject of the JWT.\" Repo: OrderOwnerHandler.cs 28-29 `var subject = context.User.FindFirstValue(\"sub\");` then `customers.FindByIdentitySubjectAsync(subject)`; Program.cs 154 FindFirst(\"sub\").",
+        "source": "https://www.rfc-editor.org/rfc/rfc7519 §4.1.2; examples/don-hang DonHang.Api/Authorization/OrderOwnerHandler.cs 28-29"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "code",
+        "text": "Carried from round 1. Repo comment, not lesson text. scripts/backend/rate-limit.sh lines 20-21 say Retry-After is \"in how many seconds the window ends\". The ASP.NET Core 11 release notes say a FixedWindowRateLimiter RetryAfter that \"accurately reflects the next window boundary\" is new in 11, so on the pinned 10.0 it is not guaranteed to be the time left in the window. The lesson correctly avoids this reading; already listed in meta repo_changes_needed.",
+        "quote": "Retry-After says in how many seconds the window ends",
+        "fix": "Propose a repo change via prompt 08: reword rate-limit.sh lines 20-21 to \"429, and Retry-After says how many seconds to wait (rounded up)\". Keep the lesson wording as it is."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-19T16:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (prompt 05, junior reader, round 2 targeted)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "example",
+        "text": "Carried from round 1. \"a whole number of seconds\" is checkable but open-ended. The lesson says the lab window is 10 seconds, so I would expect at most 10. Saying so would let me tell a correct run from a wrong one. (Apply-review skipped this because the value is not documented; left as minor.)",
+        "quote": "then `429` with `Retry-After` and a whole number of seconds.",
+        "fix": "If a bound can be stated, change to \"…a whole number of seconds, no more than the lab's 10-second window\"; otherwise leave as is."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

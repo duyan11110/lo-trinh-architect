@@ -10,13 +10,13 @@ title: "Transactions: all or nothing"
 duration_min: 12
 skills: [foundation.sql.transaction]
 prereqs: [foundation.l1.sql-write]
-related: [backend.l2.transactions-in-practice, design.l3.outbox-pattern]
+related: [backend.l2.transactions-in-practice, backend.l3.outbox-pattern]
 vocab: [transaction]
 example_tag: stage-0
 versions_used: [postgresql]
 content_version: 1
-status: approved
-approved_by: auto
+status: published
+approved_by: owner
 reviewed_at: "2026-09-28T14:00:00+07:00"
 ---
 
@@ -105,7 +105,7 @@ Expected result: the first run prints `orders_before` 12, `orders_inside_transac
 - [[foundation.l1.sql-write]] — the lesson this one completes: there you made one row change at a time, here you decide which changes stand together.
 - [[foundation.l1.tables-keys-relations]] — the foreign key declared there is why an order and its items have to be written as one unit.
 - [[backend.l2.transactions-in-practice]] — the same idea in application code, where the block is opened by code instead of by a line in a file.
-- [[design.l3.outbox-pattern]] — the answer to what you do when the two things that must happen together are a database write and a message to another system, which no single transaction covers.
+- [[backend.l3.outbox-pattern]] — the answer to what you do when the two things that must happen together are a database write and a message to another system, which no single transaction covers.
 
 ## Five-line summary
 

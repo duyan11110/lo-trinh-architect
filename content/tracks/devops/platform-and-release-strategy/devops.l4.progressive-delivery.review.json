@@ -1,0 +1,157 @@
+{
+  "id": "devops.l4.progressive-delivery",
+  "technical": {
+    "reviewed_at": "2026-10-27T19:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "canary-checks.md: table rows 17-19 '| 1 | 90 | 10 | 200 request (giả định) |', '| 2 | 50 | 50 |...', '| 3 | 0 | 100 |...'; l.38-40 'không vượt tỉ lệ 5xx của bản stable ... quá 1 điểm phần trăm (giả định). Ví dụ: bản stable có 0,2% 5xx thì canary được tới 1,2%'; l.56-58 'cách giới hạn dưới 0,5 điểm phần trăm ... Canary phục vụ thêm 200 request rồi xét lại. Vẫn sát thì người phát hành quyết'; l.6 'Mọi con số trong file này là giả định'.",
+        "source": "examples/don-hang docs/design/canary-checks.md @ stage-4 (HEAD = refs/tags/stage-4 = 828fdeb)"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "canary-checks.md l.4-6 'Các giới hạn được viết trước khi bản phát hành bắt đầu, và không ai đổi chúng trong lúc đang phát hành'; l.53-55 'Vượt giới hạn: commit trọng số api-canary về 0 ngay, không chờ hỏi ai. Bản stable vẫn chạy đủ số Pod nên nhận lại toàn bộ request; chỉ những request canary đã phục vụ là gặp lỗi.'",
+        "source": "docs/design/canary-checks.md @ stage-4"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "canary-checks.md l.28-33 'sau 20 request, một lỗi là 5%; sau 200 request, cùng một lỗi là 0,5% ... một bước để mười phút lúc vắng khách có thể chỉ có vài chục request.' Arithmetic 1/20 = 5%, 1/200 = 0.5% checked.",
+        "source": "docs/design/canary-checks.md @ stage-4"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "canary-checks.md l.42-44 'Canary được so với bản stable chứ không so với 0, vì lỗi của thứ cả hai bản cùng dùng (PostgreSQL, Redis, Keycloak) chạm cả hai bản như nhau'. canary-steps.sh l.84 limit = s + m (margin 1.0); l.86 '(c > l) ? \"over\" : (c > l - n) ? \"close\" : \"within\"' with n = close = 0.5: gap above 1.0 is over, above 0.5 up to 1.0 is close, at most 0.5 is within. Round 2: lesson s8 'the gap stayed under half a point, well inside the one-point margin' is consistent.",
+        "source": "docs/design/canary-checks.md; scripts/devops/canary-steps.sh @ stage-4"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "canary-checks.md l.76-82 'Mỗi request canary trả 5xx được tính vào error budget của api trong slo.md như mọi request khác ... Khi budget của api đã hết, chính sách trong slo.md chỉ cho phát hành bản sửa lỗi. Bản sửa lỗi vẫn đi đủ ba bước'. slo.md l.26 S3 counts the catalog-reads 503 as bad; l.93 policy 'phát hành sửa lỗi và việc tăng độ tin cậy'.",
+        "source": "docs/design/canary-checks.md, docs/design/slo.md @ stage-4"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Pinned Gateway API CRD v1.6.2 (deploy/gateway-api/standard-install.yaml l.6228-6237): 'Weight specifies the proportion of requests forwarded to the referenced backend. This is computed as weight/(sum of all weights in this BackendRefs list) ... If weight is set to 0, no traffic should be forwarded for this entry.' With the same incoming requests, weight 50 gives api-canary five times the share of weight 10 (s4 'so 50 tests it under more at once'). Script l.64-67, l.51 as stated.",
+        "source": "examples/don-hang deploy/gateway-api/standard-install.yaml @ stage-4; https://gateway-api.sigs.k8s.io/guides/traffic-splitting/"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "canary-steps.sh l.13-16 comment '(assumed numbers, written before the release)'; l.17-19 'minimum=200', 'margin=1.0', 'close=0.5'; l.67-70 set_backends, config_commit, 'sync_app edge-staging', wait_route; l.75 'batch=$((needed * 100 / canary_weight))', l.76 'read_products \"$batch\"'.",
+        "source": "scripts/devops/canary-steps.sh @ stage-4"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "canary-steps.sh l.73 'needed=$minimum' (meta says l.74; the lesson cites no line for it), l.77-80 scrapes and served, l.81 '[ \"$canary_all\" -lt \"$needed\" ] && continue' back to l.75-76, l.84 limit, l.86 awk verdict, l.87-90 first close -> needed=$((canary_all + minimum)), l.97-101 over -> stop_canary, l.102-106 close -> echo '  still close to the limit: the person releasing decides; the script stops here', stop_canary, result=stopped.",
+        "source": "scripts/devops/canary-steps.sh @ stage-4"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "canary-steps.sh l.48 'share() { awk ... if (all == 0) print \"0.0\"; ...'; at canary weight 100 api has weight 0, so stable share 0.0 and l.84 gives limit 1.0. canary-steps.txt l.13 'api-canary served 200, 5xx 0.0%; api served 0, 5xx 0.0%; limit 1.0%'. With no stable requests, a shared-dependency fault raises only the canary's share, so it counts against the canary (follows from l.84-86).",
+        "source": "scripts/devops/canary-steps.sh; outputs/stage-4/scripts/devops/canary-steps.txt"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "canary-steps.txt l.4-6 '== step 1: commit the route api: api 90, api-canary 10' / 'api-canary served 200, 5xx 0.0%; api served 1800, 5xx 0.0%; limit 1.0%' / 'within the limit: next step'; l.12-14 step 3 lines; l.24 'release: passed'. Lesson output block equals these lines with '...' elisions.",
+        "source": "examples/don-hang outputs/stage-4/scripts/devops/canary-steps.txt"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "canary-steps.sh l.28 perl inserts RateLimiting__CatalogReads__PermitLimit \"1\" and QueueLimit \"0\" into envs/staging/api-canary.yaml only. Program.cs l.147-148 binds GetSection(\"RateLimiting:CatalogReads\") into the catalog-reads ConcurrencyLimiterOptions. ASP.NET Core config docs: 'A double underscore (__) ... is automatically converted into a colon (:)'. (source_hint path 'src/DonHang.Api' is wrong; file is DonHang.Api/Program.cs.)",
+        "source": "canary-steps.sh, DonHang.Api/Program.cs @ stage-4; refs/aspnetcore-docs/aspnetcore/fundamentals/configuration/index.md l.276"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "rate-limit.md l.276 'The concurrency limiter limits the number of concurrent requests. Each request reduces the concurrency limit by one. When a request completes, the limit is increased by one.' rate-limit-samples.md l.41 'The default rejected status is 503 Service Unavailable.' Program.cs OnRejected (l.173-181) only switches to 429 when the lease has RetryAfter metadata; the concurrency limiter's refusals stay 503.",
+        "source": "refs/aspnetcore-docs/aspnetcore/performance/rate-limit.md; rate-limit-samples.md; DonHang.Api/Program.cs @ stage-4"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "scripts/lib/release.sh l.172-175 'read_products() { local count=$1 parallel=${2:-20} ... curl -s --parallel --parallel-max \"$parallel\"'; canary-steps.sh l.76 calls it with one argument, so 20 in parallel. canary-steps-bad.txt step 1 ends 'over the limit', consistent with reads being refused.",
+        "source": "scripts/lib/release.sh @ stage-4"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "canary-steps-bad.txt l.9 'api-canary served 200, 5xx ...%; api served 1800, 5xx 0.0%; limit 1.0%', l.10 'over the limit: api-canary back to weight 0, the release stops', l.11 'route api: api weight 100, api-canary weight 0', no '== step 2', l.18 'release: stopped'. canary-steps.sh l.86: over means c > l, so a real run prints a share above 1.0%.",
+        "source": "examples/don-hang outputs/stage-4/scripts/devops/canary-steps-bad.txt; scripts/devops/canary-steps.sh @ stage-4"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "Round 2: lesson s5 now attributes the point to the repo. canary-checks.md l.87-89 'Đội không dùng controller chạy canary tự động trong cluster: mỗi bước là một commit, nên lịch sử repo cấu hình cho biết bước nào chạy lúc nào và ai quyết.' content/versions.yaml has no key for such a tool. Script l.67-69 commits each weight and syncs edge-staging.",
+        "source": "docs/design/canary-checks.md @ stage-4; content/versions.yaml"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "canary-steps.sh l.50-56 stop_canary only runs set_backends api 100 api-canary 0, config_commit, sync_app edge-staging, wait_route; nothing scales Deployment api. canary-checks.md l.54 'Bản stable vẫn chạy đủ số Pod nên nhận lại toàn bộ request'.",
+        "source": "scripts/devops/canary-steps.sh; docs/design/canary-checks.md @ stage-4"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "canary-checks.md l.86-87 'Tài liệu này chỉ áp cho api, thành phần nhận request qua Gateway. Notifications và Payments phát hành bằng rolling update (ADR 0019).' ADR 0019 l.41 'Notifications và Payments: rolling update.'",
+        "source": "docs/design/canary-checks.md; docs/adr/0019-chien-luoc-phat-hanh-theo-thanh-phan.md @ stage-4"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "Grounded in the repo document, not general practice: canary-checks.md l.4-6 '... không ai đổi chúng trong lúc đang phát hành'; l.80-82 'Bản sửa lỗi vẫn đi đủ ba bước ở trên: một bản sửa hỏng sẽ tiêu thêm vào budget đã hết.' 'Send reads yourself' matches what the script does (l.75-76).",
+        "source": "docs/design/canary-checks.md @ stage-4"
+      },
+      {
+        "n": 19,
+        "verdict": "verified",
+        "evidence": "Round 2: tool column now reads 'Whatever the tool's configuration sets', 'What its configuration says, applied by the tool', 'Depends on the tool', 'One more component, not in Đơn Hàng's pinned versions'; no feature of an unnamed tool is asserted. Script and eye columns match canary-steps.sh l.64-106 and canary-checks.md l.21-23, 52-58, 87-89. versions.yaml pins no canary tool. Quiz q4 explanation e (en/vi) no longer asserts a tool feature.",
+        "source": "content/versions.yaml; docs/design/canary-checks.md; scripts/devops/canary-steps.sh @ stage-4"
+      },
+      {
+        "n": 20,
+        "verdict": "verified",
+        "evidence": "release.sh l.39-41 'if [ ! -f \"$config_repo/envs/staging/kustomization.yaml\" ]; then echo \"the config repository is not in the Kustomize layout yet: run scripts/k8s/kustomize-config-repo.sh first\" >&2; exit 1'. canary-steps.sh calls sync_app at l.35, 53, 69, 121, 122.",
+        "source": "scripts/lib/release.sh; scripts/devops/canary-steps.sh @ stage-4"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-27T20:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior reader)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "text": "Round 2, new in changed text. Section 4 and the diagram node H say that on a second close 'the person releasing decides', which reads as if the canary keeps its weight while I choose. Section 5 then says the script already calls stop_canary on a second close, so the weight is 0 before anyone decides. I had to reconcile the two: what is left to decide, and is the canary still serving meanwhile?",
+        "quote": "still close, and the person releasing decides.",
+        "fix": "Change the end of that sentence to say the script commits the canary's weight back to 0 and the person releasing then decides whether to run the release again, so section 4 matches section 5."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

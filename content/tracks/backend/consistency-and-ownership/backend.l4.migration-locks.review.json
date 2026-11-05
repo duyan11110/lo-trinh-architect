@@ -1,0 +1,135 @@
+{
+  "id": "backend.l4.migration-locks",
+  "technical": {
+    "reviewed_at": "2026-10-28T23:45:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Round 2: claim and section 4 now read \"Every statement that reads or changes a table first takes a table lock on it.\" Docs: SELECT \"acquires a lock of this mode on referenced tables\"; UPDATE/DELETE/INSERT/MERGE acquire ROW EXCLUSIVE on the target table; \"Once acquired, a lock is normally held until the end of the transaction.\"",
+        "source": "https://www.postgresql.org/docs/17/explicit-locking.html (13.3.1 Table-Level Locks)"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "ACCESS SHARE: \"Conflicts with the ACCESS EXCLUSIVE lock mode only. The SELECT command acquires a lock of this mode on referenced tables.\"",
+        "source": "https://www.postgresql.org/docs/17/explicit-locking.html (13.3.1, ACCESS SHARE)"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "SHARE: \"Conflicts with the ROW EXCLUSIVE, SHARE UPDATE EXCLUSIVE, ... lock modes. ... Acquired by CREATE INDEX (without CONCURRENTLY).\" ROW EXCLUSIVE: \"The commands UPDATE, DELETE, INSERT, and MERGE acquire this lock mode\". CREATE INDEX: \"Other transactions can still read the table, but if they try to insert, update, or delete rows in the table they will block until the index build is finished.\" Output step 1: SELECT -> 200000, INSERT -> lock timeout.",
+        "source": "https://www.postgresql.org/docs/17/explicit-locking.html; https://www.postgresql.org/docs/17/sql-createindex.html; outputs/stage-4/scripts/backend/migration-locks.txt"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "ALTER TABLE Notes: \"An ACCESS EXCLUSIVE lock is acquired unless explicitly noted.\" ADD COLUMN carries no lower-lock note. ACCESS EXCLUSIVE: \"Conflicts with locks of all modes (ACCESS SHARE, ROW SHARE, ...). This mode guarantees that the holder is the only transaction accessing the table in any way.\"",
+        "source": "https://www.postgresql.org/docs/17/sql-altertable.html; https://www.postgresql.org/docs/17/explicit-locking.html"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Not stated in 13.3 (the page only says a transaction \"will wait indefinitely for conflicting locks to be released\"). Settled by execution: captured output step 3 at stage-4 shows \"C waits for a lock, behind B: yes\" (until_state C relation succeeded while A held only the SELECT lock), then \"B: ERROR:  canceling statement due to lock timeout\", then \"C, once B gave up: 200000\". Not re-run: Docker engine not running on review host.",
+        "source": "examples/don-hang outputs/stage-4/scripts/backend/migration-locks.txt; scripts/backend/migration-locks.sh @ stage-4 lines 56-77"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "\"Abort any statement that waits longer than the specified amount of time while attempting to acquire a lock on a table, index, row, or other database object. ... A value of zero (the default) disables the timeout.\" Error text from captured output: \"ERROR:  canceling statement due to lock timeout\".",
+        "source": "https://www.postgresql.org/docs/17/runtime-config-client.html (lock_timeout); outputs/stage-4/scripts/backend/migration-locks.txt"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "\"Before each table scan, the index build must wait for existing transactions that have modified the table to terminate. After the second scan, the index build must wait for any transactions that have a snapshot ... predating the second scan to terminate\"; \"requires more total work than a standard index build and takes significantly longer\". Round-2 section 4 wording (\"waits for transactions already open when it started, so one long open transaction stalls it\") is supported: such a transaction predates the second scan.",
+        "source": "https://www.postgresql.org/docs/17/sql-createindex.html (Building Indexes Concurrently)"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "\"a regular CREATE INDEX command can be performed within a transaction block, but CREATE INDEX CONCURRENTLY cannot.\" Captured output step 2: \"ERROR:  CREATE INDEX CONCURRENTLY cannot run inside a transaction block\", then \"and on its own\" / \"created\" with the same name orders_status_idx (line 53), so the refusal left no index.",
+        "source": "https://www.postgresql.org/docs/17/sql-createindex.html; outputs/stage-4/scripts/backend/migration-locks.txt"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "\"If a problem arises while scanning the table, such as a deadlock or a uniqueness violation in a unique index, the CREATE INDEX command will fail but leave behind an 'invalid' index. This index will be ignored for querying purposes because it might be incomplete; however it will still consume update overhead.\" \"The recommended recovery method ... is to drop the index and try again\". Round 2: sections 3, 4, 11 now carry the build-failure condition.",
+        "source": "https://www.postgresql.org/docs/17/sql-createindex.html (Building Indexes Concurrently)"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "refs mirror, exact: \"In most cases, EF Core will automatically wrap each migration in its own transaction when applying migrations. Unfortunately, some migration operations cannot be performed within a transaction in some databases; for these cases, you may opt out of the transaction by passing `suppressTransaction: true` to `migrationBuilder.Sql`.\" Note: EF Core 9 spanned all migrations in one transaction, \"reverted in EF Core 10\"; either way the SQL runs in a transaction, so pinned 10.0 is fine.",
+        "source": "refs/efcore-docs/entity-framework/core/managing-schemas/migrations/managing.md:208-211"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "pg_stat_activity: \"One row per server process\". Table 27.11 Wait Events of Type Lock: \"relation — Waiting to acquire a lock on a relation.\" Table 27.13 Timeout: \"PgSleep — Waiting due to a call to pg_sleep or a sibling function.\" Script until_state filters pg_stat_activity on application_name and wait_event (lines 17-25), matching the round-2 helper prose.",
+        "source": "https://www.postgresql.org/docs/17/monitoring-stats.html; scripts/backend/migration-locks.sh @ stage-4"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Source at stage-4: line 41 BEGIN; CREATE INDEX ...; pg_sleep(60) with no COMMIT; line 26 comment \"end a session that is still sleeping in its transaction (it rolls back)\", line 27 pg_terminate_backend; until_state lines 16-25 poll wait_event; lock_timeout '2s' line 45, '5s' line 65; session() lines 11-15 one psql --command with PGAPPNAME; lines 6-9 perf-db.sh --if-missing. Output prints 200000.",
+        "source": "scripts/backend/migration-locks.sh @ stage-4; outputs/stage-4/scripts/backend/migration-locks.txt"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Argo CD 3.1 sync waves page: Sync hooks: \"If any of them fails the whole sync process will be marked as failed.\" Waves: \"Argo CD determines the number of the first wave to apply. This is the first number where any resource is out-of-sync or unhealthy.\" Repo: migrate hook is hook: Sync, wave 1; api wave 2 (base/migrate-hook.yaml, api.yaml). Execution analogue: dr-drill output \"the api (wave 2): never applied, the sync stops at wave 0\".",
+        "source": "https://argo-cd.readthedocs.io/en/release-3.1/user-guide/sync-waves/; examples/don-hang deploy/gitops/config-repo-kustomize/base @ stage-4; outputs/stage-4/scripts/devops/dr-drill-without-sealing-key.txt"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "Each cell traces to verified claims 3, 7, 8, 9, 10: plain build blocks writes and is faster (\"takes significantly longer\" for CONCURRENTLY), concurrent build waits for existing transactions, cannot run in a transaction block, leaves an invalid index on scan failure. Planned-outage row is definitional.",
+        "source": "https://www.postgresql.org/docs/17/sql-createindex.html"
+      },
+      {
+        "n": 15,
+        "verdict": "not-needed",
+        "evidence": "Conditional recommendations tied to stated conditions; facts rest on claims 3, 6, 7, 10. Round 2 (targeted) opened: round1 change log, lesson sections 3, 4, 5, 7, 11, quiz q3-q6, script at stage-4 (lines 1-77), PG17 sql-createindex (WebFetch), meta claims 1, 7, 8, 11, 12. All 5 round-1 issues fixed; no new issue in changed parts.",
+        "source": "lesson sections 7, 8"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-28T23:55:00+07:00",
+    "reviewer": "review-junior (claude-opus-5-5)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "code",
+        "text": "Carried from round 1. The output line ends with 'at character 40', which the prose never mentions, while step 3's similar error does not have it. I wonder whether it means something different.",
+        "quote": "ERROR:  canceling statement due to lock timeout at character 40",
+        "fix": "Add half a sentence after the output: what 'at character 40' points to, or that it only marks the position in the INSERT text and changes nothing."
+      },
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "style",
+        "text": "Carried from round 1, partly fixed. Lines 41, 43 and 67 now quote a few words, but lines 45-46, 47, 51, 53 and 71 are still given by number only, so I still count from the block's first line to find them.",
+        "quote": "Line 51 sends the concurrent build inside `BEGIN` and `COMMIT`.",
+        "fix": "Quote a few words next to the remaining numbers, e.g. \"line 47 (`end A`)\", \"Line 51 (`BEGIN; CREATE INDEX CONCURRENTLY ...`)\", \"line 71 (`until_state C relation`)\"."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

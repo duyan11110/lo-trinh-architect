@@ -1,0 +1,178 @@
+{
+  "id": "backend.l3.bulkhead",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-10-19T12:00:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "ConcurrencyLimiter allows at most PermitLimit leases at once; a lease is held until disposed. Up to QueueLimit further requests wait for a permit; a request that finds the queue full is rejected at once.",
+      "kind": "behavior",
+      "source_hint": "API reference: System.Threading.RateLimiting.ConcurrencyLimiter, ConcurrencyLimiterOptions (PermitLimit, QueueLimit); ASP.NET Core docs: Rate limiting middleware, 'Concurrency limiter'",
+      "version_key": "dotnet",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 2,
+      "text": "The rate limiting middleware acquires the lease before the endpoint runs and releases it when the request ends, so a concurrency limiter counts requests in progress, not requests per period.",
+      "kind": "behavior",
+      "source_hint": "ASP.NET Core docs: Rate limiting middleware, 'Concurrency limiter' (limits concurrent requests)",
+      "version_key": "aspnetcore",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 3,
+      "text": "options.AddConcurrencyLimiter(policyName, configure) registers a policy backed by one ConcurrencyLimiter shared by every request to endpoints using that policy (no per-caller partition).",
+      "kind": "syntax",
+      "source_hint": "API reference: Microsoft.AspNetCore.RateLimiting.RateLimiterOptionsExtensions.AddConcurrencyLimiter; Rate limiting middleware docs",
+      "version_key": "aspnetcore",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 4,
+      "text": "RateLimiterOptions.RejectionStatusCode defaults to 503; a ConcurrencyLimiter's failed lease carries no MetadataName.RetryAfter, so Program.cs's OnRejected (lines 173-181) leaves the status at 503.",
+      "kind": "behavior",
+      "source_hint": "API reference: RateLimiterOptions.RejectionStatusCode; ConcurrencyLimiter (failed lease metadata); examples/don-hang @ stage-3 DonHang.Api/Program.cs lines 168-181",
+      "version_key": "aspnetcore",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 5,
+      "text": "Program.cs @ stage-3 143-166: catalogReads = PermitLimit 20, QueueLimit 5, bound from RateLimiting:CatalogReads; policy \"catalog-reads\" via AddConcurrencyLimiter. docker-compose.yml @ stage-3 sets no RateLimiting__CatalogReads__* (only RateLimiting__Orders__Window).",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Api/Program.cs lines 143-166; docker-compose.yml lines 148-202",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 6,
+      "text": "ProductsController @ stage-3: List (line 24) and Get (line 42) carry [EnableRateLimiting(\"catalog-reads\")]; OrdersController.Create only \"orders\". An order still reads prices via CatalogProductPrices.cs:15 catalog.FindAsync, outside the limit; bulkhead.sh orders product 8.",
+      "kind": "fact",
+      "source_hint": "don-hang @ stage-3: DonHang.Api/Controllers/ProductsController.cs 22-49, OrdersController.cs 30-36; DonHang.Infrastructure/CatalogProductPrices.cs; scripts/backend/bulkhead.sh",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 7,
+      "text": "Program.cs @ stage-3 lines 33-38: AddCatalogModule and AddDonHangInfrastructure receive the same connection string (one database donhang).",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Api/Program.cs lines 24-38",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 8,
+      "text": "Npgsql pools connections by default; Maximum Pool Size defaults to 100 and the stage-3 connection string does not set it. CatalogDbContext and DonHangDbContext get the same connection string, so product reads and orders both use the api's connections to the same PostgreSQL database.",
+      "kind": "number",
+      "source_hint": "Npgsql docs: Connection String Parameters (Maximum Pool Size); examples/don-hang @ stage-3 docker-compose.yml line 158",
+      "version_key": "npgsql_efcore",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 9,
+      "text": "At stage-3, with Redis stopped, a product read is answered from PostgreSQL: ProductCache treats the Redis error as a miss (abortConnect=false, BacklogPolicy.FailFast). The product list (CatalogService.ListAsync) never uses the cache; it queries CatalogDbContext every time.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Catalog/ProductCache.cs, DonHang.Catalog/CatalogService.cs",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 10,
+      "text": "At stage-3 Payments and Notifications run as separate Compose services (own containers, processes, databases donhang_payments / donhang_notifications); Notifications sends email via SMTP to mailpit; the api sends no email (Program.cs line 42).",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: docker-compose.yml lines 289-404; DonHang.Api/Program.cs lines 40-46",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 11,
+      "text": "A request waiting in the limiter's queue is still in progress: it waits in the queue until a permit comes free (or a timeout), and its caller has no answer yet.",
+      "kind": "behavior",
+      "source_hint": "ASP.NET Core docs: Rate limiting middleware, queuing ('waits in the queue until a permit becomes available or a timeout occurs')",
+      "version_key": "aspnetcore",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 12,
+      "text": "UseHttpMetrics (prometheus-net) records each request with its status code, so 503 refusals of product reads count among the api's 5xx answers.",
+      "kind": "behavior",
+      "source_hint": "prometheus-net README, ASP.NET Core HTTP request metrics; examples/don-hang @ stage-3 DonHang.Api/Program.cs lines 190-195",
+      "version_key": "prometheus_net",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 13,
+      "text": "bulkhead.sh @ stage-3 stops Redis, sends one POST /api/v1/orders and 100 parallel GET /api/v1/products/3, then restarts Redis; captured output: only 200/503: yes, some 503: yes, some 200: yes, order -> 201.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: scripts/backend/bulkhead.sh; outputs/stage-3/scripts/backend/bulkhead.txt",
+      "needs_verification": true,
+      "section": 7
+    },
+    {
+      "n": 14,
+      "text": "A Kubernetes container's resource limit caps the CPU and memory that container may use on its node.",
+      "kind": "behavior",
+      "source_hint": "Kubernetes docs: Resource Management for Pods and Containers (limits)",
+      "version_key": "kubernetes",
+      "needs_verification": true,
+      "section": 8
+    },
+    {
+      "n": 15,
+      "text": "Use a concurrency cap inside one process, rather than extracting a service, when the only goal is to keep one kind of request from taking capacity another needs; a separate service adds a network call and more to deploy and watch.",
+      "kind": "opinion",
+      "source_hint": "Lesson reasoning; design.l3.when-to-extract-a-service",
+      "needs_verification": false,
+      "section": 6
+    },
+    {
+      "n": 16,
+      "text": "Refuse at once beyond a short queue, rather than let requests wait without bound, when waiting requests hold resources and callers may give up; a short queue suits brief bursts.",
+      "kind": "opinion",
+      "source_hint": "Lesson reasoning; backend.l3.slow-dependencies",
+      "needs_verification": false,
+      "section": 6
+    },
+    {
+      "n": 17,
+      "text": "At most 20 product reads run at once, so at most 20 can query PostgreSQL at once. ProductCache.FindAsync takes a per-key SemaphoreSlim, so reads of one product query one at a time; in bulkhead.sh (100 reads of product 3) the 20 permit holders wait on that lock.",
+      "kind": "behavior",
+      "source_hint": "Follows from claims 1, 2, 5, 6; examples/don-hang @ stage-3 DonHang.Catalog/ProductCache.cs lines 31-41",
+      "version_key": "aspnetcore",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 18,
+      "text": "A concurrency limiter cannot know when a running request will end, so its refused lease has no RetryAfter; Program.cs's OnRejected therefore never sets 429 for catalog-reads.",
+      "kind": "behavior",
+      "source_hint": "ASP.NET Core docs: rate-limit-samples, 'The ConcurrencyLimiter has no way of calculating when permits are available'",
+      "version_key": "aspnetcore",
+      "needs_verification": true,
+      "section": 5
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [1, 2, 3, 4, 5],
+    "outline_items_missing": [],
+    "beyond_scope": [
+      "one sentence that the limit also applies while Redis is up",
+      "mentions that UseHttpMetrics counts the 503 refusals among 5xx answers",
+      "names Npgsql's default maximum of 100 connections only so the 20-read cap can be compared with it"
+    ]
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1400,
+    "notes": "apply-review r1: §4 Npgsql default 100 (claim 8); claim 17 suggested_text; §5 why no 429 (claim 18), prices via Catalog, list not cached (claims 6, 9); §6 503 cost reworded; §7 ProductCache lock; quiz q5 c, q6 c. r2: §6 claim 11 suggested_text; §4 'driver' → 'the library the api uses to talk to PostgreSQL'."
+  }
+}

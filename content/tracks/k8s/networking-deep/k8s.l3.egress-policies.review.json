@@ -1,0 +1,136 @@
+{
+  "id": "k8s.l3.egress-policies",
+  "technical": {
+    "reviewed_at": "2026-10-19T23:59:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "\"A pod is isolated for egress if there is any NetworkPolicy that both selects the pod and has \"Egress\" in its policyTypes ... When a pod is isolated for egress, the only allowed connections from the pod are those allowed by the egress list of some NetworkPolicy that applies to the pod for egress.\"",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/services-networking/network-policies.md lines 60-63 (The two sorts of pod isolation)"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "\"You can create a \"default\" egress isolation policy for a namespace by creating a NetworkPolicy that selects all pods but does not allow any egress traffic from those pods.\" Caution: \"A default deny-all egress policy also blocks DNS traffic.\" Captured: after deny-egress.yaml, 'does not resolve' (outputs/stage-3/scripts/k8s/egress-policy.txt line 10).",
+        "source": "refs/kubernetes-website/.../network-policies.md lines 234-248 (Default deny all egress traffic)"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "\"Network policies do not conflict; they are additive. If any policy or policies apply to a given pod for a given direction, the connections allowed in that direction from that pod is the union of what the applicable policies allow. Thus, order of evaluation does not affect the policy result.\"",
+        "source": "refs/kubernetes-website/.../network-policies.md lines 75-77"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "\"For a connection from a source pod to a destination pod to be allowed, both the egress policy on the source pod and the ingress policy on the destination pod need to allow the connection. If either side does not allow the connection, it will not happen.\"",
+        "source": "refs/kubernetes-website/.../network-policies.md lines 79-81"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "\"A single to/from entry that specifies both namespaceSelector and podSelector selects particular Pods within particular namespaces.\" and \"The Kubernetes control plane sets an immutable label kubernetes.io/metadata.name on all namespaces, the value of the label is the namespace name.\"",
+        "source": "refs/kubernetes-website/.../network-policies.md lines 153-155, 355-356"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Docs list CoreDNS Pods with \"kubectl get pods --namespace=kube-system -l k8s-app=kube-dns\" (output: coredns-... Running). Captured on donhang after allow-dns-egress.yaml: 'resolves' (egress-policy.txt lines 11-14). allow-dns-egress.yaml spec read in working tree.",
+        "source": "refs/kubernetes-website/content/en/docs/tasks/administer-cluster/dns-debugging-resolution.md line 116; examples/don-hang/outputs/stage-3/scripts/k8s/egress-policy.txt"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Kubernetes docs: \"Until musl version 1.24 didn't include TCP fallback to the DNS stub resolver meaning any DNS call above 512 bytes would fail.\" — i.e. resolvers fall back to TCP for answers too large for UDP. The cited RFC 1035/7766 are not docs roots in versions.yaml; the Kubernetes page suffices for the lesson's clause.",
+        "source": "refs/kubernetes-website/.../tasks/administer-cluster/dns-debugging-resolution.md line 343"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Round 2: text now matches the round-1 suggested_text. API ref NetworkPolicyPort.port: \"This can either be a numerical or named port on a pod.\" Concepts page lists \"Targeting of services by name\" as not possible. The kube-proxy order is scoped to donhang and backed by the capture: port 80 times out, 8080 works (egress-policy.txt lines 18-24).",
+        "source": "refs/kubernetes-website/.../reference/kubernetes-api/networking/network-policy-v1.md line 219; network-policies.md lines 196-199, 458; egress-policy.txt lines 18-24"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Service echo-ip: ports: - port: 80, targetPort: 8080 (deploy/k8s/lessons/echo-ip.yaml lines 71-81, working tree; see note on tag check under claim 12).",
+        "source": "examples/don-hang/deploy/k8s/lessons/echo-ip.yaml"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Execution capture on donhang: 'wget: download timed out' (egress-policy.txt lines 16, 20) and 'no connection (exit 124; 124: timeout gave up waiting)' (line 49). Claim is correctly scoped to donhang; the diagram node is now scoped too ('on donhang the caller waits until it times out').",
+        "source": "examples/don-hang/outputs/stage-3/scripts/k8s/egress-policy.txt"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Capture lines 7-24 match the lesson's output block exactly: deny-egress -> 'does not resolve'; allow-dns-egress -> 'resolves', wget 'download timed out'; port 80 rule -> timed out; patch to 8080 -> 'echo-ip-...-... saw ...'. Round 2: the s5 walk-through order (deny-egress before the excerpt, patch after it) matches egress-policy.sh lines 31-33 and 62.",
+        "source": "examples/don-hang/outputs/stage-3/scripts/k8s/egress-policy.txt lines 7-24; scripts/k8s/egress-policy.sh"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "File holds default-deny-egress, dns-egress, api-egress (db 5432, redis 6379, rabbitmq 5672, keycloak 8080), payments-egress, notifications-egress, db-clients-egress (migrate, notifications-migrate, payments-migrate, db-backup -> db 5432). Read from the submodule working tree (master 7ef8fff); git show/extract-code at tag stage-3 was refused by the permission system, so tag identity was not checked by command.",
+        "source": "examples/don-hang/deploy/gitops/config-repo-kustomize/base/egress-policies.yaml"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "base/kustomization.yaml line 41: Keycloak__MetadataAddress=http://keycloak:8080/realms/donhang/.well-known/openid-configuration; keycloak.yaml line 33: \"the api and Payments fetch the keys from keycloak:8080\"; api-egress allows app: keycloak port 8080.",
+        "source": "examples/don-hang/deploy/gitops/config-repo-kustomize/base/kustomization.yaml, keycloak.yaml"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "Capture: before -> 'connected' (line 28); after sync 'no connection (exit 124; ...)' (line 49), orders/1 with token 'HTTP 200' (line 57), '== Pods in donhang not ready: 0' (line 61). Round 2: the script's last line reads .status.containerStatuses[0].ready, matching 'first container' in the claim and section 5.",
+        "source": "examples/don-hang/outputs/stage-3/scripts/k8s/egress-policy.txt lines 26-61; scripts/k8s/egress-policy.sh lines 79-86, 144-145"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "\"Reply traffic for those allowed connections will also be implicitly allowed.\" (egress, line 64); \"traffic to and from the node where a Pod is running is always allowed\". Kubelet pulls images: \"The kubelet uses this information to pull a private image on behalf of your Pod.\" Probes: \"The kubelet can optionally perform ... three kinds of probes\". Round 2: s6 now uses the run as evidence for probes only.",
+        "source": "network-policies.md lines 35-36, 64, 70-72; concepts/configuration/secret.md line 585; workloads/pods/pod-lifecycle.md line 794"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "Follows from the docs sentence for claim 1 (\"isolated for egress if there is any NetworkPolicy that both selects the pod and has Egress in its policyTypes\") applied to allow-dns-egress.yaml (podSelector: {}, policyTypes [Egress], one rule to kube-dns port 53). The script filters '^command terminated' (egress-policy.sh line 21), so a manual run shows that kubectl line, as s7 now says. Not executed by me.",
+        "source": "network-policies.md lines 60-63; examples/don-hang/deploy/k8s/lessons/allow-dns-egress.yaml; scripts/k8s/egress-policy.sh line 21"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "network-lessons.sh: show echoes '$ <command>' then runs it; client_up runs caddy:2.10.0 with sleep 3600 in network-lessons (\"Caddy's image has wget, nc and getent\"). egress-policy.sh try_name: getent hosts echo-ip, then echo resolves / does not resolve; try_echo: wget -T 5 -qO- http://echo-ip. Capture shows 'download timed out'. Working tree read (git show at tag refused by the permission system).",
+        "source": "examples/don-hang/scripts/lib/network-lessons.sh lines 5, 24-36; scripts/k8s/egress-policy.sh lines 15-22"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "Lesson states it conditionally (\"keeps the Pods isolated if the DNS policy is ever removed\"). Docs: \"This ensures that even pods that aren't selected by any other NetworkPolicy will not be allowed egress traffic.\" Round 2 re-review covered only the sections changed by apply-review r1; documents opened: network-policies.md, kubernetes-api v1 NetworkPolicyPort, egress-policy.sh, network-lessons.sh.",
+        "source": "network-policies.md lines 241-242"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-19T14:00:00Z",
+    "reviewer": "review-junior (prompt 05)",
+    "issues": [],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

@@ -15,8 +15,8 @@ vocab: [prometheus, metric-label]
 example_tag: stage-2
 versions_used: [prometheus_net, prometheus, aspnetcore, caddy]
 content_version: 1
-status: approved
-approved_by: auto
+status: published
+approved_by: owner
 reviewed_at: "2026-09-30T00:36:11+07:00"
 ---
 

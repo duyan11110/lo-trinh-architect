@@ -1,0 +1,211 @@
+{
+  "id": "sysdesign.l4.support-chat-trade-offs",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-11-03T20:00:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "The review estimates about 200 open connections at the busy hour (about 100 conversations), about 1.7 messages per second, and about 100 connections per Pod with 2 Pods (assumed, split evenly).",
+      "kind": "fact",
+      "source_hint": "docs/design/support-chat-design-review.md @ stage-4 lines 25-30",
+      "needs_verification": true,
+      "section": 2
+    },
+    {
+      "n": 2,
+      "text": "The scarce resource is open connections held per Pod, mostly without messages; Support's capacity plan counts connections at the busy hour, not requests per second. A Pod keeps only so many open at once, so the peak is held below a measured limit with headroom.",
+      "kind": "fact",
+      "source_hint": "docs/design/support-chat-design-review.md @ stage-4 lines 61-63; ADR 0032 line 65 (revisit when connections per Pod use up the measured headroom)",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 3,
+      "text": "A chat screen holds no database connection; a Pod uses one only while it saves or reads. max_connections, the cap on connections open to the server at the same time, bounds how many saves and reads all services run at once, not how many customers are connected.",
+      "kind": "fact",
+      "source_hint": "docs/design/support-chat-design-review.md @ stage-4 lines 64-66; PostgreSQL 17 docs, Connection Settings: max_connections",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 4,
+      "text": "Each release by rolling update closes the connections of the replaced Pod; apps reconnect after a wait with jitter so they do not all reconnect at once, then read after their last id from the database.",
+      "kind": "fact",
+      "source_hint": "ADR 0032 @ stage-4 lines 50-51, 59-60; support-chat-design-review.md lines 51-54, 106",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 5,
+      "text": "Redis publish/subscribe delivers a message only to subscribers connected at that moment, at most once, and stores nothing for later subscribers.",
+      "kind": "behavior",
+      "source_hint": "Redis docs, Pub/Sub: delivery semantics (at-most-once)",
+      "version_key": "redis",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 6,
+      "text": "If Redis (1 replica) fails, only the relay between Pods is lost; messages are still saved and the app reads them on reconnect.",
+      "kind": "fact",
+      "source_hint": "docs/design/support-chat-design-review.md @ stage-4 lines 67-68",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 7,
+      "text": "capacity-plan.md counts api load as product reads and orders per second, and requires the sum of Pods times maximum connections per Pod of every service on server db to stay below PostgreSQL's max_connections.",
+      "kind": "fact",
+      "source_hint": "docs/design/capacity-plan.md @ stage-4 lines 20-24, 44-49",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 8,
+      "text": "donhang_support is a separate database on server db, like Notifications and Payments, so each Support Pod adds its own database connections to the sum (Pods × maximum connections per Pod) capacity-plan.md keeps below max_connections; the sum grows with Pods, not screens.",
+      "kind": "fact",
+      "source_hint": "ADR 0032 @ stage-4 lines 37-38; capacity-plan.md lines 44-49",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 9,
+      "text": "Rejected options: asking again every few seconds (load grows with screens × frequency, a message waits up to one interval; kept as fallback), a module in DonHang.Api (shares Pods, limits, canary with ordering; against driver 4), SignalR (deferred, no Dart client).",
+      "kind": "fact",
+      "source_hint": "docs/design/support-chat-design-review.md @ stage-4 lines 74-78; ADR 0032 lines 24-31, 52",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 10,
+      "text": "Trade-off points: open connection vs asking again (driver 1); Redis at most once (driver 2); own WebSocket vs SignalR. Drivers: 1 message reaches an open screen within seconds; 2 no message lost when the relay fails; 4 chat never takes capacity ordering needs.",
+      "kind": "fact",
+      "source_hint": "docs/design/support-chat-design-review.md @ stage-4 lines 19-24, 79-84",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 11,
+      "text": "With 200 screens each asking every 5 seconds (assumed), the API would receive 40 requests per second, against about 1.7 messages per second.",
+      "kind": "number",
+      "source_hint": "Arithmetic on review lines 27-29 (200 connections, 1.7 messages/s); 5 seconds is the lesson's assumed interval for 'every few seconds' (review line 74)",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 12,
+      "text": "SignalR is ASP.NET Core's real-time library; it would give reconnection in its clients and passing messages between Pods through Redis, without the team writing either itself.",
+      "kind": "fact",
+      "source_hint": "ADR 0032 @ stage-4 lines 29-31; aspnetcore-docs signalr/introduction.md, signalr/scale.md, signalr/client-features.md",
+      "version_key": "aspnetcore",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 13,
+      "text": "ASP.NET Core's documented SignalR clients include none for Dart.",
+      "kind": "behavior",
+      "source_hint": "aspnetcore-docs signalr/supported-platforms.md",
+      "version_key": "aspnetcore",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 14,
+      "text": "ADR 0032 releases Support by rolling update under ADR 0019: a Gateway weight decides only where new connections go; open connections stay on the old Pod until it stops.",
+      "kind": "fact",
+      "source_hint": "ADR 0032 @ stage-4 lines 50-51",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 15,
+      "text": "ADR 0032 revisit conditions: a phone build (push instead of email), an official SignalR client for Dart in ASP.NET Core, connections per Pod exceeding the measured headroom.",
+      "kind": "fact",
+      "source_hint": "ADR 0032 @ stage-4 lines 63-65",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 16,
+      "text": "Asking again every few seconds is the right choice when chat screens are few and a reply may wait one interval; it adds no resource to count, no relay and no reconnect wave.",
+      "kind": "opinion",
+      "source_hint": "review lines 74-75, 79-80 (cost grows with screens × frequency; connections are the new resource)",
+      "needs_verification": false,
+      "section": 6
+    },
+    {
+      "n": 17,
+      "text": "If connections per Pod doubled while messages per second stayed the same, max_connections is not the question; check whether connections per Pod use up the headroom below the measured limit before adding Pods.",
+      "kind": "opinion",
+      "source_hint": "review lines 61-66; ADR 0032 line 65",
+      "needs_verification": false,
+      "section": 7
+    },
+    {
+      "n": 18,
+      "text": "If an official SignalR client for Dart appeared, the team would weigh ready-made reconnection and relay against rewriting a working path, in a new ADR superseding 0032.",
+      "kind": "opinion",
+      "source_hint": "ADR 0032 line 64; review lines 83-84",
+      "needs_verification": false,
+      "section": 7
+    },
+    {
+      "n": 19,
+      "text": "With a weaker freshness driver than seconds at the busy hour, the fallback of asking every few seconds could be the whole design.",
+      "kind": "opinion",
+      "source_hint": "review lines 20, 74-75",
+      "needs_verification": false,
+      "section": 7
+    },
+    {
+      "n": 20,
+      "text": "If the chat connection cannot open, the app asks again every few seconds (ADR 0032's fallback), so replies arrive up to one interval late.",
+      "kind": "fact",
+      "source_hint": "ADR 0032 @ stage-4 lines 24-25, 52; review line 57",
+      "needs_verification": true,
+      "section": 9
+    },
+    {
+      "n": 21,
+      "text": "On reconnect the app sends the id of its last message; the Pod reads the messages after that id from the database and sends them first, then new messages.",
+      "kind": "fact",
+      "source_hint": "docs/design/support-chat-design-review.md @ stage-4 lines 53-54",
+      "needs_verification": true,
+      "section": 8
+    },
+    {
+      "n": 22,
+      "text": "Nothing in the design closes an app's connection when Redis restarts, so a reply missed by the relay appears only when the app next reconnects, such as at a release, and reads after its last id.",
+      "kind": "fact",
+      "source_hint": "support-chat-design-review.md @ stage-4 lines 53-54 (reads after last id on reconnect), 67-68 (Redis failure loses only the relay)",
+      "needs_verification": true,
+      "section": 9
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [1, 2, 3, 4, 5, 6],
+    "outline_items_missing": [],
+    "beyond_scope": [
+      "Failure case of Redis (1 replica) from review step 5, shown in the excerpt.",
+      "Illustrative arithmetic: 200 screens asking every 5 seconds (assumed) = 40 requests per second."
+    ]
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1996,
+    "notes": "apply-review 1: max_connections = concurrency cap (c3); excerpt 1 to 59-68 (c6); no SignalR client list (c13); SignalR glossed (c12); drivers 1,2,4 (c10); per-Pod limit + headroom; missed-first (c21); diagram Redis->Pod. apply-review 2: 'backplane' dropped (c12); bridge clause for 'tốc độ ghi tin' in s5; Try-it 3 = c22 suggested_text; trimmed s5, s6, Try-it 1 to hold length. SignalR-as-vocab (junior minor) not applied: needs track.yaml change."
+  },
+  "open_questions": [],
+  "repo_changes_needed": [
+    {
+      "lesson": "sysdesign.l4.support-chat-trade-offs",
+      "need": "Line 65 at stage-4: '`max_connections` giới hạn tốc độ ghi tin' is looser than PostgreSQL's definition (cap on concurrent connections); suggest 'giới hạn số lần lưu và đọc chạy cùng lúc'. The lesson quotes it verbatim and corrects it in prose.",
+      "suggested_path": "docs/design/support-chat-design-review.md"
+    }
+  ]
+}

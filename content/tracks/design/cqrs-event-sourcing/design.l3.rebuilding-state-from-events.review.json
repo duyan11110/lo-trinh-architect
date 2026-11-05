@@ -1,0 +1,143 @@
+{
+  "id": "design.l3.rebuilding-state-from-events",
+  "technical": {
+    "reviewed_at": "2026-10-15T17:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Round 2: text now matches the round-1 suggested_text. `public EventSourcedOrder Load(int orderId) => EventSourcedOrder.FromEvents(ReadStream(orderId));` with comment \"Loading is a replay of the order's whole stream.\" The claim is now scoped to InMemoryEventStore.Load, so the OrderSnapshots.Load path no longer contradicts it.",
+        "source": "examples/don-hang @ stage-3: samples/DonHang.Samples/Samples/Design/EventSourcing/InMemoryEventStore.cs:42-44"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "`public EventSourcedOrder Load(int orderId) => EventSourcedOrder.FromEvents(ReadStream(orderId));` and `public IReadOnlyList<OrderEvent> ReadStream(int orderId, int afterVersion = 0)` returning `stream.Skip(afterVersion).ToList()`; comment: \"One order's events, oldest first\". Append is called only from Save, which appends in recorded order.",
+        "source": "examples/don-hang @ stage-3: samples/DonHang.Samples/Samples/Design/EventSourcing/InMemoryEventStore.cs"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "FromEvents: `var order = new EventSourcedOrder(); foreach (var domainEvent in stream) { order.Apply(domainEvent); } return order;` Private ctor is empty; `Status { get; private set; } = \"\"`; Version defaults to 0. No call to Pay/Cancel/Ship/Record in FromEvents.",
+        "source": "examples/don-hang @ stage-3: EventSourcedOrder.cs FromEvents, properties, private ctor"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Apply (EventSourcedOrder.cs:99-121, extracted verbatim): switch with `case OrderPlaced placed:` setting Id, CustomerId, TotalVnd, Status = \"new\"; OrderPaid → \"paid\"; OrderShipped → \"shipped\"; OrderCancelled → \"cancelled\"; then `Version++;`. No throw, no read of the previous Status. `dotnet test --filter EventSourcingTests` (SDK 10.0.300, net10.0): Passed 7, Failed 0.",
+        "source": "tools/extract-code EventSourcedOrder.cs --tag stage-3 --lines 99-121; dotnet test samples/DonHang.Samples.Tests"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Test Replay_GivesTheStateAfterTheEventsApplied asserts `Assert.Equal(\"cancelled\", EventSourcedOrder.FromEvents(stream).Status)` and passes. Version 3 follows from three Apply calls each doing `Version++` from 0. Demo output: \"A cancels and appends: the stream is now at version 3\".",
+        "source": "EventSourcingTests.cs:15-27 @ stage-3; dotnet test run; outputs/stage-3/scripts/design/event-sourcing.txt"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "newEvents is added to only in Record; FromEvents never calls Record. Save: `Append(order.Id, order.LoadedVersion, order.NewEvents); order.MarkSaved();` with `LoadedVersion => Version - newEvents.Count`. Append checks `stream.Count != expectedVersion` (equal after a plain load) then `stream.AddRange(events)` with an empty list.",
+        "source": "examples/don-hang @ stage-3: EventSourcedOrder.cs Record, LoadedVersion; InMemoryEventStore.cs Append, Save"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "`public void Ship(DateTimeOffset at) { if (Status != \"paid\") throw new InvalidOperationException(...); Record(new OrderShipped(Id, at)); }`. Test Ship_CancelledOrder_ThrowsAndRecordsNothing (Assert.Throws<InvalidOperationException>, Assert.Empty(order.NewEvents)) passes in the dotnet test run.",
+        "source": "EventSourcedOrder.cs Ship; EventSourcingTests.cs:29-38 @ stage-3; dotnet test run"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Record is private and its only callers are Place, Pay, Cancel and Ship; `newEvents.Add` appears only in Record. Ship records OrderShipped only after `if (Status != \"paid\") throw`. Grep of samples/: `Append(` is called only from InMemoryEventStore.Save, so stored events also come only through Record.",
+        "source": "examples/don-hang @ stage-3: EventSourcedOrder.cs; InMemoryEventStore.cs:49"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "refs/dotnet-docs partitioning-data.md: \"| Take | Takes elements up to a specified position in a sequence.\" and \"You use the `Take` method to take only the first elements in a sequence\". The test's `Assert.Equal(\"paid\", EventSourcedOrder.FromEvents(stream.Take(2)).Status)` passes.",
+        "source": "refs/dotnet-docs/docs/csharp/linq/standard-query-operators/partitioning-data.md:24,32; dotnet test run"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Round 2: claim and s4 text now say stage-2, past tense. Round-1 extraction of DonHang.Domain/Entities.cs @ stage-2 (Cancel, lines 83-88) showed no paid check before `Status = \"cancelled\"`. The stage-3 source corroborates the change: comment \"From stage-3 a paid order is not cancelled here: its money must go back first\" above `if (Status == \"paid\") throw ...` (Entities.cs:118-125). 'The row kept no earlier value' is scoped to the row.",
+        "source": "examples/don-hang: DonHang.Domain/Entities.cs @ stage-2 Cancel (round-1 extract-code); Entities.cs:118-127 @ stage-3"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Script: `dotnet run --project samples/DonHang.Samples --verbosity quiet -- event-sourcing`, comment \"Runs on the host: it needs dotnet\"; no docker/compose call. Ran tools/capture-output scripts/design/event-sourcing.sh (round 1): lines 1-4 \"== the stream of order 5\" / \"  version 1: OrderPlaced at 09:00\" / \"  version 2: OrderPaid at 09:30\" / \"== replayed: order 5 is paid at version 2\"; identical to outputs/stage-3/... at the tag.",
+        "source": "examples/don-hang @ stage-3: scripts/design/event-sourcing.sh; EventSourcingDemo.cs; outputs/stage-3/scripts/design/event-sourcing.txt"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Grep for RabbitMQ|IConnection|Publish in samples/DonHang.Samples/Samples/Design/EventSourcing/: no matches. Load → ReadStream → FromEvents → Apply touch only in-memory lists and properties.",
+        "source": "examples/don-hang: samples/DonHang.Samples/Samples/Design/EventSourcing/*.cs"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Round 2: s6 now carries the ledger's condition (\"The sample's store never changes or deletes a stored event\"). Store comment: \"It only ever appends; no event is changed or removed once stored\"; the class has no remove/update method; Load always replays through Apply, so an Apply that threw on a stored event would throw on every Load of that order.",
+        "source": "examples/don-hang @ stage-3: InMemoryEventStore.cs:3-8, 42-44; EventSourcedOrder.cs Apply comment"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "`public int LoadedVersion => Version - newEvents.Count;` (EventSourcedOrder.cs:38). Save: `Append(order.Id, order.LoadedVersion, order.NewEvents);`. Append: `if (stream.Count != expectedVersion) throw new StreamConcurrencyException(orderId, expectedVersion, stream.Count);` before `stream.AddRange(events)`.",
+        "source": "examples/don-hang @ stage-3: EventSourcedOrder.cs:38; InMemoryEventStore.cs:17-30, 46-51"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "Snapshot_LoadsTheSameOrder_AndCanBeDeleted: loads order 7 from a snapshot (`EventsReplayedByLastLoad` 1), deletes snapshots, loads again by full replay (`EventsReplayedByLastLoad` 3), then `Assert.Equal(fromEvents.ToSnapshot(), fromSnapshot.ToSnapshot());`. Part of the 7 EventSourcingTests that passed in the round-1 dotnet test run.",
+        "source": "examples/don-hang @ stage-3: samples/DonHang.Samples.Tests/EventSourcingTests.cs:114-132"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "`public Order(int customerId, IEnumerable<OrderItem> items, DateTimeOffset placedAt) { this.items.AddRange(items); if (this.items.Count == 0) throw new ArgumentException(\"an order needs at least one item\"); if (this.items.Any(item => item.Quantity < 1)) throw new ArgumentException(...); ...` The throws precede any assignment of CustomerId/Status, so no order is constructed.",
+        "source": "examples/don-hang @ stage-3: DonHang.Domain/Entities.cs:78-88"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-15T18:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation, prompt 05, round 2 targeted re-review)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "term",
+        "text": "Carried from round 1. 'Git Bash' is a tool name that none of my known terms covers. I know what a shell is, but not this program or how to get it on Windows. The text of step 1 did not change in round 1.",
+        "quote": "run `scripts/design/event-sourcing.sh` in a bash shell (Git Bash on Windows).",
+        "fix": "If an earlier lesson already set up Git Bash, cite that lesson in step 1. Otherwise replace the parenthesis with '(the bash shell installed with Git for Windows)'."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "style",
+        "text": "New in the changed sentence: the added appositive puts three commas between 'asks' and 'for order 5', so I had to re-read to find what the caller asks for.",
+        "quote": "the caller asks `InMemoryEventStore`, the sample's event store, which keeps streams in memory, for order 5 with `Load`.",
+        "fix": "Split into two sentences: '`InMemoryEventStore` is the sample's event store, which keeps streams in memory. The caller asks it for order 5 with `Load`.'"
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "Git Bash"
+      ],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

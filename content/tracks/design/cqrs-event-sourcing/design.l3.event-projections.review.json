@@ -1,0 +1,121 @@
+{
+  "id": "design.l3.event-projections",
+  "technical": {
+    "reviewed_at": "2026-10-15T14:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Append: `stream.AddRange(events); all.AddRange(events);` (lines 28-29). `// Every order's events in the order they were appended, from `position` on.` `public IReadOnlyList<OrderEvent> ReadAll(int position = 0) => all.Skip(position).ToList();` (lines 39-40).",
+        "source": "examples/don-hang samples/DonHang.Samples/Samples/Design/EventSourcing/InMemoryEventStore.cs:17-40 (working tree on master; git show at stage-3 was not permitted in this session, see summary)"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "`public int Position { get; private set; }` (line 12); CatchUp: `foreach (var domainEvent in store.ReadAll(Position)) { Apply(domainEvent); Position++; }` (lines 14-21). The only assignments to Position in the file are in CatchUp (line 19) and Rebuild (line 26); the private setter blocks the derived classes.",
+        "source": "examples/don-hang samples/DonHang.Samples/Samples/Design/EventSourcing/OrderProjections.cs:10-28"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "`public void Rebuild(InMemoryEventStore store) { Clear(); Position = 0; CatchUp(store); }` (lines 23-28); with Position 0, ReadAll returns `all.Skip(0)`, every event.",
+        "source": "examples/don-hang OrderProjections.cs:23-28; InMemoryEventStore.cs:40"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Grep `Projection|CatchUp|Rebuild` over samples/DonHang.Samples/Samples/Design/EventSourcing/ matches only OrderProjections.cs and EventSourcingDemo.cs:58-59 (`counts.CatchUp(store); timeline.CatchUp(store);`). InMemoryEventStore.cs has no reference to any projection; CatchUp calls only store.ReadAll, never Append/Save.",
+        "source": "examples/don-hang samples/DonHang.Samples/Samples/Design/EventSourcing/ (grep)"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "`private readonly Dictionary<int, string> statusOfOrder = [];` (line 47). Apply: `if (statusOfOrder.TryGetValue(domainEvent.OrderId, out var before)) { Counts[before]--; if (Counts[before] == 0) Counts.Remove(before); }` then `statusOfOrder[domainEvent.OrderId] = after; Counts[after] = Counts.GetValueOrDefault(after) + 1;` (lines 53-61). StatusAfter: Placed/Paid/Shipped/Cancelled => new/paid/shipped/cancelled (lines 34-41).",
+        "source": "examples/don-hang OrderProjections.cs:34-68 (working tree; git show not permitted in this session)"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "`lines.Add($\"{StatusAfter(domainEvent)} at {domainEvent.OccurredAt:HH:mm}\");` into `Lines[domainEvent.OrderId]` (lines 76-85).",
+        "source": "examples/don-hang OrderProjections.cs:72-88"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Test body: `live.CatchUp(store); var paid = store.Load(1); paid.Ship(At); store.Save(paid); live.CatchUp(store); var rebuilt = new OrderStatusCounts(); rebuilt.Rebuild(store); Assert.Equal(live.Counts, rebuilt.Counts); Assert.Equal(live.Position, rebuilt.Position);` (lines 64-80). Block in the lesson matches lines 62-80 character for character.",
+        "source": "examples/don-hang samples/DonHang.Samples.Tests/EventSourcingTests.cs:62-80"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "`private static readonly DateTimeOffset At = new(2026, 3, 18, 9, 0, 0, TimeSpan.FromHours(7));` (line 10). StoreWithThreeOrders: `EventSourcedOrder.Place(id, customerId: 1, totalVnd: 100_000, At); if (id == 1) order.Pay(At);` (lines 135-146). Every Place/Pay/Ship/Cancel call in the file passes `At` (lines 35-141); only the replay test builds event records with `At.AddMinutes(30)`/`At.AddHours(2)` (lines 21-22), not method calls.",
+        "source": "examples/don-hang samples/DonHang.Samples.Tests/EventSourcingTests.cs:10-22, 35-146"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "`counts.CatchUp(store); var order = store.Load(2); order.Cancel(At); store.Save(order); Assert.Equal(2, counts.Counts[\"new\"]); counts.CatchUp(store); Assert.Equal(1, counts.Counts[\"new\"]);` (lines 84-96).",
+        "source": "examples/don-hang EventSourcingTests.cs:82-96"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "`var timeline = new OrderTimeline(); timeline.CatchUp(store); Assert.Equal(new[] { 1, 2, 3 }, timeline.Lines.Keys); Assert.Equal(new[] { \"new at 09:00\", \"paid at 09:00\" }, timeline.Lines[1]);` (lines 100-109).",
+        "source": "examples/don-hang EventSourcingTests.cs:98-109"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Handler comment: `one row for every domain event Order records` ... `The events themselves are not kept anywhere: orders placed before stage-3 have only the `placed` row the AddOrderStatusHistory migration wrote.` Migration: `INSERT INTO order_status_history (order_id, event, status, occurred_at) SELECT id, 'placed', 'new', placed_at FROM orders`. Each HandleAsync calls AddRow once; DomainEvents.cs declares exactly the six events it handles.",
+        "source": "examples/don-hang DonHang.Infrastructure/RecordOrderStatusHistory.cs:5-40; Migrations/20261005224255_AddOrderStatusHistory.cs:42-50; DonHang.Domain/DomainEvents.cs"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Captured output: `  7 |           3 | shipped` then `== GET /api/v1/orders/7/history` `[{\"event\":\"placed\",\"status\":\"new\",\"occurredAt\":\"2026-03-18T00:45:00+00:00\"}]`. design.l3.read-model.en.md:135 (Try it) runs `scripts/design/order-history.sh`, which \"prints order 7's row in `orders` and its history\".",
+        "source": "examples/don-hang outputs/stage-3/scripts/design/order-history.txt:1-8; content/tracks/design/cqrs-event-sourcing/design.l3.read-model.en.md:135"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Captured output lines 9-12: `== projections over every event` / `  counts: cancelled 1, new 1` / `  order 5: new at 09:00, paid at 09:30, cancelled at 11:00` / `  order 6: new at 10:00`. Consistent with EventSourcingDemo.cs (order 6 placed at Morning.AddHours(1), order 5 cancelled at Morning.AddHours(2)).",
+        "source": "examples/don-hang outputs/stage-3/scripts/design/event-sourcing.txt:9-12; EventSourcingDemo.cs:12-64"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "Conditioned on the events being kept, as the lesson states. Supported by the code: Rebuild = Clear + Position 0 + CatchUp over the append-only store (OrderProjections.cs:23-28; InMemoryEventStore.cs comment `It only ever appends; no event is changed or removed once stored.`), and by Rebuild_GivesTheSameCountsAsTheLiveProjection.",
+        "source": "examples/don-hang OrderProjections.cs:3-28; InMemoryEventStore.cs:3-7; EventSourcingTests.cs:62-80"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "accuracy",
+        "text": "New in round 2. Over-general: the test class does not pass `At` itself to every change. Replay_GivesTheStateAfterTheEventsApplied builds events at `At.AddMinutes(30)` and `At.AddHours(2)` (EventSourcingTests.cs:21-22). Claim 8 is narrower (every Place/Pay/Ship/Cancel call) and true; the lesson sentence is broader than the claim.",
+        "quote": "`At` is a fixed time the test class uses for every change.",
+        "fix": "Replace with: \"`At` is a fixed time the test passes to each change.\""
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-15T16:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (review-junior, prompt 05, round 2)",
+    "issues": [],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

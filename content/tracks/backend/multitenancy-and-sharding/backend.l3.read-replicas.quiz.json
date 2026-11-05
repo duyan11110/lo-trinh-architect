@@ -1,0 +1,200 @@
+{
+  "lesson": "backend.l3.read-replicas",
+  "stage": 3,
+  "questions": [
+    {
+      "id": "backend.l3.read-replicas.q1",
+      "type": "single",
+      "bloom": "understand",
+      "difficulty": 2,
+      "skills": ["backend.data.replication"],
+      "section_ref": 3,
+      "question": {
+        "en": "In `replica-lag.sh`, `db` answers `UPDATE 1` for product 1's new price, and the same `SELECT` sent to `db-replica` straight after still returns `1250000`. What explains that value?",
+        "vi": "Trong `replica-lag.sh`, `db` trả lời `UPDATE 1` cho giá mới của sản phẩm 1, và cùng câu `SELECT` gửi tới `db-replica` ngay sau đó vẫn trả về `1250000`. Điều gì giải thích giá trị đó?"
+      },
+      "options": [
+        { "id": "a", "en": "`db` committed without waiting for the replica, which had not yet applied the change when the `SELECT` arrived.", "vi": "`db` đã commit mà không chờ replica, và replica chưa áp thay đổi đó khi câu `SELECT` tới." },
+        { "id": "b", "en": "`db` had not committed yet, because a commit waits until every replica holds the change.", "vi": "`db` chưa commit, vì một lần commit phải chờ tới khi mọi replica đã có thay đổi đó.", "misconception": "A replica always holds the same data as the primary, since it copies every change." },
+        { "id": "c", "en": "The replica refused the new price, because it refuses every write, so it keeps the old one.", "vi": "Replica đã từ chối giá mới, vì nó từ chối mọi lần ghi, nên nó giữ giá cũ." },
+        { "id": "d", "en": "The replica copies `db` only once when it starts, so it keeps the price it had at that moment.", "vi": "Replica chỉ chép `db` một lần lúc khởi động, nên nó giữ giá có ở thời điểm đó." }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "Replication is asynchronous by default: `db` commits and answers without waiting for `db-replica`. Until the replica applies the change, it answers with the data from before it. That gap is replication lag.",
+          "b": "If the replica always matched the primary, an old value would mean the change was not committed yet. But `UPDATE 1` and the `1300000` read on `db` show the commit is done; the primary simply does not wait for the replica.",
+          "c": "The replica does refuse writes, as the failed `UPDATE` in the output shows. But that refusal is for statements sent to it directly; the primary's changes are its only source of data, and it applies them.",
+          "d": "`start.sh` does copy `db` once at the start, so this is a fair reading of the first step. But after that the replica keeps following `db`, and six seconds later it returns `1300000`."
+        },
+        "vi": {
+          "correct": "Replication mặc định là bất đồng bộ: `db` commit và trả lời mà không chờ `db-replica`. Cho tới khi replica áp thay đổi, nó trả lời bằng dữ liệu trước thay đổi đó. Khoảng trễ ấy là replication lag.",
+          "b": "Nếu replica luôn giống primary, một giá trị cũ sẽ nghĩa là thay đổi chưa được commit. Nhưng `UPDATE 1` và giá `1300000` đọc trên `db` cho thấy commit đã xong; chỉ là primary không chờ replica.",
+          "c": "Replica đúng là từ chối ghi, như câu `UPDATE` thất bại trong output cho thấy. Nhưng việc từ chối đó áp cho các câu lệnh gửi thẳng tới nó; thay đổi của primary là nguồn dữ liệu duy nhất của nó, và nó áp các thay đổi đó.",
+          "d": "`start.sh` đúng là chép `db` một lần lúc đầu, nên cách hiểu này hợp với bước đầu tiên. Nhưng sau đó replica tiếp tục theo `db`, và sáu giây sau nó trả về `1300000`."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.read-replicas.q2",
+      "type": "truefalse",
+      "bloom": "analyze",
+      "difficulty": 4,
+      "skills": ["backend.data.replication"],
+      "section_ref": 6,
+      "question": {
+        "en": "Statement: if the api sent every `GET` to a replica of `db`, a customer who has just placed an order would always find it with `GET /api/v1/orders/{id}`.",
+        "vi": "Nhận định: nếu api gửi mọi `GET` tới một replica của `db`, một khách hàng vừa đặt đơn sẽ luôn tìm thấy đơn đó bằng `GET /api/v1/orders/{id}`."
+      },
+      "options": [
+        { "id": "a", "en": "True, because a read cannot change any data, so sending reads to a replica cannot break anything.", "vi": "Đúng, vì một lần đọc không thể thay đổi dữ liệu, nên gửi các lần đọc tới replica không thể làm hỏng gì.", "polarity": "true", "misconception": "Sending every `GET` to a replica is safe, because reads cannot break anything." },
+        { "id": "b", "en": "True, because the replica receives every change of the primary, so the new order reaches it.", "vi": "Đúng, vì replica nhận mọi thay đổi của primary, nên đơn mới sẽ tới được nó.", "polarity": "true" },
+        { "id": "c", "en": "False, because the replica may not have applied the new order yet, so it can answer `404` for it.", "vi": "Sai, vì replica có thể chưa áp đơn mới, nên nó có thể trả `404` cho đơn đó.", "polarity": "false" },
+        { "id": "d", "en": "False, because the replica refuses every write, so the order's `INSERT` fails before any `GET`.", "vi": "Sai, vì replica từ chối mọi lần ghi, nên câu `INSERT` của đơn thất bại trước khi có `GET` nào.", "polarity": "false" }
+      ],
+      "answer": ["c"],
+      "explanation": {
+        "en": {
+          "correct": "The `INSERT` commits on the primary, and the replica applies it only after some lag, with no limit promised. A `GET` that arrives during the lag finds no such order. Sending a read that follows its own write to the primary is one simple way to keep read-your-writes.",
+          "a": "It is true that a read changes nothing, which makes the plan look safe. But a read can hide a write the caller just made: during the lag the replica answers with data from before the order existed.",
+          "b": "The replica does receive every change, so the order arrives in the end. But \"always\" fails: it arrives after the primary has already answered, and a `GET` sent in between reads the old data.",
+          "d": "The replica does refuse writes, but in this setup only `GET` requests go to it. `POST /api/v1/orders` still goes to the primary, where the `INSERT` succeeds; the problem is the read that follows."
+        },
+        "vi": {
+          "correct": "Câu `INSERT` commit trên primary, và replica chỉ áp nó sau một khoảng lag, không có giới hạn nào được hứa. Một `GET` tới trong khoảng lag sẽ không thấy đơn đó. Gửi lần đọc đi sau chính lần ghi của nó tới primary là một cách đơn giản để giữ read-your-writes.",
+          "a": "Một lần đọc đúng là không thay đổi gì, nên kế hoạch này trông an toàn. Nhưng một lần đọc có thể giấu đi thứ người gọi vừa ghi: trong khoảng lag, replica trả lời bằng dữ liệu từ lúc đơn chưa tồn tại.",
+          "b": "Replica đúng là nhận mọi thay đổi, nên cuối cùng đơn sẽ tới. Nhưng chữ \"luôn\" thì sai: đơn tới sau khi primary đã trả lời, và một `GET` gửi trong khoảng giữa sẽ đọc dữ liệu cũ.",
+          "d": "Replica đúng là từ chối ghi, nhưng trong cách bố trí này chỉ các request `GET` đi tới nó. `POST /api/v1/orders` vẫn đi tới primary, nơi câu `INSERT` thành công; vấn đề nằm ở lần đọc theo sau."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.read-replicas.q3",
+      "type": "multi",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["backend.data.replication"],
+      "section_ref": 4,
+      "question": {
+        "en": "A later version of Đơn Hàng adds a read replica of `db` and must choose, read by read, where each one goes. Which reads may the replica answer? Select all that apply.",
+        "vi": "Một phiên bản sau của Đơn Hàng thêm một read replica của `db` và phải chọn nơi gửi cho từng lần đọc. Những lần đọc nào replica được phép trả lời? Chọn tất cả đáp án đúng."
+      },
+      "options": [
+        { "id": "a", "en": "The name and price of product 3, shown to a visitor who opened its page from a shared link.", "vi": "Tên và giá của sản phẩm 3, hiện cho một khách mở trang của nó từ một đường link được chia sẻ." },
+        { "id": "b", "en": "The order page shown to a customer right after they place that order.", "vi": "Trang đơn hàng hiện cho khách ngay sau khi họ đặt chính đơn đó." },
+        { "id": "c", "en": "A count of last month's orders that the owner reads the next morning.", "vi": "Số đơn của tháng trước mà chủ cửa hàng đọc vào sáng hôm sau." },
+        { "id": "d", "en": "A customer's order list, loaded straight after they cancel one of those orders.", "vi": "Danh sách đơn của một khách, tải ngay sau khi họ hủy một trong các đơn đó." }
+      ],
+      "answer": ["a", "c"],
+      "explanation": {
+        "en": {
+          "correct": "A read that can live with data a few seconds old may go to a replica: a product page for a visitor who changed nothing, and a report on last month, both qualify. The other two follow the caller's own write and must see it, so they go to the primary.",
+          "b": "It is still only a read, so it looks like a natural fit for the replica. But it follows the customer's own write; during the lag the replica may not have the order yet, and the page would not find it.",
+          "d": "Loading a list feels like browsing, the case replicas suit. But the customer has just changed one of those orders, and during the lag the replica would still show it as it was before the cancel."
+        },
+        "vi": {
+          "correct": "Lần đọc chấp nhận được dữ liệu cũ vài giây có thể đi tới replica: trang sản phẩm cho một khách chưa thay đổi gì, và báo cáo về tháng trước, đều thuộc loại này. Hai lần đọc còn lại đi sau chính lần ghi của người gọi và phải thấy nó, nên chúng đi tới primary.",
+          "b": "Nó vẫn chỉ là một lần đọc, nên trông hợp để gửi tới replica. Nhưng nó đi sau lần ghi của chính khách; trong khoảng lag, replica có thể chưa có đơn đó, và trang sẽ không tìm thấy nó.",
+          "d": "Tải một danh sách nghe giống việc xem lướt, trường hợp hợp với replica. Nhưng khách vừa thay đổi một trong các đơn đó, và trong khoảng lag replica vẫn hiện đơn như trước khi hủy."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.read-replicas.q4",
+      "type": "scenario",
+      "bloom": "evaluate",
+      "difficulty": 4,
+      "skills": ["backend.data.replication"],
+      "section_ref": 6,
+      "context": {
+        "en": "A later version of Đơn Hàng runs one PostgreSQL server, `db`. During weekly sales, customers wait several seconds when they place an order. The team finds that `db` is busy mostly with the `INSERT`s of new orders and their items; reads such as the product list are a small share of its work and stay fast. A teammate proposes adding two read replicas before the next sale so that placing orders gets faster. The team has two weeks.",
+        "vi": "Một phiên bản sau của Đơn Hàng chạy một server PostgreSQL, `db`. Trong các đợt giảm giá hằng tuần, khách phải chờ vài giây khi đặt đơn. Nhóm thấy `db` bận chủ yếu với các câu `INSERT` của đơn mới và các món trong đơn; các lần đọc như danh sách sản phẩm chỉ là phần nhỏ công việc của nó và vẫn nhanh. Một đồng đội đề xuất thêm hai read replica trước đợt giảm giá tới để việc đặt đơn nhanh hơn. Nhóm có hai tuần."
+      },
+      "question": {
+        "en": "What is the best response to the proposal here?",
+        "vi": "Phản hồi nào là tốt nhất cho đề xuất này trong bối cảnh này?"
+      },
+      "options": [
+        { "id": "a", "en": "Accept it: with two replicas sharing the load, `db` has less to do and orders are placed faster.", "vi": "Đồng ý: với hai replica chia tải, `db` có ít việc hơn và việc đặt đơn nhanh hơn.", "misconception": "Adding replicas also makes placing orders faster." },
+        { "id": "b", "en": "Accept it, and send each new order's `INSERT` to the replicas in turn so `db` handles fewer of them.", "vi": "Đồng ý, và gửi câu `INSERT` của mỗi đơn mới lần lượt tới các replica để `db` xử lý ít hơn." },
+        { "id": "c", "en": "Decline it for this problem: the new orders would still all be saved by `db`, so its busy work stays the same.", "vi": "Từ chối cho vấn đề này: các đơn mới vẫn đều do `db` lưu, nên phần việc làm nó bận vẫn y như cũ." },
+        { "id": "d", "en": "Decline it, and partition `orders` by month instead so the inserts spread over several servers.", "vi": "Từ chối, và thay vào đó chia partition cho `orders` theo tháng để các câu `INSERT` trải ra nhiều server." }
+      ],
+      "answer": ["c"],
+      "explanation": {
+        "en": {
+          "correct": "A replica adds capacity for reads only. Every `INSERT` still goes to the one primary, and each replica applies the same rows again, so the work that makes `db` busy does not move. When writes outgrow one server, the data itself has to be split across several servers.",
+          "a": "Moving reads away can leave the primary more room, so the idea is reasonable. But here reads are a small share; the busy part is writes, and write capacity stays that of one server. Adding replicas is the right call when `db` is busy mostly answering reads.",
+          "b": "Spreading the inserts sounds like the direct fix. But a replica refuses every write, as the failed `UPDATE` on `db-replica` shows. Sending work to a replica is right only when that work is reads that can live with slightly old data.",
+          "d": "Partitioning splits a table, so it can sound like splitting the load. But every partition stays on the same server and shares its CPU, memory and disk. It is the right step when queries that filter by month need to read less."
+        },
+        "vi": {
+          "correct": "Replica chỉ thêm năng lực cho việc đọc. Mọi câu `INSERT` vẫn đi tới một primary duy nhất, và mỗi replica lại áp cùng các dòng đó, nên phần việc làm `db` bận không hề dời đi. Khi việc ghi vượt quá một server, chính dữ liệu phải được chia ra nhiều server.",
+          "a": "Dời việc đọc đi có thể cho primary thêm chỗ, nên ý này hợp lý. Nhưng ở đây việc đọc chỉ là phần nhỏ; phần bận là việc ghi, và năng lực ghi vẫn là của một server. Thêm replica là lựa chọn đúng khi `db` bận chủ yếu vì trả lời các lần đọc.",
+          "b": "Chia các câu `INSERT` ra nghe như cách sửa trực tiếp. Nhưng replica từ chối mọi lần ghi, như câu `UPDATE` thất bại trên `db-replica` cho thấy. Gửi việc tới replica chỉ đúng khi việc đó là các lần đọc chấp nhận được dữ liệu hơi cũ.",
+          "d": "Partitioning chia một bảng, nên nghe như chia tải. Nhưng mọi partition vẫn ở trên cùng server và dùng chung CPU, bộ nhớ, ổ đĩa của nó. Đây là bước đúng khi các truy vấn lọc theo tháng cần đọc ít hơn."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.read-replicas.q5",
+      "type": "order",
+      "bloom": "understand",
+      "difficulty": 2,
+      "skills": ["backend.data.replication"],
+      "section_ref": 4,
+      "question": {
+        "en": "Put the steps of the price change in `replica-lag.sh` in the order they happen, from the `UPDATE` on `db` to the replica returning the new price.",
+        "vi": "Sắp xếp các bước của lần đổi giá trong `replica-lag.sh` theo thứ tự chúng xảy ra, từ câu `UPDATE` trên `db` tới lúc replica trả về giá mới."
+      },
+      "options": [
+        { "id": "a", "en": "`db-replica` applies the change.", "vi": "`db-replica` áp thay đổi đó." },
+        { "id": "b", "en": "A `SELECT` on `db-replica` returns `1300000`.", "vi": "Một câu `SELECT` trên `db-replica` trả về `1300000`." },
+        { "id": "c", "en": "`db` commits the `UPDATE` and answers `UPDATE 1`.", "vi": "`db` commit câu `UPDATE` và trả lời `UPDATE 1`." },
+        { "id": "d", "en": "A `SELECT` on `db-replica` returns `1250000`.", "vi": "Một câu `SELECT` trên `db-replica` trả về `1250000`." }
+      ],
+      "answer": ["c", "d", "a", "b"],
+      "explanation": {
+        "en": {
+          "correct": "`db` commits and answers first, without waiting for the replica. A `SELECT` on the replica during the lag still returns the old price. Only after the replica applies the change does the same `SELECT` return `1300000`."
+        },
+        "vi": {
+          "correct": "`db` commit và trả lời trước, không chờ replica. Một câu `SELECT` trên replica trong khoảng lag vẫn trả về giá cũ. Chỉ sau khi replica áp thay đổi, cùng câu `SELECT` đó mới trả về `1300000`."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.read-replicas.q6",
+      "type": "single",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["backend.data.replication"],
+      "section_ref": 5,
+      "question": {
+        "en": "To take load off `db`, a teammate points the api's database connection at `db-replica` instead of `db`, and changes nothing else. What happens when a customer calls `POST /api/v1/orders`?",
+        "vi": "Để giảm tải cho `db`, một đồng đội trỏ kết nối database của api tới `db-replica` thay vì `db`, và không đổi gì khác. Điều gì xảy ra khi một khách gọi `POST /api/v1/orders`?"
+      },
+      "options": [
+        { "id": "a", "en": "Saving the order fails, because every transaction on `db-replica` is read-only.", "vi": "Việc lưu đơn thất bại, vì mọi transaction trên `db-replica` đều chỉ đọc." },
+        { "id": "b", "en": "The order is saved on `db-replica` and reaches `db` once the lag is over.", "vi": "Đơn được lưu trên `db-replica` và tới được `db` khi hết lag." },
+        { "id": "c", "en": "The order is saved, and placing orders gets faster because `db` no longer does that work.", "vi": "Đơn được lưu, và việc đặt đơn nhanh hơn vì `db` không còn làm việc đó.", "misconception": "Adding replicas also makes placing orders faster." },
+        { "id": "d", "en": "The order is saved on `db-replica` only, so `db` never sees it.", "vi": "Đơn chỉ được lưu trên `db-replica`, nên `db` không bao giờ thấy nó." }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "The replica answers queries but refuses every write. The script's `UPDATE` on `db-replica` fails with `cannot execute UPDATE in a read-only transaction`, and the order's `INSERT` would be refused the same way.",
+          "b": "Lag is about changes travelling between the two servers, so it is natural to picture them going both ways. But changes flow only from the primary to the replica; the replica takes no writes of its own.",
+          "c": "Moving work off `db` sounds like it should speed things up. But a replica adds capacity for reads only; the write never succeeds there, and writes in general still belong to the one primary.",
+          "d": "Two separate copies would fit a second database started on its own. But `db-replica` follows `db` and refuses writes, so there is no second set of orders; the `INSERT` fails instead."
+        },
+        "vi": {
+          "correct": "Replica trả lời truy vấn nhưng từ chối mọi lần ghi. Câu `UPDATE` của script trên `db-replica` thất bại với `cannot execute UPDATE in a read-only transaction`, và câu `INSERT` của đơn cũng bị từ chối như vậy.",
+          "b": "Lag nói về các thay đổi đi giữa hai server, nên dễ hình dung chúng đi cả hai chiều. Nhưng thay đổi chỉ đi từ primary sang replica; replica không nhận lần ghi nào của riêng nó.",
+          "c": "Dời việc khỏi `db` nghe như sẽ làm mọi thứ nhanh hơn. Nhưng replica chỉ thêm năng lực cho việc đọc; lần ghi không bao giờ thành công ở đó, và việc ghi nói chung vẫn thuộc về một primary duy nhất.",
+          "d": "Hai bản sao tách rời sẽ đúng với một database thứ hai khởi động riêng. Nhưng `db-replica` theo `db` và từ chối ghi, nên không có bộ đơn thứ hai nào; câu `INSERT` thất bại."
+        }
+      }
+    }
+  ]
+}

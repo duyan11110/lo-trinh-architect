@@ -1,0 +1,183 @@
+{
+  "id": "k8s.l4.mutual-tls",
+  "technical": {
+    "reviewed_at": "2026-10-29T00:20:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "RFC 8446 §1: \"The server side of the channel is always authenticated; the client side is optionally authenticated.\" §4.3.2: \"A server which is authenticating with a certificate MAY optionally request a certificate from the client.\" §2: CertificateRequest \"is omitted if client authentication is not desired.\"",
+        "source": "https://www.rfc-editor.org/rfc/rfc8446 §1, §2, §4.3.2"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "RFC 8446 §2: CertificateVerify is \"A signature over the entire handshake using the private key corresponding to the public key in the Certificate message.\" §4.4.3: \"This message is used to provide explicit proof that an endpoint possesses the private key corresponding to its certificate.\"",
+        "source": "https://www.rfc-editor.org/rfc/rfc8446 §2, §4.4.3"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "RFC 8446 §4.4.2.4: on an empty client Certificate the server MAY continue or abort with \"certificate_required\"; on an unacceptable chain it may abort. §6.2: certificate_required \"Sent by servers when a client certificate is desired but none was provided by the client.\"; certificate_expired \"A certificate has expired or is not currently valid.\" Caddy tls docs: require_and_verify = \"Require clients to present a valid certificate that is verified\". Output mutual-tls.txt lines 30, 33 show both alerts.",
+        "source": "https://www.rfc-editor.org/rfc/rfc8446 §4.4.2.4, §6.2; https://caddyserver.com/docs/caddyfile/directives/tls"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "RFC 8446 §2 describes client authentication only as the optional CertificateRequest plus the client's Certificate/CertificateVerify; record protection (§5) is the same with or without them. §1.2: \"All handshake messages after the ServerHello are now encrypted.\"",
+        "source": "https://www.rfc-editor.org/rfc/rfc8446 §1.2, §2, §5"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Caddy tls directive: \"client_auth { mode [request|require|verify_if_given|require_and_verify] trust_pool <module> ...\"; require_and_verify: \"Require clients to present a valid certificate that is verified\"; file module \"file [<pem_file>...]\", pem_file \"a path to a PEM CA certificate file against which to validate client certificates\". Page is the current docs, not a 2.10 snapshot; the config loads and behaves as described on caddy:2.10.0 (mutual-tls.txt lines 24-37).",
+        "source": "https://caddyserver.com/docs/caddyfile/directives/tls; outputs/stage-4/scripts/k8s/mutual-tls.txt"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Caddyfile concepts, placeholder shorthand table: \"{tls_client_subject}\" | \"{http.request.tls.client.subject}\". Execution output mutual-tls.txt line 37: \"hello CN=gateway-client\".",
+        "source": "https://caddyserver.com/docs/caddyfile/concepts; outputs/stage-4/scripts/k8s/mutual-tls.txt"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Caddy tls docs: verifier modules run \"after validating they are issued from a trusted certificate authority\"; the `leaf` verifier is what restricts to a permitted set of certificates. echo-mtls.yaml lines 18-21 set only mode and trust_pool, no verifier, so nothing restricts the subject.",
+        "source": "https://caddyserver.com/docs/caddyfile/directives/tls; deploy/k8s/lessons/echo-mtls.yaml @ stage-4"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "CA issuer page: \"the correct CA certificate is stored in the secrets for issued `Certificate`s under the `ca.crt` key.\" Certificate page: renewal \"By default this will be 2/3 through the X.509 certificate's duration\"; \"DO NOT directly mount the `ca.crt` value into the application's trust store, as it will be updated when the certificate is renewed\". Round 3: section 5 now says \"for a real trust pool, because that copy changes when the certificate is renewed\", matching the stated reason.",
+        "source": "https://cert-manager.io/docs/configuration/ca/; https://cert-manager.io/docs/usage/certificate/"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "cert-manager Certificate docs: \"cert-manager will set the default requested usages of `digital signature`, `key encipherment`, and `server auth`\". Execution: mutual-tls.txt lines 12-22 print \"X509v3 Extended Key Usage:\" then \"TLS Web Server Authentication\" (echo-mtls-tls) and \"subject=CN=gateway-client\", \"TLS Web Client Authentication\" (gateway-client-tls). Round 3 wording \"prints, under extended key usage, as\" matches this output.",
+        "source": "https://cert-manager.io/docs/usage/certificate/; outputs/stage-4/scripts/k8s/mutual-tls.txt"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "mtls-certificates.yaml @ stage-4: Issuer lab-ca spec.ca.secretName lab-ca (lines 5-12); Certificate echo-mtls secretName echo-mtls-tls, dnsNames echo-mtls.mesh-lessons.svc and echo-sidecar.mesh-lessons.svc, usages server auth (lines 18-34); gateway-client secretName gateway-client-tls, commonName gateway-client, usages client auth (lines 39-53).",
+        "source": "examples/don-hang deploy/k8s/lessons/mtls-certificates.yaml (stage-4 = 828fdeb = submodule HEAD)"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "echo-mtls.yaml @ stage-4 lines 12-24 Caddyfile with tls /certs/tls.crt /certs/tls.key and client_auth; Deployment image caddy:2.10.0, volumeMounts config at /etc/caddy and certs at /certs readOnly: true, secretName echo-mtls-tls (lines 29-63).",
+        "source": "examples/don-hang deploy/k8s/lessons/echo-mtls.yaml (stage-4)"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "mutual-tls.sh @ stage-4: call_echo lines 61-81 (port-forward, openssl s_client -CAfile secrets/lab-ca.crt); line 87 `call_echo` with no options; lines 93-99 other-ca and CN=gateway-client cert; line 101 offers it; lines 107-110 read gateway-client-tls tls.crt/tls.key and call.",
+        "source": "examples/don-hang scripts/k8s/mutual-tls.sh (stage-4)"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "mutual-tls.txt lines 19-22: issuer=CN=Don Hang lab CA, O=donhang-dev; subject=CN=gateway-client; TLS Web Client Authentication. Lines 30, 33, 36-37: tlsv13 alert certificate required; tlsv1 alert unknown ca; HTTP/1.1 200 OK; hello CN=gateway-client.",
+        "source": "examples/don-hang outputs/stage-4/scripts/k8s/mutual-tls.txt"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "kind docs home: \"kind is a tool for running local Kubernetes clusters using Docker container “nodes”.\" mutual-tls.sh line 7 lessons_cluster (network-lessons.sh: cluster-up.sh if `kind get clusters` lacks donhang); line 8 installs cert-manager if cert-manager-webhook absent; line 9 dev-secrets.sh if secrets/lab-ca.key missing; line 112 deletes namespace mesh-lessons.",
+        "source": "https://kind.sigs.k8s.io/; examples/don-hang scripts/k8s/mutual-tls.sh, scripts/lib/network-lessons.sh (stage-4)"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "threat-model.md line 72: \"P5 | Gateway gọi các Pod api và Payments bằng HTTP thường: NetworkPolicy quyết ai được kết nối, nhưng dữ liệu đi qua mạng giữa các node không mã hóa, và api chỉ biết bên gọi qua địa chỉ của nó | Chấp nhận: một cluster, một đội ... chưa làm theo ADR 0021, điều kiện mở lại ở đó\". ADR 0021 lines 64-70 list three reopen conditions.",
+        "source": "examples/don-hang docs/design/threat-model.md, docs/adr/0021-chua-dung-service-mesh.md"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "threat-model.md P5 and ADR 0021 lines 10-11: \"Gateway gọi các Pod api và Payments bằng HTTP thường\"; threat-model.md line 24: NetworkPolicy from-the-gateway, \"chỉ Pod của Traefik tới được api và Payments\".",
+        "source": "examples/don-hang docs/design/threat-model.md, docs/adr/0021-chua-dung-service-mesh.md"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "network-policies.md: \"If you want to control traffic flow at the IP address or port level (OSI layer 3 or 4)\"; peers are \"Other pods\", \"Namespaces\", \"IP blocks\". The page describes only allowing/blocking connections, no encryption and no sender proof. The unencrypted-between-nodes part is now scoped to donhang via P5 (threat-model.md line 72). Matches round-1 suggested_text.",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/services-networking/network-policies.md lines 13, 30-36; examples/don-hang docs/design/threat-model.md"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "service.md: \"Pods are ephemeral resources\" ... \"Each Pod gets its own IP address (Kubernetes expects network plugins to ensure this).\" network-policies.md line 194: \"Pod IPs are ephemeral and unpredictable.\"",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/services-networking/service.md lines 35-38; network-policies.md line 194"
+      },
+      {
+        "n": 19,
+        "verdict": "verified",
+        "evidence": "Opinion now consistent with claim 8 and the cert-manager docs (issue and renew automated; ca.crt not to be mounted as a trust store). Section 5 and summary line 5 (\"cert-manager automates the first, not who may call whom\") no longer present trust distribution as automated. Matches round-1 suggested_text.",
+        "source": "https://cert-manager.io/docs/usage/certificate/; lesson sections 5, 11"
+      },
+      {
+        "n": 20,
+        "verdict": "verified",
+        "evidence": "Row \"A caller that gets past the policy\" now reads \"Reaches the app; its token is checked\" in the first two columns, consistent with threat-model.md line 24 (services check every token). Other rows follow claims 1-4, 15, 17. Upkeep row now names \"the CA every peer trusts\", consistent with claim 8.",
+        "source": "lesson section 6; examples/don-hang docs/design/threat-model.md line 24"
+      },
+      {
+        "n": 21,
+        "verdict": "verified",
+        "evidence": "ADR 0021 decision A keeps P5 accepted for \"ba service .NET và một nhóm\"; reopen conditions: \"Một hợp đồng đòi mã hóa lời gọi bên trong cluster. Nếu chỉ đòi mã hóa, làm C trước\" (C = HTTPS to api with a cert-manager certificate) and \"Service đến từ nhiều nhóm hoặc nhiều ngôn ngữ\". The three bullets are conditional and consistent with it.",
+        "source": "examples/don-hang docs/adr/0021-chua-dung-service-mesh.md lines 49-70"
+      },
+      {
+        "n": 22,
+        "verdict": "verified",
+        "evidence": "Execution: mutual-tls.sh lines 93-101 build a CN=gateway-client certificate from a fresh other-ca; mutual-tls.txt line 33 \"handshake refused: tlsv1 alert unknown ca\". RFC 8446 §6.2 unknown_ca: \"A valid certificate chain or partial chain was received, but the certificate was not accepted because the CA certificate could not be located or could not be matched with a known trust anchor.\"",
+        "source": "outputs/stage-4/scripts/k8s/mutual-tls.txt; https://www.rfc-editor.org/rfc/rfc8446 §6.2"
+      },
+      {
+        "n": 23,
+        "verdict": "verified",
+        "evidence": "No openssl docs root in versions.yaml; round 3 meta drops version_key and cites execution. mutual-tls.sh lines 93-99 run `openssl req -x509 ... -out other-ca.crt` (new CA cert) and `openssl x509 -req ... -CA other-ca.crt -CAkey other-ca.key -out other-client.crt` (signs a cert); call_echo runs `openssl s_client` as TLS client; mutual-tls.txt line 33 \"tlsv1 alert unknown ca\" shows the signed cert was offered.",
+        "source": "examples/don-hang scripts/k8s/mutual-tls.sh lines 61-101 (stage-4); outputs/stage-4/scripts/k8s/mutual-tls.txt"
+      },
+      {
+        "n": 24,
+        "verdict": "verified",
+        "evidence": "Port forwarding task page: \"Forward a local port to a port on the Pod\"; \"Connections made to local port 28015 are forwarded to port 27017 of the Pod\". mutual-tls.sh line 62 port-forward service/echo-mtls 28443:8443. Round 3 targeted re-review, zero issues: opened lesson sections 3 and 5, meta claims 8, 9, 23, mutual-tls.txt lines 1-25, round-2 cert-manager/Caddy/RFC 8446 evidence; quiz unchanged per change log.",
+        "source": "refs/kubernetes-website/content/en/docs/tasks/access-application-cluster/port-forward-access-application-cluster.md lines 115, 200; scripts/k8s/mutual-tls.sh line 62"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-28T23:59:00+07:00",
+    "reviewer": "review-junior (prompt 05), round 3 targeted re-review",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "gap",
+        "text": "New in round 3, in the changed ca.crt sentence. The reason is now given, but I cannot get from 'that copy changes when the certificate is renewed' to why that is bad for a trust pool. I guess a server could suddenly stop trusting callers, but the lesson does not say so.",
+        "quote": "because that copy changes when the certificate is renewed.",
+        "fix": "After 'renewed', add a few words saying what goes wrong, e.g. 'so a server reading it could start or stop trusting a CA without anyone deciding to'."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [
+        "Why a ca.crt copy that changes on renewal is a problem for a real trust pool is not spelled out"
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

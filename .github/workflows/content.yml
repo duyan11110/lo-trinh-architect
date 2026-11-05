@@ -1,0 +1,68 @@
+# docs/07 §10, DECISIONS.md E8 — content: validate → build → dist/ as an
+# artifact (always) → app.yml picks it up through workflow_run.
+#
+# dist/ is gitignored and never committed back (DECISIONS.md §3): the
+# uploaded `dist` artifact is what app.yml consumes; app.yml deploys Pages
+# from main only. The next run continues content_version from the published
+# site (fetch-published-content.sh). This workflow writes nothing to git.
+name: content
+
+on:
+  push:
+    branches: ["auto/**", main]
+    paths:
+      - "content/**"
+      - ".github/workflows/content.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: content-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
+          fetch-depth: 0
+      - name: Example repo tags (validate S07/L08 read files at stage-N tags)
+        run: git -C examples/don-hang fetch --tags --force
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1.8.1
+        with:
+          sdk: 3.13.2
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+      - name: mermaid-cli (tools/build renders diagrams with it)
+        run: |
+          npm install -g @mermaid-js/mermaid-cli@12.2.0
+          # Ubuntu 24.04 blocks the unprivileged user namespaces Chrome's
+          # sandbox needs; mermaid-cli's headless Chrome fails without this.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: Previous build (content_version continues from it)
+        run: |
+          if [ -f dist/VERSION ] && [ -f dist/content.json ]; then
+            echo "dist/ from the checkout: v$(cat dist/VERSION)"
+          else
+            bash .github/scripts/fetch-published-content.sh dist || {
+              code=$?
+              if [ "$code" = "3" ]; then echo "no published content yet: first build"; else exit "$code"; fi
+            }
+          fi
+      - run: bash tools/validate
+      - run: bash tools/build
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dist
+          path: |
+            dist/content.json
+            dist/content.json.gz
+            dist/manifest.json
+            dist/VERSION
+          if-no-files-found: error

@@ -1,0 +1,136 @@
+{
+  "id": "devops.l3.one-state-per-environment",
+  "technical": {
+    "reviewed_at": "2026-10-08T21:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "tofu plan by default: \"Reads the current state of any already-existing remote objects to make sure that the OpenTofu state is up-to-date.\" / \"Compares the current configuration to the prior state and noting any differences.\" Round 2: section 4 now says \"works from one folder's files and that folder's state only, and checks only the real objects that state records\", matching the claim.",
+        "source": "https://opentofu.org/docs/cli/commands/plan/"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "\"Workspaces in the OpenTofu CLI refer to separate instances of state data inside the same OpenTofu working directory.\" \"Every initialized working directory starts with one workspace named default.\" select: \"The tofu workspace select command is used to choose a different workspace to use for further operations.\" Usage: \"tofu workspace select NAME [DIR]\".",
+        "source": "https://opentofu.org/docs/cli/workspaces/ ; https://opentofu.org/docs/cli/commands/workspace/select/"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "\"CLI workspaces within a working directory use the same backend\"; remote workspaces \"are stored directly in the configured backend.\" Example count = \"${terraform.workspace == \"default\" ? 5 : 1}\". Round 3: section 4 now reads \"differ only through values chosen per workspace, such as variable values. They also share the folder's `backend.tf`, the file that says where state is kept.\" Matches the docs.",
+        "source": "https://opentofu.org/docs/cli/workspaces/ ; https://opentofu.org/docs/language/state/workspaces/"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "terraform_remote_state \"uses the latest state snapshot from a specified state backend to retrieve the root module output values\"; example reference data.terraform_remote_state.vpc.outputs.subnet_id. Read-only: data sources page, \"data resources cause OpenTofu only to read objects\".",
+        "source": "https://opentofu.org/docs/language/state/remote-state-data/ ; https://opentofu.org/docs/language/data-sources/"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Provider configuration arguments \"can only refer to values that are known before the configuration is applied.\" \"This means you can safely reference input variables, but not attributes exported by resources\". Execution: outputs/stage-3/scripts/devops/tofu-environments.txt lines 11-17 show endpoint and certificates as (known after apply).",
+        "source": "https://opentofu.org/docs/language/providers/configuration/ ; examples/don-hang outputs/stage-3/scripts/devops/tofu-environments.txt"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "hashicorp/kubernetes v3.3.0: \"host - (Optional) The hostname (in form of URI) of the Kubernetes API.\"; cluster_ca_certificate, client_certificate, client_key are PEM-encoded certs/key \"for TLS authentication\". kubeconfig v1 (refs): \"ClientCertificateData contains PEM-encoded data from a client cert file for TLS\", \"ClientKeyData contains PEM-encoded data from a client key file for TLS\", \"CertificateAuthorityData contains PEM-encoded certificate authority certificates\".",
+        "source": "https://api.opentofu.org/registry/docs/providers/hashicorp/kubernetes/v3.3.0/index.md ; refs/kubernetes-website/content/en/docs/reference/config-api/kubeconfig.v1.md"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "git show stage-3: staging/cluster/main.tf has source ../../../modules/kind-cluster, name = \"donhang-staging\", workers = 0 (plus published_ports, no longer mentioned in round 3; the sentence does not claim to be exhaustive); production/cluster/main.tf has name = \"donhang-production\", workers = 2, no published_ports.",
+        "source": "examples/don-hang deploy/tofu/envs/{staging,production}/cluster/main.tf @ stage-3"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "kind-cluster/main.tf @ stage-3: one node block role = \"control-plane\", then dynamic \"node\" with for_each = range(var.workers), role = \"worker\"; comment \"with workers = 0 there is none\".",
+        "source": "examples/don-hang deploy/tofu/modules/kind-cluster/main.tf @ stage-3"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Each of the four envs/<env>/<layer> folders holds main.tf, backend.tf and .terraform.lock.hcl. staging/cluster/backend.tf @ stage-3: backend \"pg\" { schema_name = \"staging_cluster\" }, header \"a table in the schema staging_cluster of the database donhang_tofu, in Compose's PostgreSQL\". Round 3: section 4 \"a schema such as `staging_cluster`, in a PostgreSQL database\" matches.",
+        "source": "examples/don-hang deploy/tofu/envs/*/*/backend.tf @ stage-3; directory listing"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "staging/platform/main.tf lines 12-24: data \"terraform_remote_state\" \"cluster\" { backend = \"pg\" config = { schema_name = \"staging_cluster\" } } and provider \"kubernetes\" host/certs from .outputs.*; production/platform/main.tf has schema_name = \"production_cluster\".",
+        "source": "examples/don-hang deploy/tofu/envs/{staging,production}/platform/main.tf @ stage-3"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Captured run: \"# module.platform.kubernetes_namespace_v1.donhang will be created\", \"# module.platform.kubernetes_secret_v1.sealing_key will be created\" with namespace = \"kube-system\", \"Plan: 2 to add, 0 to change, 0 to destroy.\", \"Apply complete! Resources: 2 added, 0 changed, 0 destroyed.\"",
+        "source": "examples/don-hang outputs/stage-3/scripts/devops/tofu-environments.txt lines 61-108"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "tofu-environments.sh @ stage-3: tofu-env.sh staging cluster apply -auto-approve ..., then staging platform apply -auto-approve ..., then production cluster plan piped to grep, then kind get clusters.",
+        "source": "examples/don-hang scripts/devops/tofu-environments.sh @ stage-3"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Captured run lines 110-116: \"== production, cluster layer: plan only\" / \"# module.cluster.kind_cluster.this will be created\" / \"+ name = \\\"donhang-production\\\"\" / \"Plan: 1 to add, 0 to change, 0 to destroy.\" / then kind get clusters: \"donhang\", \"donhang-staging\".",
+        "source": "examples/don-hang outputs/stage-3/scripts/devops/tofu-environments.txt"
+      },
+      {
+        "n": 14,
+        "verdict": "unverified",
+        "evidence": "Round 2: lesson softened to \"have nothing to create\" as suggested in round 1. Still only one captured run (outputs/stage-3/scripts/devops/tofu-environments.txt); I did not run the script (it creates kind clusters on the host). Production half follows from the script never applying production; the staging half rests on both providers reporting no replacement on refresh, which no document or run I had settles.",
+        "source": "examples/don-hang outputs/stage-3/scripts/devops/tofu-environments.txt (single run only)"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "tehcyx/kind v0.11.0 kind_cluster: wait_for_ready \"Defines wether or not the provider will wait for the control plane to be ready. Defaults to false.\" The module sets wait_for_ready = true; captured staging apply ends \"Apply complete! Resources: 1 added\".",
+        "source": "https://api.opentofu.org/registry/docs/providers/tehcyx/kind/v0.11.0/resources/cluster.md"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "Opinion with a condition and an opposing view, consistent with the docs: workspaces \"let you quickly switch between multiple instances of a single configuration within its single backend\"; \"Workspaces are not appropriate for system decomposition or deployments requiring separate credentials and access controls.\"",
+        "source": "https://opentofu.org/docs/cli/workspaces/ ; https://opentofu.org/docs/language/state/workspaces/"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "No 'workspace' anywhere under examples/don-hang/scripts; deploy/tofu/envs holds staging/{cluster,platform} and production/{cluster,platform}, each with its own backend schema.",
+        "source": "examples/don-hang scripts/ and deploy/tofu/envs (grep, listing)"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "terraform_remote_state \"uses the latest state snapshot from a specified state backend to retrieve the root module output values\"; tofu plan \"Reads the current state of any already-existing remote objects\". staging/platform/main.tf @ stage-3 sets provider \"kubernetes\" host and certs from data.terraform_remote_state.cluster.outputs.*, chosen only by schema_name = \"staging_cluster\"; naming production_cluster there points the provider at production's cluster. Round 3 opened: cli/workspaces, backend.tf/main.tf @ stage-3, sections 2, 4, 5, quiz.",
+        "source": "https://opentofu.org/docs/language/state/remote-state-data/ ; https://opentofu.org/docs/cli/commands/plan/ ; examples/don-hang deploy/tofu/envs/staging/platform/main.tf @ stage-3"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-08T22:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (prompt 05, junior reader, round 3 targeted)",
+    "issues": [],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

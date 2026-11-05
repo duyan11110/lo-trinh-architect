@@ -15,8 +15,8 @@ vocab: [test-pyramid]
 example_tag: stage-2
 versions_used: [dotnet, xunit, testcontainers]
 content_version: 1
-status: approved
-approved_by: auto
+status: published
+approved_by: owner
 reviewed_at: "2026-10-02T00:46:19+07:00"
 ---
 

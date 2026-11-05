@@ -1,0 +1,180 @@
+{
+  "id": "sysdesign.l4.support-chat-design",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-11-03T18:00:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "A WebSocket over HTTP/1.1 starts as an HTTP request asking to switch protocols; once the server accepts, the connection stays open and either the client or the server can send a message at any time.",
+      "kind": "behavior",
+      "source_hint": "ASP.NET Core 10 docs: WebSockets support in ASP.NET Core; ADR 0032 @ stage-4 lines 19-20",
+      "version_key": "aspnetcore",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 2,
+      "text": "ADR 0032 header: nothing is built at stage-4; the repository has no Support service, endpoint or chat code; the design is in docs/design/support-chat-design-review.md.",
+      "kind": "fact",
+      "source_hint": "docs/adr/0032-chat-ho-tro-qua-websocket-trong-service-rieng.md @ stage-4 lines 8-9",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 3,
+      "text": "ADR 0032 decides a separate service DonHang.Support following the golden path, with its own database donhang_support on server db like Notifications and Payments, using ASP.NET Core's built-in WebSocket support with no added library.",
+      "kind": "fact",
+      "source_hint": "docs/adr/0032-... @ stage-4 lines 35-38",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 4,
+      "text": "ASP.NET Core 10 includes WebSocket support in the shared framework (WebSockets middleware), so a server can accept WebSocket connections without adding a library.",
+      "kind": "behavior",
+      "source_hint": "ASP.NET Core 10 docs: WebSockets support in ASP.NET Core (UseWebSockets)",
+      "version_key": "aspnetcore",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 5,
+      "text": "Above the Decision excerpt, ADR 0032 lists a chat module in DonHang.Api and its cost (connections held open for minutes share Pods, limits and canary releases with order taking); below it, it answers a teammate that this goes against driver 4; its context section defines WebSocket.",
+      "kind": "fact",
+      "source_hint": "docs/adr/0032-... @ stage-4 lines 19-20, 26-27, 69-71",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 6,
+      "text": "Each message is saved in PostgreSQL first (conversation, shop, sender), then sent to open connections; the saved row, not the delivery, is the record.",
+      "kind": "fact",
+      "source_hint": "docs/adr/0032-... @ stage-4 lines 39-41",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 7,
+      "text": "With several Pods, a Pod publishes each saved message to a Redis publish/subscribe channel and each Pod passes it to the connections it holds; Redis holds only copies, as redis.yaml says.",
+      "kind": "fact",
+      "source_hint": "docs/adr/0032-... @ stage-4 lines 42-44; docs/design/support-chat-design-review.md lines 44-46",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 8,
+      "text": "Redis Pub/Sub delivers a published message only to clients subscribed at that moment and does not store it (at-most-once); a subscriber cut off then never receives it. Unlike a RabbitMQ queue, a channel holds nothing.",
+      "kind": "behavior",
+      "source_hint": "Redis docs: Pub/Sub, delivery semantics; RabbitMQ docs: Queues",
+      "version_key": "redis",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 9,
+      "text": "redis.yaml (kustomize base) comment: everything in Redis is a copy of what PostgreSQL holds, so losing it loses nothing that cannot be read again; the Deployment has replicas: 1.",
+      "kind": "fact",
+      "source_hint": "deploy/gitops/config-repo-kustomize/base/redis.yaml @ stage-4 lines 1-11",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 10,
+      "text": "On reconnecting, the app sends the id of its last message; the Pod reads newer messages from the database and sends them before new ones; a message during the drop is missed only on the Redis leg (driver 2).",
+      "kind": "fact",
+      "source_hint": "docs/adr/0032-... @ stage-4 line 45; docs/design/support-chat-design-review.md @ stage-4 lines 53-56",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 11,
+      "text": "A reply unread after 5 minutes (assumed) becomes a message through the outbox, then RabbitMQ, and Notifications emails the customer under ADR 0027.",
+      "kind": "fact",
+      "source_hint": "docs/adr/0032-... @ stage-4 lines 46-47; support-chat-design-review.md lines 46-47",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 12,
+      "text": "ADR 0032: shop taken from the access token, row-level security as ADR 0013; proposed endpoint /api/v1/conversations with a new HTTPRoute to Support; last two bullets cover rolling-update releases and the fallback.",
+      "kind": "fact",
+      "source_hint": "docs/adr/0032-... @ stage-4 lines 48-52",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 13,
+      "text": "httproutes.yaml at stage-4 sends /api/v1 (and /api/v2, /openapi) to Service api port 8080, and /api/v1/refunds to Service payments instead, because the longer path prefix wins.",
+      "kind": "fact",
+      "source_hint": "deploy/gitops/config-repo/platform/edge/httproutes.yaml @ stage-4 lines 16-39",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 14,
+      "text": "Review deep dive (heading 'bước 4' = step 4 of system-design-method.md, the deep dive): a connection drops on a phone network or when a Pod is replaced in a release; the app reconnects after a wait with jitter so apps do not all reconnect at once.",
+      "kind": "fact",
+      "source_hint": "docs/design/support-chat-design-review.md @ stage-4 lines 49-52; docs/design/system-design-method.md step 4",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 15,
+      "text": "Review: Redis (one replica) is a single point of failure for the relay between Pods only; losing it stops no saving or reading, and apps read missed messages on reconnect.",
+      "kind": "fact",
+      "source_hint": "docs/design/support-chat-design-review.md @ stage-4 lines 67-68",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 16,
+      "text": "Review estimate: about 200 connections at the busy hour, about 1.7 messages per second, each one short write to donhang_support; with 2 Pods about 100 connections each (assumed).",
+      "kind": "fact",
+      "source_hint": "docs/design/support-chat-design-review.md @ stage-4 lines 27-30",
+      "needs_verification": true,
+      "section": 2
+    },
+    {
+      "n": 17,
+      "text": "Conversations and messages are owned by Support (data-ownership.md), per ADR 0032's consequences.",
+      "kind": "fact",
+      "source_hint": "docs/adr/0032-... @ stage-4 line 61",
+      "needs_verification": true,
+      "section": 10
+    },
+    {
+      "n": 18,
+      "text": "Deliver-then-save loses a message if the Pod stops between steps (fails driver 2); delivering only to own connections fails driver 1 with several Pods; the Redis relay is acceptable only because the saved row makes a miss recoverable.",
+      "kind": "opinion",
+      "source_hint": "derived from ADR 0032 lines 39-45 and review lines 53-56",
+      "needs_verification": false,
+      "section": 6
+    },
+    {
+      "n": 19,
+      "text": "If Support ran one Pod, keep the channel when a second is planned; if Redis is down, driver 2 holds; nothing makes a healthy connection reconnect, so a missed reply shows after the app's next drop; reads go to donhang_support.",
+      "kind": "opinion",
+      "source_hint": "derived from review lines 30, 51-52, 67-68; ADR 0032 line 45 (no reconnect trigger besides drops is named)",
+      "needs_verification": false,
+      "section": 7
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [1, 2, 3, 4, 5, 6],
+    "outline_items_missing": [],
+    "beyond_scope": []
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1971,
+    "notes": "apply-review 2026-11-03: claim 1 HTTP/1.1 condition (s3); s5 ADR options/driver 4 per review fix; drivers listed in Before you start; RabbitMQ-vs-channel sentence (s4, claim 8); SPOF scoped to relay; 'bước 4' = method step 4 (not 4th arrow as junior guessed); longer prefix wins; Redis-down reconnect timing hedged (claim 19); s8 sentence per fix. Cut 'Read the diagram...' and one senior-bullet sentence. Quiz q1a, q2 stem."
+  },
+  "open_questions": [
+    "Claim 8 (Redis Pub/Sub at-most-once, no storage) is checked against redis.io docs; the ADR itself only says 'Redis chuyển tin nhiều nhất một lần' (line 57).",
+    "Prereq-adjacent link sysdesign.l4.notification-design is outlined but not yet generated; its Connections clause follows the outline."
+  ],
+  "repo_changes_needed": []
+}

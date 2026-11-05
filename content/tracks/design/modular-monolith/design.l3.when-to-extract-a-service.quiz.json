@@ -1,0 +1,316 @@
+{
+  "lesson": "design.l3.when-to-extract-a-service",
+  "stage": 3,
+  "questions": [
+    {
+      "id": "design.l3.when-to-extract-a-service.q1",
+      "type": "single",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["design.modular.extraction"],
+      "section_ref": 5,
+      "question": {
+        "en": "At stage-2 someone changes `replicas: 2` to `replicas: 3` in `deploy/k8s/api.yaml` and applies it. What happens to the email job?",
+        "vi": "Ở stage-2, có người đổi `replicas: 2` thành `replicas: 3` trong `deploy/k8s/api.yaml` rồi apply. Job email thay đổi thế nào?"
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "Three senders run, one in each api process, and `SKIP LOCKED` keeps them from claiming the same row at the same time.",
+          "vi": "Ba sender chạy, mỗi process api một cái, và `SKIP LOCKED` giữ cho chúng không nhận cùng một dòng cùng lúc."
+        },
+        {
+          "id": "b",
+          "en": "Still one sender runs, because a hosted service is started once for the whole cluster.",
+          "vi": "Vẫn chỉ một sender chạy, vì hosted service chỉ được khởi động một lần cho cả cluster."
+        },
+        {
+          "id": "c",
+          "en": "Three senders run, and each email now goes out three times, once from every copy.",
+          "vi": "Ba sender chạy, và mỗi email giờ được gửi ba lần, mỗi bản gửi một lần."
+        },
+        {
+          "id": "d",
+          "en": "Two senders still run, because the sender's count is set apart from the API's count.",
+          "vi": "Vẫn hai sender chạy, vì số bản của sender được đặt riêng với số bản của API."
+        }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "`replicas` is the only count in the Deployment, and every Pod runs the same api container, so each copy is one api process. `AddHostedService<NotificationSender>()` starts a sender in each process, and `FOR UPDATE SKIP LOCKED` keeps the copies from taking the same row at the same time.",
+          "b": "The sender is a background job, so it can feel like something the cluster runs once. But the host starts it with the app, in the same process, so every api process starts its own.",
+          "c": "More copies reading one queue sounds like duplicate emails. But `ClaimDueAsync` locks each row it takes with `FOR UPDATE SKIP LOCKED`, so another copy skips that row while it is locked instead of sending it too.",
+          "d": "A separate count is what the teammate's plan would give, so it can seem to exist already. But nothing in `api.yaml` sets the sender's count apart; `replicas` sets both."
+        },
+        "vi": {
+          "correct": "`replicas` là con số duy nhất trong Deployment, và mọi Pod chạy cùng một container api, nên mỗi bản là một process api. `AddHostedService<NotificationSender>()` khởi động một sender trong mỗi process, và `FOR UPDATE SKIP LOCKED` giữ cho các bản không lấy cùng một dòng cùng lúc.",
+          "b": "Sender là job chạy nền, nên dễ nghĩ cluster chỉ chạy nó một lần. Nhưng host khởi động nó cùng app, trong cùng process, nên mỗi process api khởi động sender của riêng nó.",
+          "c": "Nhiều bản cùng đọc một hàng đợi nghe như sẽ gửi trùng email. Nhưng `ClaimDueAsync` khóa mỗi dòng nó lấy bằng `FOR UPDATE SKIP LOCKED`, nên bản khác bỏ qua dòng đó khi nó đang bị khóa thay vì gửi thêm lần nữa.",
+          "d": "Một con số riêng chính là thứ kế hoạch của đồng nghiệp sẽ mang lại, nên có vẻ như nó đã có sẵn. Nhưng trong `api.yaml` không có gì đặt số bản của sender riêng; `replicas` đặt cho cả hai."
+        }
+      }
+    },
+    {
+      "id": "design.l3.when-to-extract-a-service.q2",
+      "type": "truefalse",
+      "bloom": "understand",
+      "difficulty": 2,
+      "skills": ["design.modular.extraction"],
+      "section_ref": 4,
+      "question": {
+        "en": "At stage-2 each of the two api replicas runs a `NotificationSender`, and no email has ever gone out twice. Statement: the second sender is waste, and that alone is a reason to extract the email job.",
+        "vi": "Ở stage-2, mỗi replica trong hai replica api chạy một `NotificationSender`, và chưa email nào bị gửi hai lần. Nhận định: sender thứ hai là lãng phí, và chỉ riêng điều đó đã là lý do để tách job email ra."
+      },
+      "options": [
+        {
+          "id": "a",
+          "polarity": "true",
+          "en": "True, because two copies of one background job always do the same work twice.",
+          "vi": "Đúng, vì hai bản của một job chạy nền lúc nào cũng làm cùng một việc hai lần."
+        },
+        {
+          "id": "b",
+          "polarity": "true",
+          "en": "True, because as its own service the job could run once and scale on its own.",
+          "vi": "Đúng, vì khi thành service riêng, job có thể chạy một bản và scale riêng."
+        },
+        {
+          "id": "c",
+          "polarity": "false",
+          "en": "False, because two senders only matter if the email job needs more or fewer copies than the API.",
+          "vi": "Sai, vì hai sender chỉ đáng bận tâm nếu job email cần nhiều hơn hoặc ít hơn số bản của API."
+        },
+        {
+          "id": "d",
+          "polarity": "false",
+          "en": "False, because a hosted service runs only in the first replica, so there is no second sender.",
+          "vi": "Sai, vì hosted service chỉ chạy trong replica đầu tiên, nên không có sender thứ hai."
+        }
+      ],
+      "answer": ["c"],
+      "explanation": {
+        "en": {
+          "correct": "The job has as many copies as the API, and that matters only if it needs a different count. While it does not, the two senders share the due emails between them, the extra cost is a second copy of the loop, and that is the \"no\" branch: keep the module.",
+          "a": "Two copies of a job sound like double work, which is the teammate's argument. But `FOR UPDATE SKIP LOCKED` keeps them from taking the same row at the same time, so they share the emails between them, and the logs show no email went out twice.",
+          "b": "Running once and scaling on its own is what a split would give, so it sounds like a gain. But it is worth something only if the job needs a different count, and nothing in the situation shows that need.",
+          "d": "False is right, but not for this reason. The host starts the sender in every api process, so both replicas do run one."
+        },
+        "vi": {
+          "correct": "Job có số bản bằng API, và điều đó chỉ quan trọng nếu nó cần số bản khác. Khi chưa cần, hai sender chia nhau các email đến hạn, cái giá thêm chỉ là một bản nữa của vòng lặp, và đó là nhánh \"không\": giữ module.",
+          "a": "Hai bản của một job nghe như làm gấp đôi, đó cũng là lập luận của đồng nghiệp. Nhưng `FOR UPDATE SKIP LOCKED` giữ cho chúng không lấy cùng một dòng cùng lúc, nên chúng chia nhau các email, và log cho thấy chưa email nào bị gửi hai lần.",
+          "b": "Chạy một bản và scale riêng là thứ việc tách mang lại, nên nghe như có lợi. Nhưng nó chỉ đáng giá khi job cần số bản khác, và tình huống không cho thấy nhu cầu đó.",
+          "d": "\"Sai\" là đúng, nhưng không phải vì lý do này. Host khởi động sender trong mọi process api, nên cả hai replica đều chạy một sender."
+        }
+      }
+    },
+    {
+      "id": "design.l3.when-to-extract-a-service.q3",
+      "type": "multi",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["design.modular.extraction"],
+      "section_ref": 3,
+      "question": {
+        "en": "The team keeps a list of signs that would make extracting the email job worth considering. Which of these are needs one process cannot give it? Select all that apply.",
+        "vi": "Team giữ một danh sách các dấu hiệu khiến việc tách job email đáng cân nhắc. Những điều nào dưới đây là nhu cầu mà một process không đáp ứng được? Chọn tất cả đáp án đúng."
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "After each sale, emails wait in the email queue for hours, yet both api copies are close to idle.",
+          "vi": "Sau mỗi đợt bán, email chờ hàng giờ trong hàng đợi email, trong khi cả hai bản api gần như rảnh."
+        },
+        {
+          "id": "b",
+          "en": "When the mail server is slow, the api process runs short of CPU and memory and order requests slow down with it.",
+          "vi": "Khi mail server chậm, process api thiếu CPU và bộ nhớ, và request đặt hàng cũng chậm theo."
+        },
+        {
+          "id": "c",
+          "en": "A second team takes over emails and must release changes without waiting for the ordering team.",
+          "vi": "Một team thứ hai nhận phần email và phải release thay đổi mà không chờ team đặt hàng."
+        },
+        {
+          "id": "d",
+          "en": "The email code now has a clean boundary: it owns its table and is reached only through its contract.",
+          "vi": "Code email giờ có ranh giới sạch: nó sở hữu bảng của mình và chỉ được gọi qua hợp đồng của nó.",
+          "misconception": "A system with several modules should become several services, one per module, as soon as it can."
+        },
+        {
+          "id": "e",
+          "en": "The team expects order requests to get faster once emails have a process of their own.",
+          "vi": "Team mong request đặt hàng sẽ nhanh hơn khi email có process riêng.",
+          "misconception": "Extracting a service always makes the system faster, since each part gets its own process."
+        }
+      ],
+      "answer": ["a", "b", "c"],
+      "explanation": {
+        "en": {
+          "correct": "These match three of the four needs: its own scaling, its own failures, and its own team with its own release. Each asks for something that a part sharing one process and one count with the API cannot have.",
+          "d": "A clean boundary is what makes an extraction possible, so it can look like the signal to do it. But a boundary already gives one owner per table and calls through a contract; it makes extraction possible, not needed.",
+          "e": "A process of its own sounds like more speed. But every call across the new boundary goes over the network and can fail; a split makes ordering faster only when the job was competing with it for the api process's CPU and memory, which this expectation does not show."
+        },
+        "vi": {
+          "correct": "Ba điều này ứng với ba trong bốn nhu cầu: scale riêng, cô lập lỗi riêng, và team riêng với lịch release riêng. Mỗi điều đòi một thứ mà một phần dùng chung process và chung số bản với API không thể có.",
+          "d": "Ranh giới sạch là thứ khiến việc tách làm được, nên có vẻ như đó là tín hiệu để tách. Nhưng ranh giới đã cho mỗi bảng một chủ và lời gọi qua hợp đồng; nó khiến việc tách làm được, chứ không khiến việc tách cần thiết.",
+          "e": "Có process riêng nghe như sẽ nhanh hơn. Nhưng mọi lời gọi qua ranh giới mới đều đi qua mạng và có thể lỗi; tách chỉ làm phần đặt hàng nhanh hơn khi job đang tranh CPU và bộ nhớ của process api với nó, điều mà mong đợi này không cho thấy."
+        }
+      }
+    },
+    {
+      "id": "design.l3.when-to-extract-a-service.q4",
+      "type": "scenario",
+      "bloom": "evaluate",
+      "difficulty": 4,
+      "skills": ["design.modular.extraction"],
+      "section_ref": 4,
+      "context": {
+        "en": "Đơn Hàng is at stage-2, run by one team of three developers. After a sales campaign, emails wait hours in the email queue, while both `api` replicas sit almost idle and order requests are fast. The cluster has no room for more `api` copies, but it has room for small processes that run only the sender. The ties from the previous lesson are already listed, and the team has a sprint for this.",
+        "vi": "Đơn Hàng đang ở stage-2, do một team ba developer vận hành. Sau một đợt khuyến mãi, email phải chờ hàng giờ trong hàng đợi email, trong khi cả hai replica `api` gần như rảnh và request đặt hàng vẫn nhanh. Cluster không còn chỗ cho thêm bản `api` nào, nhưng còn chỗ cho các process nhỏ chỉ chạy sender. Các mối ràng buộc ở bài trước đã được liệt kê, và team có một sprint cho việc này."
+      },
+      "question": {
+        "en": "What is the best course of action?",
+        "vi": "Hướng xử lý tốt nhất là gì?"
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "Raise `replicas` in `api.yaml` so that more senders run, one in each new api copy.",
+          "vi": "Tăng `replicas` trong `api.yaml` để có thêm sender chạy, mỗi bản api mới một cái."
+        },
+        {
+          "id": "b",
+          "en": "Write down the options and the choice, cut the listed ties, then run the sender under a Deployment of its own.",
+          "vi": "Ghi lại các phương án và lựa chọn, cắt các mối ràng buộc đã liệt kê, rồi chạy sender dưới một Deployment riêng."
+        },
+        {
+          "id": "c",
+          "en": "Change nothing: `SKIP LOCKED` already lets the two senders share the queue safely.",
+          "vi": "Không đổi gì: `SKIP LOCKED` đã cho hai sender dùng chung hàng đợi một cách an toàn."
+        },
+        {
+          "id": "d",
+          "en": "Turn every module into its own service now, since emails are only the first to need it.",
+          "vi": "Biến mọi module thành service riêng ngay bây giờ, vì email chỉ là phần đầu tiên cần điều đó.",
+          "misconception": "A system with several modules should become several services, one per module, as soon as it can."
+        }
+      ],
+      "answer": ["b"],
+      "explanation": {
+        "en": {
+          "correct": "Emails piling up while the API copies are idle is the sign that the job needs a different count than the API, and the cluster cannot add api copies. Only a process under a Deployment of its own can give the sender a count of its own, and making it a service of its own means cutting the ties; they are already listed, so the cost can be estimated and the choice written down.",
+          "a": "More replicas is the one change `api.yaml` allows, and it does add senders. It is the cheaper choice when the cluster has room, but here it has none, and every extra sender would bring an idle API copy with it.",
+          "c": "`SKIP LOCKED` really does make two senders safe, so nothing looks broken. But safe is not enough: the queue is hours behind, and two senders are all the API's count allows. Changing nothing fits only when emails keep up.",
+          "d": "If one module needs a service, splitting all of them can look consistent. But every split pays network calls, separate saves and one more image, pipeline and dashboard; only the email job shows a need here. More services fit when several teams own separate modules and each must release on its own schedule."
+        },
+        "vi": {
+          "correct": "Email dồn lại trong khi các bản API rảnh là dấu hiệu job cần số bản khác với API, và cluster không thêm được bản api nào. Chỉ một process dưới Deployment riêng mới cho sender một số bản riêng, và để nó thành service riêng thì phải cắt các mối ràng buộc; chúng đã được liệt kê, nên cái giá ước tính được và lựa chọn ghi lại được.",
+          "a": "Tăng replicas là thay đổi duy nhất `api.yaml` cho phép, và nó đúng là thêm sender. Đây là lựa chọn rẻ hơn khi cluster còn chỗ, nhưng ở đây thì không, và mỗi sender thêm vào lại kéo theo một bản API ngồi không.",
+          "c": "`SKIP LOCKED` đúng là làm hai sender an toàn, nên có vẻ không có gì hỏng. Nhưng an toàn là chưa đủ: hàng đợi đang trễ hàng giờ, và hai sender là tất cả những gì số bản của API cho phép. Không đổi gì chỉ hợp khi email vẫn theo kịp.",
+          "d": "Nếu một module cần thành service thì tách hết có vẻ nhất quán. Nhưng mỗi lần tách đều phải trả giá bằng lời gọi qua mạng, các lần lưu riêng và thêm một image, một pipeline, một dashboard; ở đây chỉ job email cho thấy nhu cầu. Nhiều service hơn sẽ hợp khi nhiều team sở hữu các module riêng và mỗi team phải release theo lịch riêng."
+        }
+      }
+    },
+    {
+      "id": "design.l3.when-to-extract-a-service.q5",
+      "type": "single",
+      "bloom": "analyze",
+      "difficulty": 4,
+      "skills": ["design.modular.extraction"],
+      "section_ref": 6,
+      "question": {
+        "en": "In a planning meeting a teammate says: \"If we do not extract the email job this year, we will never be able to.\" Which reply holds up against the lesson?",
+        "vi": "Trong một buổi lên kế hoạch, một đồng nghiệp nói: \"Nếu năm nay không tách job email ra thì sau này sẽ không bao giờ tách được.\" Câu trả lời nào đứng vững theo bài?"
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "No: what decides it is whether new ties get added in the meantime, and today's are already listed.",
+          "vi": "Không: điều quyết định là có thêm mối ràng buộc mới trong thời gian đó hay không, còn các mối hiện có đã được liệt kê."
+        },
+        {
+          "id": "b",
+          "en": "Yes: the longer the job stays in the process, the more code grows around it, so extract now while it is small.",
+          "vi": "Đúng: job ở trong process càng lâu thì code mọc quanh nó càng nhiều, nên tách ngay khi nó còn nhỏ.",
+          "misconception": "If a module is not extracted now, splitting it out later will be impossible."
+        },
+        {
+          "id": "c",
+          "en": "No: once a module has a clean boundary, extracting it later costs nothing at all.",
+          "vi": "Không: một khi module có ranh giới sạch, tách nó ra sau này không tốn gì cả."
+        },
+        {
+          "id": "d",
+          "en": "No: a hosted service can move to its own Deployment at any time without changing any code.",
+          "vi": "Không: một hosted service có thể chuyển sang Deployment riêng bất cứ lúc nào mà không cần đổi code."
+        }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "What makes a later split hard is the ties, not the waiting. A module that owns its tables and is reached only through its contract can be extracted when a reason appears, and the list of ties tells the team the cost before it starts.",
+          "b": "Code does grow over time, so waiting can feel risky. But what grows into a problem is ties, and a clean boundary keeps them from growing; while it stays clean, waiting still leaves extraction open for later.",
+          "c": "A clean boundary does keep the choice open, so the cost can seem to vanish. But a split still turns method calls into network calls, one save into several, and adds an image, a pipeline and a dashboard.",
+          "d": "A Deployment of its own is where an extraction ends up, so moving there can look like the whole job. But the sender still shares an object, a save and tables with ordering, and the api code has no way yet to start only the sender, so code must change."
+        },
+        "vi": {
+          "correct": "Thứ làm việc tách sau này khó là các mối ràng buộc, không phải việc chờ. Một module sở hữu bảng của mình và chỉ được gọi qua hợp đồng có thể được tách khi có lý do, và danh sách mối ràng buộc cho team biết cái giá trước khi bắt đầu.",
+          "b": "Code đúng là lớn dần theo thời gian, nên chờ có vẻ rủi ro. Nhưng thứ lớn thành vấn đề là các mối ràng buộc, và ranh giới sạch giữ cho chúng không lớn thêm; chừng nào ranh giới còn sạch, việc chờ vẫn để ngỏ khả năng tách về sau.",
+          "c": "Ranh giới sạch đúng là giữ cho lựa chọn còn mở, nên cái giá có vẻ biến mất. Nhưng tách vẫn biến lời gọi method thành lời gọi qua mạng, một lần lưu thành nhiều lần, và thêm một image, một pipeline, một dashboard.",
+          "d": "Một Deployment riêng là nơi việc tách đi tới, nên chuyển sang đó có vẻ là toàn bộ việc cần làm. Nhưng sender vẫn dùng chung một object, một lần lưu và các bảng với phần đặt hàng; và code api chưa có cách nào chỉ khởi động riêng sender, nên code phải thay đổi."
+        }
+      }
+    },
+    {
+      "id": "design.l3.when-to-extract-a-service.q6",
+      "type": "single",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["design.modular.extraction"],
+      "section_ref": 6,
+      "question": {
+        "en": "At stage-2 order requests are fast and the email job is not slowing them down. A teammate wants to extract the job \"so ordering gets faster\". What should you expect?",
+        "vi": "Ở stage-2, request đặt hàng nhanh và job email không làm chúng chậm đi. Một đồng nghiệp muốn tách job ra \"để phần đặt hàng nhanh hơn\". Bạn nên dự đoán điều gì?"
+      },
+      "options": [
+        {
+          "id": "a",
+          "en": "No gain: calls that cross the new boundary go over the network, and nothing here competes for the process's CPU and memory.",
+          "vi": "Không được gì: lời gọi qua ranh giới mới đi qua mạng, và ở đây không có gì tranh CPU và bộ nhớ của process."
+        },
+        {
+          "id": "b",
+          "en": "Faster ordering, because each part gets a process of its own and stops sharing one.",
+          "vi": "Đặt hàng nhanh hơn, vì mỗi phần có process riêng và không còn dùng chung một process.",
+          "misconception": "Extracting a service always makes the system faster, since each part gets its own process."
+        },
+        {
+          "id": "c",
+          "en": "Faster ordering, because the sender would then run once instead of in both replicas.",
+          "vi": "Đặt hàng nhanh hơn, vì khi đó sender chỉ chạy một bản thay vì chạy trong cả hai replica."
+        },
+        {
+          "id": "d",
+          "en": "Slower ordering in every case, because any separate service makes every request slower.",
+          "vi": "Đặt hàng chậm hơn trong mọi trường hợp, vì service riêng nào cũng làm mọi request chậm hơn."
+        }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "Every call that crosses the new boundary pays for a trip over the network and can fail. A split can make the rest faster only when the moved part was competing with it for the same process's CPU and memory, and here it is not.",
+          "b": "A process of its own sounds like more room for each part. But room helps only if the parts were fighting over it, and the situation says they were not.",
+          "c": "One sender instead of two sounds like less work in the api. But the two senders share the due emails, the extra cost is a second copy of the loop, and nothing shows it slowing requests.",
+          "d": "Network calls do add a trip and a way to fail, so slower is a fair worry. But the lesson does not say every case is slower: when the moved part competed for the process's CPU and memory, a split can help."
+        },
+        "vi": {
+          "correct": "Mọi lời gọi qua ranh giới mới đều phải đi qua mạng và có thể lỗi. Tách chỉ có thể làm phần còn lại nhanh hơn khi phần được chuyển đi đang tranh CPU và bộ nhớ của cùng một process với nó, mà ở đây thì không.",
+          "b": "Có process riêng nghe như mỗi phần có thêm chỗ. Nhưng thêm chỗ chỉ có ích khi các phần đang giành nhau chỗ, và tình huống nói là không.",
+          "c": "Một sender thay vì hai nghe như api bớt việc. Nhưng hai sender chia nhau các email đến hạn, cái giá thêm chỉ là một bản nữa của vòng lặp, và không có gì cho thấy nó làm request chậm đi.",
+          "d": "Lời gọi qua mạng đúng là thêm một chặng và một cách để lỗi, nên lo chậm hơn là có lý. Nhưng bài không nói mọi trường hợp đều chậm hơn: khi phần được chuyển đi tranh CPU và bộ nhớ của process, tách có thể giúp."
+        }
+      }
+    }
+  ]
+}

@@ -15,8 +15,8 @@ vocab: [go-router]
 example_tag: stage-2
 versions_used: [flutter, go_router, riverpod]
 content_version: 1
-status: approved
-approved_by: auto
+status: published
+approved_by: owner
 reviewed_at: "2026-09-29T18:45:17+07:00"
 ---
 

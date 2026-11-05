@@ -1,0 +1,148 @@
+{
+  "id": "design.l3.contexts-inside-don-hang",
+  "technical": {
+    "reviewed_at": "2026-10-21T14:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "git show stage-2:DonHang.Domain/Entities.cs: :35 `public string Status { get; private set; }`; :69 `Status = \"new\";`; MarkPaid/Cancel/Ship each test Status, throw OrderStatusException, then set \"paid\" (:79), \"cancelled\" (:87), \"shipped\" (:95); no method touches Items or Product. `git grep -n '\"failed\"' stage-2 -- '*.cs'` -> only NotificationSender.cs:91 `notification.Status = \"failed\";`. db/schema.sql:23 `CHECK (status IN ('new', 'paid', 'shipped', 'cancelled'))`.",
+        "source": "examples/don-hang @ stage-2: DonHang.Domain/Entities.cs:30-97; db/schema.sql:23; git grep run 2026-10-21"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Entities.cs@stage-2:116-131: comment \"an email waiting to be sent (pending), sent, or given up on after too many failed attempts (failed)\"; `public int OrderId { get; set; }`, `public Order? Order { get; set; }`, `public required string Status { get; set; }`, `Attempts`, `NextAttemptAt`. Order is declared in the same file at :30. DonHangDbContext: `e.HasOne(n => n.Order).WithMany().HasForeignKey(n => n.OrderId);`.",
+        "source": "examples/don-hang @ stage-2: DonHang.Domain/Entities.cs:116-131; DonHang.Infrastructure/DonHangDbContext.cs"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "QueuedNotifier.cs@stage-2 Send(): `db.Notifications.Add(new Notification { ... Status = \"pending\", ... })`; NotificationSender.cs:73 `notification.Status = \"sent\";`, :91 `notification.Status = \"failed\";` (RecordFailure, once Attempts >= MaxAttempts); DonHangDbContext.cs:104 `e.ToTable(t => t.HasCheckConstraint(\"notifications_status_check\", \"status IN ('pending', 'sent', 'failed')\"));`. Round 2: s5 now adds \"`RecordFailure`, further down in the same file, sets `failed` once the attempts run out\", which matches :91.",
+        "source": "examples/don-hang @ stage-2: DonHang.Infrastructure/QueuedNotifier.cs:11-22; DonHang.Api/Jobs/NotificationSender.cs:73,91; DonHang.Infrastructure/DonHangDbContext.cs:104"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "DonHangDbContext.cs@stage-2:9-14 declares DbSets Customers, Products, Orders, OrderItems, Payments, Notifications. `git grep -n -w Payment stage-2 -- '*.cs'` -> Entities.cs:107, DonHangDbContext.cs:13,78, 9 Migrations/*.Designer.cs and DonHangDbContextModelSnapshot.cs:183. Round 2 s4 now reads \"not used yet outside `Entities.cs`, `DonHangDbContext` and its generated migrations\", which matches.",
+        "source": "examples/don-hang @ stage-2: DonHang.Infrastructure/DonHangDbContext.cs:9-14; git grep run 2026-10-21 (round 1)"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Lesson block equals NotificationSender.cs@stage-2:65-81 character for character: `var customer = notification.Order!.Customer!;`, `email.SendAsync(customer.Email, ...` with `customer.FullName`, `notification.Status = \"sent\";`, `notification.SentAt = DateTimeOffset.UtcNow;`, `catch (Exception ex) when (!stoppingToken.IsCancellationRequested)` -> `RecordFailure(notification, ex);`.",
+        "source": "examples/don-hang @ stage-2: DonHang.Api/Jobs/NotificationSender.cs:65-81"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "`git ls-tree -r --name-only stage-2 -- DonHang.Tests`: the only file under Architecture/ is DependencyRuleTests.cs, with one [Fact] DomainReferencesNoOuterAssembly checking `typeof(OrderService).Assembly.GetReferencedAssemblies()` against ForbiddenPrefixes (DonHang.Infrastructure, DonHang.Api, Microsoft.EntityFrameworkCore, Microsoft.AspNetCore, Npgsql, StackExchange.Redis, MailKit). Nothing checks which DonHang.Domain classes NotificationSender reads.",
+        "source": "examples/don-hang @ stage-2: DonHang.Tests/Architecture/DependencyRuleTests.cs"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Entities.cs@stage-2:18-23 Product: Id, `required string Name`, `int PriceVnd`; no status, no methods. schema.sql:7 `CHECK (price_vnd > 0)`; Dtos.cs:10 `UpdateProductPriceRequest([Range(1, int.MaxValue)] int PriceVnd)`. OrderItem @stage-2:99-105 (verbatim block in design.l3.aggregates-and-invariants): OrderId, ProductId, Quantity, UnitPriceVnd, no Product property. s4 now says \"the one rule on its values\", as suggested in round 1.",
+        "source": "examples/don-hang @ stage-2: DonHang.Domain/Entities.cs:18-23, 99-105; db/schema.sql:4-8; DonHang.Api/Dtos.cs:10"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "ProductsController.cs@stage-2:29-43 List: `IQueryable<Product> query = db.Products;`, optional `.Where(p => p.PriceVnd <= maxPriceVnd)`, `.OrderBy(p => p.Id).Skip(offset).Take(limit).Select(...)`. Comment above the class (:10-12): \"The list reads DonHangDbContext directly: it has no rule to apply, only a query to shape.\" s5 now says \"the comment above the controller reads\", which matches.",
+        "source": "examples/don-hang @ stage-2: DonHang.Api/Controllers/ProductsController.cs:10-43"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Entities.cs@stage-2:4 `// One class per table in db/schema.sql. No behaviour here beyond what a row is,` :5 `// except Order, which owns the rules about its own status (from stage-2).`",
+        "source": "examples/don-hang @ stage-2: DonHang.Domain/Entities.cs:3-5"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Entities.cs@stage-2:33 `public int CustomerId { get; private set; }`; :14 `// Keycloak's id for this customer (the `sub` of their tokens); null until they have an account there.` :15 `public string? IdentitySubject { get; set; }`.",
+        "source": "examples/don-hang @ stage-2: DonHang.Domain/Entities.cs:13-15, 33"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "EF docs: \"it will first call the default parameterless constructor and then set each property to the value from the database.\" \"EF Core cannot set navigation properties (such as Blog or Posts above) using a constructor.\" \"The constructor can be public, private, or have any other accessibility.\" Entities.cs@stage-2:51-58: `// For EF Core only. It cannot pass the Items navigation to the public constructor ...` `private Order() { Status = \"\"; }`; the public ctor takes `List<OrderItem> items`, a navigation.",
+        "source": "refs/efcore-docs/entity-framework/core/modeling/constructors.md:42,85,86; examples/don-hang @ stage-2: DonHang.Domain/Entities.cs:51-70"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Ran `git -C examples/don-hang grep -n -w Status stage-2 -- DonHang.Domain/Entities.cs` (round 1): 14 lines, :35, 57, 69, 77, 78, 79, 85, 86, 87, 92, 93, 94, 95 (all inside Order, :30-97) and :126 `public required string Status { get; set; }` (class Notification at :119). Line 57 is `Status = \"\";` in the private ctor. The new s7 sentence \"For `Notification`, no line in this file sets or checks a value\" matches: :126 is the only Notification hit.",
+        "source": "execution 2026-10-21 in examples/don-hang; Entities.cs@stage-2"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "git-grep(1): -n \"Prefix the line number to matching lines.\" -w \"Match the pattern only at word boundary (either begin at the beginning of a line, or preceded by a non-word character; end at the end of a line or followed by a non-word character).\" <tree> \"Instead of searching tracked files in the working tree, search blobs in the given trees.\" -- \"Signals the end of options; the rest of the parameters are <pathspec> limiters.\"",
+        "source": "https://git-scm.com/docs/git-grep; execution in examples/don-hang"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "\"The Bounded Context pattern, however, doesn't specify whether the Bounded Context is a distributed service or if it's simply a logical boundary ... within a monolithic-deployment application.\" \"Each bounded context should ideally ... have exclusive access to its own persistence store.\" s4 now carries the condition: \"one database can hold several, even if each context is later given a store of its own\".",
+        "source": "refs/dotnet-docs/docs/architecture/microservices/architect-microservice-container-applications/identify-microservice-domain-model-boundaries.md:15; data-sovereignty-per-microservice.md:40"
+      },
+      {
+        "n": 15,
+        "verdict": "not-needed",
+        "evidence": "Design judgement framed as one reading among others (\"One reasonable reading\", \"Another team could fold\"), with stated reasons. Its factual parts (no Order status method reads a Product, OrderItem holds only ProductId, every notification has one OrderId) are covered by claims 1, 2, 7.",
+        "source": "lesson section 4"
+      },
+      {
+        "n": 16,
+        "verdict": "not-needed",
+        "evidence": "Conditioned judgement (\"When the lines are still moving\") with an observable symptom. Consistent with docs: \"while you gain more knowledge about the domain, you should adapt the size of your microservice, iteratively. Finding the right size isn't a one-shot process.\"",
+        "source": "refs/dotnet-docs/docs/architecture/microservices/architect-microservice-container-applications/identify-microservice-domain-model-boundaries.md:11"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "\"The main responsibility of an aggregate is to enforce invariants across state changes for all the entities within that aggregate.\" \"A domain model contains clusters of different data entities and processes ... A more fine-grained DDD unit is the aggregate\". \"A domain model with specific domain entities applies within a concrete BC\". Order -> Customer by CustomerId: Entities.cs@stage-2:33.",
+        "source": "refs/dotnet-docs/docs/architecture/microservices/microservice-ddd-cqrs-patterns/domain-model-layer-validations.md:11; microservice-domain-model.md:93; identify-microservice-domain-model-boundaries.md:15"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "New in round 2. The sentence before says products have \"the one rule on its values, a price above zero\" (schema CHECK and UpdateProductPriceRequest's Range). \"No rules of their own\" then contradicts it. What is true at stage-2 is that Product's class has no rules (no methods), not that products have none.",
+        "quote": "Unlike notifications, products have no rules of their own, so the case for a separate catalogue is weaker.",
+        "fix": "Replace with: \"Unlike notifications, products have no rules in their class, so the case for a separate catalogue is weaker.\" Update claim 15 to match (\"no rules in its class\")."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-21T15:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (review-junior)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "text": "New in round 2, in the rewritten Product paragraph. One sentence says products have 'the one rule on its values, a price above zero'; the next says they 'have no rules of their own'. I stopped: do products have a rule or not? I can guess it means 'none inside the class', but the text does not say so.",
+        "quote": "Unlike notifications, products have no rules of their own, so the case for a separate catalogue is weaker.",
+        "fix": "Replace 'no rules of their own' with 'no rules in their class', matching summary line 4."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

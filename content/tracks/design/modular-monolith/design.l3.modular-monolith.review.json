@@ -1,0 +1,120 @@
+{
+  "id": "design.l3.modular-monolith",
+  "technical": {
+    "reviewed_at": "2026-10-08T18:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "git show stage-2:DonHang.Api/Program.cs: `builder.Services.AddControllers();`, `builder.Services.AddScoped<OrderService>();`, comment \"it runs in this same process, beside the requests.\" then `builder.Services.AddHostedService<NotificationSender>();`; file ends with a single `app.Run();`.",
+        "source": "examples/don-hang @ stage-2: DonHang.Api/Program.cs"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "\"A web app that uses the Microsoft.NET.Sdk.Web SDK registers hosted services in the Program file by calling the same AddHostedService extension method on WebApplicationBuilder.Services. The host automatically starts and stops registered hosted services\". Same page: \"If the app shuts down unexpectedly (for example, the app's process fails), StopAsync might not be called.\" Lesson only says the host starts it and it runs in the app's process; both supported.",
+        "source": "https://learn.microsoft.com/aspnet/core/fundamentals/host/hosted-services?view=aspnetcore-10.0 (Hosted services in a web app; StopAsync)"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "git show stage-2:docker-compose.yml: service `migrate` (target: migrate, comment \"Runs the migration bundle against db once, then exits\"); service `api` depends_on `migrate: condition: service_completed_successfully`; service `app-web` serves `./DonHang.App/build/web` as static files (\"no Dart runs inside this container\").",
+        "source": "examples/don-hang @ stage-2: docker-compose.yml"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "QueuedNotifier(DonHangDbContext db).Send only calls `db.Notifications.Add(...)`; EfOrderRepository(DonHangDbContext db).SaveChangesAsync => db.SaveChangesAsync(); ServiceCollectionExtensions: `services.AddDbContext<DonHangDbContext>(...)`, `AddScoped<IOrderRepository, EfOrderRepository>()`, `AddScoped<INotifier, QueuedNotifier>()`. EF docs: \"AddDbContext ... registers DbContext types with a scoped lifetime by default\", so both get the same instance per request.",
+        "source": "examples/don-hang @ stage-2: DonHang.Infrastructure/QueuedNotifier.cs, EfOrderRepository.cs, ServiceCollectionExtensions.cs; https://learn.microsoft.com/ef/core/dbcontext-configuration/"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "\"By default, if the database provider supports transactions, all changes in a single call to SaveChanges are applied in a transaction. If any of the changes fail, then the transaction is rolled back and none of the changes are applied to the database. This means that SaveChanges is guaranteed to either completely succeed, or leave the database unmodified if an error occurs.\"",
+        "source": "https://learn.microsoft.com/ef/core/saving/transactions (Default transaction behavior)"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Round 2. DonHangDbContext.cs:8-13 declares the six DbSets. Round-1 `git grep Payment stage-2 -- '*.cs'` hits only Entities.cs, DonHangDbContext.cs, migration Designer files, InitialCreate and DonHangDbContextModelSnapshot.cs; no service, controller or job. Lesson now reads \"which no service, controller or job uses yet\", matching that.",
+        "source": "examples/don-hang @ stage-2: git grep Payment; DonHang.Infrastructure/DonHangDbContext.cs"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "NotificationSender.SendOneAsync: `var customer = notification.Order!.Customer!;` then `email.SendAsync(customer.Email, ...)`; rows loaded by NotificationQueue with `.Include(n => n.Order!).ThenInclude(o => o.Customer)`. ProductsController(DonHangDbContext db, ...).List: `IQueryable<Product> query = db.Products;`.",
+        "source": "examples/don-hang @ stage-2: DonHang.Api/Jobs/NotificationSender.cs; DonHang.Infrastructure/NotificationQueue.cs; DonHang.Api/Controllers/ProductsController.cs"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Round 2. git ls-tree stage-2: DonHang.Api, DonHang.Domain, DonHang.Infrastructure. Entities.cs declares Customer, Product, Order, OrderItem, Payment, Notification. DonHangDbContext.cs l.88-105, modelBuilder.Entity<Notification>: every scalar (Id, OrderId, Channel, SentAt, Subject, Status, Attempts, CreatedAt, NextAttemptAt) is mapped with .HasColumnName(snake_case), so a new property needs a mapping line there to follow the convention.",
+        "source": "examples/don-hang @ stage-2: DonHang.Domain/Entities.cs; DonHang.Infrastructure/DonHangDbContext.cs (Notification block)"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "DependencyRuleTests.DomainReferencesNoOuterAssembly: `typeof(OrderService).Assembly.GetReferencedAssemblies()` filtered by ForbiddenPrefixes [\"DonHang.Infrastructure\",\"DonHang.Api\",\"Microsoft.EntityFrameworkCore\",\"Microsoft.AspNetCore\",\"Npgsql\",\"StackExchange.Redis\",\"MailKit\"], then `Assert.Empty(forbidden)`.",
+        "source": "examples/don-hang @ stage-2: DonHang.Tests/Architecture/DependencyRuleTests.cs"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Inside `modelBuilder.Entity<Notification>(e => { ... })`: `e.HasOne(n => n.Order).WithMany().HasForeignKey(n => n.OrderId);` exact text matches the Try-it expected result.",
+        "source": "examples/don-hang @ stage-2: DonHang.Infrastructure/DonHangDbContext.cs (Notification block)"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "git-show(1) DESCRIPTION: \"For plain blobs, it shows the plain contents.\" EXAMPLES: `git show next~10:Documentation/README` \"Shows the contents of the file Documentation/README as they were current in the 10th last commit of the branch next.\" Command also run: `git -C examples/don-hang show stage-2:DonHang.Infrastructure/DonHangDbContext.cs` printed the file.",
+        "source": "https://git-scm.com/docs/git-show"
+      },
+      {
+        "n": 12,
+        "verdict": "not-needed",
+        "evidence": "Definitional: restates the glossary entries `monolith` and `modular-monolith` and outline items 1 and 3; no version-dependent behaviour."
+      },
+      {
+        "n": 13,
+        "verdict": "not-needed",
+        "evidence": "Round 2. Design judgement mandated by outline item 5, ledgered as opinion. The added section-6 sentence is conditioned (\"If notifications moves to its own process and database, its email row can no longer join the order's SaveChangesAsync\") and consistent with claim 5."
+      },
+      {
+        "n": 14,
+        "verdict": "not-needed",
+        "evidence": "Round 2. Opinion now carries its condition in the lesson text (section 4): \"it is worth keeping while the parts have no reason to be deployed separately.\" Matches the ledger; no ranking."
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-08T19:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior), round 2",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "gap",
+        "text": "New in round 2, in the reworded misconception 2. I follow that a new Notification property edits Entities.cs. The step to DonHangDbContext.cs is skipped: the text says every column there 'is named with HasColumnName', but not that a new property therefore needs its own HasColumnName line in that file. I had to infer it.",
+        "quote": "since every `Notification` column there is named with `HasColumnName`",
+        "fix": "Replace that clause with: 'since every `Notification` column there gets its name in a `HasColumnName` line, so the new property needs one too'."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [
+        "Section 6, misconception 2: why naming columns with HasColumnName means a new Notification property also edits DonHangDbContext.cs (minor)."
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

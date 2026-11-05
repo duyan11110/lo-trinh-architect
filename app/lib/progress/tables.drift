@@ -1,0 +1,62 @@
+-- DDL schemaVersion 1 — verbatim from docs/07 §4. Every change here needs a
+-- matching step in migrations.dart and a schemaVersion bump (app/CLAUDE.md rule 7).
+-- All timestamps are ISO 8601 UTC TEXT. No foreign keys to content.
+-- Only deviation from the doc text: `key` is quoted ("key") because drift's parser treats it as a keyword; SQLite DDL is equivalent.
+
+CREATE TABLE lesson_progress (
+  lesson_id       TEXT PRIMARY KEY,
+  status          TEXT NOT NULL CHECK (status IN ('new','opened','read','passed')),
+  first_opened_at TEXT,
+  read_at         TEXT,
+  passed_at       TEXT,
+  best_score      REAL,                 -- 0..1
+  scroll_ratio    REAL NOT NULL DEFAULT 0,
+  prereq_warned   INTEGER NOT NULL DEFAULT 0,
+  content_version INTEGER               -- phiên bản bài lúc passed (hiện nhãn "đã cập nhật" khi khác)
+);
+
+CREATE TABLE quiz_attempt (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind         TEXT NOT NULL CHECK (kind IN ('lesson','module','review','gate')),
+  ref_id       TEXT NOT NULL,           -- lesson id | track/module | review session id | gate id
+  started_at   TEXT NOT NULL,
+  finished_at  TEXT,                    -- NULL = đang dở (kể cả gate tạm dừng)
+  score        INTEGER,
+  total        INTEGER,
+  question_ids TEXT NOT NULL            -- JSON array: thứ tự câu đã rút (để tiếp tục và để tránh lặp ở gate)
+);
+
+CREATE TABLE quiz_answer (
+  attempt_id   INTEGER NOT NULL REFERENCES quiz_attempt(id) ON DELETE CASCADE,
+  question_id  TEXT NOT NULL,
+  answer       TEXT NOT NULL,           -- JSON: ["b"] | ["a","c"] | ["b","d","c","a"] | ["utf-8"]
+  correct      INTEGER NOT NULL,        -- 0/1
+  answered_at  TEXT NOT NULL,
+  flagged      INTEGER NOT NULL DEFAULT 0,   -- gate: "đánh dấu xem lại"
+  PRIMARY KEY (attempt_id, question_id)
+);
+
+CREATE TABLE review_item (
+  item_id      TEXT PRIMARY KEY,        -- question id, hoặc "term:<slug>" cho flashcard thuật ngữ
+  kind         TEXT NOT NULL CHECK (kind IN ('question','term')),
+  source_lesson TEXT,                   -- lesson id (câu) / introduced_in (term); NULL cho câu gate
+  tier         INTEGER NOT NULL DEFAULT 0,   -- bậc 0..4
+  due_at       TEXT NOT NULL,
+  last_result  INTEGER,
+  times_seen   INTEGER NOT NULL DEFAULT 0,
+  retired      INTEGER NOT NULL DEFAULT 0    -- 1 = đã qua bậc 4 hoặc câu không còn trong nội dung
+);
+
+CREATE TABLE vocab_seen (term TEXT PRIMARY KEY, first_lesson_id TEXT NOT NULL, seen_at TEXT NOT NULL);
+CREATE TABLE stage_progress (stage INTEGER PRIMARY KEY, gate_passed_at TEXT, best_gate_score REAL, attempts INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE settings ("key" TEXT PRIMARY KEY, value TEXT NOT NULL);
+  -- keys: content_lang (vi|en), ui_lang (follows content_lang unless set), theme (system|light|dark), font_scale (0..3),
+  --       line_height (0|1), haptics (0|1), review_max_per_session (20), review_reminder_time (HH:mm|''), content_version (int),
+  --       content_source (asset|remote), remote_base_url
+CREATE TABLE event (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL, kind TEXT NOT NULL, ref TEXT, value REAL);
+  -- kinds: lesson_opened, lesson_read, quiz_finished, review_finished, gate_finished, content_updated
+
+CREATE VIRTUAL TABLE search_index USING fts5(
+  lesson_id UNINDEXED, lang UNINDEXED, title, body,
+  tokenize = "unicode61 remove_diacritics 0"        -- giữ dấu tiếng Việt
+);

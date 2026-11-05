@@ -1,0 +1,106 @@
+{
+  "id": "design.l3.cqrs",
+  "technical": {
+    "reviewed_at": "2026-10-14T20:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Round 2. refs apply-simplified-microservice-cqrs-ddd-patterns.md:10 \"CQRS is an architectural pattern that separates the models for reading and writing data.\" :20 \"Each layer has its own data model (note that we say model, not necessarily a different database)\" :24 \"It uses a single data source or database, but two logical models\". s3, s6 myth 1, summary 1 and q1 explanation now name the separate read model.",
+        "source": "refs/dotnet-docs/docs/architecture/microservices/microservice-ddd-cqrs-patterns/apply-simplified-microservice-cqrs-ddd-patterns.md"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "refs apply-simplified-...md:18 \"a more evolved CQRS system might implement Event-Sourcing (ES) for your updates database, so you would only store events in the domain model instead of storing the current-state data. However, this approach is not used in this guide. This guide uses the simplest CQRS approach, which consists of just separating the queries from the commands.\" Supports CQRS without storing history.",
+        "source": "refs/dotnet-docs/docs/architecture/microservices/microservice-ddd-cqrs-patterns/apply-simplified-microservice-cqrs-ddd-patterns.md"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "OrderService.cs@stage-2 36-49 as quoted (identical block in design.l2.domain-model, same file/tag/lines): FindAsync, order.Cancel(), notifier.Send(order, \"order cancelled\"), SaveChangesAsync. Lines 51-61 (design.l2.status-changes-through-methods): FindAsync, order.Ship(), notifier.Send(order, \"order shipped\"), SaveChangesAsync. Lines 15-34 (design.l2.valid-from-construction): `var order = new Order(customerId, items, DateTimeOffset.UtcNow) { IdempotencyKey = idempotencyKey };`.",
+        "source": "examples/don-hang @ stage-2 DonHang.Domain/OrderService.cs (via stage-2 excerpts in validated lessons; git show not runnable in this session)"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "design.l3.ubiquitous-language.review.json records `git show stage-2:DonHang.Domain/Entities.cs`, Cancel(): `if (Status == \"cancelled\") throw new OrderStatusException(...); if (Status == \"shipped\") throw new OrderStatusException(...); Status = \"cancelled\";`. In CancelOrderAsync the throw at order.Cancel() precedes `await repository.SaveChangesAsync();`, so no save runs.",
+        "source": "examples/don-hang @ stage-2 DonHang.Domain/Entities.cs, OrderService.cs:36-49"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "refs efcore querying/tracking.md:20 \"By default, queries that return entity types are tracking. A tracking query means any changes to entity instances are persisted by `SaveChanges`.\" FindAsync = `db.Orders.Include(o => o.Items).FirstOrDefaultAsync(...)`, no AsNoTracking.",
+        "source": "refs/efcore-docs/entity-framework/core/querying/tracking.md"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "tracking.md:67 \"If the result set doesn't contain any entity types, then no tracking is done.\" performance/efficient-querying.md:40-44 \"This can be optimized by using `Select` to tell EF which columns to project out ... The resulting SQL pulls back only the needed columns\". Code: `.Select(o => new OrderSummary(o.Id, o.Status, o.Customer!.FullName))`.",
+        "source": "refs/efcore-docs/entity-framework/core/querying/tracking.md; refs/efcore-docs/entity-framework/core/performance/efficient-querying.md"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "EfOrderRepository.cs lines 6-29 as quoted: primary ctor `(DonHangDbContext db)`; FindAsync `db.Orders.Include(o => o.Items)`; FindForReadingAsync `db.Orders.AsNoTracking().Include(o => o.Items)`; ListByCustomerAsync `db.Orders.Where(...)`. Same text in stage-2 excerpts of backend.l2.no-tracking-queries (9-16), backend.l2.projection-queries (18-29), design.l3.reference-other-aggregates-by-id (9-29); identical in working tree.",
+        "source": "examples/don-hang @ stage-2 DonHang.Infrastructure/EfOrderRepository.cs"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "At stage-2 OrderService calls repository.FindAsync and OrdersController (ctor `IOrderRepository repository`, per api-versioning review of stage-2) calls repository.FindForReadingAsync and repository.ListByCustomerAsync; the code compiles only if IOrderRepository declares all three. Working-tree IOrderRepository.cs declares FindAsync, ListByCustomerAsync, AddAsync, SaveChangesAsync, FindForReadingAsync, FindByIdempotencyKeyAsync with no stage-3 markers.",
+        "source": "examples/don-hang DonHang.Domain/IOrderRepository.cs; stage-2 excerpts of OrdersController.cs"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Round 3: s4 diagram arrow C -> R \"FindForReadingAsync: owner check\" matches stage-2 68-84 Cancel `var existing = await repository.FindForReadingAsync(id);` + `AuthorizeAsync(User, existing, \"OrderOwner\")` before `orderService.CancelOrderAsync(id)`. Also 52-66 Get FindForReadingAsync; 86-97 Ship `orderService.ShipOrderAsync`; 99-115 List `repository.ListByCustomerAsync(customer.Id, after, limit)`, no OrderService.",
+        "source": "content excerpts tag=stage-2 in backend.l2.resource-based-authorization, backend.l2.no-tracking-queries, backend.l2.role-based-access, backend.l2.cursor-pagination"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "examples/don-hang STAGE.md (stage-3) lists `RecordOrderStatusHistory` writes the read model `order_status_history` among stage-3 contents; its migration is 20261005224255_AddOrderStatusHistory, after the last stage-2 migrations (20260927...). Orders keep one `status` column, so the new s4 example (status history gets nothing from `orders`) holds at stage-2.",
+        "source": "examples/don-hang/STAGE.md; DonHang.Infrastructure/Migrations"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Round 3. Ledger records a run of the command with -n at stage-2: 41 Place, 59 FindForReading, 76 FindForReading, 82 Cancel, 95 Ship, 113 ListByCustomer (run per DECISIONS default for recorded runs). Reviewer re-run denied (Bash); cross-check: 59/76/82/95/113 match stage-2 excerpts 52-124 exactly; stage-2 117-124 is CurrentCustomerAsync (no match); working tree has only PlaceOrderAsync before Get and no match after CurrentCustomerAsync.",
+        "source": "design.l3.cqrs.meta.json claim 11 recorded run; stage-2 OrdersController excerpts in backend lessons; examples/don-hang working tree OrdersController.cs"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Round 2. refs apply-simplified-...md:22 \"There are reasons to have a denormalized reads database, which you can learn about in more advanced CQRS literature.\" :24 \"a single data source or database, but two logical models\". s4 and summary line 5 now both say \"one set of tables for both sides is simpler\"; the condition (a shape a query cannot give cheaply) and the status-history example are stated. Opinion with its condition.",
+        "source": "refs/dotnet-docs/docs/architecture/microservices/microservice-ddd-cqrs-patterns/apply-simplified-microservice-cqrs-ddd-patterns.md"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "refs apply-simplified-...md:22 \"the goal is to have more flexibility in the queries instead of limiting the queries with constraints from DDD patterns like aggregates.\" :32 \"...independent from restrictions and constraints coming from DDD patterns that only make sense for transactions and updates\". efficient-querying.md:29. Round 3 zero issues; opened: lesson s4/s7, meta claim 11, stage-2 OrdersController excerpts, working-tree OrdersController.cs.",
+        "source": "refs/dotnet-docs/docs/architecture/microservices/microservice-ddd-cqrs-patterns/apply-simplified-microservice-cqrs-ddd-patterns.md; refs/efcore-docs/entity-framework/core/performance/efficient-querying.md"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-14T21:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior)",
+    "issues": [],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

@@ -15,8 +15,8 @@ vocab: [container-registry]
 example_tag: stage-1
 versions_used: [docker, github_actions]
 content_version: 1
-status: approved
-approved_by: auto
+status: published
+approved_by: owner
 reviewed_at: "2026-10-03T00:10:54+07:00"
 ---
 

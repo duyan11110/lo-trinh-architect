@@ -1,0 +1,162 @@
+{
+  "id": "backend.l3.payments-service",
+  "technical": {
+    "reviewed_at": "2026-10-14T23:59:30+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "DonHangDbContext.cs:98-101: \"No Payment or Notification here from stage-3: those rows belong to the Payments and Notifications services, in their own databases. The old `payments` and `notifications` tables stay in donhang, unread.\" DbSets (lines 10-15) are Customers, Orders, OrderItems, OrderStatusHistory, OutboxMessages, InboxMessages only. refund-design.md:89-91 agrees.",
+        "source": "examples/don-hang: DonHang.Infrastructure/DonHangDbContext.cs:10-15, 98-101; docs/design/refund-design.md:89-91"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Grep `Gateway|GATEWAY` in docker-compose.yml hits only lines 343, 370-371, 379-380 (service payments) and 412 (fake-gateway: `Gateway__ApiKey: \"${GATEWAY_API_KEY}\"`). The api service has no Gateway setting.",
+        "source": "examples/don-hang: docker-compose.yml:359-412"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "docker-compose.yml:367 `Host=db;Database=donhang_payments;Username=donhang`; :351 payments-migrate same database; :158 api `Host=db;Database=donhang`. donhang_payments appears only at 342, 351, 367.",
+        "source": "examples/don-hang: docker-compose.yml:140, 158, 351, 367"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "refund-design.md:19-24: \"Ở bản 1, mọi bản sao của DonHang.Api đều giữ khóa đó và đọc ghi được bảng `payments`. Tách ra, khóa chỉ nằm trong cấu hình của một service, bảng `payments` chỉ nằm trong cơ sở dữ liệu `donhang_payments` của service đó, và service này được triển khai, cấp quyền truy cập và kiểm toán riêng.\" Section 4 now attributes deploy/access/audit to the design.",
+        "source": "examples/don-hang: docs/design/refund-design.md:17-24"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "refund-design.md step 3 (Payments writes a pending refund row in its own payments table), step 7 (DonHang.Api moves the order to cancelled; Notifications sends the refund email), step 8 (back to paid). PaymentEventsConsumer.cs:107-108 calls CompleteRefundAsync/FailRefundAsync in DonHang.Api.",
+        "source": "examples/don-hang: docs/design/refund-design.md:34-59; DonHang.Api/Messaging/PaymentEventsConsumer.cs:107-108"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Payments RabbitMqTopology.cs:29 `QueueBindAsync(Queue, OrdersExchange, \"order.refund-requested\")`, Queue = \"payments.refund-requests\". RefundRequestedConsumer.cs:58-59 ack after HandleAsync (inbox + refund row in one SaveChangesAsync, 90-94). Answers to donhang.payments; rabbitmq-topology.txt:17 `donhang.payments --[payment.*]--> orders.payment-events`.",
+        "source": "examples/don-hang: DonHang.Payments/RabbitMqTopology.cs:9-29; DonHang.Payments/RefundRequestedConsumer.cs:51-101; outputs/stage-3/scripts/backend/rabbitmq-topology.txt:17"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Program.cs:20-22 GetConnectionString(\"Default\") + AddDbContext<PaymentsDbContext>(UseNpgsql); 27-28 GetSection(\"Gateway\") + AddGatewayRefundClient; 35-36 AddRabbitMq(clientName: \"donhang-payments\"), AddOutboxRelay<PaymentsDbContext>(exchange: \"donhang.payments\"); 37 AddHostedService<RefundRequestedConsumer>. Checked against the submodule working tree; `git show stage-3:` needed approval and was not run.",
+        "source": "examples/don-hang: DonHang.Payments/Program.cs:15-37"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "PaymentsDbContext.cs:12-14 DbSets Payments, OutboxMessages, InboxMessages; ToTable(\"payments\") line 23, ToTable(\"outbox_messages\") line 50, ToTable(\"inbox_messages\") line 62. No other entity.",
+        "source": "examples/don-hang: DonHang.Payments/PaymentsDbContext.cs:10-67"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "MessagingServiceCollectionExtensions.cs:12 `public static IServiceCollection AddRabbitMq(`, :20 `AddOutboxRelay<TDbContext>(... string exchange)`. DonHang.Api/Program.cs:47-48 `AddRabbitMq(rabbitMq, clientName: \"donhang-api\")`, `AddOutboxRelay<DonHangDbContext>(exchange: \"donhang.orders\")`.",
+        "source": "examples/don-hang: DonHang.Messaging/MessagingServiceCollectionExtensions.cs:12-24; DonHang.Api/Program.cs:47-48"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "OrdersController.cs:117-121 comment: \"The order moves to `refunding` and its order.refund-requested message is saved in the same transaction; the answer is 202 Accepted\"; line 134 `return Accepted(ToDto(order));`. refund-design.md:28-31: \"...rồi trả `202 Accepted`. Request không chờ ai khác (YC-7).\"",
+        "source": "examples/don-hang: DonHang.Api/Controllers/OrdersController.cs:115-135; docs/design/refund-design.md:28-31"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "refund-design.md:76-80 \"Phương án bị loại: gọi cổng thanh toán ngay trong request của khách ... khi cổng lỗi hoặc chậm, khách chờ rồi nhận lỗi, và yêu cầu không được ghi lại. Điều đó trái YC-7\"; :14-15 \"YC-7 đòi nhận yêu cầu cả khi cổng thanh toán đang lỗi.\"",
+        "source": "examples/don-hang: docs/design/refund-design.md:14-15, 76-80"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Entities.cs:121-126 Cancel() throws for cancelled, shipped, paid (\"request a refund instead\"), refunding; :135-140 Ship() throws for refunding; :150-153 RequestRefund() requires paid. These rules run only through the Order class in DonHang.Api; a direct SQL write would not execute them.",
+        "source": "examples/don-hang: DonHang.Domain/Entities.cs:121-174"
+      },
+      {
+        "n": 13,
+        "verdict": "not-needed",
+        "evidence": "Labelled opinion, reasoning from claims 10/11 and 6. Round-1 rephrasing applied: section 6 now reads \"Here a second broker would be one more server to run, back up and watch, and Payments needs nothing that the shared RabbitMQ cannot already do\", carrying the ledger's condition; section 4's \"fewer places can leak it\" follows from claim 4 (key in one service's config)."
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "outputs/stage-3/scripts/backend/rabbitmq-topology.txt:14-17: \"== bindings on donhang.orders and donhang.payments\" / \"donhang.orders --[order.*]--> notifications.order-events\" / \"donhang.orders --[order.refund-requested]--> payments.refund-requests\" / \"donhang.payments --[payment.*]--> orders.payment-events\".",
+        "source": "examples/don-hang: outputs/stage-3/scripts/backend/rabbitmq-topology.txt:14-17; scripts/backend/rabbitmq-topology.sh:29-33"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "GatewayRefundClient.cs:9-16 `public enum RefundOutcome { Refunded, Refused, TryAgainLater }`, `GatewayRefundResult(RefundOutcome Outcome, string? Reason)`; lines 69-84 map HTTP success, refusal, other status, exceptions, timeout and open circuit to those values.",
+        "source": "examples/don-hang: DonHang.Payments/GatewayRefundClient.cs:9-84"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "Grep -i `gateway` over DonHang.Api returns one hit only, a comment: Messaging/RabbitMqTopology.cs:35 \"// No delivery limit (-1): once the gateway has returned the money, the\". No client class, no settings. Compose api service has no Gateway key (claim 2). Gateway calls live in DonHang.Payments/GatewayRefundClient.cs. Checked on the submodule working tree; `git grep stage-3` needed approval and was not run.",
+        "source": "examples/don-hang: DonHang.Api/** (grep); docker-compose.yml:149-198; DonHang.Payments/GatewayRefundClient.cs"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "PG 17 manage-ag-overview: \"Inside the cluster are multiple databases, which are isolated from each other but can access cluster-level objects.\" and \"When connecting to the database server, a client must specify the database name in its connection request. It is not possible to access more than one database per connection.\" (WebFetch summary, quoted text as returned.)",
+        "source": "https://www.postgresql.org/docs/17/manage-ag-overview.html"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "RabbitMqTopology.cs:10-13 `PaymentsExchange = \"donhang.payments\"`, `Queue = \"payments.refund-requests\"`, `DeadLetterExchange = \"payments.dead-letter\"`, `DeadLetterQueue = \"payments.refund-requests.dead\"`; lines 25-35 declare all four and bind the dead-letter queue with \"#\". Working tree; same caveat as claim 16.",
+        "source": "examples/don-hang: DonHang.Payments/RabbitMqTopology.cs:9-35"
+      },
+      {
+        "n": 19,
+        "verdict": "verified",
+        "evidence": "RabbitMQ docs, Exchanges: \"the keys are separated into segments by `.`\" and \"`*` for exactly one segment\" (WebFetch summary). order.refund-requested has two dot segments, so order.* matches. Notifications RabbitMqTopology.cs:27 binds `order.*`; OrderEventsConsumer.cs:122 maps \"order.refund-requested\" => \"refund requested\". Round 2 opened: these files, PG 17 manage-ag-overview, RabbitMQ docs/exchanges.",
+        "source": "https://www.rabbitmq.com/docs/exchanges; examples/don-hang: DonHang.Notifications/RabbitMqTopology.cs:27, OrderEventsConsumer.cs:122"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-14T23:59:50+07:00",
+    "reviewer": "claude-opus-5-5 (prompt 05, junior reader, targeted re-review round 2)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "term",
+        "quote": "(with a dead-letter exchange and queue beside it)",
+        "text": "New in round 2. I know 'dead-letter queue' and 'exchange', but not 'dead-letter exchange'. I can compose it (the exchange that sends given-up messages to the dead-letter queue), so it does not block the bullet, but I paused on it.",
+        "fix": "Write '(with a dead-letter queue beside it, reached through its own exchange)' so only known terms appear."
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "gap",
+        "quote": "Since `*` stands for exactly one word, Notifications' `order.*` also receives `order.refund-requested`.",
+        "text": "New in round 2. What counts as a 'word' in a routing key is not said. I had to guess that words are split at the dot, so that 'refund-requested' (with a hyphen) is one word.",
+        "fix": "Replace 'exactly one word' with 'exactly one dot-separated part of the routing key'."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [
+        "dead-letter exchange (composable from known terms)"
+      ],
+      "skipped_steps": [
+        "Section 7: \"`*` stands for exactly one word\" — that words are separated by dots is not said."
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

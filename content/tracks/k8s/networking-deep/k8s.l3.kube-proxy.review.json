@@ -1,0 +1,166 @@
+{
+  "id": "k8s.l3.kube-proxy",
+  "technical": {
+    "reviewed_at": "2026-10-16T04:10:37+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "virtual-ips.md l.424: 'Service IPs are not actually answered by a single host. Instead, kube-proxy uses packet processing logic (such as Linux iptables) to define virtual IP addresses which are transparently redirected as needed.' Round 2: lesson now scopes the no-Pod/no-node statement to donhang (iptables mode, claim 5) in s.4, s.6 bullet 3 and summary 1, matching the round-1 suggested_text. Not re-run (Docker not running).",
+        "source": "refs/kubernetes-website docs/reference/networking/virtual-ips.md (IP address assignment to Services)"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "glossary/kube-proxy.md: 'kube-proxy is a network proxy that runs on each node in your cluster'. virtual-ips.md: 'Each instance of kube-proxy watches the Kubernetes control plane for the addition and removal of Service and EndpointSlice objects. For each Service, kube-proxy calls appropriate APIs ... to configure the node to capture traffic to the Service's clusterIP and port, and redirect that traffic to one of the Service's endpoints'.",
+        "source": "refs/kubernetes-website docs/reference/glossary/kube-proxy.md; docs/reference/networking/virtual-ips.md (intro)"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "endpoint-slices.md: 'The control plane automatically creates EndpointSlices for any Kubernetes Service that has a selector specified. These EndpointSlices include references to all the Pods that match the Service selector.' Conditions: 'The three conditions are serving, terminating, and ready.' Ownership: 'a kubernetes.io/service-name label that enables simple lookups of all EndpointSlices belonging to a Service.'",
+        "source": "refs/kubernetes-website docs/concepts/services-networking/endpoint-slices.md"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "endpoint-slices.md: 'Service proxies will normally ignore endpoints that are terminating, but they may route traffic to endpoints that are both serving and terminating if all available endpoints are terminating.' Round 2: s.4 'A Pod that is not ready normally has no entry' and summary 2 'normally only ready addresses get new connections' now carry the condition.",
+        "source": "refs/kubernetes-website docs/concepts/services-networking/endpoint-slices.md (Conditions)"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Captured output (stage-3 outputs/stage-3/scripts/k8s/kube-proxy.txt): 'mode: iptables'. kind.sigs.k8s.io home page (WebFetch): 'kind is a tool for running local Kubernetes clusters using Docker container \"nodes\".' Supports s.5 'Each node of the kind cluster is a Docker container, so docker exec donhang-worker runs iptables-save on that node'.",
+        "source": "examples/don-hang outputs/stage-3/scripts/k8s/kube-proxy.txt @ stage-3; https://kind.sigs.k8s.io/"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "virtual-ips.md iptables mode: 'it installs a series of iptables rules which redirect from the virtual IP address to more iptables rules, defined per Service. The per-Service rules link to further rules for each backend endpoint, and the per-endpoint rules redirect traffic (using destination NAT) to the backends.' Captured output shows KUBE-SERVICES -d .../32 --dport 80 -j KUBE-SVC-..., two KUBE-SVC -> KUBE-SEP jumps, two KUBE-SEP DNAT --to-destination ...:8080.",
+        "source": "refs/kubernetes-website docs/reference/networking/virtual-ips.md (iptables proxy mode, Example); outputs/stage-3/scripts/k8s/kube-proxy.txt"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Captured output: '-A KUBE-SVC-CLMCAZ67BDWMELKC -m statistic --mode random --probability 0.50000000000 -j KUBE-SEP-...' followed by '-A KUBE-SVC-CLMCAZ67BDWMELKC -j KUBE-SEP-...' (no match condition). With two endpoints this gives each ~1/2. Docs: rules 'by default, select a backend Pod at random'.",
+        "source": "outputs/stage-3/scripts/k8s/kube-proxy.txt @ stage-3; refs virtual-ips.md (iptables proxy mode)"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "virtual-ips.md: 'When a client connects to the Service's virtual IP address the iptables rule kicks in. A backend is chosen (either based on session affinity or randomly)'. kube-proxy.md flag --conntrack-max-per-core: 'Maximum number of NAT connections to track per CPU core' (kernel connection record). Captured: 'answers: 10, different Pods that answered: 1' (one nc connection); 'different Pods that answered: 2' (ten wget).",
+        "source": "refs/kubernetes-website docs/reference/networking/virtual-ips.md (iptables Example); docs/reference/command-line-tools-reference/kube-proxy.md; outputs/stage-3/scripts/k8s/kube-proxy.txt"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "virtual-ips.md: 'kube-proxy configures packet forwarding rules using the iptables API of the kernel netfilter subsystem' and 'packets are redirected to the backend without rewriting the client IP address'. Note: the quote in source_hint ('without the need to switch between userspace and the kernel space') is not in the mirrored page. glossary/kube-proxy.md adds 'Otherwise, kube-proxy forwards the traffic itself' - so the claim holds for iptables mode only.",
+        "source": "refs/kubernetes-website docs/reference/networking/virtual-ips.md; docs/reference/glossary/kube-proxy.md"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "RFC 9112 s.9.3: 'HTTP/1.1 defaults to the use of \"persistent connections\", allowing multiple requests and responses to be carried over a single connection.' s.9.6: 'Connection: close as a request header field indicates that this is the last request that the client will send on this connection' and 'A server that receives a \"close\" connection option MUST initiate closure of the connection ... after it sends the final response'.",
+        "source": "refs/rfc/rfc9112.txt s.9.3, s.9.6"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "scripts/k8s/kube-proxy.sh @ stage-3 lines 36-38: the loop runs 'kubectl exec client ... -- wget -qO- http://echo-ip' ten times, a new process each time. Captured output: 'different Pods that answered: 2'.",
+        "source": "examples/don-hang scripts/k8s/kube-proxy.sh and outputs/stage-3/scripts/k8s/kube-proxy.txt @ stage-3"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "service.md: 'For headless Services, a cluster IP is not allocated, kube-proxy does not handle these Services, and there is no load balancing or proxying done by the platform for them.' ... 'headless Services report the endpoint IP addresses of the individual pods via internal DNS records'. Captured: 'echo-ip-headless ClusterIP None', 'rules for echo-ip-headless on donhang-worker: 0'.",
+        "source": "refs/kubernetes-website docs/concepts/services-networking/service.md (Headless Services); outputs/stage-3/scripts/k8s/kube-proxy.txt"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Round 2: s.5 now reads 'The node then holds different rules or programs, but a connection to the cluster IP is still sent to one of the Service's ready Pods' (round-1 suggested_text). virtual-ips.md lists iptables, ipvs, nftables, kernelspace modes and says kube-proxy configures the node to 'redirect that traffic to one of the Service's endpoints'. addons.md: Cilium 'can act as a replacement for kube-proxy'.",
+        "source": "refs/kubernetes-website docs/reference/networking/virtual-ips.md (intro, proxy modes); docs/concepts/cluster-administration/addons.md (Cilium)"
+      },
+      {
+        "n": 14,
+        "verdict": "unverified",
+        "evidence": "Round 2: 'checked before they run' removed. Remaining text 'a way to load small programs into the Linux kernel' still has no allowed source: grep -ri 'ebpf' with 'kernel' in refs/kubernetes-website/content/en/docs returns nothing; addons.md only says Cilium has 'an eBPF-based data plane'. No ebpf key in versions.yaml. kind=fact, so not blocking.",
+        "source": "refs/kubernetes-website docs/concepts/cluster-administration/addons.md; grep over refs/kubernetes-website/content/en/docs"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "virtual-ips.md: kube-proxy 'configures packet forwarding rules using the iptables API of the kernel netfilter subsystem'. Execution (captured at stage-3): 'docker exec donhang-worker iptables-save -t nat' printed rules in named chains ('-A KUBE-SERVICES ...', '-A KUBE-SVC-...', '-A KUBE-SEP-... -j DNAT'), DNAT being a nat-table target. No iptables man page in allowed sources; verdict rests on docs + run output.",
+        "source": "refs virtual-ips.md (iptables proxy mode); examples/don-hang outputs/stage-3/scripts/k8s/kube-proxy.txt"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "git show stage-3:deploy/k8s/lessons/echo-ip.yaml: 'port: 80', 'targetPort: 8080', selector app: echo-ip; Caddyfile 'respond \"{system.hostname} saw {remote_host}' (one line: host name, 'saw', client address). kube-proxy.sh l.36-38 keeps awk '{ print $1 }' to count Pods. Captured EndpointSlice: '...,...  true,true  8080'.",
+        "source": "examples/don-hang deploy/k8s/lessons/echo-ip.yaml, scripts/k8s/kube-proxy.sh @ stage-3"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "git show stage-3:scripts/lib/network-lessons.sh: 'show() { echo \"\\$ $*\"; \"$@\"; }' and 'lessons_cluster() { if ! kind get clusters 2>/dev/null | grep -qx donhang; then scripts/k8s/cluster-up.sh >/dev/null; fi }'; kube-proxy.sh line 7 calls lessons_cluster.",
+        "source": "examples/don-hang scripts/lib/network-lessons.sh, scripts/k8s/kube-proxy.sh @ stage-3"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "Follows from claim 8: virtual-ips.md 'When a client connects to the Service's virtual IP address the iptables rule kicks in. A backend is chosen ...' (selection at connect time); captured nc test keeps all ten requests on one Pod. A connection opened before new Pods exist cannot be re-picked to them. The lesson states the uneven-load effect as a symptom ('You notice this when'), not as a guarantee.",
+        "source": "refs virtual-ips.md (iptables Example); outputs/stage-3/scripts/k8s/kube-proxy.txt"
+      },
+      {
+        "n": 19,
+        "verdict": "verified",
+        "evidence": "rabbitmq.com/docs/consumers (WebFetch, round 1 summary): 'Normally, active consumers connected to a queue receive messages from it in a round-robin fashion.' The broker assigns each message to a consumer. Round 2: ledger section now 8, matching the sentence in Connections.",
+        "source": "https://www.rabbitmq.com/docs/consumers"
+      },
+      {
+        "n": 20,
+        "verdict": "verified",
+        "evidence": "virtual-ips.md l.122-123: 'This same basic flow executes when traffic comes in through a `type: NodePort` Service, or through a load-balancer, though in those cases the client IP address does get altered.' Supports s.8 'built on these same kube-proxy rules'.",
+        "source": "refs/kubernetes-website docs/reference/networking/virtual-ips.md (iptables Example)"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": "k8s.l3.kube-proxy.q3",
+        "kind": "scope",
+        "text": "Changed in round 2 only in option d; explanation.correct (en+vi) still teaches the per-Pod chain structure the lesson prose no longer teaches (round-1 scope fix cut chain names and DNAT from s.5): 'each ready address in the EndpointSlice gets a KUBE-SEP-... chain whose DNAT uses the targetPort'. Key a,b,d stays correct given the shown output and s.5 prose.",
+        "quote": "each ready address in the EndpointSlice gets a `KUBE-SEP-...` chain whose `DNAT` uses the `targetPort`, `8080`",
+        "fix": "explanation.correct en: 'The first line matches the cluster IP and the Service port, and each ready address in the EndpointSlice gets a line that rewrites the destination to it and the targetPort, 8080. With two Pods, two lines pick a Pod, the first taken with probability 0.5.' Mirror in vi."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-16T12:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": "k8s.l3.kube-proxy.q3",
+        "kind": "quiz",
+        "text": "Round 2, new in changed option d. 'the Service's chain' uses 'chain', which the s.5 prose no longer uses; I only meet it in the script comment ('send it to the Service's chain; there, one entry per Pod, the first taken with probability 0.5'). I can pick d by matching that comment's wording rather than from understanding.",
+        "quote": "Two lines of the Service's chain lead to a Pod, the first taken with probability 0.5.",
+        "fix": "Reword d in the prose's words, e.g. 'Two lines after the first one each pick a Pod, the first taken with probability 0.5.'"
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

@@ -1,0 +1,170 @@
+{
+  "id": "sysdesign.l4.notification-design",
+  "technical": {
+    "reviewed_at": "2026-11-04T17:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "ADR 0027, line right under the header block: \"Chưa xây ở stage-4: Notifications vẫn chỉ gửi email như stage-3. Thiết kế và buổi review ở `docs/design/notification-design-review.md`.\"",
+        "source": "examples/don-hang @ stage-4: docs/adr/0027-thong-bao-nhieu-kenh-email-la-kenh-chinh.md"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Review lines 49-50: \"Đường đi từ API tới consumer giữ nguyên như stage-3\". notification-requirements.md: \"relay đưa lên RabbitMQ (ADR 0002)\". OutboxRelay.cs: \"A hosted service that moves outbox_messages rows to RabbitMQ\" (`: BackgroundService`), so 'a background job reads the outbox and publishes' matches.",
+        "source": "examples/don-hang @ stage-4: docs/design/notification-design-review.md; docs/team/notification-requirements.md; DonHang.Messaging/OutboxRelay.cs"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Review lines 50-52: \"Consumer lưu một dòng cho mỗi kênh khách chọn, cùng transaction với dòng inbox; cột `Channel` của `Notification` (mọi dòng stage-3 là `email`) đã có chỗ\". Notification.cs: `public required string Channel { get; set; }`; OrderEventsConsumer.NewEmail sets `Channel = \"email\"`.",
+        "source": "examples/don-hang @ stage-4: docs/design/notification-design-review.md; DonHang.Notifications/Notification.cs; DonHang.Notifications/OrderEventsConsumer.cs"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "ADR 0027 Quyết định: \"Mỗi kênh có sender riêng: batch, thử lại và nhịp riêng, một bulkhead giữa các kênh. Mỗi sender gọi nhà cung cấp qua một interface của kênh đó, như `IEmailSender`.\"",
+        "source": "examples/don-hang @ stage-4: docs/adr/0027-thong-bao-nhieu-kenh-email-la-kenh-chinh.md"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "ADR 0027 Hệ quả: \"Push chờ bản app cho điện thoại (ADR 0017).\" notification-requirements.md: \"App Đơn Hàng chưa có bản cho điện thoại ở stage-4 (ADR 0017), nên push chờ bản đó.\"",
+        "source": "examples/don-hang @ stage-4: docs/adr/0027-...md; docs/team/notification-requirements.md"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "ADR 0027: \"Notifications là chủ của lựa chọn kênh của khách (notification preferences).\" \"Tên cửa hàng lấy theo `shopId` mà message mang từ release 2 của `multi-shop-data-rollout.md`.\" Hệ quả: \"Notifications cần bản sao tên cửa hàng theo `shopId` (chủ là `shops` của Ordering); dòng đó vào `data-ownership.md` khi xây.\" Supports the new s4 sentence on the copy's rule.",
+        "source": "examples/don-hang @ stage-4: docs/adr/0027-...md; docs/design/multi-shop-data-rollout.md"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "NotificationSender.cs line 12 `BatchSize = 10`; lines 51-56 ClaimDueAsync, foreach await SendOneAsync, CompleteAsync. NotificationQueue.ClaimDueAsync: BeginTransactionAsync + `FOR UPDATE SKIP LOCKED`, comment \"The locks last until CompleteAsync commits\"; CompleteAsync = SaveChangesAsync + CommitTransactionAsync. So 'claims, that is locks until the round is saved' holds. Line 43 comment: \"never MailKit\".",
+        "source": "examples/don-hang @ stage-4: DonHang.Notifications/NotificationSender.cs; DonHang.Notifications/NotificationQueue.cs"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "NotificationSender.cs: `FirstRetryDelay = TimeSpan.FromSeconds(2)`, `MaxAttempts = 5`, `delay = FirstRetryDelay * Math.Pow(2, notification.Attempts - 1)` → 2, 4, 8, 16 s; `if (notification.Attempts >= MaxAttempts) notification.Status = \"failed\"`. ClaimDueAsync selects only `status = 'pending'`, so a failed row is never claimed again. Gaps sum to 30 s.",
+        "source": "examples/don-hang @ stage-4: DonHang.Notifications/NotificationSender.cs lines 14-17, 83-98; NotificationQueue.cs"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Review lines 58-60: \"Đủ cho Mailpit trong lab; không đủ khi dịch vụ email bên ngoài sập vài phút, vì mọi email trong lúc đó thành `failed`.\"",
+        "source": "examples/don-hang @ stage-4: docs/design/notification-design-review.md"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Review lines 64-69: \"Mỗi kênh thử lại trong 24 giờ (giả định), khoảng cách giữa hai lần tăng dần tới một trần, như `RefundSender` của Payments\" ... \"Hết 24 giờ, dòng thành `failed` và hiện cho đội vận hành để gửi lại bằng tay\". RefundSender.cs: `MaxRetryDelay = TimeSpan.FromHours(1)`; `return delay < settings.MaxRetryDelay ? delay : settings.MaxRetryDelay;`.",
+        "source": "examples/don-hang @ stage-4: docs/design/notification-design-review.md; DonHang.Payments/RefundSender.cs lines 12, 115-120"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Review lines 66-67: \"với email, hai bản Notifications chia nhau 10 email mỗi giây\"; line 32: \"Dịch vụ email cho phép 10 email mỗi giây (giả định, chờ hợp đồng)\". ADR 0027: \"nhịp gửi đặt theo tốc độ nhà cung cấp cho phép, để hàng chờ sau một lần sập được gửi hết mà không bị từ chối.\"",
+        "source": "examples/don-hang @ stage-4: docs/design/notification-design-review.md; docs/adr/0027-...md"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "ADR 0027 Các phương án: \"Một vòng gửi cho mọi kênh: ít code, nhưng một nhà cung cấp chậm làm chậm mọi kênh khác, và mọi kênh cùng một cách thử lại.\" Review line 84: \"Một vòng gửi cho mọi kênh: một nhà cung cấp chậm làm chậm mọi kênh.\"",
+        "source": "examples/don-hang @ stage-4: docs/adr/0027-...md; docs/design/notification-design-review.md"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Review lines 28-33: \"khoảng 6,6 mỗi giây ở giờ đông nhất, khoảng 1,2 mỗi giây trung bình ngày thường\"; \"SMS: khoảng 0,7 mỗi giây ở giờ đông (20% số đơn chọn SMS, giả định).\"",
+        "source": "examples/don-hang @ stage-4: docs/design/notification-design-review.md; docs/team/notification-requirements.md"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "NotificationSender.cs line 94: delay = 2 s * 2^(Attempts-1), so after k failures the next gap is 2^k s, attempt k+1 at 2^(k+1)-2 s. Sum to attempt 20 = 2^20-2 s, about 12.1 days. In 14,400 s the last failure is k=13 (at 8,190 s); next gap 2^13 = 8,192 s, about 2.3 h. New s7 sentence 'waits up to about two more hours ... every further failure doubles that wait' matches (2.3 h rounded to 'about two').",
+        "source": "examples/don-hang @ stage-4: DonHang.Notifications/NotificationSender.cs lines 16-17, 94 (hand arithmetic)"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "Attempts at t, t+2, t+6, t+14, t+30 (gaps from NotificationSender.cs); final failure ≈ t+30, so t ≤ 570 s ends failed; 1.2 × 570 = 684 ≈ 700. Email first tried at 120 s fails finally at ≈150 s = minute 2.5. Holds as a rough estimate assuming failed attempts return quickly and the sender keeps up (2 s tick adds up to ~8 s, which does not change 'roughly 700').",
+        "source": "examples/don-hang @ stage-4: DonHang.Notifications/NotificationSender.cs; docs/team/notification-requirements.md (1.2/s)"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "Review line 49: path from API to consumer unchanged; ADR 0027 lists no publisher change and puts channel choice in Notifications: \"Notifications là chủ của lựa chọn kênh của khách\". The only message change cited is \"`shopId` mà message mang từ release 2 của `multi-shop-data-rollout.md`\".",
+        "source": "examples/don-hang @ stage-4: docs/design/notification-design-review.md; docs/adr/0027-...md"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "OrderEventsConsumer.cs comment: \"The message id ... goes into inbox_messages in the same SaveChangesAsync as the new notifications row. A repeated message breaks inbox_messages' primary key, so nothing is saved\".",
+        "source": "examples/don-hang @ stage-4: DonHang.Notifications/OrderEventsConsumer.cs (HandleAsync)"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "Each row traces to the repo: one loop vs sender per channel (ADR 0027 Các phương án); late vs lost email, drivers 1-2 (review line 92-93: \"theo nhịp nhà cung cấp, đổi độ trễ lấy việc không bị từ chối (driver 2 bị thiệt sau một lần sập, driver 1 được lợi)\"); sends above the rate refused (ADR 0027 pacing sentence).",
+        "source": "examples/don-hang @ stage-4: docs/adr/0027-...md; docs/design/notification-design-review.md"
+      },
+      {
+        "n": 19,
+        "verdict": "verified",
+        "evidence": "Follows from ADR 0027 (\"Mỗi kênh có sender riêng: batch, thử lại và nhịp riêng, một bulkhead giữa các kênh\"; pacing to provider's allowed rate) and the drivers (review lines 21-24), which give a delay number only for email (\"Email tới trong vài phút (giả định)\").",
+        "source": "examples/don-hang @ stage-4: docs/adr/0027-...md; docs/design/notification-design-review.md"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": "sysdesign.l4.notification-design.q3",
+        "kind": "quiz",
+        "quote": "A row that kept failing through an outage of hours then waits hours longer than with a capped gap",
+        "text": "New in the changed q3 explanations ('correct' and 'a', en and vi). The cap's value is never given in the lesson or the review (\"tăng dần tới một trần\"), so 'hours longer than with a capped gap' cannot be derived: after a 4-hour outage the uncapped next gap is about 2.3 h; with a 1-hour cap like RefundSender's the difference is about 1.3 h. Key c itself is correct.",
+        "fix": "In the q3 'correct' and 'a' explanations (en and vi) replace 'waits hours longer than with a capped gap' / 'can wait hours more than with a capped gap' with 'can wait up to about two more hours, and longer after each further failure, where a capped gap stops growing'."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-11-04T18:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (prompt 05, junior reader, targeted re-review round 2)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "quote": "Each channel then has its own sender: the email sender calls Service A, the SMS sender calls the SMS provider.",
+        "text": "Carried from round 1. All rows sit in one table with a `Channel` column, and today's ClaimDueAsync claims any due row. I still cannot tell how the email sender avoids claiming SMS rows. Minor: the main idea (separate loops) is clear without it.",
+        "fix": "Add one clause after this sentence saying how each sender gets only its own channel's rows, using what the repo's design states; if the design says nothing, leave as is."
+      },
+      {
+        "severity": "minor",
+        "section": "sysdesign.l4.notification-design.q3",
+        "kind": "quiz",
+        "quote": "and each gap is about as long as all the waits before it",
+        "text": "New, in the changed q3 'correct' explanation. The lesson never says this; section 7 says only that the waits add up to about 12 days and 'the last gaps alone are days long'. A new fact in the explanation makes me wonder what I missed in the lesson.",
+        "fix": "Replace 'and each gap is about as long as all the waits before it' with 'and the last gaps alone are days long', the wording section 7 uses (same in vi)."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [
+        "Section 4: how each sender takes only its own channel's rows from the shared table."
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

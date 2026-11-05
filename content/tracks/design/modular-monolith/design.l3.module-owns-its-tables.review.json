@@ -1,0 +1,127 @@
+{
+  "id": "design.l3.module-owns-its-tables",
+  "technical": {
+    "reviewed_at": "2026-10-13T23:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "DonHangDbContext.cs lines 10-15: DbSet Customers, Orders, OrderItems, OrderStatusHistory, OutboxMessages, InboxMessages; no Products. Lines 32-35: \"No Product here from stage-3: `products` belongs to the Catalog module and only CatalogDbContext maps it. The table itself stays as it was, and so does the foreign key from order_items.product_id to it.\" Read from the submodule working tree (master 7ef8fffe); `git show stage-3:` was denied by the permission system in this session.",
+        "source": "examples/don-hang/DonHang.Infrastructure/DonHangDbContext.cs (working tree)"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Round 2: claim text now equals the round-1 suggested_text. CatalogDbContext.cs line 10 `internal sealed class`, line 18 `e.ToTable(\"products\");`, lines 19-21 map Id/Name/PriceVnd to id/name/price_vnd; DonHang.Catalog has no Migrations folder. Migration Designer files in DonHang.Infrastructure (e.g. InitialCreate.Designer.cs:193) record `b.ToTable(\"products\", (string)null);`, matching 'older migration snapshots'.",
+        "source": "examples/don-hang/DonHang.Catalog/CatalogDbContext.cs; DonHang.Infrastructure/Migrations/*.Designer.cs (working tree; STAGE.md says tag stage-3)"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "EF Core Entity Types: \"By convention, types that are exposed in DbSet properties on your context are included in the model as entities.\" DonHangDbContext declares no Products property and DonHang.Catalog.Product is internal (no InternalsVisibleTo anywhere in the repo), so `db.Products` on DonHangDbContext is a missing member at compile time.",
+        "source": "https://learn.microsoft.com/ef/core/modeling/entity-types; DonHangDbContext.cs; repo-wide Grep InternalsVisibleTo (no match)"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Program.cs:24 `GetConnectionString(\"Default\")`; :37 `AddCatalogModule(connectionString, redisConfiguration)`; :38 `AddDonHangInfrastructure(connectionString)`; CatalogModule.cs:17 and ServiceCollectionExtensions.cs:17 call `options.UseNpgsql(connectionString)`. docker-compose.yml:158 `ConnectionStrings__Default: \"Host=db;Database=donhang;Username=donhang;Password=${POSTGRES_PASSWORD}\"` supports 'database address and login'.",
+        "source": "examples/don-hang/DonHang.Api/Program.cs; DonHang.Catalog/CatalogModule.cs; docker-compose.yml (working tree)"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Round 3 (claim extended). EF Core Migrations Overview: \"EF Core compares the current model against a snapshot of the old model to determine the differences, and generates migration source files\". Managing: \"MyContextModelSnapshot.cs--A snapshot of your current model. Used to determine what changed when adding the next migration.\" ProductsBelongToCatalog.cs: Up/Down empty; comment: \"`dotnet ef migrations add` scaffolded a DropTable here. It was deleted by hand: the table stays\".",
+        "source": "refs/efcore-docs/.../migrations/index.md:14, managing.md:40; examples/don-hang/DonHang.Infrastructure/Migrations/20261005223445_ProductsBelongToCatalog.cs"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "schema.sql:28 `product_id integer NOT NULL REFERENCES products (id),`. docker-compose.yml:95-97 mount schema.sql, seed.sql, migrations-baseline.sql as 10-/20-/30- in docker-entrypoint-initdb.d. migrations-baseline.sql:2-4 \"schema.sql already created what the InitialCreate migration creates, so this records InitialCreate as applied\"; :12-13 INSERT '20260923154631_InitialCreate'. InitialCreate.cs:77-78 CreateTable name \"products\"; it is the earliest migration in DonHang.Infrastructure/Migrations.",
+        "source": "examples/don-hang/db/schema.sql; db/migrations-baseline.sql; docker-compose.yml; DonHang.Infrastructure/Migrations (working tree)"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "PG 17 §5.5.5: \"A foreign key constraint specifies that the values in a column (or a group of columns) must match the values appearing in some row of another table.\" ... \"NO ACTION means that if any referencing rows still exist when the constraint is checked, an error is raised; this is the default behavior if you do not specify anything.\" schema.sql:28 specifies no ON DELETE action.",
+        "source": "https://www.postgresql.org/docs/17/ddl-constraints.html"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "PG 17 §22.1: \"It is not possible to access more than one database per connection.\" §5.10: \"the even more general syntax database.schema.table can be used too, but at present this is just for pro forma compliance with the SQL standard. If you write a database name, it must be the same as the database you are connected to.\" A REFERENCES target is a table name, so it cannot name a table in another database. The literal phrase \"cross-database references are not implemented\" was not seen on these pages.",
+        "source": "https://www.postgresql.org/docs/17/manage-ag-overview.html; https://www.postgresql.org/docs/17/ddl-schemas.html"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "EF Core SQL Queries: \"Entity Framework Core allows you to drop down to SQL queries when working with a relational database.\" SqlQuery \"allows you to easily query for scalar, non-entity types via SQL\"; the result type \"does not need to match any table in the database\". The SQL is passed as an interpolated string, which the C# compiler treats as text, so table/column names in it are first checked by the database when the query runs.",
+        "source": "https://learn.microsoft.com/ef/core/querying/sql-queries"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "CatalogService.cs:5-8 \"one product at a time goes through IProductRepository, which is the ProductCache (CatalogModule)\"; FindAsync calls `products.FindAsync(id)`. CatalogModule.cs:38-42 registers IProductRepository as `new ProductCache(provider.GetRequiredService<EfProductRepository>(), ...)`. Note ListAsync reads CatalogDbContext directly; the lesson's \"such as\" wording is compatible.",
+        "source": "examples/don-hang/DonHang.Catalog/CatalogService.cs; CatalogModule.cs (working tree)"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "git-grep(1): \"<tree>... Instead of searching tracked files in the working tree, search blobs in the given trees.\" -e: \"Multiple patterns are combined by or.\" -n: \"Prefix the line number to matching lines.\" <pathspec>: \"limit the search to paths matching at least one pattern\"; default is basic regexp, so ( ) are literal. Equivalent Grep over *.cs and db/ in the working tree: exactly 2 hits, CatalogDbContext.cs:18 and db/schema.sql:28 (Designer files have `ToTable(\"products\", ...` and do not match). git itself could not be run (permission denied).",
+        "source": "https://git-scm.com/docs/git-grep; Grep in examples/don-hang working tree"
+      },
+      {
+        "n": 12,
+        "verdict": "not-needed",
+        "evidence": "Design judgement (outline items 1, 3). Its factual parts are covered elsewhere: mapping + internal (claims 2, 3), SQL strings unchecked by the compiler (claim 9), same database and no schema change (claims 4, 5). 'kept by people, e.g. code review' is a stated practice, not a documented behaviour.",
+        "source": "content/tracks/design/track.yaml outline items 1, 3"
+      },
+      {
+        "n": 13,
+        "verdict": "not-needed",
+        "evidence": "Design judgement from outline item 4 and misconception 3; its factual premises (FK enforced inside one database, no FK into another database) are verified as claims 7 and 8.",
+        "source": "content/tracks/design/track.yaml outline item 4"
+      },
+      {
+        "n": 14,
+        "verdict": "not-needed",
+        "evidence": "Round 2: claim text now equals the round-1 suggested_text and is one-directional, matching section 4 (\"Ordering would then depend on the table `products` and its column `name` by name\") and summary line 5. Design judgement from outline item 5; its factual premise is claim 9.",
+        "source": "lesson section 4 and summary line 5; track.yaml outline item 5"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "STAGE.md:10-12 \"`DonHang.Api` holds two modules: Ordering (`DonHang.Domain`, `DonHang.Infrastructure`) and Catalog (`DonHang.Catalog`, reached only through `ICatalog`)\"; DonHangDbContext is in DonHang.Infrastructure (claim 1). Round 3 opened: refs efcore migrations index.md/managing.md, the migration file, STAGE.md, quiz q6. `git show stage-3:` needed approval; working tree read.",
+        "source": "examples/don-hang/STAGE.md (working tree, header 'Đơn Hàng at tag stage-3')"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-14T00:30:00+07:00",
+    "reviewer": "review-junior (prompt 05)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "style",
+        "text": "New in round 3 (changed text). The causal step is now there and I can follow it, but 'the tool' arrives with 'the' as if I had already met it; the lesson never says which tool writes migrations. I pause for a second, then read on, since I do not need its name to get the point.",
+        "quote": "the next migration, which the tool writes from the change in what that DbContext maps",
+        "fix": "Replace 'which the tool writes' with 'which EF Core writes'."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

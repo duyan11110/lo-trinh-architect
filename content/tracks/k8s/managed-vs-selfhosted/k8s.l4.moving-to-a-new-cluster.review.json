@@ -1,0 +1,202 @@
+{
+  "id": "k8s.l4.moving-to-a-new-cluster",
+  "technical": {
+    "reviewed_at": "2026-10-29T18:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Plan @stage-4 lines 3-10: 'Trạng thái: chỉ là kế hoạch, chưa chạy ... ADR 0022. Mọi thời gian ghi \"giả định\" cho tới khi diễn tập trên staging đo được số thật.' / 'Cluster mới được dựng cạnh cluster cũ, rồi traffic mới đổi sang. Cluster cũ vẫn chạy và là đường quay lại cho tới khi việc chuyển được kiểm xong.'",
+        "source": "examples/don-hang docs/design/cluster-migration-plan.md @ stage-4, lines 3-10"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Plan lines 12-15 quoted verbatim in the lesson's first code block (matches git show stage-4 character for character): 'Object Kubernetes không được chép sang: Argo CD trên cluster mới dựng lại chúng từ repo cấu hình ... Không mang etcd snapshot ... vì nó mang theo node, địa chỉ và Secret của cluster cũ. Chỉ dữ liệu là phải chuyển.'",
+        "source": "examples/don-hang docs/design/cluster-migration-plan.md @ stage-4, lines 12-15"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "refs configure-upgrade-etcd.md: 'All Kubernetes objects are stored in etcd. ... The snapshot file contains all the Kubernetes state and critical information.' secret.md: Secrets are stored '... in the API server's underlying data store (etcd).' Volume contents are not Kubernetes objects, so they are not in the snapshot; no page says otherwise.",
+        "source": "refs/kubernetes-website/content/en/docs/tasks/administer-cluster/configure-upgrade-etcd.md (Backing up an etcd cluster); concepts/configuration/secret.md line 37"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Plan lines 17-27 (second half of the first code block, verbatim at stage-4): 'Những thứ này được sửa trong repo cấu hình trước, mỗi thứ một pull request, trước khi cluster mới đồng bộ' and four table rows: Khóa niêm secret, StorageClass, Địa chỉ Gateway, Mã cluster -> deploy/tofu/envs/production/cluster/main.tf.",
+        "source": "examples/don-hang docs/design/cluster-migration-plan.md @ stage-4, lines 17-27"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Sealed Secrets README (WebFetch, summary): 'The SealedSecret can be decrypted only by the controller running in the target cluster'; 'The key certificate (public key portion) is used for sealing secrets.' Plan line 24: 'niêm lại bằng scripts/devops/seal-secrets.sh với chứng chỉ mới'.",
+        "source": "https://github.com/bitnami-labs/sealed-secrets (README); cluster-migration-plan.md line 24 @ stage-4"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Repo @stage-4: config-repo-kustomize/base/db.yaml l.60-61 'With no storageClassName it gets the cluster's default StorageClass.'; rabbitmq.yaml volumeClaimTemplates and db-backup.yaml PVC db-backups set no storageClassName. refs persistent-volumes.md: 'All PVCs that have no storageClassName can be bound only to PVs of that default.'",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/storage/persistent-volumes.md (Class); deploy/gitops/config-repo-kustomize/base/{db,rabbitmq,db-backup}.yaml @ stage-4"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Plan line 26 (verbatim in code block). apps/traefik.yaml @stage-4 l.32-35: 'type: NodePort' ... 'nodePort: 30080'. refs service.md: 'LoadBalancer: Exposes the Service externally using an external load balancer. Kubernetes does not directly offer a load balancing component; you must provide one, or you can integrate your Kubernetes cluster with a cloud provider.'",
+        "source": "cluster-migration-plan.md line 26 @ stage-4; refs/kubernetes-website/content/en/docs/concepts/services-networking/service.md line 428-431"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Round 2: plan lines 31-34: 'khôi phục base backup mới nhất vào database ở cluster mới rồi cho nó đọc tiếp WAL từ bản lưu trữ ... Khi nó đã đuổi kịp, dừng ghi một lúc ngắn (15 phút, giả định): một commit đặt số replica của api ở cluster cũ về 0'. The lesson prose no longer equates this with pitr.sh's recovery (that behaviour is now claim 20), so the claim is plan fact as written.",
+        "source": "examples/don-hang docs/design/cluster-migration-plan.md @ stage-4, lines 31-34"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Argo CD 3.1 auto_sync (WebFetch, summary): 'By default, changes that are made to the live cluster will not trigger automated sync.' 'To enable automatic sync when the live cluster's state deviates from the state defined in Git, run: argocd app set <APPNAME> --self-heal' / selfHeal: true. apps/staging.yaml @stage-4: 'selfHeal: also sync when the live objects drift from Git, such as after kubectl scale.' Lesson §5 now states the condition.",
+        "source": "https://argo-cd.readthedocs.io/en/release-3.1/user-guide/auto_sync/ (Automatic Self-Healing); deploy/gitops/config-repo/apps/staging.yaml @ stage-4"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Plan lines 37-40 (verbatim in second code block): 'RabbitMQ: trong lúc dừng ghi, Notifications và Payments ở cluster cũ vẫn chạy cho tới khi các queue xả hết, rồi mới về 0 cũng bằng commit. ... message còn trong dead-letter queue được xử lý xong trước bước này.'",
+        "source": "cluster-migration-plan.md lines 37-40 @ stage-4"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Plan lines 41-44 (verbatim in code block): 'Sau đó đợi đoạn WAL cuối được áp vào database mới, rồi mở nó cho ghi.' 'Redis chỉ giữ cache, không chuyển; cache ở cluster mới đầy lại dần.' 'Nhờ vậy không đơn nào đã được xác nhận cho khách bị mất.' The mechanism the lesson adds (standby-style replay, pg_switch_wal) is covered by claims 20-21.",
+        "source": "cluster-migration-plan.md lines 41-44 @ stage-4"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Plan lines 48-56: '1. Cluster mới đồng bộ xong, database mới đã đuổi kịp, smoke test qua địa chỉ mới của Gateway. 2. Dừng ghi, xả queue, áp đoạn WAL cuối ... 3. Đổi DNS ... 4. Giữ cluster cũ chạy (không nhận traffic)'; 'Quay lại trước bước 3 chỉ cần không đổi DNS. Sau bước 3, đơn mới chỉ nằm ở cluster mới'. The parenthetical 'revert the write-stop commits' is not plan text but follows from lines 33-38 (writes stop by commit); the lesson does not attribute it to the plan.",
+        "source": "cluster-migration-plan.md lines 46-56 @ stage-4"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Plan lines 60-63: 'Lần chuyển này chỉ đổi cluster. Thành phần tự chạy (PostgreSQL, RabbitMQ, Keycloak, theo docs/team/self-run-components.md) chuyển nguyên như đang chạy. Đổi chúng sang dịch vụ managed là việc sau, mỗi bản phát hành một thành phần, để khi có lỗi thì biết ngay thay đổi nào gây ra.'",
+        "source": "cluster-migration-plan.md lines 58-63 @ stage-4"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "Plan lines 67-70: 'toàn bộ kế hoạch chạy trên staging: dựng một cluster staging thứ hai, chuyển dữ liệu staging, đo thời gian từng bước. Thời gian dừng ghi đo được quyết định hai việc: khung giờ chuyển, và báo trước cho các cửa hàng bao lâu (5 ngày làm việc, giả định).'",
+        "source": "cluster-migration-plan.md lines 65-70 @ stage-4"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "outputs/stage-4/scripts/devops/dr-drill.txt: '== backup: mirror clone of the config repository' ... '== 1. OpenTofu' '== 2. controllers: Sealed Secrets, then Argo CD' '== 3. Git server, and the repository pushed back from the mirror' '== 4. Argo CD: the Application from apps/staging.yaml, until Healthy' 'staging: Synced, Healthy'. No etcd step.",
+        "source": "examples/don-hang outputs/stage-4/scripts/devops/dr-drill.txt @ stage-4"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "outputs/stage-4/scripts/devops/dr-drill-without-sealing-key.txt: 'no key could decrypt secret (POSTGRES_PASSWORD)' / '== Secrets in donhang' 'none' / '== db's Pod, waiting' 'CreateContainerConfigError'.",
+        "source": "examples/don-hang outputs/stage-4/scripts/devops/dr-drill-without-sealing-key.txt @ stage-4"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "Labelled opinion, conditioned ('unless orders are being lost'), grounded in plan lines 54-56: 'Sau bước 3, đơn mới chỉ nằm ở cluster mới: quay lại nghĩa là chuyển dữ liệu theo chiều ngược'.",
+        "source": "cluster-migration-plan.md lines 54-56 @ stage-4"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "Labelled opinion, attributed to the plan: lines 14-15 (snapshot brings node, địa chỉ, Secret) and 62-63 'mỗi bản phát hành một thành phần, để khi có lỗi thì biết ngay thay đổi nào gây ra'.",
+        "source": "cluster-migration-plan.md lines 14-15, 60-63 @ stage-4"
+      },
+      {
+        "n": 19,
+        "verdict": "verified",
+        "evidence": "deploy/tofu/envs/production/cluster/main.tf @stage-4: 'Production's cluster: the same kind-cluster module as staging' ... module \"cluster\" { source = \"../../../modules/kind-cluster\" name = \"donhang-production\" }. Plan line 27 names this file as the one to change.",
+        "source": "examples/don-hang deploy/tofu/envs/production/cluster/main.tf @ stage-4"
+      },
+      {
+        "n": 20,
+        "verdict": "verified",
+        "evidence": "PG 17 19.5.5 (WebFetch): 'Targeted recovery mode ends when the archived WAL is fully replayed, or when recovery_target is reached.' Standby: 'create a file called standby.signal ... will not stop recovery when the end of archived WAL is reached, but will keep trying ... by fetching new WAL segments using restore_command.' db/pitr/start.sh l.10-11: 'recovery.signal: start by replaying WAL' / touch \"$PGDATA/recovery.signal\".",
+        "source": "https://www.postgresql.org/docs/17/runtime-config-wal.html (19.5.5 Archive Recovery); examples/don-hang db/pitr/start.sh"
+      },
+      {
+        "n": 21,
+        "verdict": "verified",
+        "evidence": "PG 17 Table 9.95 (WebFetch): pg_switch_wal 'Forces the server to switch to a new write-ahead log file, which allows the current file to be archived (assuming you are using continuous archiving).' runtime-config-wal: 'archive_command ... is only invoked for completed WAL segments' and archive_timeout forces a switch periodically. pitr.sh l.35-39: 'pg_switch_wal() closes the current WAL segment so it is archived now, not after archive_timeout.'",
+        "source": "https://www.postgresql.org/docs/17/functions-admin.html (Backup Control Functions); runtime-config-wal.html (archive_timeout); scripts/devops/pitr.sh"
+      },
+      {
+        "n": 22,
+        "verdict": "verified",
+        "evidence": "docker-compose.yml service db l.75-87: 'From stage-3 the server archives its WAL' / 'archive_mode=on' / 'archive_command=test ! -f /wal-archive/%f.gz && gzip < %p > /wal-archive/%f.gz' / 'archive_timeout=60'. config-repo/envs/production/db.yaml l.2: '... an emptyDir, so a new db Pod starts from db-init.yaml's schema and seed.', l.63 'emptyDir: {}'. Grep 'archive' over deploy/gitops: no match.",
+        "source": "examples/don-hang docker-compose.yml; deploy/gitops/config-repo/envs/production/db.yaml (submodule working tree; git show was not permitted this round)"
+      },
+      {
+        "n": 23,
+        "verdict": "verified",
+        "evidence": "Absence checked by reading the whole plan (lines 1-70): lines 33-38 say 'một commit đặt số replica của api ở cluster cũ về 0' and Notifications/Payments 'về 0 cũng bằng commit', but no line says which file or Application carries the old cluster's replica count, or what brings the new api up at step 3.",
+        "source": "examples/don-hang docs/design/cluster-migration-plan.md lines 29-56"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "New in round 2, in the changed text. §4 now says 'Unlike pitr.sh, it does not stop at the end of the archive', which is correct (claim 20). But the verbatim §5 excerpt (plan lines 31-32) still says 'cùng cách `pitr.sh` khôi phục', and the §5 prose does not mention the gap. A reader sees the plan and the lesson disagree with no explanation. The prompt 08 repo change is queued in meta.repo_changes_needed but not applied at stage-4.",
+        "quote": "Unlike `pitr.sh`, it does not stop at the end of the archive.",
+        "fix": "In §5, after the data excerpt, add one sentence: 'Where the plan says \"cùng cách pitr.sh khôi phục\", read only the base backup and archived WAL: unlike pitr.sh, this restore keeps waiting for new WAL (section 4).' Drop it once the prompt 08 change to plan lines 31-33 lands."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-29T20:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (review-junior, round 2 targeted re-review)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "gap",
+        "quote": "Unlike `pitr.sh`, it does not stop at the end of the archive.",
+        "text": "New in round 2, in changed text. Section 4 now says this restore differs from pitr.sh, but the plan excerpt in section 5 still reads 'cùng cách `pitr.sh` khôi phục' and the prose under it says nothing. I stopped to ask which one is right.",
+        "fix": "After the data excerpt in section 5, add one sentence: where the plan says 'the same way as pitr.sh', only the base backup and archived WAL are meant; this restore keeps waiting for new WAL."
+      },
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "quote": "today only the Compose setup does, so that comes first.",
+        "text": "New in round 2, in changed text. 'That comes first' means turning on WAL archiving for the cluster's PostgreSQL, but this step is not in the diagram, summary line 4 or the q5 order, so I could not tell where in the sequence it sits or who does it.",
+        "fix": "Replace 'so that comes first' with 'so turning on WAL archiving for the cluster's PostgreSQL is a step before the move starts'."
+      },
+      {
+        "severity": "minor",
+        "section": 3,
+        "kind": "gap",
+        "quote": "the values in the config repository that name one cluster's keys, storage or addresses, and must change before the new cluster syncs.",
+        "text": "New in round 2, from the fourth row now being explained. Section 4 and summary line 3 add the cluster's OpenTofu module to what differs per cluster, but this definition lists only keys, storage and addresses, and I cannot tell if `deploy/tofu/.../main.tf` is in the config repository.",
+        "fix": "Extend the definition to 'keys, storage, addresses or the module that builds the cluster', or say in section 5 which repository holds `main.tf`."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [
+        "When WAL archiving is set up for the cluster's PostgreSQL ('that comes first') relative to the rest of the move."
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

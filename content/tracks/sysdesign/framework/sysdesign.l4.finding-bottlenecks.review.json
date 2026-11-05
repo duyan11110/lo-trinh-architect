@@ -1,0 +1,145 @@
+{
+  "id": "sysdesign.l4.finding-bottlenecks",
+  "technical": {
+    "reviewed_at": "2026-11-04T00:30:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Method lines 20-22: \"5. Tìm nút cổ chai và điểm hỏng đơn lẻ. Đầu ra: phần giới hạn trước, phần kế tiếp, và với mỗi điểm hỏng đơn lẻ thì thao tác nào dừng, chờ hay chạy ở mức giảm.\"",
+        "source": "examples/don-hang @ stage-4 docs/design/system-design-method.md lines 20-22"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Plan table lines 23-24: \"Đơn mỗi giây | khoảng 0,6 | khoảng 3,3\"; \"Đọc sản phẩm mỗi giây | khoảng 23 | khoảng 133\". Method lines 81-83: \"khoảng 120 trong giờ đông nhất, tức khoảng 0,03 yêu cầu mỗi giây\".",
+        "source": "examples/don-hang @ stage-4 docs/design/capacity-plan.md lines 23-24; docs/design/system-design-method.md lines 81-83"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Program.cs @ stage-4 line 147: \"new ConcurrencyLimiterOptions { PermitLimit = 20, QueueLimit = 5 }\"; line 172: \"The concurrency limiter cannot know: its refusals stay 503.\" No RateLimiting override in appsettings.json or base api.yaml. Plan lines 35-36: \"thông lượng tối đa = 20 / thời gian một lần đọc\" (định luật Little).",
+        "source": "examples/don-hang @ stage-4 DonHang.Api/Program.cs lines 144-172; docs/design/capacity-plan.md lines 32-40"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Plan lines 57-58: \"Đặt đơn: đỉnh khoảng 3,3 đơn mỗi giây, mỗi đơn một transaction ngắn trên primary. Đạt, không phải tài nguyên chặn.\" The plan states no numeric limit for the primary, matching the revised section 4 ('the plan gives it no number').",
+        "source": "examples/don-hang @ stage-4 docs/design/capacity-plan.md lines 56-58"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Plan lines 63-66: \"nếu một lần đọc mất 200 ms, trần mỗi process còn 100 mỗi giây, một nửa trần của 2 Pod còn 100, thấp hơn đỉnh 133. Vì vậy `catalog-reads` hết trước, trả `503` cho đọc sản phẩm, trong khi đặt đơn vẫn chạy.\"",
+        "source": "examples/don-hang @ stage-4 docs/design/capacity-plan.md lines 62-66"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Plan lines 68-73: \"Bước làm trước khi tới đó, theo thứ tự: 1. Thêm Pod api; mỗi Pod thêm 20 chỗ đọc nhưng cũng thêm một pool kết nối, nên số Pod bị chặn bởi `max_connections`. 2. Chuyển danh sách sản phẩm sang replica (mục dưới), khi đỉnh đọc sản phẩm vượt khoảng dư của primary.\"",
+        "source": "examples/don-hang @ stage-4 docs/design/capacity-plan.md lines 68-73"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Plan lines 44-49: \"mỗi Pod api giữ một pool kết nối của Npgsql ... Payments, Notifications, các migration và job backup mở kết nối tới cùng server. Tổng số Pod × kết nối tối đa mỗi Pod của mọi service phải nhỏ hơn `max_connections` của PostgreSQL; đọc giá trị đó bằng `SHOW max_connections`, không đoán.\"",
+        "source": "examples/don-hang @ stage-4 docs/design/capacity-plan.md lines 44-49"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "max_connections: \"Determines the maximum number of concurrent connections to the database server.\" superuser_reserved_connections: \"Whenever the number of active concurrent connections is at least max_connections minus superuser_reserved_connections, new connections will be accepted only for superusers.\" Default three. reserved_connections: slots for roles with pg_use_reserved_connections. SHOW page (round 1): \"SHOW will display the current setting of run-time parameters.\"",
+        "source": "https://www.postgresql.org/docs/17/runtime-config-connection.html (WebFetch, re-opened round 2); https://www.postgresql.org/docs/17/sql-show.html"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Method lines 138-141: \"Nút cổ chai về tải: không tính lại ở đây. `capacity-plan.md` đã đi tải đỉnh qua các phần dùng chung và ghi phần cạn trước ở mục \\\"Tài nguyên hết trước\\\" (`catalog-reads`, không phải đặt đơn hay hoàn tiền). Với khoảng 0,03 yêu cầu mỗi giây, hoàn tiền không chạm giới hạn nào trong đó.\"",
+        "source": "examples/don-hang @ stage-4 docs/design/system-design-method.md lines 138-141"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Method lines 143-154: \"(`api` có 2 Pod; các phần còn lại một bản)\"; rows: Cổng \"Chạy: outbox nhận, `202` | Chờ: thử lại 24 giờ, rồi `failed`\"; db \"Dừng: không ghi được đơn | Dừng\"; RabbitMQ \"Chạy ... | Chờ\"; Payments \"Chạy | Chờ\"; Notifications \"Chạy | Đơn vẫn `cancelled`; chỉ email chờ\"; Keycloak \"Dừng với khách cần đăng nhập lại | Chạy\"; \"Một Pod `api` | Chạy ở mức giảm trên Pod còn lại | Chạy\".",
+        "source": "examples/don-hang @ stage-4 docs/design/system-design-method.md lines 143-154; deploy/gitops/config-repo-kustomize/base/api.yaml line 15"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Method lines 156-157: \"Cổng thanh toán là điểm hỏng đơn lẻ cho việc hoàn tiền xong, nhưng không cho việc nhận yêu cầu: outbox và 24 giờ thử lại để yêu cầu chờ.\"",
+        "source": "examples/don-hang @ stage-4 docs/design/system-design-method.md lines 156-157"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Method lines 81-83: \"khoảng 1.000 mỗi ngày đông nhất, khoảng 120 trong giờ đông nhất, tức khoảng 0,03 yêu cầu mỗi giây\"; lines 89-92: \"Cổng lỗi 24 giờ (YC-10) thì số dòng `pending` khoảng 1.000 yêu cầu mỗi ngày × 1 ngày = khoảng 1.000 dòng\". refund-design lines 34-35: Payments \"ghi một dòng hoàn tiền `pending`\" on receipt, before the gateway call — 'accepted, not yet refunded' holds.",
+        "source": "examples/don-hang @ stage-4 docs/design/system-design-method.md lines 81-92; docs/design/refund-design.md lines 34-35"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "refund-design lines 45-47: \"thử lại sau 1 phút, rồi 2, 4, 8 phút, tối đa 1 giờ giữa hai lần, trong 24 giờ kể từ `requested_at` (YC-10). Hết 24 giờ, hoặc cổng từ chối hẳn, dòng thành `failed` ... cho nhân viên (YC-6)\". Method lines 54-55: \"3. Khóa API của cổng và các dòng tiền là phần nhạy cảm nhất của hệ thống\".",
+        "source": "examples/don-hang @ stage-4 docs/design/refund-design.md lines 45-50; docs/design/system-design-method.md lines 54-55"
+      },
+      {
+        "n": 14,
+        "verdict": "not-needed",
+        "evidence": "Conditional judgement (each option tied to a condition), not a fact. Its premises are verified: plan lines 68-73 (add Pods), method table lines 146-154 (outbox wait, db stop), YC-10 24 h. No unconditional ranking.",
+        "source": "examples/don-hang @ stage-4 docs/design/capacity-plan.md lines 68-73; docs/design/system-design-method.md lines 146-157"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "Plan lines 77-78: \"Số cửa hàng hay số đơn trung bình mỗi cửa hàng lệch quá một phần tư so với bảng trên.\" Line 18: \"Lần đọc sản phẩm cho mỗi đơn đặt được ... | 40 (giả định)\". Doubling orders at a fixed 40 reads/order: 2 × 133 ≈ 266/s.",
+        "source": "examples/don-hang @ stage-4 docs/design/capacity-plan.md lines 18, 24, 75-78"
+      },
+      {
+        "n": 16,
+        "verdict": "not-needed",
+        "evidence": "Conditional recommendation, now with the condition the round-1 issue asked for: 'If it can refund payments taken through the first gateway, it would remove the single point of failure for completing refunds.' Premises verified: method table line 150 (RabbitMQ loss: completing waits), line 148 (gateway), driver 3 lines 54-55. Quiz q3 context states the same condition.",
+        "source": "examples/don-hang @ stage-4 docs/design/system-design-method.md lines 51-55, 146-157"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "Plan lines 53-54: \"tải đỉnh không vượt một nửa trần của 2 Pod api, để một Pod gánh được toàn bộ khi mất Pod kia\" — the stated purpose is N-1. Prereq backend.l4.capacity-planning line 62: \"the peak must fit under the ceiling of all api Pods but one\". Arithmetic: 20/0.2 = 100; (3-1) × 100 = 200 > 133.",
+        "source": "examples/don-hang @ stage-4 docs/design/capacity-plan.md lines 53-54; content/tracks/backend/capacity-and-slo/backend.l4.capacity-planning.en.md line 62"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "GatewayRefundClient.cs line 27: \"public TimeSpan Timeout { get; set; } = TimeSpan.FromSeconds(10);\"; Payments Program.cs line 124: \"pipeline.AddTimeout(gateway.Timeout);\". No Timeout override in Payments appsettings or deploy manifests. Round 2 re-opened: lesson sections 2, 4, 5, 6, 7, quiz q3, PostgreSQL 17 runtime-config-connection, capacity-plan.md, system-design-method.md, refund-design.md.",
+        "source": "examples/don-hang DonHang.Payments/GatewayRefundClient.cs line 27; DonHang.Payments/Program.cs line 124"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-11-04T01:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "length",
+        "text": "Round 2, changed text: the first paragraph after the diagram now carries Little's law, the 200 ms arithmetic, the headroom rule, the primary with no number, and the 0.03 refunds in one block. Every step is now there and I could follow it, but I had to read it twice to separate the product-read walk from the order/refund walk.",
+        "quote": "By Little's law, reads per second per process are 20 divided by the time of one read. At 200 ms that is 100, and under the headroom rule only one of the 2 Pods counts, so 100 falls below the peak of 133.",
+        "fix": "Start a new paragraph at 'Order placement and refunds meet the primary instead', so the product-read arithmetic and the order/refund check sit in separate paragraphs."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

@@ -1,0 +1,151 @@
+{
+  "id": "backend.l3.dead-letter-queue",
+  "technical": {
+    "reviewed_at": "2026-10-14T23:59:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "OrderEventsConsumer.cs:96-98 SubjectFor, Read, `if (!Guid.TryParse(messageId, out var id)) throw new PoisonMessageException(\"the message has no id\");`; :125 `_ => throw new PoisonMessageException($\"unknown routing key {routingKey}\")`; :133-134 null/OrderId<1/empty CustomerEmail -> \"the body is not an order message\"; :137-139 JsonException -> \"the body is not valid JSON\". Lines 55-100 of the raw stage-3 file (GitHub) match the working tree exactly.",
+        "source": "examples/don-hang @ stage-3: DonHang.Notifications/OrderEventsConsumer.cs:94-141"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "stage-3 raw file lines 74-75 HandleAsync then `BasicAckAsync(delivery.DeliveryTag, multiple: false)`; 77-80 `catch (PoisonMessageException ex)` LogWarning + `BasicRejectAsync(delivery.DeliveryTag, requeue: false)`; 82-85 `catch (Exception ex)` LogError + `BasicNackAsync(delivery.DeliveryTag, multiple: false, requeue: true)`. Prose line refs 74, 80, 85 and 69-71 (tracing, module observability, after messaging in track.yaml) are correct.",
+        "source": "https://raw.githubusercontent.com/duyan11110/don-hang/stage-3/DonHang.Notifications/OrderEventsConsumer.cs; working tree"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "refs exception-handling-statements.md:79: \"When an exception occurs, the runtime checks catch clauses in the specified order, from top to bottom. At most, only one `catch` block runs for any thrown exception.\" Lesson text: \"C# uses the first `catch` clause that matches\".",
+        "source": "refs/dotnet-docs/docs/csharp/language-reference/statements/exception-handling-statements.md"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "RabbitMQ 4.1 confirms, Negative Acknowledgement: \"when this field is set to `false`, the message will be routed to a Dead Letter Exchange if it is configured, otherwise it will be discarded.\" DLX page: dead-lettered when \"negatively acknowledged ... using `basic.reject` or `basic.nack` with `requeue` parameter set to `false`\".",
+        "source": "https://www.rabbitmq.com/docs/4.1/confirms; https://www.rabbitmq.com/docs/dlx"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "RabbitMQ 4.1 confirms: \"When the field is set to `true`, the broker will requeue the delivery\"; \"Requeued messages may be immediately ready for redelivery depending on their position in the queue.\" \"It is possible to reject or requeue multiple messages at once using the basic.nack method. This is what differentiates it from basic.reject.\" Round 2: s4 \"can be delivered again right away\" and s5 nack = reject for one message both match.",
+        "source": "https://www.rabbitmq.com/docs/4.1/confirms"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "RabbitMQ 4.1 quorum-queues, Poison Message Handling: \"The delivery limit can be set using the policy key delivery-limit or the x-delivery-limit queue argument.\" \"When a message has been redelivered more times than the limit the message will be dropped (removed) or dead-lettered (if a DLX is configured).\" Feature matrix: Poison message handling: classic no, quorum yes.",
+        "source": "https://www.rabbitmq.com/docs/4.1/quorum-queues"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "RabbitMQ 4.1 DLX, Routing Dead-Lettered Messages: \"If the routing key is not set, the message's own routing keys are used.\" QueueArguments sets no x-dead-letter-routing-key; capture shows \"routing_key\": \"order.placed\" on the dead-lettered message.",
+        "source": "https://www.rabbitmq.com/docs/4.1/dlx; outputs/stage-3/scripts/backend/dead-letter.txt"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "RabbitMQ 4.1 exchanges, Topic: \"`#` for zero or more (including multiple) segments\"; \"A binding (routing key) pattern of `\"#\"` will match any routing key\".",
+        "source": "https://www.rabbitmq.com/docs/4.1/exchanges"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "RabbitMQ 4.1 DLX: x-death fields `queue` \"The name of the queue this message was dead lettered from\", `reason`, `count` \"How many times this message was dead lettered from this queue for this reason\", `exchange`; \"`x-first-death-queue`: The first queue this message was dead lettered from.\" \"`x-first-death-reason`: Why this message was dead lettered for the first time.\" \"`rejected`: the message was rejected\".",
+        "source": "https://www.rabbitmq.com/docs/4.1/dlx"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "RabbitMqTopology.cs 13-14 constants; 25-26 QueueDeclareAsync(Queue, ... arguments: QueueArguments()); 32-36 topic DeadLetterExchange durable, DeadLetterQueue durable, bound \"#\"; 45-50 x-queue-type quorum, x-delivery-limit 5, x-dead-letter-exchange. Block 29-50 matches char-for-char. Read from submodule working tree (master 7ef8fff): `git show stage-3:` denied by permission system; raw stage-3 file via WebFetch has the same content (summariser line numbering inconsistent).",
+        "source": "examples/don-hang DonHang.Notifications/RabbitMqTopology.cs; https://raw.githubusercontent.com/duyan11110/don-hang/stage-3/DonHang.Notifications/RabbitMqTopology.cs"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Grep `order-events.dead|DeadLetterQueue` in examples/don-hang (excluding bin/obj/outputs): only RabbitMqTopology.cs (declare/bind), scripts/backend/dead-letter.sh, DonHang.Tests/Notifications/OrderEventsConsumerTests.cs:105-116 (Running_PoisonMessage_EndsInTheDeadLetterQueue), and a Grafana panel reading the rabbitmq_detailed_queue_messages metric. No BasicConsumeAsync on it.",
+        "source": "examples/don-hang working tree (master 7ef8fff)"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "RabbitMQ 4.1 TTL: \"Message TTL can be set for a given queue by setting the `message-ttl` argument with a policy or by specifying the same argument at the time of queue declaration\"; \"A message that has been in the queue for longer than the configured TTL is said to be _expired_.\" DeadLetterQueue is declared with no arguments; grep finds no message-ttl/max-length/policy for RabbitMQ in the repo.",
+        "source": "https://www.rabbitmq.com/docs/4.1/ttl; examples/don-hang RabbitMqTopology.cs:34-35"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "docker-compose.yml top-level services include one `rabbitmq:` (line 268) and no dead-letter service; RabbitMqTopology.DeclareAsync declares notifications.dead-letter and notifications.order-events.dead on the same channel as the main queue.",
+        "source": "examples/don-hang docker-compose.yml; DonHang.Notifications/RabbitMqTopology.cs"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "dead-letter.sh:16 `api \"queues/%2F/$dead/contents\" -X DELETE`; :24-25 POST exchanges/%2F/donhang.orders/publish with routing_key order.placed, payload \"this is not JSON\"; :27-30 waits until 1 message in $dead; :39 `queues/%2F/$dead/get` with `\"ackmode\":\"ack_requeue_false\"`; :40-43 prints routing_key, payload, x-first-death-*, x-death.",
+        "source": "examples/don-hang scripts/backend/dead-letter.sh"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "Capture: \"routed: true\", \"messages in notifications.order-events:      0\", \"messages in notifications.order-events.dead: 1\", \"routing_key\": \"order.placed\", \"x-first-death-queue\": \"notifications.order-events\", \"x-first-death-reason\": \"rejected\", one x-death entry {reason rejected, count 1}. HTTP API reference 4.1: \"`routed` will be true if the message was sent to at least one queue.\" Round 2 gloss \"the exchange found a queue for the message\" matches.",
+        "source": "examples/don-hang outputs/stage-3/scripts/backend/dead-letter.txt; https://www.rabbitmq.com/docs/4.1/http-api-reference"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "RabbitMQ 4.1 DLX reasons: \"`delivery_limit`: the message is returned more times than the limit\" - with limit 5, the 6th return (after the 6th failed delivery) exceeds it. DECISIONS.md /repo-stage 3 records the measurement: \"`x-delivery-limit` 5 (đo thật: lần giao hỏng thứ 6 vào DLQ...)\". Not re-run by this reviewer (bash in lab denied).",
+        "source": "https://www.rabbitmq.com/docs/4.1/dlx; DECISIONS.md line 360"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "OrderEventsConsumer.cs:79 `logger.LogWarning(ex, \"Rejecting message {MessageId}: {Reason}\", ...)`; :84 `logger.LogError(ex, \"Handling message {MessageId} failed; returning it to the queue\", ...)`.",
+        "source": "examples/don-hang @ stage-3: DonHang.Notifications/OrderEventsConsumer.cs:79,84"
+      },
+      {
+        "n": 18,
+        "verdict": "not-needed",
+        "evidence": "Conditioned recommendation (\"only a failure that can pass is worth another delivery\"); round 2 s4 now adds the timing condition (\"helps only with a failure that clears within a few deliveries\"). No unconditioned always/never. Round 2 opened: rabbitmq.com/docs/4.1/confirms, 4.1/http-api-reference; OrderEventsConsumer.cs SubjectFor @ stage-3 (order.delivered, order.unknown unmapped -> PoisonMessageException).",
+        "source": "https://www.rabbitmq.com/docs/4.1/quorum-queues"
+      },
+      {
+        "n": 19,
+        "verdict": "verified",
+        "evidence": "NotificationSender.cs:17 `private const int MaxAttempts = 5;` :82 comment \"MaxAttempts failures, mark it failed and never pick it up again\"; :86-88 `if (notification.Attempts >= MaxAttempts) ... notification.Status = \"failed\";`.",
+        "source": "examples/don-hang DonHang.Notifications/NotificationSender.cs"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-14T18:30:00Z",
+    "reviewer": "claude-opus-5-5 (junior simulation)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "diagram",
+        "text": "Carried from round 1 (order part only; the binding label is now explained). The diagram lists the requeue arrow before the dead-letter exchange and its binding, but the prose explains reject, the exchange and the `#` binding first, and only then requeue and the delivery limit. I can still narrate it, but I jump back and forth once.",
+        "quote": "Every other failure, such as the database being down, may pass, so the consumer requeues the message for another try.",
+        "fix": "Reorder the diagram's edges to follow the prose: acknowledge, poison/reject, X to D via the binding, then requeue and the delivery-limit arrow."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

@@ -1,0 +1,129 @@
+{
+  "id": "backend.l3.two-phase-commit",
+  "technical": {
+    "reviewed_at": "2026-10-14T23:59:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "refund-design.md @ stage-3 lines 65-69: 'Bản 1 ghi dòng hoàn tiền, trạng thái đơn và email trong một transaction, vì mọi thứ cùng nằm trong một cơ sở dữ liệu. Sau khi tách, giữ được điều đó cần two-phase commit qua `donhang`, `donhang_payments`, RabbitMQ và cổng thanh toán.' Stage-2 version, step 6: refund row `refunded`, order `cancelled` and a `notifications` row in one transaction.",
+        "source": "examples/don-hang @ stage-3 docs/design/refund-design.md:65-69; @ stage-2 docs/design/refund-design.md (Thiết kế đề xuất, bước 6)"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "refund-design.md @ stage-3: 'bảng `payments` chỉ nằm trong cơ sở dữ liệu `donhang_payments`'; step 3 'DonHang.Payments nhận `order.refund-requested` từ RabbitMQ'; step 7 'DonHang.Api nhận `payment.refunded` ... `order.refunded` được ghi vào outbox ... Notifications gửi email báo đã hoàn tiền (YC-5)'.",
+        "source": "examples/don-hang @ stage-3 docs/design/refund-design.md (Vì sao tách DonHang.Payments; Thiết kế 3, 7)"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Round 2: s6 bullet 2 now uses the round-1 suggested_text. PG 17 PREPARE TRANSACTION: 'Its purpose is to allow an external transaction manager to perform atomic global transactions across multiple databases'; Caution: 'committed or rolled back as soon as an external transaction manager has verified that other databases are also prepared to commit.' The decision is the manager's; the lesson now frames 'must not decide alone' as a protocol rule, not a PostgreSQL restriction.",
+        "source": "https://www.postgresql.org/docs/17/sql-prepare-transaction.html; https://www.postgresql.org/docs/17/sql-rollback-prepared.html"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "PG 17 PREPARE TRANSACTION, Description: 'its state is fully stored on disk, and there is a very high probability that it can be committed successfully, even if a database crash occurs before the commit is requested.'",
+        "source": "https://www.postgresql.org/docs/17/sql-prepare-transaction.html"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "PG 17 PREPARE TRANSACTION, Caution: 'Keep in mind also that the transaction continues to hold whatever locks it held.' Description: 'Once prepared, a transaction can later be committed or rolled back with COMMIT PREPARED or ROLLBACK PREPARED'. ROLLBACK PREPARED notes: same user or superuser, 'you do not have to be in the same session' - supports s4 'or until someone ends the prepared transaction by hand'.",
+        "source": "https://www.postgresql.org/docs/17/sql-prepare-transaction.html; https://www.postgresql.org/docs/17/sql-rollback-prepared.html"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "PG 17 PREPARE TRANSACTION, Notes: 'PREPARE TRANSACTION is not intended for use in applications or interactive sessions. Its purpose is to allow an external transaction manager to perform atomic global transactions across multiple databases or other transactional resources.'",
+        "source": "https://www.postgresql.org/docs/17/sql-prepare-transaction.html"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "PG 17 runtime-config-resource, max_prepared_transactions: 'Setting this parameter to zero (which is the default) disables the prepared-transaction feature. This parameter can only be set at server start.' Captured output at stage-3 shows ' 0'.",
+        "source": "https://www.postgresql.org/docs/17/runtime-config-resource.html; examples/don-hang @ stage-3 outputs/stage-3/scripts/backend/prepare-transaction.txt:1-5"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Captured run at stage-3, lines 11-13: \"PREPARE TRANSACTION 'refund-order-1';\" / 'ERROR:  prepared transactions are disabled' / 'HINT:  Set \"max_prepared_transactions\" to a nonzero value.' Lesson output block matches the capture verbatim.",
+        "source": "examples/don-hang @ stage-3 outputs/stage-3/scripts/backend/prepare-transaction.txt:11-13"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "PG 17 PREPARE TRANSACTION: 'If the PREPARE TRANSACTION command fails for any reason, it becomes a ROLLBACK: the current transaction is canceled.' Capture lines 14-18: SELECT status ... ' paid'. Seed @ stage-3: '( 1, 1, '2026-03-02 09:15:00+07', 'paid')'.",
+        "source": "https://www.postgresql.org/docs/17/sql-prepare-transaction.html; outputs/stage-3/scripts/backend/prepare-transaction.txt:14-18; db/seed.sql:24"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "git show stage-3:scripts/backend/prepare-transaction.sh: 13-14 'psql --host db --username donhang --dbname donhang ... --set ON_ERROR_STOP=off', 15 SHOW, 16 BEGIN, 17 UPDATE ... id = 1, 18 PREPARE TRANSACTION, 19 SELECT status. PG 17 psql: 'psql is a terminal-based front-end to PostgreSQL.' ON_ERROR_STOP: 'By default, command processing continues after an error. When this variable is set to on, processing will instead stop immediately.' Seed: order 1 'paid'.",
+        "source": "examples/don-hang @ stage-3 scripts/backend/prepare-transaction.sh:13-20; db/seed.sql:24; https://www.postgresql.org/docs/17/app-psql.html (Description; Variables)"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "refund-design.md @ stage-3 lines 69-74: 'RabbitMQ không tham gia được transaction của PostgreSQL, API HTTP của cổng không có bước prepare, và chính PostgreSQL của Đơn Hàng tắt `PREPARE TRANSACTION` (`max_prepared_transactions` là 0). Kể cả làm được, một coordinator dừng giữa chừng sẽ để các dòng bị khóa cho tới khi nó quay lại. Vì vậy mỗi bước là một transaction cục bộ, nối với nhau bằng outbox và inbox.'",
+        "source": "examples/don-hang @ stage-3 docs/design/refund-design.md:69-74"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "tools/extract-code fake-gateway/Program.cs --tag stage-3: only routes are 48 MapPut(\"/lab/delay\"), 55 MapPost(\"/v1/refunds\") which refunds in Decide(), 80 MapGet(\"/v1/refunds\"), 85 MapGet(\"/health\"). No prepare endpoint.",
+        "source": "examples/don-hang @ stage-3 fake-gateway/Program.cs:48,55,80,85"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "RabbitMQ spec page: tx methods listed are tx.select, tx.commit, tx.rollback (+ -ok), no prepare; deprecated classes incl. dtx: 'RabbitMQ does not implement these classes at all'. Semantics page: 'AMQP transactions only apply to publishes and acks.'",
+        "source": "https://www.rabbitmq.com/docs/specification; https://www.rabbitmq.com/docs/semantics"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "PG 17 synopsis: 'COMMIT PREPARED transaction_id', 'ROLLBACK PREPARED transaction_id'. PREPARE TRANSACTION, transaction_id: 'An arbitrary identifier that later identifies this transaction for COMMIT PREPARED or ROLLBACK PREPARED. The identifier must be written as a string literal'. s3 'ends it with COMMIT PREPARED or ROLLBACK PREPARED and its name' and s7 COMMIT PREPARED 'refund-order-1' conform.",
+        "source": "https://www.postgresql.org/docs/17/sql-commit-prepared.html; https://www.postgresql.org/docs/17/sql-rollback-prepared.html; https://www.postgresql.org/docs/17/sql-prepare-transaction.html"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "PG 17 Caution: prepared transaction 'continues to hold whatever locks it held' until an external manager has verified others prepared; refund-design.md:72-73 gives the stopped-coordinator consequence. Mechanism, not ranking. Round 2, zero issues: re-opened PG 17 app-psql.html (Variables) and sql-prepare-transaction.html; git show stage-3 of scripts/backend/prepare-transaction.sh and docs/design/refund-design.md:60-76.",
+        "source": "https://www.postgresql.org/docs/17/sql-prepare-transaction.html; examples/don-hang @ stage-3 docs/design/refund-design.md:72-73"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-14T23:59:30+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation, round 2 targeted)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "text": "New in the round-1 change. 'By hand' leaves me guessing who does it and how. Core concepts says the coordinator ends a prepared transaction with COMMIT PREPARED or ROLLBACK PREPARED, so I can guess a person types one of those, but the lesson never says so. I also cannot tell whether that person would pick commit or roll back.",
+        "quote": "Those rows stay locked until the coordinator returns, or until someone ends the prepared transaction by hand.",
+        "fix": "Replace 'ends the prepared transaction by hand' with 'runs `COMMIT PREPARED` or `ROLLBACK PREPARED` for it by hand'."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [
+        "Section 4: 'ends the prepared transaction by hand' does not say that this means running COMMIT PREPARED or ROLLBACK PREPARED."
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

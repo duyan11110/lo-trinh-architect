@@ -1,0 +1,173 @@
+{
+  "id": "backend.l3.slow-dependencies",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-10-15T23:55:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "docker compose stop stops a service's containers; docker compose pause freezes every process in them (cgroup freezer) without closing their open TCP connections; unpause resumes them.",
+      "kind": "behavior",
+      "source_hint": "Docker docs 'docker compose stop', 'docker compose pause', 'docker container pause' (cgroups freezer)",
+      "version_key": "docker",
+      "needs_verification": true,
+      "section": 2
+    },
+    {
+      "n": 2,
+      "text": "Captured stage-3 output of slow-dependency.sh: GET /api/v1/products/3 returns 200 in less than 1 s with Redis up and with Redis stopped, and 200 after more than 5 s with Redis paused.",
+      "kind": "behavior",
+      "source_hint": "examples/don-hang @ stage-3: outputs/stage-3/scripts/backend/slow-dependency.txt",
+      "version_key": "stackexchange_redis",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 3,
+      "text": "When the Redis container stops, the client's connection breaks and StackExchange.Redis marks the endpoint as disconnected; with BacklogPolicy.FailFast a command issued meanwhile fails at once with an exception instead of being queued.",
+      "kind": "behavior",
+      "source_hint": "StackExchange.Redis docs 'Configuration' (BacklogPolicy), 'Connection resilience'; CatalogModule.cs @ stage-3 lines 21-27",
+      "version_key": "stackexchange_redis",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 4,
+      "text": "With the default backlog policy, StackExchange.Redis holds commands issued while disconnected and sends them once the connection is back (or fails them at their timeout); FailFast instead fails them at once.",
+      "kind": "behavior",
+      "source_hint": "StackExchange.Redis docs 'Configuration' (BacklogPolicy.Default vs BacklogPolicy.FailFast)",
+      "version_key": "stackexchange_redis",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 5,
+      "text": "abortConnect=false makes ConnectionMultiplexer.Connect return even when no server is reachable, and the multiplexer keeps retrying the connection in the background.",
+      "kind": "syntax",
+      "source_hint": "StackExchange.Redis docs 'Configuration' (abortConnect)",
+      "version_key": "stackexchange_redis",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 6,
+      "text": "When a connection is open but the server never replies, a StackExchange.Redis command waits until its timeout and then throws RedisTimeoutException; ProductCache.IsRedisFailure treats that as a miss.",
+      "kind": "behavior",
+      "source_hint": "StackExchange.Redis docs 'Configuration' (syncTimeout/asyncTimeout), 'Timeouts'; ProductCache.cs @ stage-3 lines 64-83",
+      "version_key": "stackexchange_redis",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 7,
+      "text": "ProductCache counts any Redis failure as a cache miss and then reads PostgreSQL through the repository inside it (EfProductRepository).",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Catalog/ProductCache.cs lines 25-49, 61-83",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 8,
+      "text": "ProductCache.FindAsync sends Redis more than one command per read (a GET, a second GET after the key lock, a SET after a miss), so in the paused case each of them waits for the timeout.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Catalog/ProductCache.cs lines 25-49; scripts/backend/slow-dependency.sh lines 28-30",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 9,
+      "text": "While an I/O call is awaited, async/await returns the thread; the request keeps its objects, the client's connection and any DB connection still open (e.g. in a transaction). EF Core (3.0+) closes its connection after each operation, so ProductCache's Redis waits hold none.",
+      "kind": "behavior",
+      "source_hint": "ASP.NET Core 'Best practices' (avoid blocking calls); EF Core 3.0 breaking changes (connection closed after use); ProductCache.cs @ stage-3 lines 25-49",
+      "version_key": "dotnet",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 10,
+      "text": "A pooled database connection that a request has opened is unavailable to other requests until the request closes or disposes it.",
+      "kind": "behavior",
+      "source_hint": "Npgsql docs 'Connection pooling' (connection returned to the pool on Close/Dispose)",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 11,
+      "text": "If nothing limits how many requests of one kind run at once and they arrive faster than they finish, requests in progress pile up until a shared limit (accepted connections, DB connections, memory) runs out, and unrelated requests wait or fail too.",
+      "kind": "opinion",
+      "source_hint": "Google SRE book 'Addressing Cascading Failures'; Microsoft Azure Architecture Center 'Retry/Circuit Breaker pattern' (context)",
+      "needs_verification": false,
+      "section": 4
+    },
+    {
+      "n": 12,
+      "text": "A dependency that is down usually fails at once (e.g. a refused or broken connection), while one that accepts the call but does not answer keeps the caller waiting until a timeout.",
+      "kind": "opinion",
+      "source_hint": "follows from claims 3 and 6; foundation.l1.tcp-vs-udp (refused vs timeout)",
+      "needs_verification": false,
+      "section": 3
+    },
+    {
+      "n": 13,
+      "text": "CatalogModule.cs @ stage-3 lines 19-33 registers one IConnectionMultiplexer as a singleton, parses redisConfiguration, sets BacklogPolicy.FailFast and calls ConnectionMultiplexer.Connect.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Catalog/CatalogModule.cs lines 19-33",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 14,
+      "text": "redisConfiguration is ConnectionStrings:Redis, set in docker-compose.yml for the api as ConnectionStrings__Redis: \"redis:6379,abortConnect=false\" and passed to AddCatalogModule by Program.cs.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: docker-compose.yml line 159; DonHang.Api/Program.cs lines 27-37",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 15,
+      "text": "slow-dependency.sh: read_product (lines 9-12) curls GET /api/v1/products/3 and prints the code with a time band; a trap (line 13) unpauses and starts redis on EXIT; it runs on the host.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: scripts/backend/slow-dependency.sh lines 1-13; bash manual 'trap' (EXIT)",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 16,
+      "text": "slow-dependency.sh lines 15-34: reads with Redis up, stops redis and reads, starts it and sleeps 3 s for the api to reconnect, pauses it and reads, then unpauses.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: scripts/backend/slow-dependency.sh lines 15-34",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 17,
+      "text": "A count of requests in progress that keeps climbing while the CPU has little to do is a typical symptom of requests waiting on a slow dependency, since async/await frees only the thread.",
+      "kind": "opinion",
+      "source_hint": "follows from claim 9; ASP.NET Core 'Best practices'",
+      "needs_verification": false,
+      "section": 6
+    },
+    {
+      "n": 18,
+      "text": "Try it: with the lab running, scripts/backend/slow-dependency.sh run from the repo root in a host terminal (where docker compose started the lab) prints three '-> 200' lines: less than 1 s (up), less than 1 s (stopped), more than 5 s (paused).",
+      "kind": "behavior",
+      "source_hint": "examples/don-hang @ stage-3: scripts/backend/slow-dependency.sh lines 2-3; outputs/stage-3/scripts/backend/slow-dependency.txt",
+      "needs_verification": true,
+      "section": 7
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [1, 2, 3, 4, 5],
+    "outline_items_missing": [],
+    "beyond_scope": [
+      "names that a timeout of the Redis client ends the paused wait, without its value or how to set it (taught in backend.l3.timeouts)"
+    ]
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1450,
+    "notes": "apply-review: s4 timeout said in plain words, 'Redis client' kept apart from the api's caller; DB connection only 'still holds open' (s3, s4, s6, summary), product read holds none (EF Core, claim 9); pile-up made conditional and generic (claim 11); diagram note = one of several waits; s5 paragraph split, 'no request failed'; Try it: host terminal; Connections 'a first fix'. Quiz q2/q3/q6 left to /quiz apply-review."
+  }
+}
