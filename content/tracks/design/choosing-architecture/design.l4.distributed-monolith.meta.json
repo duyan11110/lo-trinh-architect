@@ -1,0 +1,138 @@
+{
+  "id": "design.l4.distributed-monolith",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-10-27T16:00:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "At stage-3 OrderMessage(OrderId, CustomerEmail, CustomerName, OccurredAt) is declared three times: DonHang.Domain (what DonHang.Api publishes as JSON), DonHang.Notifications and DonHang.Payments, each service keeping its own copy.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3 DonHang.Domain/OrderMessage.cs lines 3-8; DonHang.Notifications/OrderMessage.cs lines 1-6; DonHang.Payments/Messages.cs lines 1-6",
+      "needs_verification": true,
+      "section": 2
+    },
+    {
+      "n": 2,
+      "text": "In the production kustomization.yaml at stage-3 the six images (api, migrate, notifications, notifications-migrate, payments, payments-migrate) each have their own images entry, all with the same sha- commit tag.",
+      "kind": "fact",
+      "source_hint": "deploy/gitops/config-repo-kustomize/envs/production/kustomization.yaml @ stage-3 lines 17-39",
+      "needs_verification": true,
+      "section": 2
+    },
+    {
+      "n": 3,
+      "text": "At stage-3 donhang, donhang_notifications and donhang_payments are three databases on one PostgreSQL server (Host=db); each service connects only to its own; of the services only payments and payments-migrate use donhang_payments; the db-backup CronJob dumps all three from host db.",
+      "kind": "fact",
+      "source_hint": "base/db.yaml, base/payments.yaml, base/db-backup.yaml lines 53-54 @ stage-3; docker-compose.yml @ stage-3",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 4,
+      "text": "Signs of a distributed monolith: changes that always touch several services, services released only together, services reading each other's tables, chains of calls where one slow service stalls the rest.",
+      "kind": "opinion",
+      "source_hint": "Outline items 1-2",
+      "needs_verification": false,
+      "section": 4
+    },
+    {
+      "n": 5,
+      "text": "OrderMessage reaches Notifications and Payments through RabbitMQ and waits in a queue, so a slow Notifications does not hold up placing an order.",
+      "kind": "behavior",
+      "source_hint": "backend.l3.message-broker; STAGE.md @ stage-3 data flow (API -> outbox -> RabbitMQ -> Notifications, Payments)",
+      "version_key": "rabbitmq",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 6,
+      "text": "POST /api/v1/orders/{id}/refund on DonHang.Api returns 202 (accepted, not done); Payments saves a pending refund on receiving order.refund-requested, and RefundSender calls the payment gateway (provider) afterwards.",
+      "kind": "fact",
+      "source_hint": "DonHang.Api/Controllers/OrdersController.cs lines 117-134; DonHang.Payments/RefundRequestedConsumer.cs; DonHang.Payments/RefundSender.cs @ stage-3",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 7,
+      "text": "DonHang.Api (and Infrastructure), DonHang.Notifications and DonHang.Payments each reference DonHang.Messaging, which references no Đơn Hàng project and knows no order, payment or email.",
+      "kind": "fact",
+      "source_hint": "DonHang.Api.csproj line 15, DonHang.Infrastructure.csproj line 23, DonHang.Notifications.csproj line 17, DonHang.Payments.csproj line 15 @ stage-3; ModuleBoundaryTests.cs lines 72-81",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 8,
+      "text": "Each service has its own database and maps no other service's tables, but the shared PostgreSQL server stopping takes all three databases down at once; the services' work needing a database fails together.",
+      "kind": "behavior",
+      "source_hint": "PostgreSQL 17 docs 'Creating a Database Cluster'; base/db.yaml @ stage-3; OrderEventsConsumer.cs nack/requeue comment",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 9,
+      "text": "Because each image has its own entry (newTag, digest), a promotion commit can change one service's tag and leave the others; at stage-3 all six share one commit because CI's publish job builds and pushes them together.",
+      "kind": "behavior",
+      "source_hint": "Kustomize docs, images field; kustomization.yaml @ stage-3 lines 17-39; STAGE.md 'CI signs the six images the publish job pushes'",
+      "version_key": "kustomize",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 10,
+      "text": "Consumers read OrderMessage JSON by property name; both Read() methods reject a message without CustomerEmail, so renaming it moves the API, Notifications and Payments in step. A shared class would not avoid it: each service reads the new name only once rebuilt and released.",
+      "kind": "behavior",
+      "source_hint": ".NET docs System.Text.Json (JsonSerializerOptions.Web, missing property); RefundRequestedConsumer.cs, OrderEventsConsumer.cs Read() @ stage-3",
+      "version_key": "dotnet",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 11,
+      "text": "ServiceUsesNoDonHangProjectButMessaging runs for OrderEventsConsumer (Notifications) and RefundRequestedConsumer (Payments); it fails when that type's assembly references a DonHang.* assembly other than DonHang.Messaging, e.g. a new DonHang.Shared.",
+      "kind": "fact",
+      "source_hint": "DonHang.Tests/Architecture/ModuleBoundaryTests.cs @ stage-3 lines 56-70",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 12,
+      "text": "Trade-offs: a shared domain project puts every Order change in every service's next build; reading another's tables makes column changes a change in step; an own message copy limits the tie to fields that cross, at the cost of copies to keep alike.",
+      "kind": "opinion",
+      "source_hint": "Outline items 3, 6; misconceptions 2-3",
+      "needs_verification": false,
+      "section": 6
+    },
+    {
+      "n": 13,
+      "text": "Choices: keep copies over a shared Order project unless services already change together; if refund changes always span Api and Payments, move shared knowledge to one side or weigh merging; give a service its own server only if its drivers ask.",
+      "kind": "opinion",
+      "source_hint": "Outline items 1, 6; design.l4.architectural-drivers; design.l4.merging-a-service-back",
+      "needs_verification": false,
+      "section": 7
+    },
+    {
+      "n": 14,
+      "text": "A container decides where code runs, not what it can change or release without; separate databases remove only the table tie.",
+      "kind": "opinion",
+      "source_hint": "Outline misconceptions 1, 3",
+      "needs_verification": false,
+      "section": 8
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [1, 2, 3, 4, 5, 6],
+    "outline_items_missing": [],
+    "beyond_scope": []
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1649,
+    "notes": "apply-review 2026-10-27: Try it 2 -> CustomerEmail; summary 5, s8 narrowed; backup CronJob in Try it 3; shared project = next-build tie; db-down wording; claim 6; payment provider, 202, assembly, six images, migration image. R2: diagram = ties of code and data; s5 block line numbers 64, 60-61; s5 readers reject missing CustomerEmail (claim 10). Quiz q4 explanation left to /quiz."
+  },
+  "open_questions": [],
+  "repo_changes_needed": []
+}

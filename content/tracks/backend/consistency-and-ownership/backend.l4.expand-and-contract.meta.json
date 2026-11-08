@@ -1,0 +1,158 @@
+{
+  "id": "backend.l4.expand-and-contract",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-10-28T20:00:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "In staging, Argo CD creates the migrate hook Pod in sync wave 1 (hook: Sync, BeforeHookCreation) and the api Deployment is in wave 2; wave 2 starts only after wave 1 is healthy, i.e. after the hook succeeds.",
+      "kind": "behavior",
+      "source_hint": "deploy/gitops/config-repo-kustomize/base/migrate-hook.yaml @ stage-4 lines 11-14; base/api.yaml @ stage-4 lines 11-13; Argo CD docs, Sync Phases and Waves",
+      "version_key": "argocd",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 2,
+      "text": "The migrate hook applies every migration the database has not recorded yet (the bundle skips migrations already applied).",
+      "kind": "behavior",
+      "source_hint": "EF Core docs, Applying migrations: migration bundles; __EFMigrationsHistory",
+      "version_key": "efcore",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 3,
+      "text": "The api Deployment has 2 replicas and keeps the default RollingUpdate strategy (maxSurge/maxUnavailable 25%), so it adds one new Pod, waits for it to be ready, removes one old Pod, and repeats; old and new Pods serve side by side until the rollout ends.",
+      "kind": "behavior",
+      "source_hint": "base/api.yaml @ stage-4 line 15 (replicas: 2); Kubernetes docs, Deployments: Rolling Update Deployment (maxSurge/maxUnavailable default 25%)",
+      "version_key": "kubernetes",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 4,
+      "text": "A revert restores manifests, not data: applied migrations stay, so the previous version comes back against the newer schema.",
+      "kind": "behavior",
+      "source_hint": "devops.l3.rollback-by-revert summary line 5; Argo CD docs, hooks (no Down is run on revert)",
+      "version_key": "argocd",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 5,
+      "text": "Zero-downtime migration: a schema change made while the system keeps serving, so each migration works with the code before and after it. Expand and contract: add the new shape beside the old, move the code, remove the old once no running version uses it.",
+      "kind": "fact",
+      "source_hint": "glossary zero-downtime-migration, expand-contract; outline items 2-3",
+      "needs_verification": false,
+      "section": 3
+    },
+    {
+      "n": 6,
+      "text": "dotnet ef migrations add writes a migration from changes to the mapped model, compared with the model snapshot, and updates that snapshot. At stage-3 it scaffolded two DropTable calls, deleted by hand, so Up is empty and only the snapshot records the new mapping.",
+      "kind": "behavior",
+      "source_hint": "EF Core docs, Migrations overview / Managing migrations (model snapshot); PaymentsAndNotificationsLeaveOrdering.cs @ stage-4 lines 7-25",
+      "version_key": "efcore",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 7,
+      "text": "At stage-3 Notifications got its own table (expand), in its own database donhang_notifications.",
+      "kind": "fact",
+      "source_hint": "DropOldNotificationsTable.cs @ stage-4 lines 8-9; STAGE.md @ stage-4 line 16; docs/design/data-ownership.md @ stage-4 line 16",
+      "needs_verification": false,
+      "section": 1
+    },
+    {
+      "n": 8,
+      "text": "DropOldNotificationsTable is the contract step, step 2 of ADR 0008; Up calls DropTable(name: \"notifications\"); the api of the previous release no longer reads or writes the table, so an old Pod cannot fail on a missing table.",
+      "kind": "fact",
+      "source_hint": "DonHang.Infrastructure/Migrations/20261101090000_DropOldNotificationsTable.cs @ stage-4 lines 7-22",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 9,
+      "text": "The rows were dumped first by scripts/backend/drop-old-notifications.sh (ADR 0008 step 1, pg_dump -Fc --table); the old payments table stays until accounting confirms its check against donhang_payments (step 3).",
+      "kind": "fact",
+      "source_hint": "DropOldNotificationsTable.cs @ stage-4 lines 13-14; docs/adr/0008-xoa-bang-cu-trong-donhang.md @ stage-4 lines 26-35, 44-49; STAGE.md @ stage-4 lines 20-25",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 10,
+      "text": "A migration's Up runs when it is applied and its Down when the database is moved back past it. DropOldNotificationsTable's Down recreates the notifications table empty; the rows come back from the dump (pg_restore --data-only).",
+      "kind": "behavior",
+      "source_hint": "EF Core docs, Applying migrations (rolling back to a target migration); DropOldNotificationsTable.cs @ stage-4 lines 24-45",
+      "version_key": "efcore",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 11,
+      "text": "After a column is renamed, queries that still name the old column fail with an error (the column no longer exists under that name).",
+      "kind": "behavior",
+      "source_hint": "PostgreSQL 17 docs, ALTER TABLE ... RENAME COLUMN; error 42703 undefined_column",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 7
+    },
+    {
+      "n": 12,
+      "text": "Every migration of a release runs in the hook in wave 1, before any new api Pod starts, so ordering expand and contract inside one release cannot protect old Pods.",
+      "kind": "behavior",
+      "source_hint": "migrate-hook.yaml @ stage-4 lines 11-14; api.yaml @ stage-4 lines 11-13; Argo CD docs, Sync Phases and Waves",
+      "version_key": "argocd",
+      "needs_verification": true,
+      "section": 8
+    },
+    {
+      "n": 13,
+      "text": "Trade-offs: one migration with its code breaks old Pods and reverts; stopping the api costs a planned outage and still leaves the revert problem; expand and contract keeps both versions working at the cost of extra releases.",
+      "kind": "opinion",
+      "source_hint": "Outline items 1-3",
+      "needs_verification": false,
+      "section": 6
+    },
+    {
+      "n": 14,
+      "text": "Dropping the old payments table is compatible for the code (no code reads or writes it) but should wait for accounting's confirmation, step 3 of ADR 0008.",
+      "kind": "opinion",
+      "source_hint": "docs/adr/0008-xoa-bang-cu-trong-donhang.md @ stage-4 lines 9-11, 33-35, 44-49",
+      "needs_verification": false,
+      "section": 7
+    },
+    {
+      "n": 15,
+      "text": "To rename customers.email while serving: add nullable contact_email with code writing both; once no older Pod is left, copy email into rows lacking contact_email; move reads; drop email in a release whose previous version no longer touches it. If a short outage harms nobody, stopping is simpler.",
+      "kind": "opinion",
+      "source_hint": "Outline misconceptions 2-3; customers.email column per docs/design/data-ownership.md @ stage-4 line 40",
+      "needs_verification": false,
+      "section": 7
+    },
+    {
+      "n": 16,
+      "text": "Expand and the code move may share a release, because neither removes anything a running version uses; only contract must wait for a later release.",
+      "kind": "opinion",
+      "source_hint": "Derived from claims 1, 3, 12; DropOldNotificationsTable.cs @ stage-4 lines 8-12",
+      "needs_verification": false,
+      "section": 5
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [1, 2, 3, 4, 5],
+    "outline_items_missing": [],
+    "beyond_scope": []
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1923,
+    "notes": "apply-review 10-28: rename recipe = nullable col + dual write, copy after old Pods gone, move reads (T-major, J-major); 2 Pods one at a time (§4, mermaid, §8, §11, q1); Deployment participant in diagram; Up/Down, migrations add, model snapshot explained; expand+move may share a release (claim 16); q2 stem, q3 c, q5 e reworded. Cut §5 lines-8-12 restatement. No DDL locks, payments not dropped."
+  },
+  "open_questions": [],
+  "repo_changes_needed": []
+}

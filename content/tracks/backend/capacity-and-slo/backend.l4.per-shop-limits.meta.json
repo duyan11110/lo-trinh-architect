@@ -1,0 +1,152 @@
+{
+  "id": "backend.l4.per-shop-limits",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-10-29T23:30:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "Program.cs at stage-4: \"orders\" partitions a fixed-window limiter by the token's sub (no limiter when signed out); \"catalog-reads\" is one concurrency limiter per process with no key; neither reads a shop.",
+      "kind": "fact",
+      "source_hint": "DonHang.Api/Program.cs lines 150-166 @ stage-4",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 2,
+      "text": "Program.cs defaults: orders 10 per 1-minute window per customer (line 140); catalog-reads PermitLimit 20, QueueLimit 5 (line 147); both limits carry 'lesson: backend.l3.*' comments, i.e. introduced at stage-3.",
+      "kind": "fact",
+      "source_hint": "DonHang.Api/Program.cs lines 135-148 @ stage-4",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 3,
+      "text": "The orders policy is attached only to POST /api/v1/orders; only endpoints marked [EnableRateLimiting] are limited.",
+      "kind": "fact",
+      "source_hint": "docs/design/multi-shop-architecture-review.md, table 'Kịch bản đã phân tích' row R2; DonHang.Api/Program.cs lines 207-210 @ stage-4",
+      "needs_verification": false,
+      "section": 4
+    },
+    {
+      "n": 4,
+      "text": "ADR 0013 (shared tables with shop_id and row-level security) left the noisy-neighbor problem open; the multi-shop architecture review recorded R1 (catalog-reads counts all callers of a process) and R2 (orders counts per customer sub, not shop) under scenario K1.",
+      "kind": "fact",
+      "source_hint": "docs/adr/0016-gioi-han-tai-theo-cua-hang.md lines 8-18; docs/design/multi-shop-architecture-review.md 'Kịch bản đã phân tích', 'Sau buổi đánh giá' @ stage-4",
+      "needs_verification": false,
+      "section": 4
+    },
+    {
+      "n": 5,
+      "text": "Scenario K1: one shop runs a promotion bringing it 10% of the day's orders, during its busiest hour, others at normal load.",
+      "kind": "fact",
+      "source_hint": "docs/design/multi-shop-architecture-review.md table 'Kịch bản' row K1 @ stage-4",
+      "needs_verification": false,
+      "section": 2
+    },
+    {
+      "n": 6,
+      "text": "ADR 0016 options: keep shared limits (no cost, risk remains); per-shop limits inside the API on top of the shared ones; move a large shop to its own database or deployment (strongest isolation, only for known-large shops, a data move each time). It chooses the second.",
+      "kind": "fact",
+      "source_hint": "docs/adr/0016-gioi-han-tai-theo-cua-hang.md lines 23-35 @ stage-4",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 7,
+      "text": "ADR 0016: each shop's cap is a fixed share of a process's concurrent reads, assumed a quarter of 20; the cap is not a reservation, unused capacity stays with other shops, so 1,000 shops do not split capacity into 1,000 parts. The ADR does not state the order of the two checks.",
+      "kind": "fact",
+      "source_hint": "docs/adr/0016-gioi-han-tai-theo-cua-hang.md lines 35-38 @ stage-4",
+      "needs_verification": false,
+      "section": 4
+    },
+    {
+      "n": 8,
+      "text": "ADR 0016 adds a counter of requests by outcome (served, refused by shop, refused by shared limit) labelled by shop; no shop label on the response-time histogram: 1,000 shops times every bucket, endpoint and status code is too many series, each stored and scraped by Prometheus.",
+      "kind": "fact",
+      "source_hint": "docs/adr/0016-gioi-han-tai-theo-cua-hang.md lines 40-44 @ stage-4; series cost as taught in devops.l2.prometheus-scraping",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 9,
+      "text": "The SLIs in slo.md aggregate all shops, so a shop refused most of the time may not pull the SLI below the SLO.",
+      "kind": "fact",
+      "source_hint": "docs/adr/0016-gioi-han-tai-theo-cua-hang.md lines 20-21; docs/design/slo.md line 104 @ stage-4",
+      "needs_verification": false,
+      "section": 4
+    },
+    {
+      "n": 10,
+      "text": "ADR 0016 consequences: the limit needs the request's shop from the access token, available from release 2 of multi-shop-data-rollout.md, so Program.cs keeps its orders and catalog-reads limits at stage-4; each process counts separately, so a shop's real ceiling multiplies with the number of Pods.",
+      "kind": "fact",
+      "source_hint": "docs/adr/0016-gioi-han-tai-theo-cua-hang.md lines 46-54 @ stage-4",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 11,
+      "text": "The team reviews when a shop regularly needs more than its share: that shop moves to the third option under ADR 0013's review condition (a shop too large for the shared tables, or one that must be restored on its own, moves to its own database).",
+      "kind": "fact",
+      "source_hint": "docs/adr/0016-gioi-han-tai-theo-cua-hang.md lines 56-57; docs/adr/0013-du-lieu-cua-hang-trong-bang-chung.md lines 62-64 @ stage-4",
+      "needs_verification": false,
+      "section": 7
+    },
+    {
+      "n": 12,
+      "text": "ASP.NET Core concurrency limiter: at most PermitLimit leases run at once and up to QueueLimit requests wait; a request arriving when both are full is rejected, and with no RejectionStatusCode set the middleware answers 503. A fixed-window refusal in Đơn Hàng becomes 429.",
+      "kind": "behavior",
+      "source_hint": "ASP.NET Core docs, Rate limiting middleware: Concurrency limiter, RejectionStatusCode; ConcurrencyLimiterOptions QueueLimit; Program.cs lines 168-181 @ stage-4",
+      "version_key": "aspnetcore",
+      "needs_verification": true,
+      "section": 9
+    },
+    {
+      "n": 13,
+      "text": "Try it arithmetic: stage-4, A's 30 reads take 20 places and 5 queue spots, 5 refused, B's and C's 6 refused; under ADR 0016 A runs 5, B and C run 6, 9 places free; 2 Pods give A up to 10. Four shops at a cap of 5 fill 20 places.",
+      "kind": "fact",
+      "source_hint": "derived from Program.cs line 147 and ADR 0016 lines 35-38, 53-54 @ stage-4",
+      "needs_verification": false,
+      "section": 9
+    },
+    {
+      "n": 14,
+      "text": "Prefer a cap on top of the shared limit when many shops of mostly similar size share one deployment; a reserved share fits only a few shops with capacity promised by contract; move a shop out when it keeps needing more than its cap.",
+      "kind": "opinion",
+      "source_hint": "reasoning from ADR 0016 lines 23-38, 56-57 @ stage-4",
+      "needs_verification": false,
+      "section": 6
+    },
+    {
+      "n": 15,
+      "text": "Raising every shop's cap would bring back the risk the cap removes; when Pods are added, the database total is what the capacity plan checks (Pods times connections per Pod below max_connections).",
+      "kind": "opinion",
+      "source_hint": "reasoning from ADR 0016 lines 46-57; capacity-plan.md (backend.l4.capacity-planning outline item 4) @ stage-4",
+      "needs_verification": false,
+      "section": 7
+    },
+    {
+      "n": 16,
+      "text": "ADR 0016 does not say whether a shop's reads may wait at the per-shop limit, nor which status code a per-shop refusal returns; the lesson's diagram and Try it assume they are refused at once (a design assumption, not ADR text).",
+      "kind": "fact",
+      "source_hint": "docs/adr/0016-gioi-han-tai-theo-cua-hang.md lines 35-44 @ stage-4",
+      "needs_verification": false,
+      "section": 4
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [1, 2, 3, 4, 5, 6],
+    "outline_items_missing": [],
+    "beyond_scope": [
+      "Reserved-share row in Trade-offs (from misconception 2) and the 'contracts that promise capacity' fit condition (opinion, claim 14).",
+      "4-Pod scenario in 'What would you choose if…' (from ADR consequence lines 53-54)."
+    ]
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1850,
+    "notes": "apply-review 2026-10-29: per-shop refusal assumed immediate, ADR silent on waiting and status code (claim 16; sec 4, 9); catalog-reads 503 vs orders 429 (sec 5, claim 12); ADR 0013 review condition stated (sec 7, claim 11); series cost clause (claim 8); 10 orders a minute; line-147 wording; ADR paragraph split; Try it 'none' clarified; summary line 5. Cut to stay under 2,000 words: read-routing Connections bullet."
+  }
+}

@@ -1,0 +1,181 @@
+{
+  "id": "backend.l3.graceful-degradation",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-10-16T12:00:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "Graceful degradation: when a dependency fails, the system keeps its most important functions and loses only what needs that dependency, in a way chosen in advance.",
+      "kind": "fact",
+      "source_hint": "content/glossary.yaml graceful-degradation; outline item 1",
+      "needs_verification": false,
+      "section": 3
+    },
+    {
+      "n": 2,
+      "text": "Program.cs @ stage-2 lines 75-80 registers one health check, AddDbContextCheck<DonHangDbContext>(tags: [\"ready\"]); the comment says Redis is left out on purpose. Lines 123-124 map /health/ready to run only checks tagged \"ready\". No mail server check exists.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: DonHang.Api/Program.cs lines 75-80, 120-124",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 3,
+      "text": "The DbContext health check (AddDbContextCheck) by default calls EF Core's CanConnectAsync, so it fails when the database cannot be reached.",
+      "kind": "behavior",
+      "source_hint": "Microsoft Learn: 'Health checks in ASP.NET Core', section 'Entity Framework Core DbContext probe'",
+      "version_key": "aspnetcore",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 4,
+      "text": "With default HealthCheckOptions, a health endpoint answers 200 when the report is Healthy and 503 when it is Unhealthy.",
+      "kind": "behavior",
+      "source_hint": "Microsoft Learn: 'Health checks in ASP.NET Core', 'Customize the HTTP status code' (ResultStatusCodes defaults)",
+      "version_key": "aspnetcore",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 5,
+      "text": "A Pod whose readiness probe fails is removed from the endpoints of the Services that select it, so it gets no requests through them; a failing readiness probe restarts nothing.",
+      "kind": "behavior",
+      "source_hint": "Kubernetes docs: 'Liveness, Readiness, and Startup Probes' / 'Configure Liveness, Readiness and Startup Probes'; deploy/k8s/api.yaml @ stage-2 lines 38-52",
+      "version_key": "kubernetes",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 6,
+      "text": "ProductCache.GetAsync (ProductCache.cs @ stage-2 lines 61-76) catches only RedisException or RedisTimeoutException via an exception filter, logs a warning and returns null; other exceptions propagate.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: DonHang.Infrastructure/ProductCache.cs lines 61-76",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 7,
+      "text": "FindAsync (ProductCache.cs @ stage-2 L25-49) treats a null from GetAsync as a miss, tries GetAsync again under its per-key lock, then calls inner.FindAsync (one query). Only GET /api/v1/products/{id} uses it; the list reads DonHangDbContext directly.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: DonHang.Infrastructure/ProductCache.cs lines 25-49; DonHang.Api/Controllers/ProductsController.cs lines 11-12, 51",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 8,
+      "text": "The Redis connection string at stage-2 sets abortConnect=false, and ServiceCollectionExtensions.cs sets options.BacklogPolicy = BacklogPolicy.FailFast.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: deploy/k8s/api-configmap.yaml, docker-compose.yml, DonHang.Infrastructure/ServiceCollectionExtensions.cs line 36",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 9,
+      "text": "QueuedNotifier.Send (QueuedNotifier.cs @ stage-2 lines 9-23) only adds a Notification with Status \"pending\" to the order's DbContext; it does not contact the mail server.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: DonHang.Infrastructure/QueuedNotifier.cs lines 5-23",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 10,
+      "text": "Captured output of email-retry.sh @ stage-2 (Mailpit stopped): the order POST answers 201; the email row fails attempts 1-5 and ends 'failed | 5 | t'.",
+      "kind": "behavior",
+      "source_hint": "examples/don-hang @ stage-2: outputs/stage-2/scripts/backend/email-retry.txt; backend.l3.timeouts claim 18",
+      "version_key": "docker",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 11,
+      "text": "NotificationSender marks a row failed after its fifth failed attempt (MaxAttempts = 5) and never picks it up again; the five attempts span about 40 s in all, so a longer mail outage loses the email.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: DonHang.Api/Jobs/NotificationSender.cs RecordFailure; scripts/backend/email-retry.sh line 30",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 12,
+      "text": "deploy/k8s @ stage-2: api.yaml runs 2 api replicas with readinessProbe on /health/ready; redis.yaml runs one Redis replica shared by them (redis:6379).",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: deploy/k8s/api.yaml lines 11, 38-52; deploy/k8s/redis.yaml lines 1-31",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 13,
+      "text": "If /health/ready also checked Redis, a Redis outage would fail readiness on every api Pod at once, leaving the Service no ready Pod, so every request through it fails although PostgreSQL is up: a slower product page becomes no api.",
+      "kind": "opinion",
+      "source_hint": "follows from claims 4, 5, 12",
+      "needs_verification": false,
+      "section": 6
+    },
+    {
+      "n": 14,
+      "text": "A fallback moves load rather than removing it: with Redis down every single-product read becomes a PostgreSQL query until Redis is back, so it is safe only while PostgreSQL can carry the extra load; otherwise the optional dependency's failure becomes the required one's.",
+      "kind": "opinion",
+      "source_hint": "follows from claim 7; outline item 5; backend.l3.slow-dependencies (cascading failure)",
+      "needs_verification": false,
+      "section": 4
+    },
+    {
+      "n": 15,
+      "text": "Catching every exception and returning an empty result is not graceful degradation when the empty result is a wrong answer (e.g. an empty product list) and it hides failures from the logs.",
+      "kind": "opinion",
+      "source_hint": "general; claim 6",
+      "needs_verification": false,
+      "section": 6
+    },
+    {
+      "n": 16,
+      "text": "cache-aside.sh @ stage-2 reads product 3 twice (miss, then hit), then once with the redis container stopped, then starts Redis again; it prints the status code and the number of product queries per request.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: scripts/backend/cache-aside.sh lines 1-36",
+      "needs_verification": true,
+      "section": 7
+    },
+    {
+      "n": 17,
+      "text": "Captured output of cache-aside.sh @ stage-2: all three requests '-> 200' with product 3; queries PostgreSQL ran: 1, 0, 1 (the third with Redis stopped).",
+      "kind": "behavior",
+      "source_hint": "examples/don-hang @ stage-2: outputs/stage-2/scripts/backend/cache-aside.txt",
+      "version_key": "stackexchange_redis",
+      "needs_verification": true,
+      "section": 7
+    },
+    {
+      "n": 18,
+      "text": "With Redis up, a product is queried again only after its copy expires (Ttl = 5 minutes, ProductCache.cs line 18) or after UpdatePriceAsync deletes it (lines 54-59).",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-2: DonHang.Infrastructure/ProductCache.cs lines 18, 54-59",
+      "needs_verification": true,
+      "section": 7
+    },
+    {
+      "n": 19,
+      "text": "Captured output at stage-3 with Payments stopped: POST /api/v1/orders/10/refund answers 202, the order stays 'refunding' with the request waiting in payments.refund-requests, and the refund row becomes 'refunded' once Payments is back.",
+      "kind": "behavior",
+      "source_hint": "examples/don-hang @ stage-3: outputs/stage-3/scripts/backend/payments-down.txt",
+      "version_key": "docker",
+      "needs_verification": true,
+      "section": 8
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [1, 2, 3, 4, 5],
+    "outline_items_missing": [],
+    "beyond_scope": [
+      "names that a row failing its fifth attempt (about 40 s of retries) is marked failed, so a longer mail outage still loses that email (one sentence, section 4; taught in backend.l2.retry-with-backoff)",
+      "names the k8s layout at stage-2 (2 api Pods, one shared Redis) to explain misconception 1 (one sentence, section 6)"
+    ]
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1550,
+    "notes": "generate: Redis/Mailpit/PostgreSQL outages at stage-2; code Program.cs 75-80, ProductCache.cs 61-76. apply-review r1-2: email retried then failed (~40 s, claim 11); single-product reads (claim 7); s6 symptom (claim 13); claim 19 refund 202; claim 8 repo facts only; quiz q1 b. r3 (junior): cut 'second Redis try under per-key lock' in s5; mail node 'lost if still down after 5 attempts'; summary 4 'an outage outlasting five attempts' (≤25 words)."
+  }
+}

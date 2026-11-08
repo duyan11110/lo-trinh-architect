@@ -1,0 +1,136 @@
+{
+  "id": "backend.l3.cross-shard-queries",
+  "technical": {
+    "reviewed_at": "2026-10-20T17:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "ShardedOrders.cs @ stage-3 line 14: `public int ShardFor(int customerId) => customerId % shards.Count;` and LatestForCustomerAsync (16-26) queries only `ShardFor(customerId)`; LatestAcrossShardsAsync (33-44) loops `for (var shard = 0; shard < shards.Count; shard++)` and merges. With customer_id as the key, a query without it gives no input to ShardFor, so no shard can be excluded.",
+        "source": "examples/don-hang @ stage-3 samples/DonHang.Samples/Samples/Data/Sharding/ShardedOrders.cs lines 11-44"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "shard-split.sh @ stage-3 lines 10-12: `psql_in_db() { docker compose exec -T db psql --username donhang ... \"$@\" }`; lines 19-30 CREATE DATABASE donhang_shard_$shard, load shard-schema.sql, COPY rows with customer_id % 2 = $shard. scripts/up.sh: \"Start the Đơn Hàng lab: the static site, the database and the lab box.\" ... `docker compose up -d --build --wait`. Every call goes to the one db service.",
+        "source": "examples/don-hang @ stage-3 scripts/backend/shard-split.sh lines 10-30; scripts/up.sh (tools/extract-code)"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Round 2: text now conditioned as suggested. PG 17 22.1: \"It is not possible to access more than one database per connection.\" COPY: \"STDIN Specifies that input comes from the client application.\" \"STDOUT Specifies that output goes to the client application.\" \"COPY TO can also copy the results of a SELECT query.\" psql \\copy: \"to stdout, output is sent to the same place as psql command output\". The captured run loads 20000/180000 rows through the pipe.",
+        "source": "https://www.postgresql.org/docs/17/manage-ag-overview.html; https://www.postgresql.org/docs/17/sql-copy.html; https://www.postgresql.org/docs/17/app-psql.html; outputs/stage-3/scripts/backend/shard-split.txt"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "shard-split.sh line 8: `built=$(scripts/backend/perf-db.sh --if-missing 2>&1)`; perf-db.sh lines 12-17 exit 0 if donhang_perf exists, otherwise build it (200,000 rows via fill.sql), so a first run does more work and takes longer. Line 3: \"Runs on the host: it drives the db container with docker compose and runs the sample with dotnet.\"; line 36 `dotnet run --project samples/DonHang.Samples --verbosity quiet -- sharded-orders`.",
+        "source": "examples/don-hang @ stage-3 scripts/backend/shard-split.sh lines 3, 8, 36; scripts/backend/perf-db.sh lines 12-17"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "outputs/stage-3/scripts/backend/shard-split.txt is character-for-character the lesson's output block: `donhang_shard_0: 20000 orders`, `donhang_shard_1: 180000 orders`, orders 199986/199886/199786 shard 1, `orders 199971 to 200000`, `10 from shard 0, 20 from shard 1`, `with 15 from each shard instead: 5 of the 30 are not among the newest`. Recomputed by hand from fill.sql: ids 199971-200000 give 10 even-customer rows (g%100 = 81,83,..,99) and 20 odd.",
+        "source": "examples/don-hang outputs/stage-3/scripts/backend/shard-split.txt; db/perf/fill.sql lines 10-22; ShardedOrdersDemo.cs"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "fill.sql: \"20 customers, 200,000 orders: customer 1 is a large business buyer with 81% of them, the other 19 have 1% each (2,000 orders)\"; customer_id = `CASE WHEN g % 100 < 81 THEN 1 ELSE g % 100 - 79 END`. Odd ids 1,3,..,19: 162,000 + 9 x 2,000 = 180,000; even 2..20: 10 x 2,000 = 20,000. Matches the captured counts.",
+        "source": "examples/don-hang @ stage-3 db/perf/fill.sql lines 1-22"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "ShardedOrders.cs lines 14-25: `ShardFor(int customerId) => customerId % shards.Count;` then `var shard = ShardFor(customerId);` with SQL `WHERE customer_id = @customer_id ORDER BY placed_at DESC, id DESC LIMIT @count` passed to `QueryAsync(shard, ...)`. Demo builds two shards, so 7 % 2 = 1; output line `customer 7 is on shard 1`.",
+        "source": "examples/don-hang @ stage-3 ShardedOrders.cs lines 14-26; ShardedOrdersDemo.cs line 17"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "ShardedOrders.cs lines 54-61: LatestOnShardAsync runs `SELECT id, customer_id, placed_at FROM orders ORDER BY placed_at DESC, id DESC LIMIT @count` through QueryAsync, which opens `new NpgsqlConnection(shards[shard])` — one shard per call.",
+        "source": "examples/don-hang @ stage-3 ShardedOrders.cs lines 54-68"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Demo (ShardedOrdersDemo.cs 30-37) merges `LatestOnShardAsync(0, count / 2)` and `LatestOnShardAsync(1, count / 2)` and counts ids not in the true newest set; captured output: \"with 15 from each shard instead: 5 of the 30 are not among the newest\". Logic: shard 1 holds 20 of the true 30, returns 15, so 5 are absent; Merge only sees what it is given.",
+        "source": "examples/don-hang ShardedOrdersDemo.cs lines 30-37; outputs/stage-3/scripts/backend/shard-split.txt line 11"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "C# async docs: \"You start all the asynchronous tasks at once. You wait on each task only when you need the results. ... You make all the requests immediately, and then apply the `await` expression on all those tasks\"; and \"You compose tasks by separating the operations into a new method that returns a task. You can choose when to wait on that task. You can start other tasks concurrently.\"",
+        "source": "refs/dotnet-docs/docs/csharp/asynchronous-programming/index.md lines 116, 137"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "C# docs: WhenAll \"returns a Task object that completes when all the tasks in its argument list are complete.\" TAP docs: \"if any asynchronous operation fails, all the exceptions are consolidated in an AggregateException exception, which is stored in the Task that is returned from the WhenAll method. However, only one of those exceptions is propagated by the `await` keyword.\"",
+        "source": "refs/dotnet-docs/docs/csharp/asynchronous-programming/index.md line 218; refs/dotnet-docs/docs/standard/asynchronous-programming-patterns/consuming-the-task-based-asynchronous-pattern.md lines 165-170"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "LINQ docs: SelectMany \"Projects sequences of values that are based on a transform function and then flattens them into one sequence.\"; ThenByDescending \"Performs a secondary sort in descending order.\" Code lines 47-52: `SelectMany(orders => orders).OrderByDescending(order => order.PlacedAt).ThenByDescending(order => order.Id).Take(count)`. shard-schema.sql: `id integer PRIMARY KEY`, rows copied from donhang_perf, so rows with equal PlacedAt get a fixed order.",
+        "source": "refs/dotnet-docs/docs/csharp/linq/standard-query-operators/projection-operations.md line 19; sorting-data.md line 25; ShardedOrders.cs @ stage-3 lines 46-52; db/sharding/shard-schema.sql"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Follows from claim 11 and the code: `await Task.WhenAll(queries)` (line 42) completes only when every shard task completes, and throws if any faulted, so the method returns no list then. The alternative \"list that quietly lacks that shard's orders\" is stated as what a version that skips failed shards would return, which is what Merge (lines 47-52) yields over the remaining lists.",
+        "source": "ShardedOrders.cs @ stage-3 lines 28-44; refs/dotnet-docs/docs/csharp/asynchronous-programming/index.md line 218"
+      },
+      {
+        "n": 14,
+        "verdict": "not-needed",
+        "evidence": "Round 2 text: a conditioned design rule (\"When such a query runs often, look at the reads. If most of them lack the key ... If most use it and a few frequent ones do not ...\"), restating outline item 5; kind opinion, no always/never. \"eventually consistent\" follows from claim 15: a read model in its own database cannot commit in the same transaction as a shard's order.",
+        "source": "content/tracks/backend/track.yaml backend.l3.cross-shard-queries outline item 5; claim 15"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "PG 17 22.1: \"It is not possible to access more than one database per connection.\" BEGIN: \"BEGIN initiates a transaction block, that is, all statements after a BEGIN command will be executed in a single transaction until an explicit COMMIT or ROLLBACK is given.\" A transaction block lives in one session/connection, hence one database; two shards need two transactions, each committing independently.",
+        "source": "https://www.postgresql.org/docs/17/manage-ag-overview.html; https://www.postgresql.org/docs/17/sql-begin.html"
+      },
+      {
+        "n": 16,
+        "verdict": "not-needed",
+        "evidence": "After the round-1 split, claim 16 is only the saga sentence: conditioned guidance restating outline item 6 and prereq backend.l3.saga; kind opinion, no product behaviour. The two-phase-commit half moved to claim 17.",
+        "source": "content/tracks/backend/track.yaml backend.l3.cross-shard-queries outline item 6"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "PG 17 PREPARE TRANSACTION Notes: \"Keep in mind also that the transaction continues to hold whatever locks it held.\" and \"a prepared transaction will normally be committed or rolled back as soon as an external transaction manager has verified that other databases are also prepared to commit.\" Supports the Connections line \"at the cost of locks held while waiting\".",
+        "source": "https://www.postgresql.org/docs/17/sql-prepare-transaction.html"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "PG 17 ANALYZE Description: \"ANALYZE collects statistics about the contents of tables in the database, and stores the results in the pg_statistic system catalog. Subsequently, the query planner uses these statistics to help determine the most efficient execution plans for queries.\" Matches s5. Round 2 opened: PG 17 sql-analyze, sql-copy, app-psql; up.sh, shard-split.sh, shard-schema.sql @ stage-3.",
+        "source": "https://www.postgresql.org/docs/17/sql-analyze.html"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-20T18:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (review-junior, prompt 05, round 2 targeted)",
+    "issues": [],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

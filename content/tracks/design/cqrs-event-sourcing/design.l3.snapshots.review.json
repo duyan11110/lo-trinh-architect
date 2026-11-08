@@ -1,0 +1,126 @@
+{
+  "id": "design.l3.snapshots",
+  "technical": {
+    "reviewed_at": "2026-10-15T17:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "InMemoryEventStore.cs:44 `public EventSourcedOrder Load(int orderId) => EventSourcedOrder.FromEvents(ReadStream(orderId));` with comment \"Loading is a replay of the order's whole stream.\" ReadStream defaults afterVersion = 0.",
+        "source": "examples/don-hang samples/DonHang.Samples/Samples/Design/EventSourcing/InMemoryEventStore.cs:33-44"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "OrderSnapshots.cs:12 `private readonly Dictionary<int, OrderSnapshot> latest = [];`; :19 `store.Save(order);` first; :21-24 `var snapshotVersion = latest.TryGetValue(order.Id, out var snapshot) ? snapshot.Version : 0; if (order.Version - snapshotVersion >= every) { latest[order.Id] = order.ToSnapshot(); }` — one entry per order id, overwritten.",
+        "source": "examples/don-hang samples/DonHang.Samples/Samples/Design/EventSourcing/OrderSnapshots.cs:10-26"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "OrderSnapshots.cs:5 `public sealed record OrderSnapshot(int OrderId, int CustomerId, int TotalVnd, string Status, int Version);` EventSourcedOrder.cs:126 `public OrderSnapshot ToSnapshot() => new(Id, CustomerId, TotalVnd, Status, Version);`",
+        "source": "examples/don-hang OrderSnapshots.cs:5; EventSourcedOrder.cs:126"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "OrderSnapshots.cs:30-39: no snapshot → `var stream = store.ReadStream(orderId); EventsReplayedByLastLoad = stream.Count; return EventSourcedOrder.FromEvents(stream);` else `var eventsAfter = store.ReadStream(orderId, afterVersion: snapshot.Version); EventsReplayedByLastLoad = eventsAfter.Count; return EventSourcedOrder.FromSnapshot(snapshot, eventsAfter);`. Lesson block lines 17-40 matches the source character-for-character.",
+        "source": "examples/don-hang OrderSnapshots.cs:28-40"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "InMemoryEventStore.cs:32-36 comment \"One order's events, oldest first, after the first `afterVersion` of them.\" and `return stream.Skip(afterVersion).ToList();` (empty list when the stream does not exist).",
+        "source": "examples/don-hang InMemoryEventStore.cs:32-37"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "EventSourcedOrder.cs:128-144 object initializer sets Id, CustomerId, TotalVnd, Status, Version from the snapshot, then `foreach (var domainEvent in eventsAfter) order.Apply(domainEvent);` — same private Apply as FromEvents (:54-63). newEvents is empty, so LoadedVersion (:38 `Version - newEvents.Count`) = snapshot.Version + applied events, which InMemoryEventStore.Save passes to Append as expectedVersion.",
+        "source": "examples/don-hang EventSourcedOrder.cs:38, 54-63, 128-144; InMemoryEventStore.cs:47-51"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "InMemoryEventStore.Append :25-26 `if (stream.Count != expectedVersion) throw new StreamConcurrencyException(...)`; OrderSnapshots.Save calls `store.Save(order)` on line 19, before the snapshot check on 21-25, with no try/catch, so the exception leaves Save before any snapshot is written.",
+        "source": "examples/don-hang InMemoryEventStore.cs:17-30; OrderSnapshots.cs:17-26"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "OrderSnapshots.cs:42 `public void DeleteAll() => latest.Clear();`; Load's no-snapshot branch (:30-35) reads `store.ReadStream(orderId)` in full. Test asserts `Assert.Equal(3, snapshots.EventsReplayedByLastLoad)` after DeleteAll.",
+        "source": "examples/don-hang OrderSnapshots.cs:30-35, 42; EventSourcingTests.cs:127-130"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "EventSourcingTests.cs:114-132 (lesson block matches verbatim): `new OrderSnapshots(new InMemoryEventStore(), every: 2)`, Place/Save, Pay/Save, Ship/Save; `Assert.Equal(1, ...)` before DeleteAll, `Assert.Equal(3, ...)` after, `Assert.Equal(fromEvents.ToSnapshot(), fromSnapshot.ToSnapshot())`. Traced: versions 1,2,3; 2-0>=2 at save 2 → snapshot v2; 3-2=1<2 at save 3 → none.",
+        "source": "examples/don-hang samples/DonHang.Samples.Tests/EventSourcingTests.cs:111-132"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "\"Two variables of a record type are equal if they have the same type, and if, for every field, the values in both records are equal. Classes use reference equality: two variables of a class type are equal if they refer to the same object.\" Both compared values are OrderSnapshot.",
+        "source": "refs/dotnet-docs/docs/csharp/fundamentals/object-oriented/index.md:105"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "EventSourcedOrder.cs:70 Pay throws `if (Status != \"new\")`; :76 Cancel throws `if (Status is \"cancelled\" or \"shipped\")`; :82 Ship throws `if (Status != \"paid\")`. Longest sequences through the methods: placed, paid, shipped|cancelled = 3 events.",
+        "source": "examples/don-hang EventSourcedOrder.cs:68-84"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "OrderProjections.cs:12 `public int Position { get; private set; }`; CatchUp iterates `store.ReadAll(Position)` (all streams, append order); Rebuild :23-28 `Clear(); Position = 0; CatchUp(store);`. OrderSnapshot's field is `int Version` (OrderSnapshots.cs:5).",
+        "source": "examples/don-hang OrderProjections.cs:10-28; OrderSnapshots.cs:5"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Captured run, outputs/stage-3/scripts/design/event-sourcing.txt:13-15: \"== a snapshot every 2 events\" / \"  with the snapshot: shipped, 1 event replayed\" / \"  snapshots deleted: shipped, 3 events replayed\". Matches EventSourcingDemo.cs:66-78 format strings. I could not re-run the script in this session (shell blocked).",
+        "source": "examples/don-hang outputs/stage-3/scripts/design/event-sourcing.txt:13-15; EventSourcingDemo.cs:66-78"
+      },
+      {
+        "n": 14,
+        "verdict": "not-needed",
+        "evidence": "Design reasoning. Checkable parts hold: InMemoryEventStore.cs:5-6 \"It only ever appends; no event is changed or removed once stored.\"; :25-26 `if (stream.Count != expectedVersion) throw`; OrderSnapshots.cs:8-9 \"A snapshot is a cache: the events stay the truth\". Round 3: re-read changed s4 (reordered append-only sentence, trimmed shape sentence) against claims 2, 6, 7, 8, 14 and these files; no issue. git show was blocked, so read the submodule working tree.",
+        "source": "examples/don-hang InMemoryEventStore.cs:4-6, 25-26; OrderSnapshots.cs:7-9"
+      },
+      {
+        "n": 15,
+        "verdict": "not-needed",
+        "evidence": "Conditional design judgement (\"when an aggregate's stream grows long\"), matching outline item 5; not phrased as an unconditional rule, so not opinion-as-fact. The factual premise (at most three events) is claim 11."
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-15T18:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (prompt 05, junior, round 3 targeted)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "style",
+        "text": "Round 3, new in changed s4. I re-read this twice. \"no second source\" is abstract, and \"it\" could mean the event or its stored shape. I worked out that new code must still be able to apply events written in the old shape, but only on the second read.",
+        "quote": "The events have no second source: they keep their stored shape, so new code must still apply it.",
+        "fix": "Replace with: \"The events cannot be taken again from anything else: they keep the shape they were stored with, so new code must still be able to apply events in that old shape.\""
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

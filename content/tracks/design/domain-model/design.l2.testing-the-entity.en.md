@@ -15,8 +15,8 @@ vocab: []
 example_tag: stage-2
 versions_used: [dotnet, xunit]
 content_version: 1
-status: approved
-approved_by: auto
+status: published
+approved_by: owner
 reviewed_at: "2026-10-01T00:34:50+07:00"
 ---
 

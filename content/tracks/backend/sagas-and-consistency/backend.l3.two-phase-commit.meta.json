@@ -1,0 +1,152 @@
+{
+  "id": "backend.l3.two-phase-commit",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-10-14T23:55:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "refund-design.md v2 (rejected option, lines 65-69): version 1 saved the refund row, the order's status and the email in one transaction because all lived in one database; after the split, keeping that would need two-phase commit across donhang, donhang_payments, RabbitMQ and the gateway.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: docs/design/refund-design.md:65-69",
+      "needs_verification": true,
+      "section": 2
+    },
+    {
+      "n": 2,
+      "text": "At stage-3 the refund row lives in donhang_payments, the order in donhang, and the customer's email is requested through RabbitMQ (order events consumed by Notifications).",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: docs/design/refund-design.md:28-59; docker-compose.yml:367 (payments connection string)",
+      "needs_verification": true,
+      "section": 2
+    },
+    {
+      "n": 3,
+      "text": "2PC: all participants prepare; all commit only if all prepared, else all roll back. A prepared participant must not decide alone (it does not know what others were told); the protocol leaves the decision to the coordinator, which can pick roll back only before announcing.",
+      "kind": "behavior",
+      "source_hint": "PostgreSQL 17 docs, SQL Commands > PREPARE TRANSACTION (Description: two-phase commit, external transaction manager); Glossary 'Transaction, prepared'",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 4,
+      "text": "Once prepared, a PostgreSQL transaction's state is stored on disk, so it can still be committed after a database restart (crash).",
+      "kind": "behavior",
+      "source_hint": "PostgreSQL 17 docs, SQL Commands > PREPARE TRANSACTION, Description ('its state is fully stored on disk')",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 5,
+      "text": "A prepared transaction keeps holding the locks it held (e.g. the row lock from its UPDATE) until COMMIT PREPARED or ROLLBACK PREPARED, which need not come from the coordinator (any session of the same user or a superuser); another UPDATE of that row waits. PostgreSQL does not end it on its own.",
+      "kind": "behavior",
+      "source_hint": "PostgreSQL 17 docs, SQL Commands > PREPARE TRANSACTION, Notes/Caution ('continues to hold whatever locks it held'); ROLLBACK PREPARED, Notes; Explicit Locking > Row-Level Locks",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 6,
+      "text": "PostgreSQL does not act as the coordinator: PREPARE TRANSACTION is meant for an external transaction manager running a global transaction across databases, not for applications.",
+      "kind": "behavior",
+      "source_hint": "PostgreSQL 17 docs, SQL Commands > PREPARE TRANSACTION, Notes ('not intended for use in applications or interactive sessions... external transaction manager')",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 7,
+      "text": "max_prepared_transactions defaults to 0, which disables prepared transactions; it can only be set at server start.",
+      "kind": "number",
+      "source_hint": "PostgreSQL 17 docs, Server Configuration > Resource Consumption > Memory, max_prepared_transactions",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 8,
+      "text": "With max_prepared_transactions = 0, PREPARE TRANSACTION fails with 'ERROR:  prepared transactions are disabled' and 'HINT:  Set \"max_prepared_transactions\" to a nonzero value.'",
+      "kind": "behavior",
+      "source_hint": "examples/don-hang @ stage-3: outputs/stage-3/scripts/backend/prepare-transaction.txt:12-13",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 9,
+      "text": "If PREPARE TRANSACTION fails for any reason it becomes a ROLLBACK: the current transaction is cancelled, so the UPDATE of order 1 does not take effect and the next SELECT returns paid.",
+      "kind": "behavior",
+      "source_hint": "PostgreSQL 17 docs, SQL Commands > PREPARE TRANSACTION, Description; outputs/stage-3/scripts/backend/prepare-transaction.txt:14-18",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 10,
+      "text": "prepare-transaction.sh lines 13-14 run psql (PostgreSQL's command-line client) on donhang with ON_ERROR_STOP=off, so it keeps running after an error; then SHOW max_prepared_transactions (15), BEGIN + UPDATE order 1 (16-17), PREPARE TRANSACTION (18), SELECT status (19). Order 1 is paid in the seed.",
+      "kind": "behavior",
+      "source_hint": "examples/don-hang @ stage-3: scripts/backend/prepare-transaction.sh:13-20; outputs/stage-3/scripts/backend/prepare-transaction.txt; PostgreSQL 17 docs, psql > Variables > ON_ERROR_STOP",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 11,
+      "text": "refund-design.md lines 69-74 give the reasons: RabbitMQ cannot join a PostgreSQL transaction, the gateway's HTTP API has no prepare step, PostgreSQL disables PREPARE TRANSACTION (max 0); even if possible, a coordinator stopping halfway leaves rows locked; so each step is a local transaction.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: docs/design/refund-design.md:69-74",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 12,
+      "text": "The fake gateway's HTTP API refunds on POST /v1/refunds and has no prepare endpoint (others: GET /v1/refunds, /health, PUT /lab/delay).",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: fake-gateway/Program.cs:48, 55, 80, 85",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 13,
+      "text": "RabbitMQ's own transactions (AMQP 0-9-1 tx.select/tx.commit/tx.rollback on a channel) cover only the broker's publishes and acks and have no prepare step, so RabbitMQ cannot be a two-phase commit participant with PostgreSQL.",
+      "kind": "behavior",
+      "source_hint": "RabbitMQ docs, AMQP 0-9-1 Reference (class tx); Publisher Confirms page (transactions section)",
+      "version_key": "rabbitmq",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 14,
+      "text": "A prepared transaction is ended with COMMIT PREPARED 'gid' or ROLLBACK PREPARED 'gid', using the identifier given to PREPARE TRANSACTION.",
+      "kind": "syntax",
+      "source_hint": "PostgreSQL 17 docs, SQL Commands > COMMIT PREPARED, ROLLBACK PREPARED",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 15,
+      "text": "Opinion: two-phase commit costs more than a one-database transaction because locks are held across a round of questions to every participant and until the slowest answers; a stopped coordinator is a failure one database does not have.",
+      "kind": "opinion",
+      "source_hint": "reasoning from claims 3 and 5; refund-design.md:72-73",
+      "needs_verification": false,
+      "section": 6
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [1, 2, 3, 4, 5],
+    "outline_items_missing": [],
+    "beyond_scope": []
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1590,
+    "notes": "generate 2026-10-14; no XA/recovery/3PC, replacement not named (depth_notes). apply-review: s6 'many systems' narrowed; s4 'or ended by hand'; claim 3 rephrased (s6 b2); session->request (s7, q3e); COMMIT/ROLLBACK PREPARED in s3; psql+ON_ERROR_STOP and line contents in s5 (claim 10); design note's last sentence restated; gateway in s2 quote; q3 a/c, q5 correct/a reworded. Cut: diagram intro, s5 heading recap, s7 expected 'because', 2 connection tails."
+  },
+  "open_questions": [],
+  "repo_changes_needed": []
+}

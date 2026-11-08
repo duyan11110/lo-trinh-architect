@@ -1,0 +1,167 @@
+{
+  "id": "backend.l3.safe-to-repeat-saga-steps",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-10-14T23:59:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "Refunding order 10: POST /api/v1/orders/10/refund (customer 1) answers 202, the order moves to refunding and Payments saves a pending refund row; RefundSender calls the gateway later, not in the request.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: scripts/backend/gateway-down.sh:21-25; docs/design/refund-design.md steps 1, 3, 4",
+      "needs_verification": true,
+      "section": 2
+    },
+    {
+      "n": 2,
+      "text": "RefundSender is a BackgroundService: every 2 s (Tick) it opens a transaction and claims up to 10 (BatchSize) refund rows with status pending and next_attempt_at <= now, using FOR UPDATE SKIP LOCKED, like NotificationSender.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Payments/RefundSender.cs:16-24, 44-79; refund-design.md step 4",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 3,
+      "text": "With FOR UPDATE SKIP LOCKED, a second transaction running the same query skips rows another transaction has locked instead of waiting for them.",
+      "kind": "behavior",
+      "source_hint": "PostgreSQL 17 docs, SELECT reference, The Locking Clause (SKIP LOCKED)",
+      "version_key": "postgresql",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 4,
+      "text": "GatewayRefundClient maps a success status to Refunded, 422 to Refused with the gateway's reason, and any other status, HttpRequestException, TimeoutRejectedException or BrokenCircuitException to TryAgainLater.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Payments/GatewayRefundClient.cs:39-86",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 5,
+      "text": "HttpResponseMessage.IsSuccessStatusCode is true for status codes 200-299.",
+      "kind": "behavior",
+      "source_hint": ".NET API reference: HttpResponseMessage.IsSuccessStatusCode",
+      "version_key": "dotnet",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 6,
+      "text": "Polly raises TimeoutRejectedException when the timeout strategy ends a call and BrokenCircuitException when an open circuit rejects a call without executing it (the circuit opens after failures and stays open for a break duration).",
+      "kind": "behavior",
+      "source_hint": "Polly docs: Timeout resilience strategy; Circuit breaker resilience strategy",
+      "version_key": "polly",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 7,
+      "text": "IdempotencyKeyFor returns \"refund-\" + the row's Id; RefundAsync sends it as the Idempotency-Key header on every call, so the key does not change with Attempts (IdempotencyKeyFor_IsRefundAndTheRowId: refund-9).",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: GatewayRefundClient.cs:48-51, 65; DonHang.Tests/Payments/RefundSenderTests.cs (last test)",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 8,
+      "text": "fake-gateway answers a repeated Idempotency-Key with the answer it gave the first time and makes no new refund; GET /v1/refunds lists one entry per refund made.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: fake-gateway/Program.cs:36-39, 66-83, 89-100",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 9,
+      "text": "fake-gateway answers 200 with {refundId, status: \"refunded\"} and refuses with 422 and a JSON reason; refund rows in donhang_payments use the statuses pending, refunded, failed.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: fake-gateway/Program.cs:89-100; DonHang.Payments/RefundSender.cs:88-112",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 10,
+      "text": "On TryAgainLater before GiveUpAfter, RecordResult adds one to Attempts, keeps the row pending, sets NextAttemptAt = now + NextDelay(Attempts), logs the attempt and returns no message.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Payments/RefundSender.cs:88-112",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 11,
+      "text": "Defaults: FirstRetryDelay 1 minute, MaxRetryDelay 1 hour, GiveUpAfter 24 hours. BackoffDelay = FirstRetryDelay x 2^(attempts-1), capped at MaxRetryDelay (tests: 1->1, 2->2, 4->8, 7->60 minutes).",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: RefundSender.cs:9-14, 114-121; RefundSenderTests.cs BackoffDelay_DoublesUpToOneHour; refund-design.md step 5",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 12,
+      "text": "NextDelay returns a wait between half of BackoffDelay(attempts) and all of it, so the first wait is at most 1 minute by default.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Payments/RefundSender.cs:123-132; RefundSenderTests.cs NextDelay_IsBetweenHalfAndAllOfTheBackoff",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 13,
+      "text": "Refunded sets the row refunded with a payment.refunded outbox message. A row becomes failed only on Refused, or on any non-Refunded outcome once now - RequestedAt >= GiveUpAfter, with a payment.refund-failed message. Message and row change commit in one transaction.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Payments/RefundSender.cs:44-65, 88-105; RefundSenderTests.cs RecordResult_TryAgainLaterAfter24Hours_GivesUp",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 14,
+      "text": "While a refund is pending the order stays refunding, and Ship() refuses a refunding order.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: DonHang.Domain/Entities.cs (Ship, RequestRefund); refund-design.md step 2",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 15,
+      "text": "The refund requirements ask that, when the gateway fails, a refund is resent automatically for at least 24 hours before staff take over (YC-10), and that an order is never refunded twice (YC-9).",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: docs/team/refund-requirements.md:47-50",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 16,
+      "text": "gateway-down.sh stops fake-gateway, requests a refund of order 10 (202), shows pending | 3 and three 'attempt N failed' log lines, starts the gateway, then shows refunded and one gateway refund {orderId 10, amountVnd 1730000}.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: scripts/backend/gateway-down.sh; outputs/stage-3/scripts/backend/gateway-down.txt",
+      "needs_verification": true,
+      "section": 7
+    },
+    {
+      "n": 17,
+      "text": "The lab sets Refunds__FirstRetryDelay to 2 s and Refunds__MaxRetryDelay to 10 s in docker-compose.yml, so the waits are seconds.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang @ stage-3: docker-compose.yml:372-375",
+      "needs_verification": true,
+      "section": 7
+    },
+    {
+      "n": 18,
+      "text": "Opinion: when a saga step calls an outside service that may act without answering, make every retry the same request (one key per step, not per attempt), and bound the retries so the saga can compensate instead of waiting forever.",
+      "kind": "opinion",
+      "source_hint": "docs/design/refund-design.md steps 4-5; refund-requirements.md YC-9, YC-10",
+      "needs_verification": false,
+      "section": 4
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [1, 2, 3, 4, 5],
+    "outline_items_missing": [],
+    "beyond_scope": []
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1560,
+    "notes": "apply-review: §4 names donhang_payments, fake-gateway as lab stand-in, success path (claim 13), 'any other status' wording, random wait; §5 plain words for the two Polly protections (claim 6), test sentence now BackoffDelay vs NextDelay; §6 requirements doc; §7 'in the script's output'; §9 give-up from request. Cut Connections/answer prose for budget. Quiz q4e rephrased."
+  }
+}

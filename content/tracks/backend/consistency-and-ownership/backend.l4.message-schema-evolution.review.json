@@ -1,0 +1,158 @@
+{
+  "id": "backend.l4.message-schema-evolution",
+  "technical": {
+    "reviewed_at": "2026-10-28T23:59:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "not-needed",
+        "evidence": "Definition of the lesson's vocab term, worded as the outline item 1 and the glossary entry; no behaviour asserted."
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "All three files declare `public sealed record OrderMessage(int OrderId, string CustomerEmail, string CustomerName, DateTimeOffset OccurredAt);` in namespaces DonHang.Domain, DonHang.Notifications, DonHang.Payments. OrderMessageContractTests aliases them as Sent, NotificationsCopy, PaymentsCopy.",
+        "source": "examples/don-hang @ stage-4 (828fdeb): DonHang.Domain/OrderMessage.cs:8, DonHang.Notifications/OrderMessage.cs:6, DonHang.Payments/Messages.cs:6"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "EfOutbox.cs:19 `Body = JsonSerializer.Serialize(message, message.GetType(), JsonSerializerOptions.Web)`. Docs: \"The following options have different defaults for web apps: PropertyNameCaseInsensitive = true; PropertyNamingPolicy = JsonNamingPolicy.CamelCase; NumberHandling = AllowReadingFromString\" and \"In .NET 9 and later versions, you can use the JsonSerializerOptions.Web singleton\".",
+        "source": "refs/dotnet-docs/docs/standard/serialization/system-text-json/configure-options.md lines 38-46; DonHang.Infrastructure/EfOutbox.cs @ stage-4"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "\"By default, if the JSON payload you're deserializing contains properties that don't exist in the plain old CLR object (POCO) type, they're simply ignored.\" The web-defaults list (configure-options.md) names only PropertyNameCaseInsensitive, PropertyNamingPolicy and NumberHandling, not UnmappedMemberHandling. No UnmappedMemberHandling anywhere in examples/don-hang (grep).",
+        "source": "refs/dotnet-docs/.../system-text-json/missing-members.md line 12; configure-options.md lines 40-44"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "\"Prior to .NET 9, constructor-based deserialization treated all constructor parameters as optional\" (example `record Person(string Name, int Age)` from \"{}\" gives `Name = , Age = 0`); \"Starting in .NET 9, you can set the RespectRequiredConstructorParameters flag\"; \"implemented as an opt-in flag in .NET 9\". Not in the web-defaults list; no RespectRequired* in the repo (grep). The repo's own test BothCopies_ReadAnOlderMessageWithoutCustomerName asserts a missing string is null.",
+        "source": "refs/dotnet-docs/.../system-text-json/required-properties.md lines 37-62; nullable-annotations.md line 95"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Round 2 re-read at stage-4: OrderEventsConsumer.cs Read (lines 128-141, identical to the lesson block) and RefundRequestedConsumer.cs:125-127 both deserialise with JsonSerializerOptions.Web and throw PoisonMessageException when message is null, OrderId < 1 or CustomerEmail is null/empty. Payments' queue is bound to donhang.orders with exactly order.refund-requested (Payments/RabbitMqTopology.cs), matching the new §5 clause.",
+        "source": "examples/don-hang @ stage-4: DonHang.Notifications/OrderEventsConsumer.cs, DonHang.Payments/RefundRequestedConsumer.cs, DonHang.Payments/RabbitMqTopology.cs"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Code: catch (PoisonMessageException) -> `BasicRejectAsync(delivery.DeliveryTag, requeue: false)` (lines 77-81); queue args `x-queue-type: quorum`, `x-dead-letter-exchange: notifications.dead-letter`; DLQ bound with #. RabbitMQ docs (WebFetch summary): messages are dead-lettered when rejected \"by an AMQP 0.9.1 consumer using basic.reject or basic.nack with requeue parameter set to false\".",
+        "source": "https://www.rabbitmq.com/docs/dlx; DonHang.Notifications/RabbitMqTopology.cs @ stage-4"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "outputs/stage-4/scripts/backend/message-shapes.txt is identical to the lesson's output block (12 lines: dead before 0, two `routed: true`, handled yes, Mailpit yes, dead after 1, renamed payload, `reason: rejected`). Script lines 18-22 publish with routing_key order.placed to exchanges/%2F/donhang.orders. Script not re-run.",
+        "source": "examples/don-hang @ stage-4: scripts/backend/message-shapes.sh, outputs/stage-4/scripts/backend/message-shapes.txt"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "RabbitMQ DLX page (WebFetch summary): the x-death and x-first-death-reason headers can contain `rejected`, `expired`, `maxlen` or `delivery_limit`; `rejected` means \"the message was rejected\". Script line 56 prints headers[\"x-first-death-reason\"], captured output shows `reason: rejected`.",
+        "source": "https://www.rabbitmq.com/docs/dlx"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "OutboxRelay.ClaimDueAsync selects `WHERE published_at IS NULL ORDER BY created_at` and publishes the stored row body; nothing at startup deletes rows. Queue declared durable, quorum; the only QueuePurgeAsync calls in the repo are in DonHang.Tests. Established by code inspection at the tag; an app deploy does not touch the broker.",
+        "source": "DonHang.Messaging/OutboxRelay.cs lines 37-83; DonHang.Notifications/RabbitMqTopology.cs lines 25-50 @ stage-4"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "notifications.order-events.dead is declared with no arguments (no x-message-ttl, no x-dead-letter-exchange back to the main queue) and no service consumes it (only scripts/tests read it), so nothing in the system redelivers it automatically. RabbitMQ DLX page lists dead-lettering triggers only; it describes no automatic return.",
+        "source": "DonHang.Notifications/RabbitMqTopology.cs lines 32-36 @ stage-4; https://www.rabbitmq.com/docs/dlx"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Round 2, by inspection (dotnet test not run): line 20 `Body = JsonSerializer.Serialize(Message, JsonSerializerOptions.Web)`; lines 25/34 deserialise with each copy and Assert.Equal the 4-tuple. A rename on a copy loses the value (or breaks the test's compile); a retype to an incompatible type makes the tuple types differ. Only the api's current shape is ever sent, so a reader newly requiring a property in Read is not exercised, as the claim now says.",
+        "source": "DonHang.Tests/Messaging/OrderMessageContractTests.cs lines 9-38 @ stage-4"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Code: `QueueBindAsync(Queue, OrdersExchange, \"order.*\")`, exchange Topic. RabbitMQ docs (WebFetch summary): \"For the purpose of routing, the keys are separated into segments by `.`\"; \"`*` for exactly one segment and `#` for zero or more\"; `regions.na.cities.*` matches `regions.na.cities.toronto` but not `regions.na.cities`. Supports the new §7 advice that a two-word key after order. bypasses the binding.",
+        "source": "https://www.rabbitmq.com/docs/exchanges; DonHang.Notifications/RabbitMqTopology.cs:27"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "OrderEventsConsumer.cs:117-126: switch over the six listed keys, `_ => throw new PoisonMessageException($\"unknown routing key {routingKey}\")`; HandleAsync calls SubjectFor before Read. The repo comment above it reads \"One subject per routing key\", matching the §7 gloss \"turns a routing key into an email subject\".",
+        "source": "DonHang.Notifications/OrderEventsConsumer.cs @ stage-4"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "Round 3: row 2 now reads 'rejected as poison, or, when Read accepts them but a later step fails, redelivered up to the queue's delivery limit ... then dead-lettered'; claim text synced. The condition matches the code (Read checks only OrderId and CustomerEmail; non-poison failures are nacked with requeue, x-delivery-limit 5) and claim 19. Misread path by NumberHandling = AllowReadingFromString; row 4 by claim 13. Gloss wording: see minor issue.",
+        "source": "lesson section 6; claims 13, 19; DonHang.Notifications/RabbitMqTopology.cs lines 38-50 @ stage-4; refs/dotnet-docs/.../configure-options.md"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "Follows from claims 4 and 5 (unknown property skipped, missing property left at default) and claims 10-11 (old messages remain). The type-change reasoning holds in the direction that matters: a new reader with a string property cannot read old messages carrying a JSON number (AllowReadingFromString applies to number types reading strings, configure-options.md line 44).",
+        "source": "claims 4, 5, 10, 11; refs/dotnet-docs/.../configure-options.md"
+      },
+      {
+        "n": 17,
+        "verdict": "not-needed",
+        "evidence": "Conditional recommendation (\"the rename only tidies a name and nothing forces it\"), framed in the lesson as a choice, not a fact; no checkable behaviour."
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "Both tests compare a 4-tuple of the copies' properties; a fifth api property is unmapped for each copy and skipped by default (missing-members.md line 12: \"they're simply ignored\"). The third test does not use Body. Established by inspection; `dotnet test` not run in this session.",
+        "source": "DonHang.Tests/Messaging/OrderMessageContractTests.cs lines 17-38 @ stage-4; refs/dotnet-docs/.../missing-members.md"
+      },
+      {
+        "n": 19,
+        "verdict": "verified",
+        "evidence": "Code: NewEmail sets FullName = message.CustomerName; full_name IsRequired(); non-poison exceptions -> BasicNackAsync(requeue: true); x-delivery-limit 5 (repo comment: 'its 6th failed delivery is its last'). Quorum-queues page (WebFetch summary, current docs): 'redelivered more times than the limit ... dead-lettered'; 'Starting with RabbitMQ 4.3, the delivery limit is based on delivery-count rather than acquired-count', nack no longer counted. Holds for pinned 4.1.",
+        "source": "https://www.rabbitmq.com/docs/quorum-queues; OrderEventsConsumer.cs 82-86, 143-153; NotificationsDbContextModelSnapshot.cs 68-71; Notifications/RabbitMqTopology.cs @ stage-4"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "accuracy",
+        "text": "New in round 3 (changed row 2). The gloss defines the delivery limit as the most deliveries of one message. The limit counts returns to the queue, not deliveries: RabbitMQ dead-letters a message 'redelivered more times than the limit', and the repo's own comment on x-delivery-limit 5 says 'its 6th failed delivery is its last'. Off by one against the code the lesson cites.",
+        "quote": "the queue's delivery limit, the most times it delivers one message",
+        "fix": "Replace the gloss with: 'the queue's delivery limit, the most times it returns one message to the queue'."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-28T23:59:30+07:00",
+    "reviewer": "claude-opus-5-5 (junior reader, prompt 05, round 3 targeted re-review)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "length",
+        "text": "New in the changed row 2. The cell now holds a parenthesis with a condition, a gloss nested inside it, and two outcomes, all before 'or misread them'. I had to read it twice to find where the parenthesis ends and which outcome 'or misread them' belongs to.",
+        "quote": "fail on new messages that lack what they need (rejected as poison, or, when `Read` accepts them but a later step fails, redelivered up to the queue's delivery limit, the most times it delivers one message, then dead-lettered) or misread them",
+        "fix": "Move the delivery-limit gloss out of the cell into one sentence just below the table, leaving the cell as 'rejected as poison, or, when Read accepts them but a later step fails, redelivered up to the delivery limit, then dead-lettered'."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

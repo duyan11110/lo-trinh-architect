@@ -1,0 +1,133 @@
+{
+  "id": "backend.l3.trace-ids-in-logs",
+  "technical": {
+    "reviewed_at": "2026-10-15T23:55:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "ASP.NET Core 10.0 logging page: \"The logging libraries implicitly create a scope object with ActivityTrackingOptions. The following fields indicate the options: SpanId, TraceId, ParentId, Baggage, Tags. SpanId, TraceId, ParentId are enabled by default.\" Execution: outputs/stage-3/scripts/devops/json-logs.txt lines 19-25 show a Scopes entry with SpanId, TraceId, ParentId.",
+        "source": "https://learn.microsoft.com/aspnet/core/fundamentals/logging/ (moniker aspnetcore-10.0, log scopes section)"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "ASP.NET Core logging page: \"If a provider supports log scopes, IncludeScopes indicates whether they're enabled.\" Console log formatting page shows Json formatter configured via Logging:Console:FormatterOptions:IncludeScopes. Execution: outputs/stage-3/scripts/devops/json-logs.txt lines 19-35 show \"Scopes\": [ {\"Message\": \"SpanId:..., TraceId:..., ParentId:...\", \"SpanId\": ..., \"TraceId\": ..., \"ParentId\": ...}, ... ].",
+        "source": "https://learn.microsoft.com/aspnet/core/fundamentals/logging/ ; https://learn.microsoft.com/dotnet/core/extensions/console-log-formatter ; don-hang outputs/stage-3/scripts/devops/json-logs.txt"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "docker-compose.yml: api line 194, notifications 326, payments 387, fake-gateway 417 set Logging__Console__FormatterOptions__IncludeScopes: \"true\" next to Logging__Console__FormatterName: \"json\" (180, 322, 383, 413); comment at 191-193: \"Only this setting changed, no log call.\" Read from the submodule working tree (images tagged :stage-3); `git show stage-3:docker-compose.yml` was blocked by the permission system in round 1.",
+        "source": "examples/don-hang docker-compose.yml (working tree)"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "RequestLoggingMiddleware.cs lines 17-22: logger.LogInformation(\"{Method} {Path} responded {StatusCode} in {ElapsedMs}ms\", Method, Path, StatusCode, ElapsedMilliseconds). outputs/stage-3/scripts/devops/json-logs.txt: Category DonHang.Api.Middleware.RequestLoggingMiddleware with Scopes entry SpanId/TraceId/ParentId. Round 2: git ls-tree stage-3 lists DonHang.Api/Middleware/RequestLoggingMiddleware.cs, matching the new gloss.",
+        "source": "examples/don-hang DonHang.Api/Middleware/RequestLoggingMiddleware.cs; outputs/stage-3/scripts/devops/json-logs.txt"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Alloy loki.process: stage.json \"parses incoming log lines ... as JSON and uses JMESPath expressions to extract new values\"; stage.structured_metadata \"can read data from the extracted values map and add them to log entries as structured metadata\"; \"If the value is empty, it's inferred to be the same as the key.\" Execution: logs-for-trace.txt returns lines matched by trace_id=\"...\", so the expression yields the TraceId.",
+        "source": "https://grafana.com/docs/alloy/latest/reference/components/loki/loki.process/ ; don-hang outputs/stage-3/scripts/backend/logs-for-trace.txt"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Claim restated as a fact about the config comment. git show stage-3:deploy/monitoring/alloy/config.alloy line 33: \"// stream for every request. A line with no trace id passes through as it is...\". The lesson (section 5) and quiz q7 now attribute the pass-through to this comment, not to Alloy's documentation. The underlying Alloy behaviour stays undocumented (round 1 fetch), which the lesson no longer asserts.",
+        "source": "examples/don-hang @ stage-3 deploy/monitoring/alloy/config.alloy lines 29-33"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Loki structured metadata page: structured metadata is \"a way to attach metadata to logs without indexing them\"; recommended for \"high cardinality metadata that should not be used as a label and does not exist in the log line\". The page uses trace_id as its example of structured metadata.",
+        "source": "https://grafana.com/docs/loki/latest/get-started/labels/structured-metadata/"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Loki labels page: \"If another unique combination of labels comes in (for example, status_code=\\\"500\\\") another new stream is created.\" \"In Loki, the content of each log line is not indexed.\" \"Imagine now if you set a label for ip. Not only does every request from a user become a unique stream.\" \"High cardinality causes Loki to build a huge index...\"",
+        "source": "https://grafana.com/docs/loki/latest/get-started/labels/"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Log queries page: \"!=: Log line does not contain string\"; \"Label filter expression allows filtering log line using their original and extracted labels.\" Structured metadata page (round 2 fetch): \"You can use labels of structured metadata to filter log line using a label filter expression.\" Example {job=\"example\"} | pod=\"myservice-abc1234-56789\".",
+        "source": "https://grafana.com/docs/loki/latest/query/log_queries/ ; https://grafana.com/docs/loki/latest/get-started/labels/structured-metadata/"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "git show stage-3:scripts/backend/logs-for-trace.sh: line 23 id=$(trace_id \"$traceparent\"); line 30 query=\"{service=~\\\"api|payments|notifications\\\"} | trace_id=\\\"$id\\\" != \\\"Microsoft.EntityFrameworkCore\\\" != \\\"System.Net.Http\\\"\"; lines 25-31 match the lesson block character for character.",
+        "source": "examples/don-hang @ stage-3 scripts/backend/logs-for-trace.sh"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "git show stage-3: line 13 start=$(date +%s)000000000; lines 33-36 curl --get http://loki:3100/loki/api/v1/query_range --data-urlencode \"query=$query\" --data-urlencode \"start=$start\" --data-urlencode limit=100 | jq ... sort_by(.time)[] | \"\\(.service): \\(.line | fromjson | .Message)\". Only a start time is sent, as the revised section 5 now says.",
+        "source": "examples/don-hang @ stage-3 scripts/backend/logs-for-trace.sh"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "outputs/stage-3/scripts/backend/logs-for-trace.txt lines 1-7 equal the lesson's output block: \"-> 202\", the logql> line, then api POST ... responded 202, notifications refund requested email, payments Refund ... done, notifications order refunded email.",
+        "source": "examples/don-hang outputs/stage-3/scripts/backend/logs-for-trace.txt"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "datasources.yml lines 25-32: derivedFields: - name: TraceId, matcherType: label, matcherRegex: trace_id, datasourceUid: tempo, url: \"$${__value.raw}\", urlDisplayLabel: \"Open the trace\"; Tempo data source uid: tempo (line 38). Read from the submodule working tree; git show at the tag was blocked in round 1.",
+        "source": "examples/don-hang deploy/monitoring/grafana/provisioning/datasources/datasources.yml (working tree)"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "Claim now uses round-1 suggested_text. Grafana Loki configure page: \"When the type is Label, the input matches as a regular expression against label keys\"; Internal link: \"Toggle on to define an internal link to a tracing data source.\" Loki structured metadata page (round 2 fetch): \"Structured metadata is extracted automatically for each returned log line and added to the labels returned for the query.\" This closes the round-1 inference gap.",
+        "source": "https://grafana.com/docs/grafana/latest/datasources/loki/configure/ ; https://grafana.com/docs/loki/latest/get-started/labels/structured-metadata/"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "git show stage-3:deploy/monitoring/alloy/config.alloy: discovery.docker via unix:///var/run/docker.sock (3-10); relabel to target_label \"service\" (13-19); loki.source.docker forward_to = [loki.process.trace_ids.receiver] (22-27); loki.process \"trace_ids\" forward_to = [loki.write.loki.receiver] (34-42); loki.write to http://loki:3100/loki/api/v1/push (45-49).",
+        "source": "examples/don-hang @ stage-3 deploy/monitoring/alloy/config.alloy"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "Prometheus data model: \"Every time series is uniquely identified by its metric name and optional key-value pairs called labels.\" \"The change of any label's value, including adding or removing labels, will create a new time series.\" Round 2, zero issues: re-read changed sections 3, 4, 5, 6, 7 and quiz q7; opened Loki structured-metadata page, config.alloy and scripts/backend/trace-refund.sh @ stage-3.",
+        "source": "https://prometheus.io/docs/concepts/data_model/"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-16T00:20:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation, round 2 targeted re-review)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "style",
+        "text": "New in round 2. I had to read this paragraph twice. Section 4 told me trace_id is not a label, and here a derived field 'of type Label' matches 'a label key', with the reason tucked into a parenthesis. 'internal link' and 'target data source' also arrive as Grafana settings I have not seen. I follow it on the second pass, but it is the densest paragraph in the lesson.",
+        "quote": "In Grafana's Loki data source, a derived field of type Label matches a label key of each line (Loki returns structured metadata among a line's labels)",
+        "fix": "Split it: first one sentence 'When Loki returns a line, it lists the line's structured metadata together with its labels, so Grafana can match `trace_id` the same way as a label.', then the derived-field sentence without the parenthesis."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

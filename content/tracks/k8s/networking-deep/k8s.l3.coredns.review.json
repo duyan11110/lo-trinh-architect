@@ -1,0 +1,142 @@
+{
+  "id": "k8s.l3.coredns",
+  "technical": {
+    "reviewed_at": "2026-10-19T23:50:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Capture at stage-3: two lines 'coredns-...-...   registry.k8s.io/coredns/coredns:v1.12.1' for -l k8s-app=kube-dns; 'kubectl scale deployment coredns -n kube-system --replicas=0' -> 'deployment.apps/coredns scaled'. Matches versions.yaml coredns 1.12 (image v1.12.1, node image v1.34.11).",
+        "source": "examples/don-hang outputs/stage-3/scripts/k8s/coredns.txt; content/versions.yaml (coredns)"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Capture: 'kube-dns   ClusterIP   10.96.0.10   <none>        53/UDP,53/TCP,9153/TCP   ...' and 'nameserver 10.96.0.10' from the client Pod.",
+        "source": "examples/don-hang outputs/stage-3/scripts/k8s/coredns.txt"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Port: CoreDNS manual \"This defaults to port 53 (the standard port for DNS).\"; capture kube-dns '53/UDP,53/TCP'. Round 3, UDP gloss: RFC 768 \"to send messages to other programs with a minimum of protocol mechanism\"; \"The protocol is transaction oriented, and delivery and duplicate protection are not guaranteed.\" Same statement is foundation.l1.tcp-vs-udp claim 5, verdict verified (RFC 768).",
+        "source": "https://coredns.io/manual/toc/; https://www.rfc-editor.org/rfc/rfc768.txt; foundation.l1.tcp-vs-udp.review.json claim 5; coredns.txt"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "virtual-ips.md: \"Each instance of kube-proxy watches the Kubernetes control plane for the addition and removal of Service and EndpointSlice objects. For each Service, kube-proxy calls appropriate APIs ... to configure the node to capture traffic to the Service's clusterIP and port, and redirect that traffic to one of the Service's endpoints\". dns-custom-nameservers.md: \"If you are running CoreDNS as a Deployment, it will typically be exposed as a Kubernetes Service with a static IP address.\"",
+        "source": "refs/kubernetes-website docs/reference/networking/virtual-ips.md; docs/tasks/administer-cluster/dns-custom-nameservers.md"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Round 3: unverified half ('cache comes before forward') removed from claim and from s4. Manual, Configuration: \"The ordering of the Plugins in the Corefile does not determine the order of the plugin chain. The order in which the plugins are executed is determined by the ordering in plugin.cfg.\" Plugins: \"That (static) ordering is defined in plugin.cfg.\"",
+        "source": "https://coredns.io/manual/toc/ (Configuration; Plugins)"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "\"you can modify the ConfigMap for the CoreDNS Corefile to change how DNS service discovery behaves\"; default shown as ConfigMap 'name: coredns', 'namespace: kube-system', data key 'Corefile: |'. Capture reads it with jsonpath '{.data.Corefile}'.",
+        "source": "refs/kubernetes-website docs/tasks/administer-cluster/dns-custom-nameservers.md (CoreDNS ConfigMap options); coredns.txt"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Manual: \"That file consists of one or more Server Blocks.\" \"Each Server Block starts with the zones the Server should be authoritative for.\" Root '.': \"a server that is responsible for all zones below the root zone\". \"you can add a plugin by just using its name in a Server Block\"; \"Other plugins with more configuration options have a Plugin Block, which, just as a Server Block, is enclosed in an opening and closing brace\". Lesson makes no claim about chain order (manual: Corefile order does not set it).",
+        "source": "https://coredns.io/manual/toc/ (Configuration: Server Blocks, Plugins)"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Plugin page: \"This plugin implements the Kubernetes DNS-Based Service Discovery Specification\"; \"The kubernetes plugin watches Endpoints via the discovery.EndpointSlices API.\" Page does not name Services explicitly; execution settles it: echo-new (selector app=echo-new, no Pods) still resolves, so the answer comes from the Service object. k8s docs: a normal Service name \"resolves to the cluster IP of the Service.\"",
+        "source": "https://coredns.io/plugins/kubernetes/; refs/kubernetes-website dns-pod-service.md (A/AAAA records); coredns.txt"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Capture: 'getent hosts echo-new.network-lessons.svc.cluster.local' answers right after 'service/echo-new created'. Plugin page: \"CoreDNS will answer SERVFAIL to any request made for a Kubernetes record that has not yet been synchronized\" (answers come from synced API state); cache page: \"disable the success or denial cache for the listed ZONES\" and the Corefile disables both for cluster.local. Deletion half not executed; the text carries the condition 'once CoreDNS sees it deleted'.",
+        "source": "coredns.txt; https://coredns.io/plugins/kubernetes/; https://coredns.io/plugins/cache/"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "k8s docs: \"forward: Any queries that are not within the Kubernetes cluster domain are forwarded to predefined resolvers (/etc/resolv.conf).\" Loop plugin: \"CoreDNS uses this /etc/resolv.conf as a list of upstreams to forward requests to.\"",
+        "source": "refs/kubernetes-website dns-custom-nameservers.md; https://coredns.io/plugins/loop/ (Troubleshooting Loops In Kubernetes Clusters)"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Loop plugin: \"Kubernetes (via kubelet) by default will pass this /etc/resolv.conf file to all Pods using the default dnsPolicy\" ... \"(this includes CoreDNS Pods)\"; \"CoreDNS uses this /etc/resolv.conf as a list of upstreams to forward requests to.\" k8s: Default policy \"inherits the name resolution configuration from the node\"; \"'Default' is not the default DNS policy\". New wording names no setting, so it matches. Deployment dnsPolicy not queried (kubectl not permitted).",
+        "source": "https://coredns.io/plugins/loop/; refs/kubernetes-website dns-pod-service.md (Pod's DNS Policy); dns-custom-nameservers.md"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Round 3, re-fetched: \"cache [TTL] [ZONES...]\"; \"Each element in the cache is cached according to its TTL (with TTL as the max).\"; \"disable the success or denial cache for the listed ZONES.\" Lesson s4 now says a repeated outside name 'can be answered without asking the node's DNS servers again' - no longer rests on chain order. Captured Corefile served by CoreDNS 1.12.1 Pods.",
+        "source": "https://coredns.io/plugins/cache/; coredns.txt"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "\"health: Health of CoreDNS is reported to http://localhost:8080/health.\" \"prometheus: Metrics of CoreDNS are available at http://localhost:9153/metrics in the Prometheus format\". Capture shows 'prometheus :9153' and kube-dns port 9153/TCP.",
+        "source": "refs/kubernetes-website docs/tasks/administer-cluster/dns-custom-nameservers.md; coredns.txt"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "coredns.sh@stage-3 line 4 'set -euo pipefail' (a failing command exits the shell); lines 11-15 restore() runs 'kubectl scale deployment coredns -n kube-system --replicas=2', 'trap restore EXIT'; line 44 sets pod_ip from jsonpath .items[0].status.podIP before the scale on line 45. network-lessons.sh line 5 defines show(): echo the command after '$', then run it. 'even after an error' matches set -e plus the EXIT trap.",
+        "source": "examples/don-hang@stage-3 scripts/lib/network-lessons.sh; scripts/k8s/coredns.sh"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "Execution: 'getent hosts echo-new.network-lessons.svc.cluster.local' prints '...   echo-new.network-lessons.svc.cluster.local ...' (address, then name); 'getent hosts echo-ip' fails once CoreDNS is gone, so the lookup went through the Pod's DNS settings. wget output 'echo-ip-...-... saw ...' is the response body. No getent/wget man page among the docs roots; evidence is execution only.",
+        "source": "examples/don-hang outputs/stage-3/scripts/k8s/coredns.txt"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "Capture: 'command terminated with exit code 2' / '(no answer: exit 2)' after the scale to 0; wget to the Pod IP prints 'echo-ip-...-... saw ...'. echo-ip.yaml@stage-3: Caddyfile ':8080 {' with 'respond \"{system.hostname} saw {remote_host}'.",
+        "source": "coredns.txt; examples/don-hang@stage-3 deploy/k8s/lessons/echo-ip.yaml"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "dns-pod-service.md: \"ClusterFirst: Any DNS query that does not match the configured cluster domain suffix, such as www.kubernetes.io, is forwarded to an upstream nameserver by the DNS server.\" dns-debugging: \"Kubernetes installs do not configure the nodes' resolv.conf files to use the cluster DNS by default\". Capture: client's only nameserver is 10.96.0.10.",
+        "source": "refs/kubernetes-website dns-pod-service.md (Pod's DNS Policy); dns-debugging-resolution.md (Known issues); coredns.txt"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "Claim now equals the round-1 suggested_text. Capture: getent hosts echo-ip exits 2 at 0 replicas while wget to the Pod IP answers. dns-pod-service.md: \"If dnsPolicy is not explicitly specified, then 'ClusterFirst' is used\"; ClusterFirst queries go to the cluster DNS server. Section 6 and summary item 5 now carry the 'default DNS settings' condition.",
+        "source": "refs/kubernetes-website dns-pod-service.md (Pod's DNS Policy); coredns.txt"
+      },
+      {
+        "n": 19,
+        "verdict": "verified",
+        "evidence": "\"Headless Services (without a cluster IP) are also assigned DNS A and/or AAAA records ... Unlike normal Services, this resolves to the set of IPs of all of the Pods selected by the Service.\" Note: \"the Pod needs to be ready in order to have a record unless publishNotReadyAddresses=True is set on the Service.\" Round 3 (targeted: s4, s5 trap/UDP lines, q6) opened: coredns.io manual/toc, plugins/cache, rfc768.txt, foundation.l1.tcp-vs-udp review.",
+        "source": "refs/kubernetes-website docs/concepts/services-networking/dns-pod-service.md; round 3: coredns.io manual/toc, plugins/cache, rfc768.txt"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-20T00:10:00+07:00",
+    "reviewer": "claude-opus-5-5 (review-junior, prompt 05, round 3 targeted re-review: s4 plugin-order and cache sentences, s5 trap sentence, quiz q6)",
+    "issues": [],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

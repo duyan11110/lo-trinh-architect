@@ -1,0 +1,197 @@
+{
+  "id": "k8s.l2.tls-at-the-gateway",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-10-14T23:40:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "With tls.mode Terminate the client's TLS session ends at the Gateway (certificateRefs needs at least one entry); re-encrypting toward backends is a separate setting, none configured here, so the request reaches the Service as plain HTTP.",
+      "kind": "behavior",
+      "version_key": "gateway_api",
+      "source_hint": "gateway-api.sigs.k8s.io API reference: ListenerTLSConfig.mode, certificateRefs; Guides > TLS (backend TLS is BackendTLSPolicy)",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 2,
+      "text": "A certificateRefs entry without a namespace refers to a Secret in the same namespace as the Gateway.",
+      "kind": "syntax",
+      "version_key": "gateway_api",
+      "source_hint": "gateway-api.sigs.k8s.io API reference: SecretObjectReference.namespace ('When unspecified, the local namespace is inferred')",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 3,
+      "text": "A Secret of type kubernetes.io/tls must contain the keys tls.crt and tls.key; kubectl create secret tls builds one from --cert and --key files, and with --dry-run=client it builds the object without sending it to the cluster.",
+      "kind": "syntax",
+      "version_key": "kubernetes",
+      "source_hint": "kubernetes.io: Concepts > Configuration > Secrets > TLS Secrets; refs/kubernetes-website content/en/docs/concepts/configuration/secret.md L364-399; kubectl reference: --dry-run=client",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 4,
+      "text": "gateway.yaml @stage-3: L1-5 the staging node publishes Traefik's 8000/8443 on this machine as localhost:18080/18443; L21-27 listener https 8443 HTTPS, Terminate, certificateRefs donhang-tls; L29-51 HTTPRoute redirect-to-https on sectionName http, scheme https, port 18443, 301.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang deploy/gitops/config-repo/platform/edge/gateway.yaml @stage-3; deploy/tofu/envs/staging/cluster/main.tf (published_ports)",
+      "needs_verification": false,
+      "section": 4
+    },
+    {
+      "n": 5,
+      "text": "seal-secrets.sh L44-54 @stage-3 builds Secret donhang-tls with kubectl create secret tls (--cert secrets/donhang-tls.crt, --key secrets/donhang-tls.key, --dry-run=client) and seals it with kubeseal into platform/edge/sealed-donhang-tls.yaml.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang scripts/devops/seal-secrets.sh @stage-3 L44-54",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 6,
+      "text": "A SealedSecret lists each data key of the original Secret (here tls.crt and tls.key) under spec.encryptedData as ciphertext; the Sealed Secrets controller creates the Secret of the same name from it.",
+      "kind": "behavior",
+      "version_key": "sealed_secrets",
+      "source_hint": "github.com/bitnami-labs/sealed-secrets README: Overview / SealedSecrets as templates for secrets (encryptedData)",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 7,
+      "text": "In TLS the server sends its certificate to the client; holding the matching private key is what lets a server present that certificate for its names.",
+      "kind": "behavior",
+      "source_hint": "RFC 8446 §4.4.2 Certificate, §4.4.3 CertificateVerify; foundation.l1.tls-and-https",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 8,
+      "text": "dev-secrets.sh @stage-3 L71-84 creates a lab CA (secrets/lab-ca.crt + key) and signs secrets/donhang-tls.crt for DNS:donhang.localhost and DNS:auth.donhang.localhost for 825 days, only if secrets/donhang-tls.key does not exist.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang scripts/dev-secrets.sh @stage-3 L71-84; outputs/stage-3/scripts/k8s/gateway-tls.txt L1-5",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 9,
+      "text": "curl --cacert <file> verifies the server with that CA file; without a trusted signer curl fails with error 60. curl on Windows built with Schannel also needs --ssl-no-revoke for the lab CA, which gateway-tls.sh adds (L9-14).",
+      "kind": "behavior",
+      "source_hint": "curl man page: --cacert; libcurl-errors: CURLE_PEER_FAILED_VERIFICATION (60); outputs/stage-3/scripts/k8s/gateway-tls.txt L21-23; scripts/k8s/gateway-tls.sh @stage-3 L9-14",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 10,
+      "text": "A RequestRedirect filter answers with a redirect instead of forwarding; with hostname and path unset the Location keeps the request's host and path. A 3xx response's Location names where to send the request instead; 301 means the move is permanent.",
+      "kind": "syntax",
+      "version_key": "gateway_api",
+      "source_hint": "gateway-api.sigs.k8s.io API reference: HTTPRequestRedirectFilter (scheme, hostname, path, port, statusCode); RFC 9110 s10.2.2 Location, s15.4 Redirection 3xx, s15.4.2 301 Moved Permanently",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 11,
+      "text": "gateway-tls.sh output @stage-3: http 1 route, https 2 routes, Programmed=True; plain HTTP gets 301 to the same path on https://donhang.localhost:18443; error 60 without --cacert, 200 with; iss is the HTTPS address; /orders/1 401 without token, 200 with.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang outputs/stage-3/scripts/k8s/gateway-tls.txt",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 12,
+      "text": "Keycloak's issuer (iss) is its frontend URL, set by the hostname option KC_HOSTNAME, followed by /realms/<realm>.",
+      "kind": "behavior",
+      "version_key": "keycloak",
+      "source_hint": "keycloak.org: Server > Configuring the hostname (v2) — hostname option sets the frontend URL used in tokens; outputs/stage-3/scripts/k8s/gateway-tls.txt L26",
+      "needs_verification": true,
+      "section": 3
+    },
+    {
+      "n": 13,
+      "text": "gateway-tls.sh @stage-3: L32 copies httproutes.yaml via routes_without_refunds (drops the /api/v1/refunds rule, Service not on staging yet); L33 rewrites Keycloak's address in keycloak.yaml (KC_HOSTNAME) and api-configmap.yaml (Keycloak__Authority); L36 commits all, incl. the SealedSecret.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang scripts/k8s/gateway-tls.sh @stage-3 L23, L26-36; scripts/lib/gitops.sh routes_without_refunds L147-153, config_commit L56-63",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 14,
+      "text": "The api checks each token's iss. Keycloak__Authority names Keycloak by the same public address that ends up in iss, so the script moves it to the HTTPS address with KC_HOSTNAME, keeping the api's settings in step with the tokens.",
+      "kind": "behavior",
+      "version_key": "aspnetcore",
+      "source_hint": "aspnetcore configure-jwt-bearer-authentication.md (validates issuer); JwtBearerOptions.Authority; DonHang.Api/Program.cs @stage-3 L52-73; backend.l2.validating-provider-tokens",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 15,
+      "text": "The api reads its ConfigMap (as environment variables) only when its container starts, so gateway-tls.sh deletes the api's Pods after the commit (L42-46).",
+      "kind": "behavior",
+      "version_key": "kubernetes",
+      "source_hint": "kubernetes.io: Concepts > Configuration > ConfigMaps ('ConfigMaps consumed as environment variables are not updated automatically'); gateway-tls.sh @stage-3 L42-46",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 16,
+      "text": "A client accepts a server certificate only if an authority it trusts signed it and now is inside its two dates, so an expired certificate is refused even with its signer trusted; nothing in staging renews donhang-tls.",
+      "kind": "behavior",
+      "source_hint": "foundation.l1.tls-and-https meta claim 9 (name, signer, dates); RFC 8446 s6.2 certificate_expired, unknown_ca; dev-secrets.sh L71-75 comment ('Nothing renews it')",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 17,
+      "text": "Staging's api Deployment (envs/staging/api.yaml @stage-3) mounts no volume and exposes containerPort 8080; the HTTPRoute api forwards to port 8080 of Service api.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang deploy/gitops/config-repo/envs/staging/api.yaml, platform/edge/httproutes.yaml @stage-3",
+      "needs_verification": false,
+      "section": 6
+    },
+    {
+      "n": 18,
+      "text": "openssl x509 -noout -issuer -dates prints the certificate's issuer and its notBefore= and notAfter= dates.",
+      "kind": "syntax",
+      "source_hint": "scripts/network/inspect-cert.sh @stage-3 (-subject -issuer -dates); outputs/stage-3/scripts/network/inspect-cert.txt (issuer=, notBefore=, notAfter=); openssl-x509(1)",
+      "needs_verification": true,
+      "section": 7
+    },
+    {
+      "n": 19,
+      "text": "A cluster can instead let a controller issue certificates and renew them before they expire (taught in k8s.l3.cert-manager).",
+      "kind": "opinion",
+      "source_hint": "cert-manager docs: overview ('renews the certificates before they expire'); k8s.l3.cert-manager outline",
+      "needs_verification": false,
+      "section": 5
+    },
+    {
+      "n": 20,
+      "text": "In an HTTPRoute's parentRefs, sectionName names one listener of the Gateway the route attaches to; at stage-3 the routes api and keycloak use sectionName https.",
+      "kind": "syntax",
+      "version_key": "gateway_api",
+      "source_hint": "gateway-api.sigs.k8s.io API reference: ParentReference.sectionName ('Gateway: Listener name'); k8s.l2.gateway-api claim (verified); httproutes.yaml @stage-3",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 21,
+      "text": "At stage-3 the api's ConfigMap sets Keycloak__MetadataAddress to http://keycloak:8080/realms/donhang/.well-known/openid-configuration, and Program.cs uses it as JwtBearer's MetadataAddress, so metadata and keys come from inside the cluster.",
+      "kind": "fact",
+      "source_hint": "examples/don-hang deploy/gitops/config-repo/envs/staging/api-configmap.yaml; DonHang.Api/Program.cs @stage-3 L58-73",
+      "needs_verification": false,
+      "section": 5
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [1, 2, 3, 4, 5, 6],
+    "outline_items_missing": [],
+    "beyond_scope": []
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1477,
+    "notes": "apply-review: -enddate→-dates (inspect-cert.sh); Authority/iss, Terminate, cert-manager theo suggested_text; thêm câu CA tin cậy, port 18080/18443, sectionName, redirect/301, --dry-run, routes_without_refunds, MetadataAddress, Schannel; đoạn http lên trước, mũi tên Secret lên đầu sơ đồ; claim 16 dựa bài foundation; quiz q3b 'ciphertext' đổi theo. Quiz q5 (major) để /quiz apply-review."
+  }
+}

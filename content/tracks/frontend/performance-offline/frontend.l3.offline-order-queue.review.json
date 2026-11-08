@@ -1,0 +1,143 @@
+{
+  "id": "frontend.l3.offline-order-queue",
+  "technical": {
+    "reviewed_at": "2026-10-20T21:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "stage-2 create_order_screen.dart _submit: `} on ApiProblem catch (problem) { ... _serverError = problem.detail); } on Exception { ... AppLocalizations.of(context).orderFailed); }`; stage-2 api_client.dart createOrder posts with `headers: _headers` only (no Idempotency-Key); app_en.arb@stage-2 line 37 `\"orderFailed\": \"The order could not be sent. Check your connection and try again.\"`.",
+        "source": "examples/don-hang@stage-2 DonHang.App/lib/screens/create_order_screen.dart, lib/api_client.dart:58-68, lib/l10n/app_en.arb:37"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "OrderService.PlaceOrderAsync@stage-3: the earlier-order lookup runs only `if (idempotencyKey is not null)`; otherwise it builds `new Order(customerId, items, ...) { IdempotencyKey = idempotencyKey }` and `await repository.AddAsync(order)`. A resend without a key (or with a different key) therefore inserts another order.",
+        "source": "examples/don-hang@stage-3 DonHang.Domain/OrderService.cs:17-41"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "order_queue.dart@stage-3: `class QueuedOrder { final String idempotencyKey; final String subject; final String description; final List<OrderItemRequest> items; final QueuedOrderStatus status; ...` constructor `this.status = QueuedOrderStatus.waiting`; comment: \"`subject` is the `sub` of the customer who placed it.\" Round 2: the added gloss of `sub` as the token field naming the signed-in customer matches `_queue` reading it via `tokenSubject(token)`.",
+        "source": "examples/don-hang@stage-3 DonHang.App/lib/offline/order_queue.dart:11-35; lib/screens/create_order_screen.dart:86-90"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "order_queue.dart@stage-3: `class OrderQueue extends Notifier<List<QueuedOrder>>`, `static const String storageKey = 'donhang.order_queue';`, `void add(QueuedOrder order) => _save([...state, order]);` (appends: oldest first), `void _save(...) { ref.read(localStoreProvider).write(storageKey, jsonEncode(...)); state = orders; }`. local_store.dart: \"In the browser it is localStorage\".",
+        "source": "examples/don-hang@stage-3 DonHang.App/lib/offline/order_queue.dart:77-115; lib/offline/local_store.dart:5-9"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "api_client.dart@stage-3 65-79: `headers: {..._headers, 'Idempotency-Key': idempotencyKey}`, `} on http.ClientException { throw ApiUnreachable(); }`, `if (const [502, 503, 504].contains(response.statusCode)) throw ApiUnreachable();` then `if (response.statusCode != 201) throw ApiProblem.fromResponse(response);`. Lesson block matches the tag character for character.",
+        "source": "examples/don-hang@stage-3 DonHang.App/lib/api_client.dart:65-79"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Ledger text now equals round-1 suggested_text. http 1.6.0 source (pub cache): exception.dart \"An exception caused by an error in a pkg/http client.\"; io_client.dart `on SocketException catch (error) { throw _ClientSocketException(error, request.url); }`; browser_client.dart: BrowserClient \"backed by window.fetch\", `catch (e, st) { _rethrowAsClientException(e, st, request); }`. Lesson sentence \"`http.ClientException` is how the `http` package reports a request that got no response\" holds.",
+        "source": "Pub cache hosted/pub.dev/http-1.6.0/lib/src/exception.dart:5, io_client.dart:226-229, browser_client.dart:42-43,128-129"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "api_client.dart@stage-3 9-12: \"Caddy proxies /api/v1/* to DonHang.Api ... it always goes through Caddy on :8080\", `baseUrl = 'http://localhost:8080/api/v1'`; 62-64, the comment above createOrder: \"a 502, 503 or 504, which only says the proxy in front of the API could not reach it.\" §5 now says exactly that. Caddyfile@stage-3: `handle /api/v1/* { reverse_proxy api:8080 }`.",
+        "source": "examples/don-hang@stage-3 DonHang.App/lib/api_client.dart:9-12,61-64; Caddyfile"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "create_order_screen.dart@stage-3: `final idempotencyKey = newIdempotencyKey();` before `createOrder(items, idempotencyKey: idempotencyKey);`, `on ApiUnreachable { _queue(...) } on ApiProblem catch (problem) {...} on Exception {...}`. Flutter API State.mounted: \"Whether this State object is currently in a tree.\" \"The State object remains mounted until the framework calls dispose\". Supports §5 \"`mounted` turns false once the screen has left the widget tree\".",
+        "source": "examples/don-hang@stage-3 DonHang.App/lib/screens/create_order_screen.dart:58-80; https://api.flutter.dev/flutter/widgets/State/mounted.html"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "create_order_screen.dart@stage-3 86-101: `final subject = token == null ? null : tokenSubject(token); if (!mounted) return; if (subject == null) { setState(() => _serverError = AppLocalizations.of(context).orderFailed); return; }` then `ref.read(orderQueueProvider.notifier).add(QueuedOrder(...))` and `context.go('/orders/queued')`. §5 now includes the no-sub branch.",
+        "source": "examples/don-hang@stage-3 DonHang.App/lib/screens/create_order_screen.dart:86-101"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "queue_sync.dart@stage-3 _send: comment \"Sends one order with the key it got when it was first sent.\"; `await ref.read(apiClientProvider).createOrder(order.items, idempotencyKey: order.idempotencyKey);`.",
+        "source": "examples/don-hang@stage-3 DonHang.App/lib/offline/queue_sync.dart:~66-72"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "OrderService@stage-3: `var earlier = await repository.FindByIdempotencyKeyAsync(idempotencyKey); if (earlier is not null && earlier.CustomerId != customerId) throw new ArgumentException(...); if (earlier is not null) return (earlier, Created: false);`. OrdersController.Create: \"a retry that repeats an Idempotency-Key gets the earlier order back and adds nothing\"; returns `CreatedAtAction(..., ToDto(order))` (201) either way.",
+        "source": "examples/don-hang@stage-3 DonHang.Domain/OrderService.cs:20-26; DonHang.Api/Controllers/OrdersController.cs:27-57"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "queued_orders_screen.dart@stage-3: `orders = [for (final order in ref.watch(orderQueueProvider)) if (order.subject == subject) order]`; `QueuedOrderStatus.waiting => StatusBanner(message: l10n.queuedWaiting(order.description) ...)`. arb: `\"queuedOrdersTitle\": \"Waiting orders\"`, `\"queuedWaiting\": \"Waiting to be sent: {description}\"`. §5 now says \"a waiting one shows `Waiting to be sent:`\".",
+        "source": "examples/don-hang@stage-3 DonHang.App/lib/screens/queued_orders_screen.dart:27,78-94; lib/l10n/app_en.arb:55-60"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "models.dart@stage-3 `class OrderResult { final int id; ...}` read by `OrderResult.fromJson(jsonDecode(response.body) ...)` after the 201 check (api_client.dart:78); QueuedOrder has no id field, only `final OrderResult? result;`, set by `markSent(order, result)`.",
+        "source": "examples/don-hang@stage-3 DonHang.App/lib/models.dart; lib/offline/order_queue.dart:18-35,92; lib/api_client.dart:78"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "Round 1 run at stage-3 (Flutter 3.47.2, http 1.6.0): `00:00 +7: All tests passed!`; with `const [502, 504]`: `a 503 from the proxy means no answer [E]`, `00:00 +6 -1: Some tests failed.` Round 2: the new §7 list \"a `201`, each proxy status, no response, a `400` and a `429`\" matches the seven tests in api_client_test.dart (201 with key; 502/503/504 loop; ClientException; 400; 429).",
+        "source": "flutter test test/api_client_test.dart (scratch copy of examples/don-hang@stage-3 DonHang.App), 2026-10-20; DonHang.App/test/api_client_test.dart:20-60"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "Ledger now matches the code and drops the 409-as-refusal reading. ArgumentException → `WriteProblemAsync(context, StatusCodes.Status400BadRequest, \"Invalid request\", ex.Message)`; unhandled → `StatusCodes.Status500InternalServerError, \"Server error\"` from DonHang.Api's own middleware, so \"a 500 also comes from DonHang.Api itself\" holds; api_client.dart turns every non-201 status outside [502, 503, 504] into ApiProblem. Round 2 inspected the working tree (git show not permitted this session).",
+        "source": "examples/don-hang DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs:27-64; DonHang.App/lib/api_client.dart:104-105"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "order_queue.dart@stage-3 73-76 comment: \"The queue, oldest first, as an outbox on the device: every change is written to localStorage before anything else happens, so a page reload cannot lose an order the customer has placed.\"; `_save` writes the store before `state = orders`. Round 2 opened: api.flutter.dev State.mounted; examples/don-hang test/api_client_test.dart, ExceptionHandlingMiddleware.cs, Program.cs (only 429 set by the API's rate limiter, no 503 on orders).",
+        "source": "examples/don-hang@stage-3 DonHang.App/lib/offline/order_queue.dart:73-112"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-20T22:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (prompt 05, junior reader, round 2 targeted re-review)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 6,
+        "kind": "gap",
+        "text": "New in round 2. Now that 409 is no longer called a refusal, nothing in this lesson (or the prereq summaries) says what a 409 is. It is named next to 400 in the diagram, this bullet, summary line 3 and quiz q2/q5. I can follow the rule ('any status the API sends'), but I stop to wonder why 409 is singled out.",
+        "quote": "A `400` or `409` is the API's answer, shown in the form;",
+        "fix": "Either drop `409` here and in summary line 3, or add a short clause the first time it appears saying what DonHang.Api means by it (e.g. 'a `409`, which DonHang.Api sends when ...')."
+      },
+      {
+        "severity": "minor",
+        "section": 7,
+        "kind": "example",
+        "text": "New in round 2. The added sentence lists 'a `429`' among the fake responses, but the lesson never says what a 429 is. Not needed to do the steps, but I stopped on it.",
+        "quote": "a `201`, each proxy status, no response, a `400` and a `429`.",
+        "fix": "Add a short gloss, e.g. 'a `429` (the API's rate limiter refusing too many requests)', or describe it as 'another status the API sends itself'."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [
+        "§6 and summary: why `409` is named next to `400` — its meaning is never given"
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

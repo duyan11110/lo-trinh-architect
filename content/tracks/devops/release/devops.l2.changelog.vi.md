@@ -15,8 +15,8 @@ vocab: [changelog]
 example_tag: stage-2
 versions_used: [semver, keep_a_changelog]
 content_version: 1
-status: approved
-approved_by: auto
+status: published
+approved_by: owner
 reviewed_at: "2026-10-03T07:50:40+07:00"
 ---
 

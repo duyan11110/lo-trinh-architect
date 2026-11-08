@@ -13,7 +13,12 @@ Write the quiz for lesson `{{id}}` (stage {{stage}}): 5–7 questions in both En
 
 **Mode:** {{mode}}
 {{#if fix-validation}}Errors to fix, changing nothing else: {{validation_errors}}{{/if}}
-{{#if apply-review}}Review items of kind `quiz` to apply: {{review_quiz_items}}{{/if}}
+{{#if apply-review}}Review items of kind `quiz` to apply: {{review_quiz_items}}
+A fix must not create the next round's issue (2026-10-07): (1) re-read the current lesson and align every option and
+explanation with its present wording, not with a version the review already rejected; (2) a rewritten wrong option must
+still be clearly wrong *from the lesson's text*, and the right one clearly right — if two options can be argued from the
+text, change the stem or an option, not only the explanation; (3) explanations use only `known_vocab` and the lesson's
+own terms; (4) do not reintroduce wording an earlier review removed.{{/if}}
 
 ### Inputs
 

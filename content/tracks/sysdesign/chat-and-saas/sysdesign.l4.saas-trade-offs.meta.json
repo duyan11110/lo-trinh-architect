@@ -1,0 +1,182 @@
+{
+  "id": "sysdesign.l4.saas-trade-offs",
+  "generated_by": "claude-opus-5-5",
+  "generated_at": "2026-11-04T10:00:00+07:00",
+  "claims": [
+    {
+      "n": 1,
+      "text": "Most of a shop's cost is shared (nodes, database server, fixed platform per cluster); cost per shop = the month's shared cost times the shop's measured share; each way of splitting is an estimate.",
+      "kind": "fact",
+      "source_hint": "docs/design/cost-per-shop.md @ stage-4 lines 8-18",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 2,
+      "text": "The fixed cost per cluster is split evenly across shops because it does not grow with use.",
+      "kind": "fact",
+      "source_hint": "docs/design/cost-per-shop.md @ stage-4 lines 17-18",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 3,
+      "text": "Usage metering in cost-per-shop.md is a model at stage-4, not code: requests per shop (counter ADR 0016 decides on) for api nodes; orders and rows by shop_id daily for database and backups; chat connections per shop (Support, ADR 0032's support-chat service) when it exists.",
+      "kind": "fact",
+      "source_hint": "docs/design/cost-per-shop.md @ stage-4 lines 3, 20-28; ADR 0016 lines 40-52; ADR 0032 title",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 4,
+      "text": "A shop with its own database under ADR 0026 carries that database's whole cost plus its share of the rest.",
+      "kind": "fact",
+      "source_hint": "docs/design/cost-per-shop.md @ stage-4 lines 30-31",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 5,
+      "text": "Each value of a label adds time series: a shop label on a counter adds about one series per shop per combination of the other labels; on a classic histogram, per shop, one series for every bucket plus its _sum and _count series.",
+      "kind": "behavior",
+      "source_hint": "Prometheus docs, Concepts > Data model (series = metric name + label set); Metric types > Histogram (_bucket per le, _sum, _count); cost-per-shop.md lines 33-39",
+      "version_key": "prometheus",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 6,
+      "text": "Per-shop detail stays on counters, as ADR 0016 decided; the response-time histogram has no shop label.",
+      "kind": "fact",
+      "source_hint": "docs/design/cost-per-shop.md @ stage-4 lines 37-39",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 7,
+      "text": "A trace that starts in the api is kept with probability Telemetry:SampleRatio, 0.1 unless configured; a parent-based sampler makes a span with a parent follow its parent's decision, so a trace is kept or dropped whole.",
+      "kind": "behavior",
+      "source_hint": "DonHang.Api/Program.cs @ stage-4 lines 101-110; OpenTelemetry .NET docs, ParentBasedSampler and TraceIdRatioBasedSampler",
+      "version_key": "opentelemetry_dotnet",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 8,
+      "text": "SLIs S1-S4 come from metrics that count every request, so they do not depend on the trace sampling ratio.",
+      "kind": "fact",
+      "source_hint": "docs/design/cost-per-shop.md @ stage-4 lines 51-52; backend.l3.trace-sampling (request metrics from prometheus-net)",
+      "needs_verification": true,
+      "section": 4
+    },
+    {
+      "n": 9,
+      "text": "Compose sets Telemetry__SampleRatio to 1.0, so the lab keeps every trace; the lab's Tempo keeps traces 24 hours (block_retention: 24h in deploy/monitoring/tempo.yml).",
+      "kind": "fact",
+      "source_hint": "docs/design/cost-per-shop.md @ stage-4 lines 46, 49-50; deploy/monitoring/tempo.yml @ stage-4 (compactor.compaction.block_retention); docker-compose.yml",
+      "version_key": "tempo",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 10,
+      "text": "The api's ConfigMap in staging and production sets OTEL_SDK_DISABLED: \"true\", so those environments keep no traces yet.",
+      "kind": "fact",
+      "source_hint": "docs/design/cost-per-shop.md @ stage-4 lines 47-48; api ConfigMap under deploy/gitops at stage-4",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 11,
+      "text": "S1 (order placed without 5xx, SLO 99.5% over 28 days; assumed 50,000/day, ~1.4M in 28 days) allows ~7,000 bad requests; a quarter (slo.md's postmortem threshold) is ~1,750; at 0.1 ~175 error traces kept.",
+      "kind": "number",
+      "source_hint": "docs/design/cost-per-shop.md @ stage-4 lines 58-61; docs/design/slo.md lines 24, 64, 95",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 12,
+      "text": "S4 (refund request answered within 2 seconds, SLO 99%; assumed ~14,000 in 28 days) allows ~140 bad requests; a quarter is ~35; at 0.1 ~3 traces remain; the doc accepts it because each request's log is still there.",
+      "kind": "number",
+      "source_hint": "docs/design/cost-per-shop.md @ stage-4 lines 62-64; docs/design/slo.md lines 27, 67",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 13,
+      "text": "Production keeps 0.1, the code's default, with no code change; keeping traces by outcome (waiting for the whole trace, then keeping every failing one) is named only as an option in words, not built.",
+      "kind": "fact",
+      "source_hint": "docs/design/cost-per-shop.md @ stage-4 lines 66-68",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 14,
+      "text": "Retention: traces and logs 7 days in production (assumed), since 24 h is too short (Friday incident, Monday investigation); metrics at least 28 days is the doc's target: staging Prometheus keeps 2d (no volume), production has no Prometheus.",
+      "kind": "fact",
+      "source_hint": "docs/design/cost-per-shop.md @ stage-4 lines 70-76; deploy/gitops/config-repo/platform/monitoring/prometheus.yaml lines 1-5, 109",
+      "needs_verification": true,
+      "section": 5
+    },
+    {
+      "n": 15,
+      "text": "Trade-off point: finer metering and more traces give fairer plan prices and faster diagnosis, but every series and span costs storage, itself a shared cost; the driver is knowing each plan's cost per shop well enough to set prices, no more.",
+      "kind": "fact",
+      "source_hint": "docs/design/cost-per-shop.md @ stage-4 lines 78-85",
+      "needs_verification": true,
+      "section": 6
+    },
+    {
+      "n": 16,
+      "text": "Keeping every trace is right in the lab: a learner wants to see each request, and its traffic and 24 hours of storage are small.",
+      "kind": "opinion",
+      "source_hint": "cost-per-shop.md line 46 (lab keeps every trace), tempo.yml comment (enough for one lab)",
+      "needs_verification": false,
+      "section": 6
+    },
+    {
+      "n": 17,
+      "text": "If a higher plan promised per-shop response-time figures, the team would weigh the histogram's per-shop, per-bucket series as a new trade-off point before adding the label.",
+      "kind": "opinion",
+      "source_hint": "cost-per-shop.md lines 33-39, 84-85",
+      "needs_verification": false,
+      "section": 7
+    },
+    {
+      "n": 18,
+      "text": "A ratio-based sampler keeps traces regardless of outcome, so raising the ratio keeps more of every trace, failing or not, and storage grows with all traffic.",
+      "kind": "behavior",
+      "source_hint": "OpenTelemetry .NET docs, TraceIdRatioBasedSampler (decision from trace id only); OpenTelemetry spec, Sampling",
+      "version_key": "opentelemetry_dotnet",
+      "needs_verification": true,
+      "section": 7
+    },
+    {
+      "n": 19,
+      "text": "Try it: with 1,000 shops and an assumed 10-bucket histogram, a shop label adds ~1,000 counter series and ~10,000 bucket series; at ratio 0.05 a quarter-budget burn on S1 leaves ~88 traces, S4 ~2.",
+      "kind": "number",
+      "source_hint": "Arithmetic on cost-per-shop.md lines 35-39, 58-64; 10 buckets is the lesson's assumption",
+      "needs_verification": true,
+      "section": 9
+    }
+  ],
+  "coverage": {
+    "outline_items_covered": [1, 2, 3, 4, 5, 6],
+    "outline_items_missing": [],
+    "beyond_scope": [
+      "A shop with its own database (ADR 0026) carries its whole cost, from the quoted excerpt.",
+      "Lab vs production retention reason (Friday incident, Monday investigation), from the excerpt.",
+      "Keeping traces by outcome mentioned only as the doc's option in words; not taught (depth_notes)."
+    ]
+  },
+  "self_check": {
+    "one_concept": true,
+    "vocab_all_defined": true,
+    "code_from_repo": true,
+    "no_external_urls": true,
+    "word_count": 1900,
+    "notes": "apply-review: metering is a model, not code (s4, claim 3); 28-day metrics a target, staging 2d (s5, s6, claim 14); s8 'error budget panel' -> S1 query; _sum/_count (s4, summary); S1/S4 defined (claims 11-12); Support, driver, outcome sampling, design doc named; s5 paragraph split; table header renamed. Quiz q3 and q4 d updated to match. Cut s4/s5 prose to stay in budget."
+  },
+  "open_questions": [],
+  "repo_changes_needed": []
+}

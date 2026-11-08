@@ -1,0 +1,224 @@
+{
+  "lesson": "backend.l3.trace-ids-in-logs",
+  "stage": 3,
+  "questions": [
+    {
+      "id": "backend.l3.trace-ids-in-logs.q1",
+      "type": "single",
+      "bloom": "understand",
+      "difficulty": 2,
+      "skills": ["backend.observability.correlation"],
+      "section_ref": 4,
+      "question": {
+        "en": "At `stage-3`, Payments writes `Refund ... for order 10 is done`, and the JSON line has a `TraceId` in `Scopes`. The log call passes only its message and values. Where does that `TraceId` come from?",
+        "vi": "Ở `stage-3`, Payments ghi `Refund ... for order 10 is done`, và dòng JSON có một `TraceId` trong `Scopes`. Lời gọi log chỉ truyền message và các giá trị của nó. `TraceId` đó đến từ đâu?"
+      },
+      "options": [
+        { "id": "a", "en": "The logging library adds a log scope with the current span's `TraceId`, and the formatter writes it.", "vi": "Thư viện logging thêm một log scope chứa `TraceId` của span hiện tại, và formatter ghi nó ra." },
+        { "id": "b", "en": "The refund handler reads the trace id and passes it as one of the log call's values.", "vi": "Handler hoàn tiền đọc trace id rồi truyền nó như một trong các giá trị của lời gọi log.", "misconception": "To find one request's logs, I must pass a request id into every log call." },
+        { "id": "c", "en": "Alloy looks up the matching trace in Tempo and writes its id into the line's `Scopes`.", "vi": "Alloy tra trace tương ứng trong Tempo rồi ghi id của nó vào `Scopes` của dòng." },
+        { "id": "d", "en": "Loki adds the trace id to each line when it stores the line in the `payments` stream.", "vi": "Loki thêm trace id vào mỗi dòng khi lưu dòng đó vào luồng log `payments`." }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "The line is written while a span of the refund's trace is current, so the logging library opens a log scope holding that span's `TraceId` and `SpanId`. With `IncludeScopes` on, the JSON formatter writes that scope into `Scopes`; no log call changed.",
+          "b": "A value in the line usually comes from the log call, so passing it by hand looks necessary. But the lesson's log call passes only its message and values, and `RequestLoggingMiddleware` still passes only method, path, status and time, yet its line carries a `TraceId`.",
+          "c": "Alloy does handle the trace id on the way to Loki, so it can look like the one adding it. But Alloy only copies the id out of `Scopes`, which already holds it when the line leaves the container; it never asks Tempo.",
+          "d": "Loki is where you query `trace_id`, so it can seem to attach the id. But Loki receives the id from Alloy as structured metadata, and Alloy reads it from the line the service wrote."
+        },
+        "vi": {
+          "correct": "Dòng được ghi khi một span của trace hoàn tiền là span hiện tại, nên thư viện logging mở một log scope chứa `TraceId` và `SpanId` của span đó. Khi `IncludeScopes` bật, JSON formatter ghi scope đó vào `Scopes`; không lời gọi log nào phải sửa.",
+          "b": "Giá trị trong dòng thường đến từ lời gọi log, nên truyền tay có vẻ là cần thiết. Nhưng lời gọi log trong bài chỉ truyền message và các giá trị của nó, và `RequestLoggingMiddleware` vẫn chỉ truyền method, path, status và thời gian, vậy mà dòng của nó vẫn mang `TraceId`.",
+          "c": "Alloy đúng là xử lý trace id trên đường tới Loki, nên có vẻ nó là bên thêm vào. Nhưng Alloy chỉ chép id ra khỏi `Scopes`, nơi id đã có sẵn khi dòng rời container; nó không hỏi Tempo.",
+          "d": "Loki là nơi bạn truy vấn `trace_id`, nên có vẻ nó gắn id vào. Nhưng Loki nhận id từ Alloy dưới dạng structured metadata, và Alloy đọc nó từ dòng mà service đã ghi."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.trace-ids-in-logs.q2",
+      "type": "truefalse",
+      "bloom": "analyze",
+      "difficulty": 4,
+      "skills": ["backend.observability.correlation"],
+      "section_ref": 6,
+      "question": {
+        "en": "Statement: in Đơn Hàng, Alloy should attach the trace id to each line as a Loki label rather than as structured metadata.",
+        "vi": "Nhận định: trong Đơn Hàng, Alloy nên gắn trace id vào mỗi dòng dưới dạng label của Loki thay vì structured metadata."
+      },
+      "options": [
+        { "id": "a", "en": "True, because labels are what Loki indexes, so a label makes looking up one refund's lines fast.", "vi": "Đúng, vì label là thứ Loki đánh index, nên dùng label thì tra các dòng của một lần hoàn tiền sẽ nhanh.", "misconception": "The trace id should be a Loki label, so that looking it up is fast.", "polarity": "true" },
+        { "id": "b", "en": "True, because with a label the query would no longer need the `service` stream selector.", "vi": "Đúng, vì có label thì truy vấn không còn cần bộ chọn luồng theo `service` nữa.", "polarity": "true" },
+        { "id": "c", "en": "False, because Loki would then have to create and index a separate stream for each refund.", "vi": "Sai, vì khi đó Loki phải tạo và đánh index một luồng log riêng cho từng lần hoàn tiền.", "polarity": "false" },
+        { "id": "d", "en": "False, because structured metadata is indexed too, so a label would add nothing to the lookup.", "vi": "Sai, vì structured metadata cũng được đánh index, nên label không thêm gì cho việc tra cứu.", "polarity": "false" }
+      ],
+      "answer": ["c"],
+      "explanation": {
+        "en": {
+          "correct": "Each new label value makes a new stream, and Loki indexes every stream, so a per-request label would make one stream per request. Structured metadata keeps the id with the line instead, and the stream selector still picks the streams first.",
+          "a": "Loki does answer stream selection from its index, so a label sounds like the fast path. But the cost lands on the index itself: one new stream for every refund, every order, every request.",
+          "b": "Selecting by trace id alone sounds simpler than selecting streams first. But that is a convenience, not a reason worth a stream per request, and the lesson's query works fine with `service` first and `trace_id` after it.",
+          "d": "The statement is false, but not for this reason. Structured metadata is not indexed; it is kept next to each line, and `trace_id` only narrows the lines inside the streams already picked."
+        },
+        "vi": {
+          "correct": "Mỗi giá trị label mới tạo một luồng log mới, và Loki đánh index mọi luồng, nên label theo từng request sẽ tạo một luồng cho mỗi request. Structured metadata thì giữ id cạnh dòng, còn bộ chọn luồng vẫn chọn luồng trước.",
+          "a": "Loki đúng là trả lời phần chọn luồng bằng index, nên label nghe như đường nhanh. Nhưng cái giá rơi vào chính index: một luồng mới cho mỗi lần hoàn tiền, mỗi đơn hàng, mỗi request.",
+          "b": "Chọn chỉ bằng trace id nghe gọn hơn chọn luồng trước. Nhưng đó chỉ là tiện, không đáng để đổi lấy một luồng cho mỗi request, và truy vấn trong bài vẫn chạy tốt với `service` trước rồi `trace_id` sau.",
+          "d": "Nhận định là sai, nhưng không phải vì lý do này. Structured metadata không được đánh index; nó được giữ cạnh mỗi dòng, và `trace_id` chỉ thu hẹp các dòng bên trong những luồng đã chọn."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.trace-ids-in-logs.q3",
+      "type": "order",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["backend.observability.correlation"],
+      "section_ref": 4,
+      "question": {
+        "en": "Payments logs that the refund of order 10 is done. Put the steps that end with this line in the result of `logs-for-trace.sh`'s query in order.",
+        "vi": "Payments ghi log rằng lần hoàn tiền của đơn 10 đã xong. Sắp xếp các bước dẫn tới việc dòng này có trong kết quả truy vấn của `logs-for-trace.sh` theo đúng thứ tự."
+      },
+      "options": [
+        { "id": "a", "en": "Alloy copies T out of `Scopes` into structured metadata named `trace_id`", "vi": "Alloy chép T ra khỏi `Scopes` vào structured metadata tên `trace_id`" },
+        { "id": "b", "en": "Payments calls the logger with only its message and values, while a span of trace T is current", "vi": "Payments gọi logger chỉ với message và các giá trị, trong lúc một span của trace T là span hiện tại" },
+        { "id": "c", "en": "The JSON formatter writes the scope into the line's `Scopes` field, because `IncludeScopes` is on", "vi": "JSON formatter ghi scope vào field `Scopes` của dòng, vì `IncludeScopes` đang bật" },
+        { "id": "d", "en": "A LogQL query picks streams by `service`, then keeps the lines whose `trace_id` is T", "vi": "Một truy vấn LogQL chọn luồng log theo `service`, rồi giữ các dòng có `trace_id` là T" },
+        { "id": "e", "en": "The logging library adds a log scope holding the current span's `TraceId` and `SpanId`", "vi": "Thư viện logging thêm một log scope chứa `TraceId` và `SpanId` của span hiện tại" }
+      ],
+      "answer": ["b", "e", "c", "a", "d"],
+      "explanation": {
+        "en": {
+          "correct": "The scope can only be added while the log call runs inside the span, and the formatter writes what the scope holds. Alloy can copy the id only from a written line, and the query can match `trace_id` only after the line reaches Loki with it."
+        },
+        "vi": {
+          "correct": "Scope chỉ được thêm khi lời gọi log chạy bên trong span, và formatter ghi ra những gì scope đang giữ. Alloy chỉ chép được id từ một dòng đã được ghi, và truy vấn chỉ khớp được `trace_id` sau khi dòng tới Loki cùng với nó."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.trace-ids-in-logs.q4",
+      "type": "fill",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["backend.observability.correlation"],
+      "section_ref": 5,
+      "question": {
+        "en": "In `config.alloy` at `stage-3`, one step attaches the extracted trace id to each line so that Loki keeps it next to the line without making a new stream. Complete that step's first line: `stage.___ {`",
+        "vi": "Trong `config.alloy` ở `stage-3`, một bước gắn trace id đã trích ra vào mỗi dòng để Loki giữ nó cạnh dòng mà không tạo luồng log mới. Điền vào dòng đầu của bước đó: `stage.___ {`"
+      },
+      "answer": ["structured_metadata"],
+      "answer_regex": "^\\s*structured_metadata\\s*$",
+      "explanation": {
+        "en": {
+          "correct": "`stage.structured_metadata` attaches the value `stage.json` extracted as `trace_id`, kept next to the line but not indexed. `stage.json` only reads the id out of `Scopes`; it does not attach anything to the line."
+        },
+        "vi": {
+          "correct": "`stage.structured_metadata` gắn giá trị mà `stage.json` đã trích ra dưới tên `trace_id`, giữ cạnh dòng nhưng không đánh index. `stage.json` chỉ đọc id ra khỏi `Scopes`; nó không gắn gì vào dòng."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.trace-ids-in-logs.q5",
+      "type": "scenario",
+      "bloom": "evaluate",
+      "difficulty": 4,
+      "skills": ["backend.observability.correlation"],
+      "section_ref": 5,
+      "context": {
+        "en": "Đơn Hàng runs `stage-3` with the monitoring profile and handles several refunds a minute. You are on call in a team of three. In Grafana you find an error line from Notifications about one refund; its `trace_id` is shown. You need to see what `DonHang.Api` and Payments did for that same request, and the refund is still waiting, so you want an answer within minutes, without a redeploy.",
+        "vi": "Đơn Hàng đang chạy `stage-3` với profile monitoring và xử lý vài lần hoàn tiền mỗi phút. Bạn đang trực trong một nhóm ba người. Trong Grafana, bạn thấy một dòng lỗi của Notifications về một lần hoàn tiền; `trace_id` của nó được hiển thị. Bạn cần xem `DonHang.Api` và Payments đã làm gì cho chính request đó, và lần hoàn tiền vẫn đang chờ, nên bạn muốn có câu trả lời trong vài phút, không deploy lại."
+      },
+      "question": {
+        "en": "What do you do?",
+        "vi": "Bạn làm gì?"
+      },
+      "options": [
+        { "id": "a", "en": "Follow the line's `trace_id` link to the trace in Tempo, and query the three services' streams filtered on that `trace_id`.", "vi": "Mở link `trace_id` của dòng tới trace trong Tempo, và truy vấn luồng log của ba service, lọc theo `trace_id` đó." },
+        { "id": "b", "en": "Query `{service=\"payments\"}` and `{service=\"api\"}` for lines written a few seconds before the error, and match them by time.", "vi": "Truy vấn `{service=\"payments\"}` và `{service=\"api\"}` lấy các dòng ghi vài giây trước lỗi, rồi ghép chúng theo thời gian.", "misconception": "Logs and traces live in separate tools, so I have to line them up by time." },
+        { "id": "c", "en": "Ask each service's owners to add the order id to every log call, redeploy, and wait for the error to happen again.", "vi": "Nhờ người phụ trách từng service thêm id đơn hàng vào mọi lời gọi log, deploy lại, rồi chờ lỗi xảy ra lần nữa.", "misconception": "To find one request's logs, I must pass a request id into every log call." },
+        { "id": "d", "en": "Query `{service=\"notifications\"}` filtered on that `trace_id`, to read every line this request produced.", "vi": "Truy vấn `{service=\"notifications\"}` lọc theo `trace_id` đó, để đọc mọi dòng mà request này tạo ra." }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "Every service writes the refund's trace id into its lines, and Alloy keeps it as `trace_id`, so one query over the three streams returns this request's lines from all of them. The derived field opens the same trace in Tempo, with no time matching and no change to deploy.",
+          "b": "Time is what linked a request's lines at `stage-2`, so it feels like the safe fallback. With several refunds a minute, lines from other refunds fall in the same seconds, and work that ran after the `202` may be far from the error. Matching by time is right only when a line carries no trace id, such as one written while no span is current.",
+          "c": "An id in every line is the right goal, so asking for one sounds thorough. But the lines already carry the trace id without any log call changing, and this path needs a redeploy and a second failure. It would be the choice only when records carry no trace id at all.",
+          "d": "Filtering on `trace_id` is the right tool, so this looks close. But the stream selector keeps only Notifications' lines, while you need Api's and Payments'. It is the right query when you want just one service's part of the request."
+        },
+        "vi": {
+          "correct": "Mọi service ghi trace id của lần hoàn tiền vào các dòng của mình, và Alloy giữ nó dưới tên `trace_id`, nên một truy vấn trên ba luồng log trả về các dòng của request này từ cả ba. Derived field mở chính trace đó trong Tempo, không cần ghép thời gian và không phải deploy gì.",
+          "b": "Thời gian là thứ nối các dòng của một request ở `stage-2`, nên nó có vẻ là cách dự phòng an toàn. Với vài lần hoàn tiền mỗi phút, dòng của các lần hoàn tiền khác rơi vào cùng những giây đó, và việc chạy sau `202` có thể cách xa lỗi. Ghép theo thời gian chỉ đúng với các dòng không mang trace id, như dòng được ghi khi không có span nào là span hiện tại.",
+          "c": "Có một id trong mọi dòng là mục tiêu đúng, nên yêu cầu thêm id nghe có vẻ kỹ lưỡng. Nhưng các dòng đã mang trace id mà không lời gọi log nào phải sửa, còn cách này cần deploy lại và một lần lỗi nữa. Nó chỉ là lựa chọn khi các bản ghi hoàn toàn không mang trace id.",
+          "d": "Lọc theo `trace_id` là đúng công cụ, nên phương án này trông rất gần. Nhưng bộ chọn luồng chỉ giữ các dòng của Notifications, trong khi bạn cần dòng của Api và Payments. Đây là truy vấn đúng khi bạn chỉ muốn phần việc của một service trong request."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.trace-ids-in-logs.q6",
+      "type": "multi",
+      "bloom": "understand",
+      "difficulty": 2,
+      "skills": ["backend.observability.correlation"],
+      "section_ref": 3,
+      "question": {
+        "en": "`logs-for-trace.sh` asks for a refund of order 10, whose trace id is T. At `stage-3`, which of these carry T? Select all that apply.",
+        "vi": "`logs-for-trace.sh` yêu cầu hoàn tiền cho đơn 10, trace id của lần này là T. Ở `stage-3`, những thứ nào dưới đây mang T? Chọn tất cả đáp án đúng."
+      },
+      "options": [
+        { "id": "a", "en": "The span Payments recorded for the refund, as Tempo shows it.", "vi": "Span mà Payments ghi lại cho lần hoàn tiền, như Tempo hiển thị." },
+        { "id": "b", "en": "Notifications' `Saved the order refunded email for order 10` line, written after the `202`.", "vi": "Dòng `Saved the order refunded email for order 10` của Notifications, được ghi sau `202`." },
+        { "id": "c", "en": "The Api line `POST /api/v1/orders/10/refund responded 202`, in its `Scopes`.", "vi": "Dòng `POST /api/v1/orders/10/refund responded 202` của Api, trong `Scopes` của nó." },
+        { "id": "d", "en": "Every line in the `{service=\"payments\"}` stream from the last hour, since they share its label.", "vi": "Mọi dòng trong luồng log `{service=\"payments\"}` của một giờ qua, vì chúng chung label của luồng đó." },
+        { "id": "e", "en": "The labels of Payments' Loki stream, which gained `trace_id=\"T\"` at `stage-3`.", "vi": "Bộ label của luồng log Payments trong Loki, vốn có thêm `trace_id=\"T\"` từ `stage-3`.", "misconception": "The trace id should be a Loki label, so that looking it up is fast." }
+      ],
+      "answer": ["a", "b", "c"],
+      "explanation": {
+        "en": {
+          "correct": "Once tracing is in place, the trace id is the correlation id: every span of the refund and every line written inside one of its spans carries T. That includes Notifications' line after the `202`, because the context reached Notifications with the message.",
+          "d": "The stream does hold the refund's Payments line, so the whole stream can seem tied to it. But the stream mixes lines from every refund in that hour; only the lines written inside this refund's spans carry T.",
+          "e": "The query filters on `trace_id` right after the stream selector, so it can look like a label. But Alloy adds no new label; `trace_id` is structured metadata on each line, and the stream keeps only its `service` label."
+        },
+        "vi": {
+          "correct": "Khi đã có tracing, trace id chính là correlation id: mọi span của lần hoàn tiền và mọi dòng được ghi bên trong một span của nó đều mang T. Kể cả dòng của Notifications sau `202`, vì context đã tới Notifications cùng với message.",
+          "d": "Luồng log đó đúng là chứa dòng Payments của lần hoàn tiền, nên có vẻ cả luồng gắn với nó. Nhưng luồng trộn các dòng của mọi lần hoàn tiền trong giờ đó; chỉ những dòng được ghi bên trong span của lần hoàn tiền này mới mang T.",
+          "e": "Truy vấn lọc theo `trace_id` ngay sau bộ chọn luồng, nên trông nó như một label. Nhưng Alloy không thêm label mới nào; `trace_id` là structured metadata trên từng dòng, và luồng log chỉ giữ label `service` của nó."
+        }
+      }
+    },
+    {
+      "id": "backend.l3.trace-ids-in-logs.q7",
+      "type": "single",
+      "bloom": "apply",
+      "difficulty": 3,
+      "skills": ["backend.observability.correlation"],
+      "section_ref": 5,
+      "question": {
+        "en": "Suppose `OutboxRelay`'s loop writes a log line on a timer tick, where no span is current. What happens to that line on its way through Alloy at `stage-3`?",
+        "vi": "Giả sử vòng lặp của `OutboxRelay` ghi một dòng log ở một tick của timer, nơi không có span nào là span hiện tại. Dòng đó đi qua Alloy ở `stage-3` thì sao?"
+      },
+      "options": [
+        { "id": "a", "en": "It reaches Loki in its usual stream, with no `trace_id` attached to it.", "vi": "Nó tới Loki trong luồng log quen thuộc của nó, không có `trace_id` gắn kèm." },
+        { "id": "b", "en": "Alloy drops it, because `stage.json` finds no `TraceId` in its `Scopes`.", "vi": "Alloy bỏ nó đi, vì `stage.json` không tìm thấy `TraceId` nào trong `Scopes` của nó." },
+        { "id": "c", "en": "It reaches Loki with an empty `trace_id`, since the config sets `trace_id = \"\"`.", "vi": "Nó tới Loki với `trace_id` rỗng, vì cấu hình đặt `trace_id = \"\"`." },
+        { "id": "d", "en": "Alloy gives it the `trace_id` of the request whose lines arrived closest in time.", "vi": "Alloy gán cho nó `trace_id` của request có các dòng tới gần nhất về thời gian.", "misconception": "Logs and traces live in separate tools, so I have to line them up by time." }
+      ],
+      "answer": ["a"],
+      "explanation": {
+        "en": {
+          "correct": "With no span current, the logging library has no `TraceId` to put in a scope, so `stage.json` extracts nothing. The config's comment says such a line passes through as it is, so it reaches its usual stream without `trace_id`.",
+          "b": "The step exists to extract a `TraceId`, so a line without one can look like a failure to drop. But the config's comment says such a line passes through as it is; only the metadata is missing.",
+          "c": "The empty string in the config looks like the value being set. But it means \"use the extracted value of the same name\", and for this line nothing was extracted, so no `trace_id` is attached.",
+          "d": "Lining lines up by time is how requests were linked at `stage-2`, so Alloy might seem to do it for you. But nothing in this chain compares times; a line carries a trace id only if it was written inside a span."
+        },
+        "vi": {
+          "correct": "Khi không có span hiện tại, thư viện logging không có `TraceId` nào để đặt vào scope, nên `stage.json` không trích ra gì. Comment trong cấu hình nói dòng như vậy đi qua nguyên vẹn, nên nó tới luồng log quen thuộc của nó mà không có `trace_id`.",
+          "b": "Bước này tồn tại để trích `TraceId`, nên một dòng không có nó trông như lỗi cần bỏ. Nhưng comment trong cấu hình nói dòng như vậy đi qua nguyên vẹn; chỉ thiếu phần metadata.",
+          "c": "Chuỗi rỗng trong cấu hình trông như giá trị được gán. Nhưng nó nghĩa là \"dùng giá trị đã trích ra có cùng tên\", và với dòng này không có gì được trích ra, nên không có `trace_id` nào được gắn.",
+          "d": "Ghép các dòng theo thời gian là cách nối request ở `stage-2`, nên có vẻ Alloy làm việc đó giúp bạn. Nhưng chuỗi này không so sánh thời gian ở đâu cả; một dòng chỉ mang trace id nếu nó được ghi bên trong một span."
+        }
+      }
+    }
+  ]
+}

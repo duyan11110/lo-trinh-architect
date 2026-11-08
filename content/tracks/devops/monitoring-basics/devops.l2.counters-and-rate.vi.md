@@ -15,8 +15,8 @@ vocab: [counter, gauge, promql]
 example_tag: stage-2
 versions_used: [prometheus, prometheus_net]
 content_version: 1
-status: approved
-approved_by: auto
+status: published
+approved_by: owner
 reviewed_at: "2026-09-30T01:51:14+07:00"
 ---
 

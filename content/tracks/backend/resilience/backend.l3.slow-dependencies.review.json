@@ -1,0 +1,154 @@
+{
+  "id": "backend.l3.slow-dependencies",
+  "technical": {
+    "reviewed_at": "2026-10-16T10:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Engine API ContainerPause: \"Use the freezer cgroup to suspend all processes in a container. ... With the freezer cgroup the process is unaware, and unable to capture, that it is being suspended, and subsequently resumed.\" Connection staying open is not stated by Docker; it is shown by execution: the captured stage-3 run waits >5 s while paused instead of failing fast as in the stopped run (FailFast fails only when no connection is available).",
+        "source": "refs/docker-docs/_vendor/github.com/moby/moby/api/docs/v1.56.yaml (ContainerPause); examples/don-hang outputs/stage-3/scripts/backend/slow-dependency.txt"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "tools/extract-code outputs/stage-3/scripts/backend/slow-dependency.txt --tag stage-3 prints exactly: \"== GET /api/v1/products/3, Redis up / -> 200 after less than 1 s / == ... Redis stopped / -> 200 after less than 1 s / == ... Redis paused / -> 200 after more than 5 s\". Matches the lesson's output block. Docker engine not running on review host, so not re-run.",
+        "source": "examples/don-hang @ stage-3: outputs/stage-3/scripts/backend/slow-dependency.txt"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Release notes 2.5.27: \"old behavior is configured via options.BacklogPolicy = BacklogPolicy.FailFast. This backlogs nothing and fails commands immediately if no connection is available.\" Configuration (ReconnectRetryPolicy): \"StackExchange.Redis automatically tries to reconnect in the background when the connection is lost for any reason.\" Stopped run in captured output: <1 s.",
+        "source": "https://seredis.dev/ReleaseNotes ; https://seredis.dev/Configuration (redirect from stackexchange.github.io/StackExchange.Redis/)"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Release notes 2.5.27: \"Commands will be queued if a connection is lost and then sent to the server when the connection is restored.\" \"All commands queued will only remain in the backlog for the duration of the configured timeout.\" \"BacklogPolicy.FailFast ... backlogs nothing and fails commands immediately if no connection is available.\" No later note reverses this.",
+        "source": "https://seredis.dev/ReleaseNotes"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Configuration table, abortConnect: \"If true, Connect will not create a connection while no servers are available\" (default true). ReconnectRetryPolicy: \"automatically tries to reconnect in the background when the connection is lost for any reason\" / \"It keeps retrying until the connection has been restored.\" Behaviour also exercised by the lab: api starts with redis depends_on condition service_started.",
+        "source": "https://seredis.dev/Configuration"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Configuration: asyncTimeout default \"SyncTimeout\"; syncTimeout default \"5000\" — \"Time (ms) to allow for asynchronous operations\". Timeouts page shows the exception message form \"Timeout performing GET MyKey (1000ms) ...\". ProductCache.cs @ stage-3 line 83: `ex is RedisException or RedisTimeoutException or TaskCanceledException`, caught in GetAsync and returned as null (miss).",
+        "source": "https://seredis.dev/Configuration ; https://seredis.dev/Timeouts ; DonHang.Catalog/ProductCache.cs @ stage-3 lines 64-83"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "ProductCache.cs @ stage-3: GetAsync catches `when (IsRedisFailure(ex))` and returns null; FindAsync then calls `inner.FindAsync(id)`; CatalogModule wires `new ProductCache(provider.GetRequiredService<EfProductRepository>(), ...)`.",
+        "source": "DonHang.Catalog/ProductCache.cs @ stage-3 lines 25-49, 64-83; DonHang.Catalog/CatalogModule.cs lines 38-42"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "ProductCache.FindAsync @ stage-3: `await GetAsync(key)` (line 28), after `keyLock.WaitAsync()` a second `await GetAsync(key)` (line 38), then `if (product is not null) await SetAsync(key, product)` (line 42). Three Redis commands for a found product on a miss.",
+        "source": "DonHang.Catalog/ProductCache.cs @ stage-3 lines 25-49"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Round 2, reworded claim. ASP.NET Core best practices: \"Rather than waiting on a long-running synchronous task to complete, the thread can work on another request.\" EF Core 3.0 breaking changes line 806: \"Starting with 3.0, EF Core closes the connection as soon as it's done using it.\" EfProductRepository.FindAsync is `await db.Products.FindAsync(id)` with no explicit OpenConnection or transaction (read from working tree; tag show needed approval), so the Redis waits around it hold no DB connection.",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/best-practices.md:28; refs/efcore-docs/entity-framework/core/what-is-new/ef-core-3.x/breaking-changes.md:806; DonHang.Catalog/EfProductRepository.cs"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Npgsql performance: \"When a pooled connection is closed, Npgsql will arrange for its state to be reset the next time it's used\"; a buffer persists \"until the connection is closed or returned to the pool\". Connection string parameters: Pooling default true; Maximum Pool Size default 100.",
+        "source": "https://www.npgsql.org/doc/performance.html ; https://www.npgsql.org/doc/connection-string-parameters.html"
+      },
+      {
+        "n": 11,
+        "verdict": "not-needed",
+        "evidence": "Round 2: now worded as a conditional, generic mechanism (\"Suppose nothing limits how many requests of one kind run at once\"), no longer asserted of Đơn Hàng product reads (which stage-3 caps with the catalog-reads limiter). It follows from claims 9-10 (held resources, pooled connections bounded by Maximum Pool Size) and is the round-1 suggested_text verbatim; kind opinion, no version-dependent fact.",
+        "source": "lesson section 4; claims 9-10; DonHang.Api/Program.cs @ stage-3 lines 143-166"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "FailFast \"fails commands immediately if no connection is available\" (Release notes 2.5.27) vs asyncTimeout default 5000 ms for a command on an open connection (Configuration). Captured stage-3 output: stopped <1 s, paused >5 s. Hedged with \"usually\" in the lesson.",
+        "source": "https://seredis.dev/ReleaseNotes ; https://seredis.dev/Configuration ; outputs/stage-3/scripts/backend/slow-dependency.txt"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "tools/extract-code DonHang.Catalog/CatalogModule.cs --tag stage-3, lines 19-33: `services.AddSingleton<IConnectionMultiplexer>(_ => { var options = ConfigurationOptions.Parse(redisConfiguration); options.BacklogPolicy = BacklogPolicy.FailFast; return ConnectionMultiplexer.Connect(options); });` — identical to the lesson block.",
+        "source": "DonHang.Catalog/CatalogModule.cs @ stage-3 lines 19-33"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "docker-compose.yml @ stage-3 line 159: `ConnectionStrings__Redis: \"redis:6379,abortConnect=false\"`. Program.cs @ stage-3 lines 30-37: `builder.Configuration.GetConnectionString(\"Redis\")` ... `builder.Services.AddCatalogModule(connectionString, redisConfiguration);`.",
+        "source": "docker-compose.yml @ stage-3; DonHang.Api/Program.cs @ stage-3 lines 27-37"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "slow-dependency.sh @ stage-3 lines 2-3: \"Runs on the host\"; lines 9-12 read_product curls http://localhost:8080/api/v1/products/3 and awk prints \"less than 1 s\" / \"1 to 5 s\" / \"more than 5 s\"; line 13: `trap 'docker compose unpause redis ... ; docker compose start redis ...' EXIT`.",
+        "source": "scripts/backend/slow-dependency.sh @ stage-3 lines 1-13"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "tools/extract-code scripts/backend/slow-dependency.sh --tag stage-3 lines 15-34 is identical to the lesson block: read, `docker compose stop redis`, read, `docker compose start redis`, `sleep 3`, `docker compose pause redis`, read, `docker compose unpause redis`.",
+        "source": "scripts/backend/slow-dependency.sh @ stage-3 lines 15-34"
+      },
+      {
+        "n": 17,
+        "verdict": "not-needed",
+        "evidence": "Hedged diagnostic heuristic (\"You notice this when\") that follows from the documented thread behaviour in claim 9 (best-practices.md:28); not a version-dependent fact.",
+        "source": "refs/aspnetcore-docs/aspnetcore/fundamentals/best-practices.md:28"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "Script header lines 2-3 (\"Runs on the host: it stops, starts, pauses and unpauses Redis with docker compose\"); captured stage-3 output shows three \"-> 200\" lines with bands less than 1 s, less than 1 s, more than 5 s. Lesson now says to run it in the host terminal that started the lab. Not re-run: Docker engine unavailable on review host.",
+        "source": "scripts/backend/slow-dependency.sh @ stage-3; outputs/stage-3/scripts/backend/slow-dependency.txt"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "New in round 2 (changed text). \"none\" follows a list of three held resources, so it can be read as \"holds none of these resources\", which contradicts the previous sentence (the read does keep the client connection and its memory). Only the database connection is meant.",
+        "quote": "The product read above holds none while it waits: EF Core closes its database connection after each query.",
+        "fix": "Replace with: \"The product read above holds no database connection while it waits: EF Core closes its database connection after each query.\""
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-16T12:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation, round 2 targeted re-review)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "diagram",
+        "text": "New in round 2 (changed text). The diagram sends one command, GET product:3, yet the note says this is \"one of several waits\". Section 4's prose never says a read sends more than one Redis command; I only learn that in section 5. Reading section 4, I could not tell what the other waits are.",
+        "quote": "Note over A: one of several waits for the Redis client's timeout",
+        "fix": "Add one clause to the section 4 paragraph on the paused case, e.g. \"A read sends Redis more than one command, and each waits like this.\""
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

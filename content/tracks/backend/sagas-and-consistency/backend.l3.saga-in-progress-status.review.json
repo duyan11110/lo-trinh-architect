@@ -1,0 +1,130 @@
+{
+  "id": "backend.l3.saga-in-progress-status",
+  "technical": {
+    "reviewed_at": "2026-10-14T23:59:58+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "OrdersController.Refund: 'var order = await orderService.RequestRefundAsync(id); return Accepted(ToDto(order));'. OrderService.RequestRefundAsync: 'order.RequestRefund(); await events.DispatchAsync(order); await repository.SaveChangesAsync();' and NotifyCustomerOnOrderEvents.cs:21 adds 'order.refund-requested' in the dispatch. RefundApiTests asserts HttpStatusCode.Accepted, Status 'refunding', outbox routing keys ['order.placed','order.refund-requested']. Read from submodule working tree (line numbers match stage-3 via tools/extract-code).",
+        "source": "examples/don-hang @ stage-3: DonHang.Api/Controllers/OrdersController.cs:122-135; DonHang.Domain/OrderService.cs:86-95; DonHang.Domain/NotifyCustomerOnOrderEvents.cs:21; DonHang.Tests/Integration/RefundApiTests.cs:20-32"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "refund-design.md step 5: 'thử lại sau 1 phút, rồi 2, 4, 8 phút, tối đa 1 giờ giữa hai lần, trong 24 giờ kể từ requested_at (YC-10)'. Code: RefundSender.cs 'public TimeSpan GiveUpAfter { get; set; } = TimeSpan.FromHours(24);'. Lesson text only says 'much longer if the gateway keeps failing', which this supports.",
+        "source": "examples/don-hang @ stage-3: docs/design/refund-design.md:45-50; DonHang.Payments/RefundSender.cs:12-13"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "tools/extract-code Entities.cs --tag stage-2: Cancel() has only 'if (Status == \"cancelled\") ...' and 'if (Status == \"shipped\") ...' then 'Status = \"cancelled\";'. Ship(): cancelled, shipped, 'if (Status != \"paid\") throw ... \"not-paid\"' then 'Status = \"shipped\";'. stage-2 OrderTests has 'Cancel_PaidOrder_SetsStatusCancelled'.",
+        "source": "examples/don-hang @ stage-2: DonHang.Domain/Entities.cs:82-96; DonHang.Tests/Domain/OrderTests.cs:63-72"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "PostgreSQL 17 §13.2: 'Read Committed is the default isolation level in PostgreSQL.' §13.2.1: 'a SELECT query (without a FOR UPDATE/SHARE clause) sees only data committed before the query began; it never sees either uncommitted data or changes committed by concurrent transactions during the query's execution.' (WebFetch summary, quoted as returned.)",
+        "source": "https://www.postgresql.org/docs/17/transaction-iso.html (13.2, 13.2.1)"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Entities.cs@stage-3:152 'if (Status == \"refunding\") throw new OrderStatusException(Id, \"refund-in-progress\", ...)'; :153 'if (Status != \"paid\") throw new OrderStatusException(Id, \"not-paid\", ...)'; :154 'Status = \"refunding\";'; :155 'domainEvents.Add(new OrderRefundRequested(this, DateTimeOffset.UtcNow));'.",
+        "source": "examples/don-hang @ stage-3: DonHang.Domain/Entities.cs:150-156"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Entities.cs@stage-3 Cancel():125 'if (Status == \"paid\") throw new OrderStatusException(Id, \"paid\", ...)'; :126 'if (Status == \"refunding\") throw new OrderStatusException(Id, \"refund-in-progress\", ...)'; :127 'Status = \"cancelled\";'. Ship():139 'if (Status == \"refunding\") throw ... \"refund-in-progress\"'; :141 'Status = \"shipped\";'. Every throw precedes the assignment; OrderService saves only after the method returns.",
+        "source": "examples/don-hang @ stage-3: DonHang.Domain/Entities.cs:121-143; DonHang.Domain/OrderService.cs:59-80"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "ExceptionHandlingMiddleware: 'catch (OrderStatusException ex) { ... await WriteProblemAsync(context, StatusCodes.Status409Conflict, \"Order status does not allow this\", ex.Message, type: ProblemTypeBase + ex.Code, orderId: ex.OrderId); }' with 'ProblemTypeBase = \"https://donhang.local/problems/\"'. RefundApiTests.PostRefund_Twice_SecondReturns409 asserts Conflict and Type 'https://donhang.local/problems/refund-in-progress'.",
+        "source": "examples/don-hang @ stage-3: DonHang.Api/Middleware/ExceptionHandlingMiddleware.cs:16, 36-41; DonHang.Tests/Integration/RefundApiTests.cs:34-45"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Entities.cs:163 'if (Status != \"refunding\") throw new OrderStatusException(Id, \"not-refunding\", ...)'; :164 'Status = \"cancelled\";'. PaymentEventsConsumer.cs:107 'if (routingKey == \"payment.refunded\") await orders.CompleteRefundAsync(message.OrderId);' and OrderService.CompleteRefundAsync calls 'order.CompleteRefund()'. Note: FailRefund() (:172-177) also accepts a refunding order — see issue on section 4/9.",
+        "source": "examples/don-hang @ stage-3: DonHang.Domain/Entities.cs:158-177; DonHang.Api/Messaging/PaymentEventsConsumer.cs:107; DonHang.Domain/OrderService.cs:97-107"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "refund-design.md@stage-2 (tools/extract-code): 'Hôm nay PATCH /api/v1/orders/{id}/cancel vẫn hủy được đơn paid (Order.Cancel() chỉ chặn cancelled và shipped) ... Product owner quyết định có chặn trường hợp đó trong đợt này không'. @stage-3: 'Câu hỏi mở của bản 1 đã đóng: từ bản này Order.Cancel() từ chối đơn paid, nên mọi đơn đã thanh toán rời đi qua luồng hoàn tiền.'",
+        "source": "examples/don-hang: docs/design/refund-design.md @ stage-2:54-63; @ stage-3:93-106"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "OrderTests.cs@stage-3:67-76 Cancel_PaidOrder_Throws: 'Assert.Equal(\"paid\", ex.Code); Assert.Equal(\"paid\", order.Status);'. Same file has RequestRefund_RefundingOrder_Throws, Cancel_RefundingOrder_Throws, Ship_RefundingOrder_Throws, all on 'RefundingOrder()' built with NewOrder/MarkPaid/RequestRefund; class comment 'No repository, no outbox, no fake, no await.' Not present at stage-2 (that tag has Cancel_PaidOrder_SetsStatusCancelled).",
+        "source": "examples/don-hang @ stage-3: DonHang.Tests/Domain/OrderTests.cs:5-9, 63-76, 191-257"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "refund-design.md step 2: 'Khi đơn đang refunding, yêu cầu hoàn tiền thứ hai, hủy đơn và giao hàng đều bị từ chối với 409 (YC-4).' refund-requirements.md: 'YC-4: Sau khi gửi yêu cầu, khách thấy đơn đang hoàn tiền và không gửi được yêu cầu thứ hai cho cùng đơn.'",
+        "source": "examples/don-hang @ stage-3: docs/design/refund-design.md:32-33; docs/team/refund-requirements.md:34-35"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "PG 17 §13.3.2: 'Row-level locks are released at transaction end or during savepoint rollback, just like table-level locks.' FOR UPDATE: 'other transactions that attempt UPDATE, DELETE, SELECT FOR UPDATE ... of these rows will be blocked until the current transaction ends'. 'Row-level locks ... block only writers and lockers to the same row.' Supports s6 'every other request that tries to change that order would wait'. (WebFetch summary, quoted as returned.)",
+        "source": "https://www.postgresql.org/docs/17/explicit-locking.html (13.3.1, 13.3.2)"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "OutboxRelay.RelayDueAsync: 'await using var transaction = await db.Database.BeginTransactionAsync(stoppingToken);' then 'SELECT * FROM outbox_messages WHERE published_at IS NULL ... FOR UPDATE SKIP LOCKED' in its own scope/DbContext (default level). PG 17 §13.2.1: under Read Committed a query 'never sees either uncommitted data'.",
+        "source": "examples/don-hang @ stage-3: DonHang.Messaging/OutboxRelay.cs:43-83; https://www.postgresql.org/docs/17/transaction-iso.html"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "RefundApiTests.ShipOrder_Refunding_Returns409: POST refund as 'customer-an', then 'ClientFor(\"staff-lan\", \"staff\").PatchAsync($\"/api/v1/orders/{orderId}/ship\", null)' and 'Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);'. The client comes from the WebApplicationFactory (factory.CreateClient()), no app involved.",
+        "source": "examples/don-hang @ stage-3: DonHang.Tests/Integration/RefundApiTests.cs:47-56, 69-75"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": ".NET docs: 'An expression without any operator is interpreted as a contains on the FullyQualifiedName property. For example, dotnet test --filter xyz is the same as dotnet test --filter FullyQualifiedName~xyz.' Ran 'dotnet test DonHang.Tests --filter Cancel_RefundingOrder_Throws' in examples/don-hang (SDK 10.0.300 via global.json): 'Passed! - Failed: 0, Passed: 1, Skipped: 0, Total: 1'.",
+        "source": "refs/dotnet-docs/docs/core/testing/selective-unit-tests.md:27; local run in examples/don-hang"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "By inspection (file not modified in this session): with :126 commented, a 'refunding' order is not 'cancelled'/'shipped'/'paid' (:123-125), so :127 'Status = \"cancelled\";' runs and no exception is thrown; Cancel_RefundingOrder_Throws uses 'Assert.Throws<OrderStatusException>(order.Cancel)', which fails when nothing is thrown. CompleteRefund :163 'if (Status != \"refunding\") throw ... \"not-refunding\"'. Unmodified run: the filter selects exactly 1 test.",
+        "source": "examples/don-hang @ stage-3: DonHang.Domain/Entities.cs:121-133, 161-166; DonHang.Tests/Domain/OrderTests.cs:237-246"
+      },
+      {
+        "n": 17,
+        "verdict": "not-needed",
+        "evidence": "Opinion, given in s6 as rebuttals with reasons and an observable check each, not as an unconditional rule. Round 2 opened: PG 17 explicit-locking.html (claim 12), docs/design/refund-design.md and ADR 0003 (gateway = cổng thanh toán, s2 gloss), Entities.cs/OrderTests.cs lines named in s5, quiz q1/q3/q5. Round 1: PG 17 transaction-iso, refs/dotnet-docs selective-unit-tests.md, sources of claims 1-16.",
+        "source": "examples/don-hang @ stage-3: docs/design/refund-design.md:32-33"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-15T00:10:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation, round 2)",
+    "issues": [],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

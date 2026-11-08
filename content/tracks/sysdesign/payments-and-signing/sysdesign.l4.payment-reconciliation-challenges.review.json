@@ -1,0 +1,157 @@
+{
+  "id": "sysdesign.l4.payment-reconciliation-challenges",
+  "technical": {
+    "reviewed_at": "2026-11-04T12:40:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Challenge table rows: \"Key chặn hoàn lần hai (YC-9) ... | Không\"; \"Chỉ hai bản ghi cùng nhau mới cho thấy ... | Không\"; \"ADR 0028: chạy lại; ngày bị lỡ báo kế toán | Không\"; \"Rủi ro: dòng hoàn tiền không ghi cổng nào | Thêm cột cổng | Lập trình viên backend\"; \"Ai sửa đơn kẹt ở `paid`? | Mở | Thiết kế bước sửa | Đội Đặt hàng (ADR 0025)\".",
+        "source": "docs/design/reconciliation-design-review.md @ stage-4 lines 97-105"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "\"YC-9: Một đơn không bao giờ được hoàn tiền hai lần, kể cả khi việc gửi sang cổng thanh toán phải thử lại.\" \"YC-10: Khi cổng thanh toán lỗi, yêu cầu được gửi lại tự động trong ít nhất 24 giờ trước khi chuyển cho nhân viên xử lý.\"",
+        "source": "docs/team/refund-requirements.md @ stage-4 lines 47-50"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "`public static string IdempotencyKeyFor(Payment refund) => $\"refund-{refund.Id}\";` with comment \"The same key on every call for one refund row, so the gateway refunds once however many times a timeout makes RefundSender ask again.\" RefundAsync adds it as header `Idempotency-Key`.",
+        "source": "DonHang.Payments/GatewayRefundClient.cs @ stage-4 (IdempotencyKeyFor, RefundAsync)"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "RefundSender.cs: \"The background job that calls the gateway ... claims the due `pending` refund rows ..., calls the gateway for each, and records what happened\"; class in DonHang.Payments. GatewayRefundClient: `catch (TimeoutRejectedException) { return new(RefundOutcome.TryAgainLater, ...) }`; error status and HttpRequestException also return TryAgainLater, so RefundSender only schedules another attempt (RecordResult).",
+        "source": "DonHang.Payments/RefundSender.cs lines 16-20, 83-87; DonHang.Payments/GatewayRefundClient.cs @ stage-4 (RefundAsync catch blocks)"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Round 2: lesson now reads \"if every retry fails until YC-10's 24 hours run out\". Review deep dive: \"Cổng lỗi liên tục tới hết 24 giờ của YC-10; dòng thành `failed`, `payment.refund-failed` được gửi.\" \"đơn quay về `paid`, khách nhận email báo hoàn tiền thất bại. Tiền thật ra đã hoàn.\" RefundSender.RecordResult: `now - refund.RequestedAt >= settings.GiveUpAfter` (GiveUpAfter = 24h) sets `failed`.",
+        "source": "docs/design/reconciliation-design-review.md @ stage-4 lines 49-54; DonHang.Payments/RefundSender.cs lines 13, 99-101"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "ĐS-2: \"Cổng có khoản hoàn không có dòng nào trong Payments (ví dụ hoàn tay trên trang quản trị của cổng) | Hiện thành một chỗ lệch\". ADR 0028: \"bắt được cả khoản hoàn làm ngoài Đơn Hàng\"; outcome \"cổng có khoản hoàn không có dòng\". Round 3: try-it answer 2 now cites the challenge table's first row; \"khoản hoàn làm tay\" is verbatim in that row (line 100), and \"the daily run lists it as a gateway refund with no row\" matches ĐS-2 (detected in the next run).",
+        "source": "docs/team/reconciliation-requirements.md @ stage-4 (Kịch bản ĐS-2); docs/adr/0028-*.md; docs/design/reconciliation-design-review.md line 100"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Challenge row: \"Sao không chỉ dùng báo cáo của cổng? | Chỉ hai bản ghi cùng nhau mới cho thấy khoản cổng đã hoàn cho một dòng `failed`\".",
+        "source": "docs/design/reconciliation-design-review.md @ stage-4 line 102"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "ADR 0028 decision: \"Báo cáo trễ hay cổng lỗi lúc chạy: job chạy lại; ngày bị lỡ được báo cho kế toán (giả định).\"",
+        "source": "docs/adr/0028-doi-soat-hoan-tien-hang-ngay-voi-bao-cao-cua-cong.md @ stage-4, Quyết định"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "\"API báo cáo của cổng là điểm hỏng đơn lẻ cho đối soát, không cho hoàn tiền: job chạy lại khi cổng quay lại; ngày bị lỡ được báo cho kế toán (giả định).\"",
+        "source": "docs/design/reconciliation-design-review.md @ stage-4 lines 67-68"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Risk row: \"Dòng hoàn tiền không ghi cổng nào; cần cho bước 4 kế hoạch rời đi của ADR 0010 | Lập trình viên backend | Thêm cột cổng trước khi có cổng thứ hai\". Payment.cs has Id, OrderId, Kind, Status, AmountVnd, Method, PaidAt, RequestedBy, RequestedAt, Attempts, NextAttemptAt, FailureReason, TraceParent; no gateway property.",
+        "source": "docs/design/reconciliation-design-review.md @ stage-4 line 89; DonHang.Payments/Payment.cs @ stage-4"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "ADR 0010: \"Chọn Cổng A. Cổng B bị loại vì không nhận idempotency key\". Step 4: \"Chạy cả hai cổng trong một giai đoạn: khoản thanh toán qua Cổng A chỉ hoàn được qua Cổng A, nên mỗi dòng hoàn tiền phải biết khoản thanh toán của nó đi qua cổng nào, cho tới khi khoản cuối cùng của Cổng A hết hạn hoàn tiền (180 ngày).\"",
+        "source": "docs/adr/0010-cong-thanh-toan-ben-ngoai.md @ stage-4 lines 25, 59-62"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "\"1. Chọn cổng mới bằng một lần đánh giá như `payment-gateway-evaluation.md`, cùng tiêu chí.\" (Step 3/CSV no longer in the claim or lesson.)",
+        "source": "docs/adr/0010-cong-thanh-toan-ben-ngoai.md @ stage-4 lines 51-52"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "\"Đội xem lại quyết định khi: thêm cổng thứ hai theo bước 4 kế hoạch rời đi của ADR 0010 (mỗi dòng phải biết cổng của nó, mỗi cổng một báo cáo); số khoản hoàn mỗi ngày vượt xa một lô nhỏ.\"",
+        "source": "docs/adr/0028-doi-soat-hoan-tien-hang-ngay-voi-bao-cao-cua-cong.md @ stage-4, Hệ quả"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "\"Vì vậy cần một bước sửa mới cho đơn: đưa đơn `paid` sang `cancelled` khi khoản hoàn đã được xác nhận qua đối soát.\" Risk row: \"Đơn của dòng `failed` mà cổng đã hoàn kẹt ở `paid`: cần bước sửa mới cho đơn | Đội Đặt hàng (ADR 0025) | Mở; thiết kế bước sửa trước khi dựng đối soát\".",
+        "source": "docs/design/reconciliation-design-review.md @ stage-4 lines 61-62, 88, 105"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "Entities.cs: `public void CompleteRefund() { if (Status != \"refunding\") throw new OrderStatusException(Id, \"not-refunding\", ...` Test CompleteRefund_PaidOrder_Throws. Review: \"Gửi muộn `payment.refunded` không sửa được: `Order.CompleteRefund()` chỉ nhận đơn `refunding`\".",
+        "source": "DonHang.Domain/Entities.cs @ stage-4 lines 161-166; docs/design/reconciliation-design-review.md lines 57-59"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "Review: \"Trạng thái: đã review\"; risk table rows 88-90 still open with owners and next steps. ADR 0028: \"Trạng thái: Đã chấp nhận\".",
+        "source": "docs/design/reconciliation-design-review.md @ stage-4 lines 6, 84-90; docs/adr/0028-*.md line 3"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "ADR 0028: \"Mỗi dòng báo cáo được ghép với một dòng hoàn tiền theo key `refund-<id>`.\" Review line 42: \"Mỗi dòng báo cáo được ghép với dòng hoàn tiền theo key `refund-<id>`\". Risk row: \"Báo cáo của Cổng A có thể không ghi idempotency key | Lập trình viên làm tích hợp cổng | Hỏi Cổng A; không có thì ghép theo đơn và số tiền, chỗ lệch nhiều hơn\".",
+        "source": "docs/adr/0028-*.md @ stage-4 line 39; docs/design/reconciliation-design-review.md @ stage-4 lines 42, 90"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "\"Điểm đánh đổi, cửa sổ 24 giờ của YC-10: dài hơn thì ít dòng `failed` mà cổng đã hoàn, nhưng đơn ở `refunding` lâu hơn và nhân viên chờ lâu hơn. Giữ 24 giờ.\"",
+        "source": "docs/design/reconciliation-design-review.md @ stage-4 lines 77-78"
+      },
+      {
+        "n": 19,
+        "verdict": "not-needed",
+        "evidence": "Method statement (opinion), consistent with what the review file actually does: risk row 89 times the gateway column \"trước khi có cổng thứ hai\" instead of designing two-gateway support.",
+        "source": "docs/design/reconciliation-design-review.md @ stage-4 line 89"
+      },
+      {
+        "n": 20,
+        "verdict": "verified",
+        "evidence": "Round 2: text now says the condition is \"in sight\", not met. ADR 0028: \"Đội xem lại quyết định khi: thêm cổng thứ hai theo bước 4 kế hoạch rời đi của ADR 0010\"; ADR 0010 step 1: \"Chọn cổng mới bằng một lần đánh giá\". Round 3: zero issues remain; opened ADR 0010, ADR 0028, reconciliation-design-review.md, reconciliation-requirements.md (stage-4), RefundSender.cs.",
+        "source": "docs/adr/0028-*.md @ stage-4, Hệ quả; docs/adr/0010-cong-thanh-toan-ben-ngoai.md lines 51-52"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-11-04T14:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior simulation, prompt 05, round 3 targeted re-review)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 9,
+        "kind": "example",
+        "text": "New in round 3, in the changed try-it answer 2. It labels the hand refund 'one record's limit' but cites the challenge table's first row, which is the key's row. Core concepts also puts 'a refund Đơn Hàng never sent' under the key's limit. If I answered 'the key's limit, first row', I would not know whether I got it right. The source and the reasoning ('only in the gateway's report, with no row in Payments') are clear, so I can still do the exercise.",
+        "quote": "2. One record's limit, the challenge table's first row (\"khoản hoàn làm tay\").",
+        "fix": "Add a few words to answer 2 saying that the key's limit also fits, e.g. 'One record's limit (the key's limit also fits: no call of ours exists), the challenge table's first row (…)'."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

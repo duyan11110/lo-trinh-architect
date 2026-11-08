@@ -1,0 +1,149 @@
+{
+  "id": "k8s.l2.persistent-volume-claims",
+  "technical": {
+    "reviewed_at": "2026-10-15T15:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "\"For a Pod that defines an `emptyDir` volume, the volume is created when the Pod is assigned to a node. As the name says, the `emptyDir` volume is initially empty. ... When a Pod is removed from a node for any reason, the data in the `emptyDir` is deleted permanently.\" Note: \"A container crashing does *not* remove a Pod from a node. The data in an `emptyDir` volume is safe across container crashes.\"",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/storage/volumes.md lines 163-171 (#emptydir)"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "git show stage-3:deploy/k8s/db.yaml (via tools/extract-code): Deployment `db`, `replicas: 1`, `image: postgres:17.6-alpine`, volumeMount `data` at `/var/lib/postgresql/data`, volume `- name: data` / `emptyDir: {}`.",
+        "source": "examples/don-hang deploy/k8s/db.yaml @ stage-3"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "\"A _PersistentVolume_ (PV) is a piece of storage in the cluster ... PVs are volume plugins like Volumes, but have a lifecycle independent of any individual Pod that uses the PV.\" \"A _PersistentVolumeClaim_ (PVC) is a request for storage by a user. ... Claims can request specific size and access modes\". Namespaces page: \"low-level resources, such as Nodes and PersistentVolumes, are not in any namespace.\" PVCs: \"PersistentVolumeClaims are namespaced objects\".",
+        "source": "refs/kubernetes-website .../concepts/storage/persistent-volumes.md lines 37-49, 1003-1004; .../overview/working-with-objects/namespaces.md lines 135-137"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "\"A control loop in the control plane watches for new PVCs, finds a matching PV (if possible), and binds them together. ... the user will always get at least what they asked for, but the volume may be in excess of what was requested. Once bound, PersistentVolumeClaim binds are exclusive, regardless of how they were bound. A PVC to PV binding is a one-to-one mapping\". pvc.txt line 7: `data   Bound    100Mi      ReadWriteOnce`.",
+        "source": "refs/kubernetes-website .../concepts/storage/persistent-volumes.md lines 97-104 (#binding); examples/don-hang/outputs/stage-3/scripts/k8s/pvc.txt"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "\"`ReadWriteOnce`: the volume can be mounted as read-write by a single node. ReadWriteOnce access mode still can allow multiple pods to access (read from or write to) that volume when the pods are running on the same node.\" pvc.txt lines 24-30: both lines in note.txt, writer and writer-2 Running, `nodes they run on: 1`.",
+        "source": "refs/kubernetes-website .../concepts/storage/persistent-volumes.md lines 625-628 (#access-modes)"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "\"Pods access storage by using the claim as a volume. Claims must exist in the same namespace as the Pod using the claim. The cluster finds the claim in the Pod's namespace and uses it to get the PersistentVolume backing the claim.\" \"Users ... access their claimed PVs by including a `persistentVolumeClaim` section in a Pod's `volumes` block.\" Example uses `persistentVolumeClaim: claimName: myclaim`. data-writer-pod.yaml lines 18-21 match.",
+        "source": "refs/kubernetes-website .../concepts/storage/persistent-volumes.md lines 118-120, 976-999 (#claims-as-volumes)"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Round 2: kubelet removed. Claim now matches docs: \"Pods access storage by using the claim as a volume. ... The volume is then mounted to the host and into the Pod.\" data-writer-pod.yaml lines 15-17 mount `data` at `/data`; lesson section 4 now reads \"On the Pod's node, the volume is mounted into the container at `/data`\".",
+        "source": "refs/kubernetes-website .../concepts/storage/persistent-volumes.md lines 976-981 (#claims-as-volumes); deploy/k8s/lessons/data-writer-pod.yaml @ stage-3"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "PVs \"have a lifecycle independent of any individual Pod that uses the PV.\" Execution: pvc.txt lines 10-14 `pod \"writer\" deleted ...` then `data   Bound`; lines 16-19 new `writer` prints `order 13: written by writer`.",
+        "source": "refs/kubernetes-website .../concepts/storage/persistent-volumes.md line 41; examples/don-hang/outputs/stage-3/scripts/k8s/pvc.txt"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "tools/extract-code data-pvc.yaml --tag stage-3: `kind: PersistentVolumeClaim`, `name: data`, `namespace: storage-lessons`, `accessModes: [\"ReadWriteOnce\"]`, `storage: 100Mi`. data-writer-pod.yaml lines 15-21 mount `data` at `/data`, line 14 `command: [\"sleep\", \"3600\"]`.",
+        "source": "examples/don-hang deploy/k8s/lessons/data-pvc.yaml, data-writer-pod.yaml @ stage-3"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "\"Currently when a Pod is created, its hostname (as observed from within the Pod) is the Pod's `metadata.name` value.\" data-writer-pod.yaml sets no spec.hostname. pvc.txt lines 19, 24-25: `written by writer`, `written by writer-2`.",
+        "source": "refs/kubernetes-website .../concepts/services-networking/dns-pod-service.md lines 134-135"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "\"`nodeName` is a more direct form of node selection than affinity or `nodeSelector`. ... If the `nodeName` field is not empty, the scheduler ignores the Pod and the kubelet on the named node tries to place the Pod on that node.\"",
+        "source": "refs/kubernetes-website .../concepts/scheduling-eviction/assign-pod-node.md lines 607-610 (#nodename)"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "tools/extract-code scripts/k8s/pvc.sh --tag stage-3: line 6 `show() { echo \"\\$ $*\"; \"$@\"; }`; lines 12-13 delete/create namespace storage-lessons; 18-21 apply claim, Pod, get pvc; 40 `node=$(... {.spec.nodeName})`; 42-43 sed + `kubectl apply -f -`; 48-49 count distinct nodeName, echo `nodes they run on: $nodes`.",
+        "source": "examples/don-hang scripts/k8s/pvc.sh @ stage-3"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "\"When the container starts, it checks whether the PostgreSQL data directory is empty. If the directory already contains data, PostgreSQL starts immediately without running any initialization. If the directory is empty, the container runs `initdb` ... then executes all scripts in `/docker-entrypoint-initdb.d/` in alphabetical order\". Round 2: version_key now `docker`, matching the source; lesson now says \"the PostgreSQL image\".",
+        "source": "refs/docker-docs/content/guides/postgresql.md line 414"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "kubectl quick reference: \"`-o=custom-columns=<spec>` | Print a table using a comma separated list of custom columns\". Tutorial output of `kubectl get pvc task-pv-claim`: header `NAME  STATUS  VOLUME  CAPACITY  ACCESSMODES  STORAGECLASS  AGE`; \"the PersistentVolumeClaim is bound to your PersistentVolume, `task-pv-volume`.\" Namespaces page: PersistentVolumes \"are not in any namespace.\"",
+        "source": "refs/kubernetes-website .../reference/kubectl/quick-reference.md line 457; .../tutorials/configuration/configure-persistent-volume-storage.md lines 168-173; .../namespaces.md line 137"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "\"ReadWriteOnce access mode still can allow multiple pods to access (read from or write to) that volume when the pods are running on the same node. For single pod access, please see ReadWriteOncePod.\" pvc.txt lines 23-30 show writer-2 appending to writer's file while both are Running.",
+        "source": "refs/kubernetes-website .../concepts/storage/persistent-volumes.md lines 626-628"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "devops.l1.volumes.en.md line 89: \"a named volume has its own lifecycle: removing `donhang-db` leaves `donhang_db-data` in place, and the next `db` container picks up the same data.\"",
+        "source": "content/tracks/devops/docker/devops.l1.volumes.en.md"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "\"You can express memory as a plain integer or as a fixed-point number using one of these quantity suffixes: E, P, T, G, M, k. You can also use the power-of-two equivalents: Ei, Pi, Ti, Gi, Mi, Ki.\" Same page: \"probably meant to ask for 400 mebibytes (`400Mi`)\". So 100Mi = 100 mebibytes. Round 2 docs opened: persistent-volumes.md, volumes.md, manage-resources-containers.md, kubectl quick-reference.md, docker guides/postgresql.md.",
+        "source": "refs/kubernetes-website/content/en/docs/concepts/configuration/manage-resources-containers.md lines 183-185, 194"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-15T16:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "gap",
+        "text": "Carried from round 1. The lesson says ReadWriteOnce allows one node at a time, but never says what happens to a Pod on a second node that uses the same claim. I can answer q5 by elimination, but I can't picture option c's result.",
+        "quote": "`ReadWriteOnce` counts nodes, not Pods.",
+        "fix": "Add one sentence after it saying what a Pod on another node experiences while the volume is mounted read-write elsewhere (e.g. it cannot mount it and does not start)."
+      },
+      {
+        "severity": "minor",
+        "section": 3,
+        "kind": "style",
+        "text": "Carried from round 1. Access mode and `emptyDir` are defined in Core concepts but not bolded like the other two concepts, so I was unsure whether they are new terms to learn or side notes.",
+        "quote": "- Access mode — how nodes may mount a volume;",
+        "fix": "Bold 'Access mode' in Core concepts (or state that `emptyDir` and access mode are fields, not lesson vocab), consistently."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [
+        "What happens to a Pod on a second node using a ReadWriteOnce claim already mounted elsewhere"
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

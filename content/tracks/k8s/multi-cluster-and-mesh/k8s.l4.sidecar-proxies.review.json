@@ -1,0 +1,187 @@
+{
+  "id": "k8s.l4.sidecar-proxies",
+  "technical": {
+    "reviewed_at": "2026-10-28T23:59:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Sidecar Containers: \"Feature state: Stable since Kubernetes v1.33\"; \"If an init container is created with its restartPolicy set to Always, it will start and remain running during the entire life of the Pod.\" Pod Lifecycle: \"Sidecar containers are init containers that always restart regardless of the Pod's restartPolicy because they have their own container-level restartPolicy: Always\". Docs root is current, not a 1.34 snapshot; GA since 1.33 covers 1.34.",
+        "source": "https://kubernetes.io/docs/concepts/workloads/pods/sidecar-containers/ ; https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Sidecar Containers: started status \"becomes true because there is a process running in the container and no startup probe defined, or as a result of its startupProbe succeeding.\" Pod Lifecycle > Startup probe: \"This type of probe is only executed at startup, unlike liveness and readiness probes, which are run periodically.\" Supports the round-2 wording \"a probe the kubelet runs only while the container starts\".",
+        "source": "https://kubernetes.io/docs/concepts/workloads/pods/sidecar-containers/ ; https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Init Containers: \"Init containers always run to completion.\" \"Each init container must complete successfully before the next one starts.\" \"Init containers run to completion sequentially, and the main container does not start until all the init containers have successfully completed.\"",
+        "source": "https://kubernetes.io/docs/concepts/workloads/pods/init-containers/"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Pod Lifecycle: \"the kubelet will delay sending the TERM signal to these sidecar containers until the last main container has fully terminated. The sidecar containers will be terminated in the reverse order they are defined in the Pod spec.\" Sidecar Containers: \"Upon Pod termination, the kubelet postpones terminating sidecar containers until the main application container has fully stopped.\"",
+        "source": "https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/ ; https://kubernetes.io/docs/concepts/workloads/pods/sidecar-containers/"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Pods > Pod networking: \"Every container in a Pod shares the network namespace, including the IP address and network ports. Inside a Pod (and only then), the containers that belong to the Pod can communicate with one another using localhost.\" Execution: capture line 20-21 shows the app reaching its sidecar on 127.0.0.1:9000.",
+        "source": "https://kubernetes.io/docs/concepts/workloads/pods/ ; examples/don-hang/outputs/stage-4/scripts/k8s/sidecar-proxy.txt"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "bind: \"Overrides the interface to which the server's socket should bind.\" respond: \"Writes a hard-coded/static response to the client.\" Concepts shorthand table: {header.*} -> {http.request.header.*}; {tls_client_subject} -> {http.request.tls.client.subject}. reverse_proxy: header_up \"sets, adds..., deletes... a request header going upstream\". Placeholder in respond body confirmed by execution: capture line 21 \"echo app, plain HTTP, called by CN=gateway-client\".",
+        "source": "https://caddyserver.com/docs/caddyfile/directives/bind ; .../directives/respond ; .../caddyfile/concepts ; .../directives/reverse_proxy"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Round 2: text now names Caddy 2.10. reverse_proxy: Caddy \"passes through incoming headers-including Host-to the backend without modifications\"; \"Since Caddy v2.11.0, this is done automatically, so it is no longer necessary to explicitly override the Host header when proxying to HTTPS.\" So for 2.10 Host passes unchanged. Concepts: {upstream_hostport} -> {http.reverse_proxy.upstream.hostport}. tls_client_auth, tls_trust_pool as claimed.",
+        "source": "https://caddyserver.com/docs/caddyfile/directives/reverse_proxy ; https://caddyserver.com/docs/caddyfile/concepts"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Global options, strict_sni_host: \"Enabling this requires that a request's Host header matches the value of the ServerName\"; \"This option will automatically be turned on if client authentication is configured.\"; \"HTTP status 421 Misdirected Request response is written to the client.\" reverse_proxy tls_server_name: \"By default, this will use the upstream address' host part.\" 421 without header_up Host recorded from the repo run in DECISIONS.md (2026-10-26).",
+        "source": "https://caddyserver.com/docs/caddyfile/options ; https://caddyserver.com/docs/caddyfile/directives/reverse_proxy"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "echo-mtls-sidecar.yaml (HEAD 828fdeb = refs/tags/stage-4): lines 12-19 app.Caddyfile http://:8080, bind 127.0.0.1, respond with {http.request.header.X-Client-Subject}; lines 20-34 proxy.Caddyfile :8443, tls + client_auth mode require_and_verify, reverse_proxy 127.0.0.1:8080 with header_up X-Client-Subject {http.request.tls.client.subject}. tls/client_auth lines identical to echo-mtls.yaml 17-20.",
+        "source": "examples/don-hang/deploy/k8s/lessons/echo-mtls-sidecar.yaml @ stage-4"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "echo-mtls-sidecar.yaml lines 57-69: initContainers tls-proxy, caddy:2.10.0, restartPolicy: Always, mounts config and certs; 72-78 containers echo mounts config only; 83-85 volume certs secretName echo-mtls-tls; 87-97 Service echo-sidecar port 8443 targetPort 8443. Lesson line refs 57-60 and 72-78 match.",
+        "source": "examples/don-hang/deploy/k8s/lessons/echo-mtls-sidecar.yaml @ stage-4"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "mtls-client-sidecar.yaml: lines 12-25 caller-sidecar Caddyfile (13-15 global block with admin off, 16 http://:9000, 17 bind, 18 reverse_proxy, 19 header_up Host, 21-22 tls_client_auth/tls_trust_pool); 47-57 initContainers tls-proxy restartPolicy Always mounting certs; 59-61 app runs [\"sleep\",\"86400\"] with no volumeMounts; 66-68 secretName gateway-client-tls.",
+        "source": "examples/don-hang/deploy/k8s/lessons/mtls-client-sidecar.yaml @ stage-4"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "mtls-certificates.yaml line 27: \"- echo-sidecar.mesh-lessons.svc\" in dnsNames; lines 42-46: Certificate gateway-client, secretName gateway-client-tls, commonName gateway-client. sidecar-proxy.sh lines 14-19 create lab-ca and apply mtls-certificates.yaml. Round 3: q5 option b's two Certificates match (kind: Certificate at lines 19, 40 only; line 6 is the Issuer).",
+        "source": "examples/don-hang/deploy/k8s/lessons/mtls-certificates.yaml ; scripts/k8s/sidecar-proxy.sh @ stage-4"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "sidecar-proxy.txt: lines 10-11 both Pods 2/2 Running; 14-18 initContainers: tls-proxy (restartPolicy: Always), containers: echo / app; 21 \"echo app, plain HTTP, called by CN=gateway-client\"; 24 \"wget: error getting response: Resource temporarily unavailable\"; 26-37 ls /certs fails in echo and app, lists ca.crt tls.crt tls.key in both tls-proxy.",
+        "source": "examples/don-hang/outputs/stage-4/scripts/k8s/sidecar-proxy.txt"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "sidecar-proxy.sh line 7 lessons_cluster; line 8 installs cert-manager if cert-manager-webhook absent; lines 10-11 recreate mesh-lessons; lines 51-53 wget --no-check-certificate from -c app with no client cert; line 65 kubectl delete namespace mesh-lessons. Round 3: shortened Try it step 1 still matches line 8.",
+        "source": "examples/don-hang/scripts/k8s/sidecar-proxy.sh @ stage-4"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "Service: \"The set of Pods targeted by a Service is usually determined by a selector that you define.\" DNS for Services and Pods: Services get records \"with a name of the form my-svc.my-namespace.svc.cluster-domain.example\". echo-mtls-sidecar.yaml lines 92-94: selector app: echo-sidecar, matching Pod label line 53. Capture line 21 shows the call via echo-sidecar.mesh-lessons.svc. Delete-Service failure not executed. Round 3: section 8 and q5 expl. d now lab-scoped.",
+        "source": "https://kubernetes.io/docs/concepts/services-networking/service/ ; .../dns-pod-service/ ; deploy/k8s/lessons/echo-mtls-sidecar.yaml @ stage-4"
+      },
+      {
+        "n": 16,
+        "verdict": "unverified",
+        "evidence": "Only the added definition is supported: Controllers page: \"controllers are control loops that watch the state of your cluster, then make or request changes where needed\"; \"Built-in controllers manage state by interacting with the cluster API server.\" No docs root in versions.yaml covers what a mesh's controllers do (proxy injection, per-app certificates, ServiceAccount names, proxy config). Hedged with 'typically' / 'in many meshes'.",
+        "source": "https://kubernetes.io/docs/concepts/architecture/controller/ ; content/versions.yaml (no mesh key)"
+      },
+      {
+        "n": 17,
+        "verdict": "unverified",
+        "evidence": "No allowed docs root covers service-mesh retry/timeout/traffic split/telemetry (no mesh key in versions.yaml). Claim is outline-mandated (item 5) but no document was available to confirm it.",
+        "source": "content/versions.yaml (no mesh key)"
+      },
+      {
+        "n": 18,
+        "verdict": "unverified",
+        "evidence": "Per-node shared proxy meshes, and the round-2 addition that a fault in the shared proxy reaches every Pod on the node, are not described by any docs root in versions.yaml; outline item 6 is the only source. Hedged with \"Not every mesh\" / \"Some\".",
+        "source": "content/versions.yaml (no mesh key)"
+      },
+      {
+        "n": 19,
+        "verdict": "verified",
+        "evidence": "DonHang.Payments/Program.cs line 107 client.AddResilienceHandler(\"gateway\", ...), line 124 pipeline.AddTimeout(gateway.Timeout); deploy/gitops/lessons/api-canary.yaml line 67 \"The Service the HTTPRoute api names beside api, with a weight each\"; scripts/devops/canary-steps.sh commits api/api-canary weights. OpenTelemetry pinned per versions.yaml opentelemetry_dotnet.",
+        "source": "examples/don-hang @ stage-4 (working tree at 828fdeb)"
+      },
+      {
+        "n": 20,
+        "verdict": "unverified",
+        "evidence": "Admission Controllers: \"An admission controller is a piece of code that intercepts requests to the Kubernetes API server prior to persistence of the resource\"; Dynamic Admission Control: \"Mutating admission webhooks ... can modify objects sent to the API server\". Neither visible portion says meshes typically inject proxies at admission; \"typically\" is unsupported by allowed docs.",
+        "source": "https://kubernetes.io/docs/reference/access-authn-authz/admission-controllers/ ; .../extensible-admission-controllers/"
+      },
+      {
+        "n": 21,
+        "verdict": "not-needed",
+        "evidence": "Labelled opinion; reasoning from the previous lesson's situation (P5), conditioned on the apps being .NET services. No factual dependency beyond claims 1 and 16."
+      },
+      {
+        "n": 22,
+        "verdict": "not-needed",
+        "evidence": "Labelled opinion: trade-offs table restates claims 1, 10, 11, 16-18 and the lab; no new factual assertion beyond those."
+      },
+      {
+        "n": 23,
+        "verdict": "not-needed",
+        "evidence": "Labelled opinion; each choice in section 7 carries its condition (number of services, teams/languages, node memory)."
+      },
+      {
+        "n": 24,
+        "verdict": "verified",
+        "evidence": "Round 2: kind now behavior, condition added (\"a startup probe that checks the port the app calls\"). Sidecar Containers: started is true with a running process and no startup probe, \"or as a result of its startupProbe succeeding\"; the kubelet starts the next container only after started. Pod Lifecycle: \"Startup probes verify whether the application within a container is started.\"",
+        "source": "https://kubernetes.io/docs/concepts/workloads/pods/sidecar-containers/ ; https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "accuracy",
+        "text": "New in round 3 (changed text). After the inserted sentence, the pronoun in the next sentence has the echo sidecar as nearest antecedent, so it can read as the echo sidecar sending the request with Host set. The sender is the caller's sidecar (diagram 'CS->>SS: GET /'; mtls-client-sidecar.yaml line 19 header_up Host).",
+        "quote": "The echo sidecar checks it against the lab CA. It then sends the request over that connection",
+        "fix": "Replace \"It then sends the request\" with \"The caller's sidecar then sends the request\" (vi: \"Sau đó sidecar bên gọi gửi request\")."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-28T23:59:30+07:00",
+    "reviewer": "claude-opus-5-5 (prompt 05, junior reader, round 3 targeted)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 4,
+        "kind": "style",
+        "text": "New in round 3 (changed text). The order now follows the diagram, but 'It' right after 'The echo sidecar checks it' reads as the echo sidecar sending the request. I had to look back at the diagram (CS->>SS: GET /) to see that the caller's sidecar sends it.",
+        "quote": "The echo sidecar checks it against the lab CA. It then sends the request over that connection",
+        "fix": "Replace 'It then sends the request' with 'The caller's sidecar then sends the request'."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

@@ -1,0 +1,165 @@
+{
+  "id": "devops.l3.point-in-time-recovery",
+  "technical": {
+    "reviewed_at": "2026-10-14T18:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "28.3: \"changes to data files (where tables and indexes reside) must be written only after those changes have been logged, that is, after WAL records describing the changes have been flushed to permanent storage.\" ... \"any changes that have not been applied to the data pages can be redone from the WAL records. (This is roll-forward recovery, also known as REDO.)\" 25.3: \"The log records every change made to the database's data files.\"",
+        "source": "https://www.postgresql.org/docs/17/wal-intro.html ; https://www.postgresql.org/docs/17/continuous-archiving.html"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "pg_basebackup: \"pg_basebackup is used to take a base backup of a running PostgreSQL database cluster.\" ... \"Backups are always taken of the entire database cluster; it is not possible to back up individual databases or database objects.\"",
+        "source": "https://www.postgresql.org/docs/17/app-pgbasebackup.html"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "19.5.3 archive_mode: \"When archive_mode is enabled, completed WAL segments are sent to archive storage by setting archive_command or archive_library.\" archive_command: \"Any %p in the string is replaced by the path name of the file to archive, and any %f is replaced by only the file name.\"",
+        "source": "https://www.postgresql.org/docs/17/runtime-config-wal.html"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "25.3.5: \"create a file recovery.signal in the cluster data directory\"; \"The one thing that you absolutely must specify is the restore_command\". 19.5.6 recovery_target_time: \"the time stamp up to which recovery will proceed. The precise stopping point is also influenced by recovery_target_inclusive.\" recovery_target_inclusive: controls whether \"transactions having exactly the ... commit time ... will be included\". Repo db/pitr/start.sh sets restore_command, recovery_target_time, recovery.signal.",
+        "source": "https://www.postgresql.org/docs/17/continuous-archiving.html ; https://www.postgresql.org/docs/17/runtime-config-wal.html ; examples/don-hang db/pitr/start.sh:5-24"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "25.3: \"As with the plain file-system-backup technique, this method can only support restoration of an entire database cluster, not a subset.\" pg_basebackup: \"it is not possible to back up individual databases\".",
+        "source": "https://www.postgresql.org/docs/17/continuous-archiving.html ; https://www.postgresql.org/docs/17/app-pgbasebackup.html"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "19.5.3 / 25.3.1: \"The archive_command or archive_library is only invoked for completed WAL segments. Hence, if your server generates little WAL traffic (or has slack periods where it does so), there could be a long delay between the completion of a transaction and its safe recording in archive storage.\"",
+        "source": "https://www.postgresql.org/docs/17/runtime-config-wal.html ; https://www.postgresql.org/docs/17/continuous-archiving.html"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "25.3.1: \"Upon getting a zero result, PostgreSQL will assume that the file has been successfully archived, and will remove or recycle it. However, a nonzero status tells PostgreSQL that the file was not archived; it will try again periodically until it succeeds.\" \"The example command above for Unix avoids overwriting a pre-existing archive by including a separate test step.\" Round 2: the reworded s5 sentence (any non-zero exit, failed copy or file already there, retried, never thrown away) stays within this.",
+        "source": "https://www.postgresql.org/docs/17/continuous-archiving.html"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "archive_timeout: \"When this parameter is greater than zero, the server will switch to a new segment file whenever this amount of time has elapsed since the last segment file switch, and there has been any database activity, including a single checkpoint\" ... \"If this value is specified without units, it is taken as seconds.\" Repo: docker-compose.yml:87 `archive_timeout=60`.",
+        "source": "https://www.postgresql.org/docs/17/runtime-config-wal.html ; examples/don-hang docker-compose.yml:87"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Round 2 wording now states the condition (db's files lost while the archive survives) and excludes losing the machine. Follows from claim 8; docs: \"To limit how old unarchived data can be, you can set archive_timeout to force the server to switch to a new WAL segment file periodically\"; \"archive_timeout settings of a minute or so are usually reasonable.\" Same-machine fact: see claim 10.",
+        "source": "https://www.postgresql.org/docs/17/runtime-config-wal.html"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "docker-compose.yml:74-87 match the lesson block character-for-character; :100 mounts wal-archive:/wal-archive on db; :653 declares `wal-archive:` with no driver, i.e. a local volume on the Docker host that also runs db. Compared against the submodule working tree (git show needed approval in this session).",
+        "source": "examples/don-hang docker-compose.yml:74-87,100,653"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "base-backup.sh:12-17: `rm -rf /backups/base.new`; `pg_basebackup --host db ... --pgdata /backups/base.new --format tar --gzip --wal-method stream --checkpoint fast`; comment \"Only the newest base backup is kept: replace the previous one.\"; `rm -rf /backups/base`; `mv /backups/base.new /backups/base`.",
+        "source": "examples/don-hang scripts/devops/base-backup.sh:12-17"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "9.28.3 pg_switch_wal: \"Forces the server to switch to a new write-ahead log file, which allows the current file to be archived ... The result is the ending write-ahead log location plus 1 within the just-completed write-ahead log file.\" pg_walfile_name: \"Converts a write-ahead log location to the name of the WAL file holding that location.\" So pg_walfile_name(pg_switch_wal()) names the just-completed segment. pg_stat_archiver.last_archived_wal: \"Name of the WAL file most recently successfully archived\".",
+        "source": "https://www.postgresql.org/docs/17/functions-admin.html ; https://www.postgresql.org/docs/17/monitoring-stats.html"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "pitr.sh:34-58 match the lesson block character-for-character (working tree). :46-47 remove the db-pitr container and volume donhang_db-pitr-data before :48 starts db-pitr, matching the new s5 sentence. Docs: pg_get_wal_replay_pause_state returns \"paused if the recovery is actually paused\". Script exits 1 after printing 'db-pitr did not reach recovery_target_time:'.",
+        "source": "examples/don-hang scripts/devops/pitr.sh:34-58 ; https://www.postgresql.org/docs/17/functions-admin.html"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "pitr.sh:8-10 on_db/on_pitr = `docker compose exec -T db|db-pitr psql ...`, value = on_db --tuples-only --no-align --command; :14-16 `if ! docker compose exec -T lab test -f /backups/base/base.tar.gz; then ... scripts/devops/base-backup.sh`; :29-31 target=clock_timestamp(), sleep 1; :65-68 COPY back. outputs/stage-3/scripts/devops/pitr.txt identical to the lesson's output block.",
+        "source": "examples/don-hang scripts/devops/pitr.sh:8-16,29-31,61-68 ; outputs/stage-3/scripts/devops/pitr.txt"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "docker-compose.yml:616-630: db-pitr, profiles: [pitr], RECOVERY_TARGET_TIME env, backups:/backups:ro, wal-archive:/wal-archive:ro. start.sh: `-c recovery_target_action=pause`. Docs: \"The default is pause, which means recovery will be paused\"; \"If hot_standby is not enabled, a setting of pause will act the same as shutdown\"; hot_standby \"on ... (the default value)\".",
+        "source": "examples/don-hang docker-compose.yml:612-630 ; db/pitr/start.sh ; https://www.postgresql.org/docs/17/runtime-config-wal.html ; https://www.postgresql.org/docs/17/hot-standby.html"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "26.2.2: \"In standby mode, the server continuously applies WAL received from the primary server.\" 26.2.5: \"The standby connects to the primary, which streams WAL records to the standby as they're generated\".",
+        "source": "https://www.postgresql.org/docs/17/warm-standby.html"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "25.3: \"To recover successfully using continuous archiving ... you need a continuous sequence of archived WAL files that extends back at least as far as the start time of your backup.\" 19.5.6: \"if a recovery target is configured but the archive recovery ends before the target is reached, the server will shut down with a fatal error.\"",
+        "source": "https://www.postgresql.org/docs/17/continuous-archiving.html ; https://www.postgresql.org/docs/17/runtime-config-wal.html"
+      },
+      {
+        "n": 18,
+        "verdict": "verified",
+        "evidence": "recovery_target_xid: \"The transactions that will be recovered are those that committed before (and optionally including) the specified one.\" recovery_target_inclusive: \"controls whether transactions having exactly the target ... commit time ... will be included in the recovery. Default is on.\" Inclusion is per committed transaction. Exact-timestamp ties are included by default; immaterial here since the target is a clock_timestamp() a second before the DELETE.",
+        "source": "https://www.postgresql.org/docs/17/runtime-config-wal.html"
+      },
+      {
+        "n": 19,
+        "verdict": "verified",
+        "evidence": "Opinion stated with its condition in the lesson (rows written since the target in other databases). Supported by claim 5 and the repo's design: docker-compose.yml:612-615 \"A separate server for point-in-time recovery ... It reads the base backup and the WAL archive and writes neither; db keeps running.\"",
+        "source": "examples/don-hang docker-compose.yml:612-615"
+      },
+      {
+        "n": 20,
+        "verdict": "verified",
+        "evidence": "docker-compose.yml:351,367 `Host=db;Database=donhang_payments`; db/databases.sql:1-2 \"Databases on the db server that no migration bundle creates: Keycloak's (from stage-3) and the one OpenTofu keeps its state in\", :7 VALUES ('keycloak'), ('donhang_tofu'). With claim 2/5 (whole cluster), db-pitr holds all of them at one moment.",
+        "source": "examples/don-hang docker-compose.yml:351,367 ; db/databases.sql:1-9"
+      },
+      {
+        "n": 21,
+        "verdict": "verified",
+        "evidence": "19.5.6: \"In any case, if a recovery target is configured but the archive recovery ends before the target is reached, the server will shut down with a fatal error.\" pitr.sh then never sees `paused` and exits 1.",
+        "source": "https://www.postgresql.org/docs/17/runtime-config-wal.html ; examples/don-hang scripts/devops/pitr.sh:49-58"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-14T19:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (junior, round 2 targeted)",
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 5,
+        "kind": "gap",
+        "text": "Round 2, new, in the reworded paragraph. The one-minute case is now clear, but after 'losing the whole machine loses the archive with it' I still cannot tell what I would recover from, or how much I would lose, in that case. Not needed for the main idea.",
+        "quote": "so losing the whole machine loses the archive with it; the one-minute figure does not cover that case.",
+        "fix": "Add half a sentence after 'does not cover that case' saying what is lost when the whole machine goes, e.g. everything since the newest copy kept on another machine."
+      }
+    ],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [
+        "Section 5: what losing the whole machine costs, once the archive goes with it, is not said (minor)."
+      ],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

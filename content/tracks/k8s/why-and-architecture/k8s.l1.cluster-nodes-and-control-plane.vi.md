@@ -15,8 +15,8 @@ vocab: [cluster, k8s-node, control-plane]
 example_tag: stage-2
 versions_used: [kubernetes, kind, docker]
 content_version: 1
-status: approved
-approved_by: auto
+status: published
+approved_by: owner
 reviewed_at: "2026-10-03T17:49:38+07:00"
 ---
 

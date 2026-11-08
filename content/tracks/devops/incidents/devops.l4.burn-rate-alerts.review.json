@@ -1,0 +1,175 @@
+{
+  "id": "devops.l4.burn-rate-alerts",
+  "technical": {
+    "reviewed_at": "2026-10-28T00:40:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Docs (latest; the /3.5/ path returns 404): \"Alerting rules are configured in Prometheus in the same way as recording rules.\" \"The alert counts as active for these elements' label sets\". prometheus.yaml L53 at stage-4: `evaluation_interval: 15s`; slo.rules.yml L12-41: both alerts sit in group slo-s3-product-reads after its four `record` rules.",
+        "source": "https://prometheus.io/docs/prometheus/latest/configuration/alerting_rules/; examples/don-hang@stage-4 prometheus.yaml L53, slo.rules.yml L12-41"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Docs: \"The optional `for` clause causes Prometheus to wait for a certain duration between first encountering a new expression [output vector element and counting an alert as firing]\"; \"Elements that are active, but not firing yet, are in the pending state.\"; \"Alerting rules without the `keep_firing_for` clause will deactivate on the first evaluation where the condition is not met\". A re-appearing element is a new one, so `for` restarts. Rule has no keep_firing_for.",
+        "source": "https://prometheus.io/docs/prometheus/latest/configuration/alerting_rules/"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "Docs: comparison operators \"By default they filter\"; \"`vector1 and vector2` results in a vector consisting of the elements of `vector1`\" for which vector2 has elements with exactly matching label sets. Execution: the steady-10% case (expects ProductReadsFastBurn firing with {job: api}) passes in outputs/stage-4/scripts/devops/alert-rules-test.txt (\"SUCCESS\"), so `and` pairs the two differently named recorded series on job.",
+        "source": "https://prometheus.io/docs/prometheus/latest/querying/operators/; examples/don-hang@stage-4 outputs/stage-4/scripts/devops/alert-rules-test.txt L6-7"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Docs: \"The `labels` clause allows specifying a set of additional labels to be attached to the alert.\" \"The `annotations` clause specifies a set of informational labels\". The page assigns no semantics to any label value such as `severity`; alerts.md L63-64 gives page/ticket their meaning.",
+        "source": "https://prometheus.io/docs/prometheus/latest/configuration/alerting_rules/; examples/don-hang@stage-4 docs/design/alerts.md L63-65"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "alerts.md L63-65: \"Mức `page` gọi người trực ngay (`on-call.md`); mức `ticket` thành việc trong backlog, xử lý trong giờ làm việc. Mỗi alert `page` có runbook; annotation `runbook` của rule ghi đường dẫn file đó.\"",
+        "source": "examples/don-hang@stage-4 docs/design/alerts.md L63-65"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Docs: alerting rules \"are not a fully-fledged notification solution\"; \"In Prometheus's ecosystem, the Alertmanager takes on this role.\" alerts.md L83-85: \"Prometheus giữ trạng thái của alert (pending, firing) nhưng không gửi thông báo cho ai. Staging chưa chạy thành phần gửi thông báo\". Grep -i alertmanager over examples/don-hang: no match.",
+        "source": "https://prometheus.io/docs/prometheus/latest/configuration/alerting_rules/; examples/don-hang@stage-4 docs/design/alerts.md L83-85"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "slo.rules.yml L25-41 at stage-4: ProductReadsFastBurn expr `ratio_rate1h > (13.44 * 0.005) and ratio_rate5m > (13.44 * 0.005)`, `for: 2m`, `severity: page`, summary + runbook; ProductReadsSlowBurn `ratio_rate6h > (5.6 * 0.005) and ratio_rate30m > (5.6 * 0.005)`, `for: 15m`, `severity: ticket`, summary only. 13.44 × 0.005 = 0.0672; 5.6 × 0.005 = 0.028.",
+        "source": "examples/don-hang@stage-4 deploy/gitops/config-repo/platform/monitoring/rules/slo.rules.yml L22-41"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Round 2: s5 now reads \"the same pair of alerting rules for S1, S2 and S4 ... each with its own SLI's allowed share, eight alerting rules in all\" (round-1 suggested_text). slo.rules.yml at stage-4: 8 `alert:` (L25,35,55,63,83,91,111,119), 16 `record:`; S2/S4 use `* 0.01`. Captured output \"SUCCESS: 24 rules found\".",
+        "source": "examples/don-hang@stage-4 slo.rules.yml; outputs/stage-4/scripts/devops/alert-rules-test.txt L3"
+      },
+      {
+        "n": 9,
+        "verdict": "unverified",
+        "evidence": "The Site Reliability Workbook is not a `docs` root in content/versions.yaml, so it is not an admissible source for this review; no root listed there documents the multi-window, multi-burn-rate method or its parameter table. Not fetched. Kind `history`, recorded as such by DECISIONS 2026-10-22 (5); non-blocking.",
+        "source": "content/versions.yaml (no Workbook entry); DECISIONS.md 2026-10-22 incidents outline"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Docs: \"'a+bxn' becomes 'a a+b a+(2*b) a+(3*b) … a+(n*b)'\"; \"'axn' becomes 'a a a … a' (a n+1 times) - it's a shorthand for 'a+0xn'\"; syntax block: \"[ interval: <duration> | default = evaluation_interval ]\". slo.test.yml L5 states the same notation.",
+        "source": "https://prometheus.io/docs/prometheus/latest/configuration/unit_testing_rules/"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Round 2: s5 now scopes the check to the alertname (\"no `ProductReadsFastBurn` alert is expected to be firing at that minute; if one is, the test fails\"). Docs: exp_alerts lists alerts \"which are firing under the given alertname at\" eval_time; to test an alert should not fire, \"mention the above fields and leave 'exp_alerts' empty.\"",
+        "source": "https://prometheus.io/docs/prometheus/latest/configuration/unit_testing_rules/"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Round 2: s5 text now matches the samples. slo.test.yml L37,39: good m60-m63 = 6000,6000,6000,6000; bad = 0,100,200,200: two minutes of only failures (200), then a minute with no reads. 1h window at 64m (m5..m64): good +5600, bad +200 -> 200/5800 = 3.45%; extrapolated total about 5,900. 5m share at 64m = 200/400 = 50%. Spike case passes (captured SUCCESS).",
+        "source": "examples/don-hang@stage-4 slo.test.yml L30-46; arithmetic; outputs/stage-4/scripts/devops/alert-rules-test.txt"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "slo.test.yml L14-28: '0+90x120'/'0+10x120', eval 30m expects ProductReadsFastBurn {job: api, severity: page}. L51-67: '0+97x420'/'0+3x420', eval 400m expects ProductReadsSlowBurn ticket and FastBurn []. L73-101: errors stop at 60m, 65m expects FastBurn [], promql_expr_test at 65m: ratio_rate1h > bool 0.0672 = 1, ratio_rate5m < bool 0.0672 = 1. All pass (captured SUCCESS).",
+        "source": "examples/don-hang@stage-4 slo.test.yml; outputs/stage-4/scripts/devops/alert-rules-test.txt L6-7"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "promtool docs: `check rules` \"Check if the rule files are valid or not.\"; `test rules` \"Unit tests for rules.\" Captured run at stage-4: \"Checking slo.rules.yml / SUCCESS: 24 rules found\" then \"$ promtool test rules slo.test.yml / SUCCESS\". Script L18-20 comment states parse + valid PromQL + valid recorded names.",
+        "source": "https://prometheus.io/docs/prometheus/latest/command-line/promtool/; examples/don-hang@stage-4 outputs/stage-4/scripts/devops/alert-rules-test.txt L1-7"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "alert-rules-test.sh L3: \"CI's manifests job runs this same script.\"; L11 `prom/prometheus:v3.5.5@sha256:332c2f43…`, L14 `docker run --rm … --entrypoint promtool`. prometheus.yaml L105 runs the identical image@digest. ci.yml L393 (job `manifests`, L331): `run: scripts/devops/alert-rules-test.sh`.",
+        "source": "examples/don-hang@stage-4 scripts/devops/alert-rules-test.sh; prometheus.yaml L105; .github/workflows/ci.yml L331, L393"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "Execution: resolve test (slo.test.yml L73-101) passes: at 65m FastBurn is not firing while `ratio_rate1h > bool (13.44 * 0.005)` = 1 and `ratio_rate5m < bool …` = 1. Spike test passes: no FastBurn at 64m/70m. Arithmetic: 1h share at 64m ≈ 3.4% < 6.72%. Captured \"SUCCESS\".",
+        "source": "examples/don-hang@stage-4 slo.test.yml L30-46, L69-101; outputs/stage-4/scripts/devops/alert-rules-test.txt"
+      },
+      {
+        "n": 17,
+        "verdict": "unverified",
+        "evidence": "Still not executed (step 2 edits the submodule; not run in this review, nor by the author per source_hint). Arithmetic at 2.5%: spike case 1h share 3.3% at 62m -> pending, firing by 64m, fails; slow-leak case fires at 400m, fails. Resolve case at 65m: bad counter flat m60-m65 ('600x30'), 5m share 0, so it still passes. Lesson s9 is now hedged but over-broad (see issue, section 9).",
+        "source": "examples/don-hang@stage-4 slo.test.yml L30-101; arithmetic"
+      },
+      {
+        "n": 18,
+        "verdict": "not-needed",
+        "evidence": "Opinion stated with a condition in the s6 table row \"Fits when\"; each cell is conditional. Consistent with alerts.md L41-43 (long window ignores short spikes, short window ends the alert early).",
+        "source": "examples/don-hang@stage-4 docs/design/alerts.md L41-43"
+      },
+      {
+        "n": 19,
+        "verdict": "not-needed",
+        "evidence": "Opinion given with conditions in the s6 second table (\"The budget is small, or…\" / \"Spending 5% in 6 hours can wait until morning, as alerts.md decides\"). alerts.md L54-60, L63-64 confirm the project's ticket choice.",
+        "source": "examples/don-hang@stage-4 docs/design/alerts.md L51-65"
+      },
+      {
+        "n": 20,
+        "verdict": "not-needed",
+        "evidence": "Conditional advice (\"keep … if…\", \"Drop it when…\"). The factual part holds: 2m at evaluation_interval 15s (prometheus.yaml L53) spans 8+ evaluations, and docs say `for` waits before counting the alert as firing.",
+        "source": "examples/don-hang@stage-4 prometheus.yaml L53; https://prometheus.io/docs/prometheus/latest/configuration/alerting_rules/"
+      },
+      {
+        "n": 21,
+        "verdict": "verified",
+        "evidence": "slo.test.yml L51-67: steady 3% for 420 minutes; at 400m expects `ProductReadsFastBurn` exp_alerts []. With a fast threshold below 3%, both the 1h and the 5m share (3%) exceed it for hours, so the alert is firing after `for: 2m` and the case fails.",
+        "source": "examples/don-hang@stage-4 slo.test.yml L48-67; arithmetic"
+      },
+      {
+        "n": 22,
+        "verdict": "verified",
+        "evidence": "slo.rules.yml L10-11: \"sum by (job) adds up every Pod the job api scrapes, of api, api-canary and api-green alike.\" prometheus.yaml L69-71 keep regex `api|api-canary|api-green`. alerts.md L47-49 says the same. \"may never\" is hedged.",
+        "source": "examples/don-hang@stage-4 slo.rules.yml L7-11; prometheus.yaml L63-71; docs/design/alerts.md L47-49"
+      },
+      {
+        "n": 23,
+        "verdict": "verified",
+        "evidence": "slo.test.yml at stage-4, slow-leak case: `alertname: ProductReadsSlowBurn`, `exp_labels: {job: api, severity: ticket}`, `exp_annotations:` holding only `summary: Product reads spend S3's error budget faster than it lasts (5% in 6 hours)`. Paging the slow level (severity page, plus a runbook annotation) therefore requires updating these expectations, as s7 now says.",
+        "source": "examples/don-hang@stage-4 deploy/gitops/config-repo/platform/monitoring/rules/slo.test.yml L48-67"
+      }
+    ],
+    "issues": [
+      {
+        "severity": "minor",
+        "section": 9,
+        "kind": "accuracy",
+        "text": "New in round 2 (hedged wording of claim 17). Over-broad: of the cases that expect no ProductReadsFastBurn alert, the resolve case at 65m still passes at a 2.5% threshold (bad counter flat from m60, 5m share 0). Only the spike case (64m) and the slow-leak case (400m) fail, as claim 17 itself says. Step 2 is still not executed.",
+        "quote": "the second run still finds 24 rules but the tests fail on the cases that expect no `ProductReadsFastBurn` alert.",
+        "fix": "Write: \"the second run still finds 24 rules but the tests fail on the spike case and the slow-leak case, which expect no `ProductReadsFastBurn` alert.\" Better: run step 2 (tools/capture-output) and quote the observed failure in claim 17's source."
+      }
+    ],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-27T12:00:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "issues": [],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

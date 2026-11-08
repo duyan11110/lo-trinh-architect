@@ -15,8 +15,8 @@ vocab: [architecture-test]
 example_tag: stage-2
 versions_used: [dotnet, efcore, npgsql_efcore]
 content_version: 1
-status: approved
-approved_by: auto
+status: published
+approved_by: owner
 reviewed_at: "2026-09-30T03:19:36+07:00"
 ---
 

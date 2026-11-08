@@ -1,0 +1,118 @@
+{
+  "id": "backend.l3.read-replicas",
+  "technical": {
+    "reviewed_at": "2026-10-20T03:40:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "Round 2 (claim reworded to name 'standby'). 26.2: \"The primary server operates in continuous archiving mode, while each standby server operates in continuous recovery mode, reading the WAL files from the primary.\" 26.2.5: the primary \"streams WAL records to the standby as they're generated\". 26.4: hot standby is \"the ability to connect to the server and run read-only queries while the server is in archive recovery or standby mode.\"",
+        "source": "https://www.postgresql.org/docs/17/warm-standby.html ; https://www.postgresql.org/docs/17/hot-standby.html"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "26.4.1: \"Transactions started during hot standby will never be assigned a transaction ID and cannot write to the system write-ahead log. Therefore, the following actions will produce error messages: ... INSERT, UPDATE, DELETE ...\" and \"During hot standby, the parameter transaction_read_only is always true\". Captured output at stage-3: \"ERROR:  cannot execute UPDATE in a read-only transaction\".",
+        "source": "https://www.postgresql.org/docs/17/hot-standby.html ; examples/don-hang@stage-3 outputs/stage-3/scripts/backend/replica-lag.txt line 11"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "26.2.5: \"Streaming replication is asynchronous by default (see Section 26.2.8), in which case there is a small delay between committing a transaction in the primary and the changes becoming visible in the standby.\" synchronous_standby_names: \"If no synchronous standby names are specified here, then synchronous replication is not enabled and transaction commits will not wait for replication. This is the default configuration.\"",
+        "source": "https://www.postgresql.org/docs/17/warm-standby.html ; https://www.postgresql.org/docs/17/runtime-config-replication.html"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Round 2: section 4 and summary 3 now use the round-1 suggested text. 26.2.5: \"typically under one second assuming the standby is powerful enough to keep up with the load.\" Commits do not wait (claim 3), so \"no limit is promised\" is stated as a consequence, not a documented bound. Section 4 \"a query on the replica runs on a second server, which may not have applied the commit yet\" matches 26.4.1: \"Running the same query nearly simultaneously on both primary and standby might therefore return differing results.\"",
+        "source": "https://www.postgresql.org/docs/17/warm-standby.html ; https://www.postgresql.org/docs/17/hot-standby.html"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "pg_basebackup: \"Backups are always taken of the entire database cluster; it is not possible to back up individual databases or database objects.\" -R: \"Creates a standby.signal file and appends connection settings to the postgresql.auto.conf file\". db/replica/start.sh@stage-3 lines 10-11 run pg_basebackup --write-recovery-conf --wal-method stream; compose lines 583-584 say it copies db once and streams db's changes.",
+        "source": "https://www.postgresql.org/docs/17/app-pgbasebackup.html ; examples/don-hang@stage-3 db/replica/start.sh, docker-compose.yml"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "26.4.1: hot standby connections are \"strictly read-only\"; DML \"will produce error messages\". 26.1: WAL-shipping standbys are kept current \"by reading a stream of write-ahead log (WAL) records\" and this \"can only be done for the entire database server\"; \"read-only queries can be sent to just one server, allowing the read workload to be distributed among them.\" So writes stay on the primary and each standby replays them.",
+        "source": "https://www.postgresql.org/docs/17/hot-standby.html ; https://www.postgresql.org/docs/17/different-replication-solutions.html"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Round 2: section 4 now reads \"Sending such reads to the primary is one simple way to keep read-your-writes.\" (round-1 suggested wording); the condition (read follows its own write vs tolerates old data) is stated. Risk supported by 26.4.1: \"Running the same query nearly simultaneously on both primary and standby might therefore return differing results.\"",
+        "source": "https://www.postgresql.org/docs/17/hot-standby.html"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Table 9.96 Recovery Information Functions: \"pg_is_in_recovery () → boolean — Returns true if recovery is still in progress.\" 26.4: hot standby runs \"while the server is in archive recovery or standby mode\". Captured output: \" t       |        8\".",
+        "source": "https://www.postgresql.org/docs/17/functions-admin.html ; outputs/stage-3/scripts/backend/replica-lag.txt"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Round 2: md5 of git show stage-3:docker-compose.yml lines 581-605 equals md5 of the lesson block body (9e9306ad...). image postgres:17.6-alpine, profiles: [replica], command [\"sh\", \"/start.sh\"], comment \"Nothing in Đơn Hàng reads from it: the api still uses db for everything.\"",
+        "source": "examples/don-hang@stage-3 docker-compose.yml"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "refs/docker-docs profiles.md: \"the services frontend and phpmyadmin are assigned to the profiles frontend and debug respectively and as such are only started when their respective profiles are enabled.\" \"Services without a profiles attribute are always enabled. In this case running docker compose up would only start backend and db.\"",
+        "source": "refs/docker-docs/content/manuals/compose/how-tos/profiles.md lines 37-42"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Round 2, git show stage-3:scripts/backend/replica-lag.sh: lines 6-11 rm db-replica, remove volume, compose up --wait; on() lines 14-20 run psql --host \"$server\" ... --echo-queries after echo \"-- on $server\"; lines 28-29 price=$(psql ... --tuples-only --no-align) only read the price; lines 30-31 trap ... EXIT restore it; line 25 ends in || true. Lesson now names these lines by content (\"The price=$(psql …) line\", \"the trap … EXIT line\"), which matches. psql as PostgreSQL's command-line client is definitional.",
+        "source": "examples/don-hang@stage-3 scripts/backend/replica-lag.sh"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "start.sh@stage-3 line 18: exec postgres -c recovery_min_apply_delay=5s. replica-lag.sh lines 33-35 comment: \"the replica receives it right away but, in this lab, waits 5 s before applying it.\" Docs: \"the standby will replay each transaction commit only when the system time on the standby is at least five minutes past the commit time reported by the primary\" (for 5min) and \"The default is zero, adding no delay.\"",
+        "source": "https://www.postgresql.org/docs/17/runtime-config-replication.html ; examples/don-hang@stage-3 db/replica/start.sh, scripts/backend/replica-lag.sh"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "outputs/stage-3/scripts/backend/replica-lag.txt (identical at stage-3, git diff empty) matches the lesson's output block line for line: t/8, ERROR read-only, UPDATE 1, 1300000 on db, 1250000 on db-replica, 1300000 after 6 s. Seed db/seed.sql@stage-3 line 6: product 1 at 1250000.",
+        "source": "examples/don-hang@stage-3 outputs/stage-3/scripts/backend/replica-lag.txt"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "OrdersController.cs@stage-3 [HttpGet(\"{id:int}\")] Get: \"var order = await repository.FindForReadingAsync(id); if (order is null) return NotFound();\". Combined with 26.4.1 \"Running the same query nearly simultaneously on both primary and standby might therefore return differing results\", a lagging replica can lack the new row and the endpoint would answer 404. Lesson phrases it as hypothetical (\"If the API sent\").",
+        "source": "examples/don-hang@stage-3 DonHang.Api/Controllers/OrdersController.cs ; https://www.postgresql.org/docs/17/hot-standby.html"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "git show stage-2:deploy/k8s/db.yaml: \"kind: Deployment\", \"replicas: 1\", volume \"emptyDir: {}\", init scripts mounted at /docker-entrypoint-initdb.d. A second Pod would get its own emptyDir and its own database; no replication is configured. Round 2: Connections now names \"the word replica\". Round 1 + 2 documents opened: PG17 warm-standby, hot-standby, runtime-config-replication, app-pgbasebackup, functions-admin, different-replication-solutions; refs/docker-docs profiles.md.",
+        "source": "examples/don-hang@stage-2 deploy/k8s/db.yaml ; content/tracks/k8s/config-and-probes/k8s.l1.deploying-don-hang.en.md"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-20T12:00:00+07:00",
+    "reviewer": "claude-opus-5-5 (prompt 05, junior reader, round 2 targeted re-review)",
+    "issues": [],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

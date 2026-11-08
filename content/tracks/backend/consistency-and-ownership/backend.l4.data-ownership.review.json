@@ -1,0 +1,130 @@
+{
+  "id": "backend.l4.data-ownership",
+  "technical": {
+    "reviewed_at": "2026-10-28T23:55:00+07:00",
+    "reviewer": "claude-opus-5-5",
+    "claim_verdicts": [
+      {
+        "n": 1,
+        "verdict": "verified",
+        "evidence": "data-ownership.md lines 3-6: \"Mỗi loại dữ liệu có đúng một chủ: module hay service ghi nó, và giá trị của chủ là giá trị đúng khi các bản sao lệch nhau. Mọi nơi khác chỉ giữ bản sao\".",
+        "source": "examples/don-hang docs/design/data-ownership.md @ stage-4 lines 3-6"
+      },
+      {
+        "n": 2,
+        "verdict": "verified",
+        "evidence": "Rows 13-18, column 2: products → \"Catalog, `donhang`\"; orders/customers → \"Ordering, `donhang`\"; payments → \"Payments, `donhang_payments`\"; notifications → \"Notifications, `donhang_notifications`\"; sign-in accounts → \"Keycloak, database `keycloak`\".",
+        "source": "examples/don-hang docs/design/data-ownership.md @ stage-4 lines 13-18"
+      },
+      {
+        "n": 3,
+        "verdict": "verified",
+        "evidence": "ProductCache.cs: `Ttl = TimeSpan.FromMinutes(5)`; SetAsync calls `StringSetAsync(key, json, Ttl)`; UpdatePriceAsync calls `RemoveAsync($\"product:{id}\")` after the save. Redis SET docs: \"EX seconds — Set the specified expire time, in seconds\". Doc line 13: \"Xóa sau khi đổi giá; dù lệnh xóa bị lỡ, bản sao sống tối đa 5 phút (TTL)\".",
+        "source": "DonHang.Catalog/ProductCache.cs @ stage-4 lines 18, 54-59, 90; https://redis.io/docs/latest/commands/set/"
+      },
+      {
+        "n": 4,
+        "verdict": "verified",
+        "evidence": "Doc line 18: \"Mỗi message `order.*` (`customerEmail`, `customerName`) ... Chép lúc message được ghi vào outbox; cố ý không cập nhật về sau\" | `customers`. Routing key `order.placed` exists: OrderServiceTests.cs:55 `Assert.Equal(\"order.placed\", routingKey)`; NotifyCustomerOnOrderEvents.cs:34 adds `customer.Email` to the outbox message.",
+        "source": "docs/design/data-ownership.md @ stage-4 line 18; DonHang.Domain/NotifyCustomerOnOrderEvents.cs @ stage-4; DonHang.Tests/Services/OrderServiceTests.cs line 55"
+      },
+      {
+        "n": 5,
+        "verdict": "verified",
+        "evidence": "Doc line 15: \"Không ai cập nhật: bản chép lúc tách service (ADR 0003); kế toán đối soát với `donhang_payments`, nên bảng cũ chỉ bị xóa sau khi kế toán xác nhận (ADR 0008)\". ADR 0008 line 47: \"bản chép sang `donhang_payments`\" (rows copied into donhang_payments). Payments after the split only in the owner follows from \"Không ai cập nhật\".",
+        "source": "docs/design/data-ownership.md @ stage-4 line 15; docs/adr/0008-xoa-bang-cu-trong-donhang.md @ stage-4 lines 46-49"
+      },
+      {
+        "n": 6,
+        "verdict": "verified",
+        "evidence": "Doc line 13: \"`order_items.unit_price_vnd` không phải bản sao: đó là giá khách đã trả, một dữ kiện của đơn, cố ý không đổi theo giá mới\". Entities.cs lines 90-104: `Total` \"Worked out from the items each time it is read; it is not a column\", summing `item.UnitPrice.Times(item.Quantity)`; DonHangDbContext.cs:94 maps UnitPrice to `unit_price_vnd`.",
+        "source": "docs/design/data-ownership.md @ stage-4 line 13; DonHang.Domain/Entities.cs @ stage-4 lines 90-104, 184-193"
+      },
+      {
+        "n": 7,
+        "verdict": "verified",
+        "evidence": "Round 3. Lines 40-44: \"Không gì giữ hai giá trị bằng nhau. Email đơn hàng dùng giá trị trong `customers` ... Chưa quyết ai là chủ.\" Line 48 points to ADR 0014, decided but not built at stage-4. Line 18 trusts `customers`. New wording 'Line 44 ends with no owner chosen ... until it is built, nothing keeps the two emails equal, and order emails keep trusting `customers`, as line 18 says' matches.",
+        "source": "docs/design/data-ownership.md @ stage-4 lines 18, 40-48; docs/adr/0014-keycloak-giu-email-khach-hang.md @ stage-4"
+      },
+      {
+        "n": 8,
+        "verdict": "verified",
+        "evidence": "Doc line 17: \"`customers.identity_subject` trỏ tới tài khoản (`sub`) | Chỉ là khóa trỏ tới, không chép dữ liệu tài khoản\". Entities.cs lines 16-18: `IdentitySubject` \"Keycloak's id for this customer (the `sub` of their tokens)\".",
+        "source": "docs/design/data-ownership.md @ stage-4 line 17; DonHang.Domain/Entities.cs @ stage-4 lines 16-18"
+      },
+      {
+        "n": 9,
+        "verdict": "verified",
+        "evidence": "Round 3. ADR 0008 lines 32-33: \"Migration xóa `payments` sau khi kế toán xác nhận đã đối chiếu xong với `donhang_payments`\"; lines 46-47: \"họ chưa kiểm bản chép sang `donhang_payments`\". Lesson s5 now reads 'they had not yet checked the rows copied into `donhang_payments`'; q3 d en/vi say the same without 'complete' / 'đã đủ hay chưa'. Meta claim 9 matches.",
+        "source": "docs/adr/0008-xoa-bang-cu-trong-donhang.md @ stage-4 lines 32-33, 46-49"
+      },
+      {
+        "n": 10,
+        "verdict": "verified",
+        "evidence": "Doc lines 34-36: \"Không cho cả hai cùng ghi. Dữ liệu được giao cho một chủ; nơi còn lại hỏi chủ qua một lời gọi hay một message. Ví dụ ở stage-3: Payments không đổi trạng thái đơn, nó gửi `payment.refunded` và API, chủ của đơn, tự đổi.\" Code: PaymentEventsConsumer.cs:107 calls `orders.CompleteRefundAsync` on `payment.refunded`.",
+        "source": "docs/design/data-ownership.md @ stage-4 lines 34-36; DonHang.Api/Messaging/PaymentEventsConsumer.cs @ stage-4 line 107"
+      },
+      {
+        "n": 11,
+        "verdict": "verified",
+        "evidence": "Doc line 14: \"`order_id` bên Payments là một con số, không có khóa ngoại\". DonHang.Payments InitialCreate migration: `order_id = table.Column<int>(type: \"integer\", nullable: false)`; git grep finds no REFERENCES/ForeignKey in DonHang.Payments.",
+        "source": "docs/design/data-ownership.md @ stage-4 line 14; DonHang.Payments/Migrations/20261005232406_InitialCreate.cs @ stage-4 line 48"
+      },
+      {
+        "n": 12,
+        "verdict": "verified",
+        "evidence": "Entities.cs line 154 RequestRefund sets `Status = \"refunding\"`; line 163 CompleteRefund: `if (Status != \"refunding\") throw new OrderStatusException(Id, \"not-refunding\", ...)`, then `Status = \"cancelled\"`. API calls it on `payment.refunded` (PaymentEventsConsumer.cs:107).",
+        "source": "DonHang.Domain/Entities.cs @ stage-4 lines 150-166"
+      },
+      {
+        "n": 13,
+        "verdict": "verified",
+        "evidence": "Round 3, re-fetched. Redis SET page: \"Any previous time to live associated with the key is discarded on successful `SET` operation.\" KEEPTTL: \"Retain the time to live associated with the key.\" So a hand SET without a TTL option drops the 5-minute TTL, as s8 now says. ProductCache.UpdatePriceAsync deletes `product:{id}` after a price change, so the products value returns then.",
+        "source": "https://redis.io/docs/latest/commands/set/ ; DonHang.Catalog/ProductCache.cs @ stage-4 lines 54-59, 90"
+      },
+      {
+        "n": 14,
+        "verdict": "verified",
+        "evidence": "Opinion rows are conditional ('Fits when'). The only factual part, 'no operation in Đơn Hàng needs [two writers]', matches doc line 34: \"Không cho cả hai cùng ghi.\" The call-cost and copy-age rows restate claims 3 and 6.",
+        "source": "docs/design/data-ownership.md @ stage-4 lines 11-36"
+      },
+      {
+        "n": 15,
+        "verdict": "verified",
+        "evidence": "Doc line 15: old table \"Không ai cập nhật ... kế toán đối soát với `donhang_payments`\", trusted value `donhang_payments`. Correcting the owner, not the copy, follows from the row.",
+        "source": "docs/design/data-ownership.md @ stage-4 line 15"
+      },
+      {
+        "n": 16,
+        "verdict": "verified",
+        "evidence": "Doc lines 34-36 give the same rule and example. The 'order shows refunding until the API handles the message' cost follows from Entities.cs: RequestRefund sets `refunding`, CompleteRefund (on payment.refunded) sets `cancelled`.",
+        "source": "docs/design/data-ownership.md @ stage-4 lines 34-36; DonHang.Domain/Entities.cs @ stage-4 lines 150-166"
+      },
+      {
+        "n": 17,
+        "verdict": "verified",
+        "evidence": "Doc line 14: \"`order_status_history` (read model) ... `RecordOrderStatusHistory` ghi read model cùng transaction với đơn\". Round 3 zero-issue note: re-read s5, s8 and q3 (en/vi) against docs/design/data-ownership.md and ADR 0008/0014 @ stage-4 (round-2 reads) and https://redis.io/docs/latest/commands/set/ (fetched this round).",
+        "source": "docs/design/data-ownership.md @ stage-4 line 14"
+      }
+    ],
+    "issues": [],
+    "scope": {
+      "outline_covered": true,
+      "beyond_scope": []
+    },
+    "verdict": "pass"
+  },
+  "junior": {
+    "reviewed_at": "2026-10-28T23:59:00+07:00",
+    "reviewer": "claude-opus-5-5 (prompt 05, junior reader, round 3, targeted re-review of s5, s8, q3)",
+    "issues": [],
+    "readability": {
+      "unknown_terms": [],
+      "skipped_steps": [],
+      "situation_connects": true,
+      "try_it_feasible": true,
+      "summary_matches": true
+    },
+    "verdict": "pass"
+  }
+}

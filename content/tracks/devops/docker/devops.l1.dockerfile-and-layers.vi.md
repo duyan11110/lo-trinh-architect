@@ -15,8 +15,8 @@ vocab: [image-layer]
 example_tag: stage-0
 versions_used: [docker]
 content_version: 1
-status: approved
-approved_by: auto
+status: published
+approved_by: owner
 reviewed_at: "2026-09-27T16:00:00+07:00"
 ---
 

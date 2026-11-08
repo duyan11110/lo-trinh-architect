@@ -70,7 +70,7 @@ TOTAL_CALLS=0
 # generic forms as a hedge; if it ever misses again, check
 # logs/gen-*.log for the exact `"result":"..."` string and extend it.
 RATE_LIMIT_WAIT_SECS=1800
-RATE_LIMIT_MAX_RETRIES=20
+RATE_LIMIT_MAX_RETRIES=200  # ~100 h of 30-minute retries: outlasts a usage limit that resets after hours or days
 RATE_LIMIT_PATTERN='session limit|usage limit|rate.?limit|resets? [0-9:apm ]*\(|resets? (at|in)|try again (later|in)|"api_error_status":[[:space:]]*429|"(code|status)":[[:space:]]*429|quota'
 
 # Opt-in (off by default — keep the wait-and-retry above as the safe default
@@ -150,7 +150,7 @@ call_subagent() {
   local prompt="$1 (chạy subagent này ở foreground, đợi nó trả kết quả xong hẳn rồi mới trả lời — đừng chạy nền / báo lại sau)"
   TOTAL_CALLS=$((TOTAL_CALLS + 1))
   local cmd=(claude -p "$prompt" --model "$CLAUDE_MODEL_MAIN" --max-turns "$MAX_TURNS" --output-format json
-    --allowedTools "Agent,Read,Write,Edit,Glob,Grep,Bash(tools/*),Bash(git show *),Bash(git -C examples/don-hang *)")
+    --allowedTools "Agent,Read,Write,Edit,Glob,Grep,WebFetch,Bash(tools/*),Bash(git show *),Bash(git -C examples/don-hang *)")
   log "CALL #$TOTAL_CALLS (subagent): ${cmd[*]}"
   if ! run_with_rate_limit_retry "${cmd[@]}"; then
     log "CALL #$TOTAL_CALLS: claude -p thoát khác 0 (có thể hết --max-turns) — coi là chưa xong, để vòng lặp round/fix-validation bắt lại."
@@ -165,6 +165,21 @@ validate_lesson() {
   else
     return 1
   fi
+}
+
+# validate_with_fixes ID: validate, and on errors run fix-validation (lesson,
+# then quiz) up to MAX_FIX_VALIDATION times.
+validate_with_fixes() {
+  local id="$1" fix_tries=0
+  while ! validate_lesson "$id"; do
+    fix_tries=$((fix_tries + 1))
+    if [ "$fix_tries" -gt "$MAX_FIX_VALIDATION" ]; then
+      log "$id: validate vẫn lỗi sau $MAX_FIX_VALIDATION lần fix-validation — đi tiếp, ghi lại reviewed."
+      return 1
+    fi
+    call_claude "/lesson $id fix-validation" "$CLAUDE_MODEL_MAIN"
+    call_claude "/quiz $id fix-validation" "$CLAUDE_MODEL_MAIN"
+  done
 }
 
 # set_lesson_status ID STATUS APPROVED_BY
@@ -198,11 +213,15 @@ review_has_open_severity() {
 review_verdict_is_pass() {
   local file="$1" section="$2"
   [ -f "$file" ] || return 1
-  # crude JSON check: look for "verdict": "pass" inside the named top-level section
-  awk -v sec="\"$section\"" '
-    $0 ~ sec { insec=1 }
-    insec && /"verdict"/ { print; exit }
-  ' "$file" | grep -q '"pass"'
+  # Reads the JSON: the section's own top-level "verdict". The awk version
+  # this replaced took the first "verdict" line after the section name, which
+  # at stage 3 is a claim's ("verified"), so no lesson ever passed and every
+  # clean one stopped at reviewed (2026-10-08).
+  python - "$file" "$section" <<'PY'
+import json, sys
+section = json.load(open(sys.argv[1], encoding="utf-8")).get(sys.argv[2]) or {}
+sys.exit(0 if section.get("verdict") == "pass" else 1)
+PY
 }
 
 # process_lesson ID -> sets LESSON_STATUS, LESSON_APPROVED_BY, LESSON_ROUNDS
@@ -219,28 +238,27 @@ process_lesson() {
   local final_status="reviewed"
   local approved_by=""
 
+  # known_vocab goes in a file, not in the prompt: by stage 3 it is over
+  # 100 KB, past Windows' 32K command-line limit, and claude -p failed at
+  # once with no review written (2026-10-07). The subagent has Read.
+  local known_vocab_file="logs/known-vocab/$id.json"
+  mkdir -p logs/known-vocab
+  tools/known-vocab --before "$id" >"$known_vocab_file" 2>>"$LOG_FILE" || echo '[]' >"$known_vocab_file"
+  local junior_vocab="known_vocab: danh sách đầy đủ (kèm định nghĩa) nằm trong file $known_vocab_file — ghi đường dẫn này trong lời giao việc và dặn subagent đọc nó bằng Read trước khi review"
+
+  # Round 1 reviews the whole lesson; rounds 2 and 3 re-review only what the
+  # apply-review just changed, for both reviewers, as /gen-module step 6 does.
+  # Reviewing the whole lesson again every round (what this did until
+  # 2026-10-07) never converged at stage 3: each full pass drew new issues,
+  # often from the previous fix itself, and the last round's findings were
+  # never applied. Analysis: DECISIONS.md §3, 2026-10-07.
+  validate_with_fixes "$id" || true
+  call_subagent "Dùng subagent review-technical cho bài $id"
+  call_subagent "Dùng subagent review-junior cho bài $id; $junior_vocab"
+
   while [ "$round" -lt "$MAX_ROUNDS" ]; do
     round=$((round + 1))
     log "--- $id: vòng $round ---"
-
-    local fix_tries=0
-    while [ "$fix_tries" -le "$MAX_FIX_VALIDATION" ]; do
-      if validate_lesson "$id"; then
-        break
-      fi
-      fix_tries=$((fix_tries + 1))
-      if [ "$fix_tries" -gt "$MAX_FIX_VALIDATION" ]; then
-        log "$id: validate vẫn lỗi sau $MAX_FIX_VALIDATION lần fix-validation — đi tiếp, ghi lại reviewed."
-        break
-      fi
-      call_claude "/lesson $id fix-validation" "$CLAUDE_MODEL_MAIN"
-      call_claude "/quiz $id fix-validation" "$CLAUDE_MODEL_MAIN"
-    done
-
-    call_subagent "Dùng subagent review-technical cho bài $id"
-    local known_vocab
-    known_vocab="$(tools/known-vocab --before "$id" 2>>"$LOG_FILE" || echo '[]')"
-    call_subagent "Dùng subagent review-junior cho bài $id; known_vocab: $known_vocab"
 
     local has_blocker=0 has_major=0
     if review_has_open_severity "$review_file" "blocker"; then has_blocker=1; fi
@@ -261,8 +279,20 @@ process_lesson() {
 
     call_claude "/lesson $id apply-review" "$CLAUDE_MODEL_MAIN"
     call_claude "/quiz $id apply-review" "$CLAUDE_MODEL_MAIN"
-    validate_lesson "$id" || true
-    call_subagent "Dùng subagent review-technical cho bài $id (chỉ claim đã đổi)"
+    validate_with_fixes "$id" || true
+
+    # What changed, for the targeted re-review: the apply-review's own notes,
+    # copied out of .meta.json so the junior reviewer never opens the meta.
+    local changes_file="logs/rereview/$id.round$round.txt"
+    mkdir -p logs/rereview
+    python - "$meta_file" >"$changes_file" 2>>"$LOG_FILE" <<'PY' || echo "(không đọc được self_check.notes — đọc lại các mục mà issue blocker/major cũ chỉ tới)" >"$changes_file"
+import json, sys
+notes = json.load(open(sys.argv[1], encoding="utf-8")).get("self_check", {}).get("notes", "")
+print(notes if isinstance(notes, str) else "\n".join(map(str, notes)))
+PY
+    local targeted="Re-review có mục tiêu, vòng $((round + 1)) (không review lại toàn bài): danh sách thay đổi của lần apply-review vừa rồi nằm trong file $changes_file. Chỉ đọc lại các mục/câu quiz đã đổi và đối chiếu từng issue blocker/major cũ của chính phần review này trong .review.json. Ghi đè phần review đó: bỏ issue đã được sửa; giữ issue cũ còn đúng (ghi 'Carried from round $round'); chỉ thêm issue mới nếu nó nằm trong phần đã đổi; verdict tổng theo kết quả đó."
+    call_subagent "Dùng subagent review-technical cho bài $id. $targeted"
+    call_subagent "Dùng subagent review-junior cho bài $id; $junior_vocab. $targeted"
   done
 
   # Second, independent line of defense against the 2026-09-08 incident: even
@@ -308,9 +338,13 @@ id_module() {
   track="$(id_track "$id")"
   local track_yaml="content/tracks/$track/track.yaml"
   [ -f "$track_yaml" ] || { echo "unknown"; return; }
-  awk -v target="id: $id" '
-    /^      - id: / { mod=$0; sub(/^      - id: /,"",mod) }
-    $0 ~ target { print mod; found=1; exit }
+  # Module entries are the undotted "- id:" lines (see lessons_in_module).
+  awk -v target="$id" '
+    /^ *- id: / {
+      line=$0; sub(/^ *- id: /,"",line); sub(/[ \r]+$/,"",line)
+      if (line !~ /\./) mod=line
+      else if (line == target) { print mod; exit }
+    }
   ' "$track_yaml"
 }
 
@@ -321,11 +355,15 @@ lessons_in_module() {
   local track="$1" module="$2"
   local track_yaml="content/tracks/$track/track.yaml"
   [ -f "$track_yaml" ] || return 0
-  awk -v mod="- id: $module" '
-    $0 ~ mod && !inmod { inmod=1; depth=0; next }
-    inmod && /^      - id: / { exit }
-    inmod && /^          - id: / {
-      line=$0; sub(/^          - id: /,"",line); print line
+  # Indentation-agnostic: a module entry is "- id: <module>" (no dot), a
+  # lesson entry "- id: <track>.lN.<slug>" (dotted). The fixed 6/10-space
+  # anchors this used before matched nothing once track.yaml was written
+  # with 2/4 spaces, so every module "finished" with no lesson (2026-10-07).
+  awk -v mod="$module" '
+    /^ *- id: / {
+      line=$0; sub(/^ *- id: /,"",line); sub(/[ \r]+$/,"",line)
+      if (line !~ /\./) { if (inmod) exit; if (line == mod) inmod=1; next }
+      if (inmod) print line
     }
   ' "$track_yaml" | while read -r id; do
     [ -z "$id" ] && continue
