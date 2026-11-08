@@ -15,9 +15,9 @@ vocab: [recording-rule]
 example_tag: stage-4
 versions_used: [prometheus, kubernetes]
 content_version: 1
-status: published
-approved_by: owner
-reviewed_at: "2026-10-27T20:29:04+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-11-08T16:00:00+07:00"
 ---
 
 ## Before you start
@@ -25,7 +25,7 @@ reviewed_at: "2026-10-27T20:29:04+07:00"
 - [[devops.l4.alerting-on-symptoms]] — you know `alerts.md` gives each SLI of `slo.md` two alerts, and that each reads the share of bad requests over a period of time.
 - [[devops.l2.counters-and-rate]] — you know `rate(...[5m])` gives a counter's per-second increase over 5 minutes, and `sum by (...)` adds the rates of many series.
 - [[devops.l2.histograms-and-percentiles]] — you know a histogram bucket `le` counts the requests answered within its bound, and `_count` counts them all.
-- [[backend.l4.service-level-indicators]] — you know an SLI is the share of good requests out of all valid ones, and `slo.md` writes the PromQL for S1–S4.
+- [[backend.l4.service-level-indicators]] — you know an SLI is the share of good requests out of all valid ones, and `slo.md` says which requests count as good and as valid for S1–S4.
 
 ## The situation
 
@@ -153,7 +153,7 @@ Four groups of four: `order_placement_bad`, `order_placement_slow`, `product_rea
 
 ## Connections
 
-- [[backend.l4.service-level-indicators]] — the queries of `slo.md` that these rules record, turned into bad shares.
+- [[backend.l4.service-level-indicators]] — the SLIs of `slo.md` that these rules record, turned into bad shares.
 - [[devops.l2.counters-and-rate]] — the `rate()` and `sum by` each rule is built from.
 - [[devops.l4.alerting-on-symptoms]] — the symptom alerts whose input these rules compute.
 - [[devops.l4.canary-release]] — the opposite sum: by `app` to compare Deployments, where these rules sum by `job` to count them together.

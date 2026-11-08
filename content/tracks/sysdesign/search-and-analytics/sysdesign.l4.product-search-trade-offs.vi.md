@@ -15,7 +15,7 @@ vocab: []
 example_tag: stage-4
 versions_used: [postgresql]
 content_version: 1
-status: published
+status: approved
 ---
 
 ## Bạn cần biết trước
@@ -157,7 +157,7 @@ Kết quả mong đợi: bốn câu trả lời, mỗi câu nêu một điểm �
 - [[design.l3.read-model]] — thứ mà một công cụ tìm kiếm riêng sẽ là: một bản sao theo đúng hình dạng một truy vấn cần, nuôi từ phía ghi.
 - [[backend.l3.outbox-relay]] — đường sẽ nuôi bản sao đó, và lý do nó trễ.
 - [[management.l3.total-cost-of-ownership]] — cùng lối suy nghĩ ở một tầng cao hơn: cái giá của công cụ là mọi thứ nó thêm vào phải vận hành, không chỉ tính năng nó mang tới.
-- [[sysdesign.l4.finding-bottlenecks]] — bước của quy trình nơi `catalog-reads` được xác định là giới hạn mà lượt tìm chạm tới đầu tiên.
+- [[sysdesign.l4.finding-bottlenecks]] — bước của quy trình nơi `catalog-reads` được xác định là phần hết trước tiên với lượt đọc sản phẩm, giới hạn mà mỗi lượt tìm cũng sẽ chiếm một chỗ trong đó.
 - [[sysdesign.l4.product-search-challenges]] — bước tiếp theo: trả lời các phản biện của buổi review từ ADR `0017`, `0026` và `0030`.
 
 ## Tóm tắt 5 dòng

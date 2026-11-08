@@ -15,9 +15,9 @@ vocab: [web-bundle, tree-shaking, gzip, zstd]
 example_tag: stage-4
 versions_used: [flutter, caddy]
 content_version: 1
-status: published
-approved_by: owner
-reviewed_at: "2026-10-29T19:52:21+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-11-08T16:00:00+07:00"
 ---
 
 ## Bạn cần biết trước

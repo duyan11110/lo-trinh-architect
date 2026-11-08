@@ -15,15 +15,15 @@ vocab: [analytical-query]
 example_tag: stage-4
 versions_used: [postgresql]
 content_version: 1
-status: published
-approved_by: owner
-reviewed_at: "2026-11-03T10:24:45+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-11-08T16:00:00+07:00"
 ---
 
 ## Before you start
 
 - [[sysdesign.l4.product-search-challenges]] — you finished the first problem of this module with a design review that answers each challenge from an ADR; this lesson starts the second problem at step 1.
-- [[sysdesign.l4.multi-shop-challenges]] — you know the multi-shop design review left one question open with an owner: how a report across all shops reads a shop that has its own database.
+- [[sysdesign.l4.multi-shop-challenges]] — you know the multi-shop design review left the report across all shops as an open question with two owners: how it reads a shop that has its own database.
 - [[backend.l4.read-routing]] — you know every read at stage-4 goes to the primary, and a read moves to a replica only when its operation accepts slightly old data.
 - [[backend.l3.row-level-security]] — you know PostgreSQL can add a shop condition to the queries a role runs on a table, so one shop's staff see only their rows.
 

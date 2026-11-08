@@ -15,7 +15,7 @@ vocab: []
 example_tag: stage-4
 versions_used: [postgresql]
 content_version: 1
-status: published
+status: approved
 ---
 
 ## Before you start
@@ -157,7 +157,7 @@ Expected result: four answers, each naming one trade-off point, with "reopen" fo
 - [[design.l3.read-model]] — what a separate search engine would be: a copy in the shape one query needs, fed from the write side.
 - [[backend.l3.outbox-relay]] — the path that would feed that copy, and the reason it lags.
 - [[management.l3.total-cost-of-ownership]] — the same reasoning one level up: the engine's cost is everything it adds to run, not only the feature it brings.
-- [[sysdesign.l4.finding-bottlenecks]] — the framework step where `catalog-reads` is found to be the limit searches reach first.
+- [[sysdesign.l4.finding-bottlenecks]] — the framework step where `catalog-reads` is found to run out first for product reads, the limit each search will also take a place in.
 - [[sysdesign.l4.product-search-challenges]] — the next step: answering the review's challenges from ADRs `0017`, `0026` and `0030`.
 
 ## Five-line summary

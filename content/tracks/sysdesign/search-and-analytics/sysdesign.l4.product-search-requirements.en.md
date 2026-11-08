@@ -15,14 +15,14 @@ vocab: []
 example_tag: stage-4
 versions_used: [aspnetcore, postgresql]
 content_version: 1
-status: published
-approved_by: owner
-reviewed_at: "2026-11-03T05:12:40+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-11-08T16:00:00+07:00"
 ---
 
 ## Before you start
 
-- [[sysdesign.l4.bank-signing-challenges]] — you have taken one problem through the whole framework, ending with a design review that answers each challenge from a driver or an ADR; this module starts the framework again at step 1.
+- [[sysdesign.l4.bank-signing-challenges]] — you have taken one problem through the whole framework, ending with a design review that answers each challenge from a driver, an ADR or a risk with an owner; this module starts the framework again at step 1.
 - [[frontend.l4.pages-for-search]] — you know ADR `0017` keeps ordering in the Flutter app and leaves public product pages for search engines to a separate ADR.
 - [[backend.l2.filtering-with-query-parameters]] — you know a filter is a query parameter on the collection's URL, added with `Where` before the query runs.
 - [[backend.l4.capacity-planning]] — you know `capacity-plan.md` expects about 133 product reads per second at the busiest hour.

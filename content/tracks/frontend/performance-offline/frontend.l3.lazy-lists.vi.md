@@ -15,9 +15,9 @@ vocab: []
 example_tag: stage-3
 versions_used: [flutter]
 content_version: 1
-status: published
-approved_by: owner
-reviewed_at: "2026-10-22T00:15:54+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-11-08T16:00:00+07:00"
 ---
 
 ## Bạn cần biết trước

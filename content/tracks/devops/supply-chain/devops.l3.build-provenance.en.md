@@ -15,9 +15,9 @@ vocab: [attestation, build-provenance, slsa]
 example_tag: stage-3
 versions_used: [github_actions, ghcr, cosign]
 content_version: 1
-status: published
-approved_by: owner
-reviewed_at: "2026-10-14T13:08:26+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-11-08T16:00:00+07:00"
 ---
 
 ## Before you start

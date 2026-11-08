@@ -15,9 +15,9 @@ vocab: [cursor-pagination]
 example_tag: stage-2
 versions_used: [aspnetcore, efcore, postgresql]
 content_version: 1
-status: published
-approved_by: owner
-reviewed_at: "2026-09-28T06:54:08+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-11-08T16:00:00+07:00"
 ---
 
 ## Before you start
@@ -104,7 +104,7 @@ At `stage-2` the product list still pages with `offset`, while the order list ta
             .ToListAsync();
 ```
 
-Look at `o.Id > afterId` inside `Where`: that comparison is the cursor. It sits next to the customer check, so the page starts after the last order the client saw. There is `Take(limit)` but no `Skip`: nothing is counted. `OrderBy(o => o.Id)` is still needed, because "after" only means something in a fixed order. `id` is the primary key, so it is unique: the row after a given `id` is never ambiguous. The `Select` line builds an `OrderSummary` with three fields; for paging, only `Where`, `OrderBy` and `Take` matter.
+Look at `o.Id > afterId` inside `Where`: that comparison is the cursor. It sits next to the customer check, so the page starts after the last order the client saw. There is `Take(limit)` but no `Skip`: nothing is counted. `OrderBy(o => o.Id)` is still needed, because "after" only means something in a fixed order. `id` is the primary key, so it is unique: the row after a given `id` is never ambiguous. The `Select` line builds an `OrderSummary` with three fields; for pagination, only `Where`, `OrderBy` and `Take` matter.
 
 ## Beginners often think…
 

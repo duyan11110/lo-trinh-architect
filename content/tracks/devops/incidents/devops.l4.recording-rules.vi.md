@@ -15,9 +15,9 @@ vocab: [recording-rule]
 example_tag: stage-4
 versions_used: [prometheus, kubernetes]
 content_version: 1
-status: published
-approved_by: owner
-reviewed_at: "2026-10-27T20:29:04+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-11-08T16:00:00+07:00"
 ---
 
 ## Bạn cần biết trước
@@ -25,7 +25,7 @@ reviewed_at: "2026-10-27T20:29:04+07:00"
 - [[devops.l4.alerting-on-symptoms]] — bạn biết `alerts.md` cho mỗi SLI của `slo.md` hai cảnh báo, và mỗi cảnh báo đọc tỉ lệ request xấu trong một khoảng thời gian.
 - [[devops.l2.counters-and-rate]] — bạn biết `rate(...[5m])` cho mức tăng mỗi giây của một counter trong 5 phút, còn `sum by (...)` cộng rate của nhiều series.
 - [[devops.l2.histograms-and-percentiles]] — bạn biết một bucket `le` của histogram đếm các request được trả lời trong ngưỡng của nó, còn `_count` đếm tất cả.
-- [[backend.l4.service-level-indicators]] — bạn biết SLI là tỉ lệ request tốt trên mọi request hợp lệ, và `slo.md` viết truy vấn PromQL cho S1–S4.
+- [[backend.l4.service-level-indicators]] — bạn biết SLI là tỉ lệ request tốt trên mọi request hợp lệ, và `slo.md` ghi request nào tính là tốt, request nào là hợp lệ cho S1–S4.
 
 ## Tình huống
 
@@ -153,7 +153,7 @@ Bốn nhóm, mỗi nhóm bốn tên: `order_placement_bad`, `order_placement_slo
 
 ## Liên hệ
 
-- [[backend.l4.service-level-indicators]] — các truy vấn của `slo.md` mà các rule này ghi lại, đã đổi thành tỉ lệ xấu.
+- [[backend.l4.service-level-indicators]] — các SLI của `slo.md` mà các rule này ghi lại, đã đổi thành tỉ lệ xấu.
 - [[devops.l2.counters-and-rate]] — `rate()` và `sum by`, hai viên gạch dựng nên mỗi rule.
 - [[devops.l4.alerting-on-symptoms]] — các cảnh báo theo triệu chứng, với đầu vào do các rule này tính.
 - [[devops.l4.canary-release]] — phép cộng ngược lại: theo `app` để so các Deployment, trong khi các rule này cộng theo `job` để tính chung.

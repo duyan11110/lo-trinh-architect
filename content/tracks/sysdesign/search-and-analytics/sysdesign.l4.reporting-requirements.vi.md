@@ -15,15 +15,15 @@ vocab: [analytical-query]
 example_tag: stage-4
 versions_used: [postgresql]
 content_version: 1
-status: published
-approved_by: owner
-reviewed_at: "2026-11-03T10:24:45+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-11-08T16:00:00+07:00"
 ---
 
 ## Bạn cần biết trước
 
 - [[sysdesign.l4.product-search-challenges]] — bạn đã xong bài toán đầu tiên của module bằng một buổi review thiết kế, trong đó mỗi câu phản biện được trả lời từ một ADR. Bài này mở bài toán thứ hai, từ bước 1.
-- [[sysdesign.l4.multi-shop-challenges]] — bạn biết review thiết kế cho nhiều cửa hàng còn để mở một câu hỏi có người phụ trách: báo cáo trên mọi cửa hàng đọc thế nào một cửa hàng có database riêng.
+- [[sysdesign.l4.multi-shop-challenges]] — bạn biết review thiết kế cho nhiều cửa hàng còn để mở câu hỏi về báo cáo trên mọi cửa hàng, có hai người phụ trách: báo cáo ấy đọc thế nào một cửa hàng có database riêng.
 - [[backend.l4.read-routing]] — bạn biết ở stage-4 mọi lượt đọc đều vào primary, và một lượt đọc chỉ chuyển sang replica khi thao tác của nó chấp nhận dữ liệu hơi cũ.
 - [[backend.l3.row-level-security]] — bạn biết PostgreSQL có thể thêm điều kiện cửa hàng vào các truy vấn mà một role chạy trên một bảng, để nhân viên một cửa hàng chỉ thấy dòng của cửa hàng mình.
 
