@@ -12,7 +12,7 @@ lệch nhau, tài liệu này thắng.
 - App nằm trong **cùng monorepo**, thư mục `app/`, có `app/CLAUDE.md` riêng (Claude Code nạp CLAUDE.md lồng nhau khi làm việc trong `app/`).
   Lý do: app đọc `dist/content.json` của repo nội dung khi phát triển; một repo, một `git log`.
 - Tên package Dart: `lta_app`. Android `applicationId`: `dev.lotrinharchitect.app`. `minSdk 26`, `targetSdk` theo Flutter stable.
-  Web: renderer mặc định của Flutter (không dùng cờ `--web-renderer`, đã gỡ), base href `/lo-trinh-architect/app/`, PWA `--pwa-strategy offline-first`.
+  Web: renderer mặc định của Flutter (không dùng cờ `--web-renderer`, đã gỡ), base href `/lo-trinh-architect/app/`. Web V1 chỉ online (Flutter 3.47 đã gỡ `--pwa-strategy`; DECISIONS.md §3); Android offline.
 - **Không nhầm với `DonHang.App`** — đó là Flutter client trong repo ví dụ Đơn Hàng (đối tượng để *dạy*), không phải app này.
 - Pin Flutter/Dart cho app **độc lập** với `content/versions.yaml` (file đó phục vụ nội dung dạy). App pin trong `app/pubspec.yaml`
   (`environment.sdk`) và `app/.fvmrc` (FVM); dùng đúng bản `flutter --version` bạn có, ghi vào `app/CLAUDE.md`.
@@ -210,9 +210,9 @@ Cache kết quả theo `(lesson id, brightness)`. Font trong SVG: build ép `fon
 
 ## 8. Nạp và hiệu năng
 
-- Parse `content.json` (≈ 10 MB) trong `Isolate.run` → model bất biến; giữ `lessons` dạng `Map<String, Lesson>` nhưng `sections` chỉ parse Markdown → AST **khi mở bài** (cache LRU 10 bài).
+- Parse `content.json` (≈ 10 MB) trong `Isolate.run` → model bất biến; giữ `lessons` dạng `Map<String, Lesson>` nhưng `sections` chỉ parse Markdown → AST **khi mở bài** (cache LRU 10 bài). App đọc byte UTF-8 (không qua `String` cả file); `sections`/`diagram_svg` từng bài giữ dạng byte, giải mã JSON khi mở bài (DECISIONS.md §3).
 - FTS index xây trong isolate lần đầu và khi đổi nội dung; màn Tìm hiện "đang lập chỉ mục" nếu chưa xong.
-- Web: `content.json` nằm trong asset bundle; bật service worker mặc định của Flutter web để offline; SQLite qua WASM + OPFS.
+- Web: `content.json` nằm trong asset bundle; web V1 chỉ online (không service worker offline; DECISIONS.md §3); SQLite qua WASM + OPFS.
 - Khởi động mục tiêu: < 1,5 s tới màn Học tiếp trên Android tầm trung (đo bằng `event` local).
 
 ## 9. Kiểm thử bắt buộc
@@ -242,7 +242,7 @@ Tiêu chí xanh: `flutter analyze` 0 lỗi/cảnh báo; `flutter test` 100%; gol
 3. `flutter build web --base-href /lo-trinh-architect/app/` → deploy nhánh `gh-pages` vào `app/`; đồng thời copy `dist/content.json.gz` + `dist/manifest.json` → `gh-pages/content/`.
 4. `flutter build apk` — ký release nếu 4 secret keystore tồn tại, nếu không thì debug (DECISIONS.md A6) → artifact.
 
-`.github/workflows/content.yml` (trigger: push vào `content/**` trên nhánh `auto/*` và `main`): checkout `submodules: true`, `fetch-depth: 0`; Dart SDK; Node + mermaid-cli + Playwright Chromium; `tools/validate` → `tools/build` → commit `dist/` vào cùng nhánh bằng `AUTO_PUSH_TOKEN` (nếu không có secret: upload artifact) → `app.yml` chạy qua `workflow_run`. Deploy bằng `actions/deploy-pages` một site: `app/` + `content/`.
+`.github/workflows/content.yml` (trigger: push vào `content/**` trên nhánh `auto/*` và `main`): checkout `submodules: true`, `fetch-depth: 0`; Dart SDK; Node + mermaid-cli + Playwright Chromium; `tools/validate` → `tools/build` → upload artifact `dist` (không commit `dist/` — gitignored; DECISIONS.md §3) → `app.yml` chạy qua `workflow_run` và tải artifact đó. Deploy bằng `actions/deploy-pages` một site: `app/` + `content/`.
 
 ## 11. Milestone cho Claude Code (mỗi milestone một phiên, có Definition of Done)
 
