@@ -16,8 +16,8 @@ example_tag: stage-4
 versions_used: [postgresql]
 content_version: 1
 status: published
-approved_by: owner
-reviewed_at: "2026-11-03T22:14:35+07:00"
+approved_by: auto
+reviewed_at: "2026-11-08T16:00:00+07:00"
 ---
 
 ## Before you start
