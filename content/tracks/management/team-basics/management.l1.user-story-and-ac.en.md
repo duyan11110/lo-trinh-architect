@@ -15,7 +15,7 @@ vocab: [user-story, acceptance-criteria, definition-of-done]
 example_tag: stage-0
 versions_used: [scrum, http]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-11-08T16:00:00+07:00"
 ---
