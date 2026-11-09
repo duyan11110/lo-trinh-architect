@@ -83,6 +83,40 @@ bool _isAllCapsWord(String s) {
   return s == s.toUpperCase() && s != s.toLowerCase();
 }
 
+final _tokenRe = RegExp(r'[\p{L}\p{N}\p{M}]+', unicode: true);
+
+/// An acronym token of a glossary form: at least two letters, all upper case
+/// apart from a plural `s`/`es` (`CAP`, `CA`, `APIs`).
+bool _isAcronymToken(String t) {
+  final core = t.replaceFirst(RegExp(r'e?s$'), '');
+  final letters = core.replaceAll(RegExp(r'[^\p{L}]', unicode: true), '');
+  if (letters.length < 2) return false;
+  return core == core.toUpperCase() && core != core.toLowerCase();
+}
+
+/// A.2: an acronym token of the form only matches the same token, same case
+/// ("cap" is not `CAP`, "join" is not `JOIN`).
+bool _acronymsOk(String form, String matched) {
+  final f = _tokenRe.allMatches(form).map((m) => m[0]!).toList();
+  final t = _tokenRe.allMatches(matched).map((m) => m[0]!).toList();
+  for (var k = 0; k < f.length; k++) {
+    if (_isAcronymToken(f[k]) && (k >= t.length || t[k] != f[k])) return false;
+  }
+  return true;
+}
+
+/// A.2: an ALL-CAPS token (≥ 3 letters) of the text only matches an
+/// all-caps token of the form (`COMMIT` is not `commit`; `DNS` is `DNS`).
+bool _shoutingOk(String form, String matched) {
+  final f = _tokenRe.allMatches(form).map((m) => m[0]!).toList();
+  final t = _tokenRe.allMatches(matched).map((m) => m[0]!).toList();
+  for (var k = 0; k < t.length; k++) {
+    if (!_isAllCapsWord(t[k])) continue;
+    if (k >= f.length || f[k] != f[k].toUpperCase()) return false;
+  }
+  return true;
+}
+
 class TermMatch {
   final String term;
   final int start;
@@ -128,10 +162,8 @@ List<TermMatch> findTermOccurrences(String rawText, List<GlossaryEntry> glossary
       }
       if (overlap) continue;
       final matchedText = text.substring(m.start, m.end);
-      final entryEn = glossary.firstWhere((e) => e.term == c.value).en;
-      if (_isAllCapsWord(matchedText) && !_isAllCapsWord(entryEn)) {
-        continue;
-      }
+      if (!_shoutingOk(form, matchedText)) continue;
+      if (!_acronymsOk(form, matchedText)) continue;
       for (int i = m.start; i < m.end; i++) {
         consumed[i] = true;
       }

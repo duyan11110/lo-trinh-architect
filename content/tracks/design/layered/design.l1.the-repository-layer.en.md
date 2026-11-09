@@ -15,9 +15,9 @@ vocab: [repository]
 example_tag: stage-1
 versions_used: [dotnet, efcore]
 content_version: 1
-status: published
-approved_by: owner
-reviewed_at: "2026-09-26T02:30:00+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-11-09T11:00:00+07:00"
 ---
 
 ## Before you start
@@ -31,7 +31,7 @@ reviewed_at: "2026-09-26T02:30:00+07:00"
 
 ## Core concepts
 
-- **repository** — the layer hiding how data is fetched or saved behind a small set of methods that describe what is needed, not how.
+- **repository layer** — the layer hiding how data is fetched or saved behind a small set of methods that describe what is needed, not how; each class in it is a repository.
 - data-access code — the code that actually talks to the database: queries, `Include`, `SaveChangesAsync`. The data layer is the project meant to hold this code — in Đơn Hàng, `DonHang.Infrastructure`, where `DonHangDbContext` and `EfOrderRepository` live.
 - implementation — a class that provides the methods an interface declares; `EfOrderRepository` and `FakeOrderRepository` are two implementations of `IOrderRepository`.
 
