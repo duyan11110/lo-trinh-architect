@@ -119,7 +119,8 @@ class GlossaryMatcher {
 
   /// Matches every glossary occurrence in [text], longest form first at each
   /// position, Unicode word boundaries on both sides, case-insensitive except
-  /// that an all-caps token only matches an all-caps token of the form.
+  /// that an all-caps token only matches an all-caps token of the form, and an
+  /// acronym token of the form only matches itself, same case.
   List<TermMatch> match(String text) {
     final out = <TermMatch>[];
     var i = 0;
@@ -182,6 +183,23 @@ class GlossaryMatcher {
       if (!_isShouting(src[k])) continue;
       if (k >= f.tokens.length || !_isCaps(f.tokens[k])) return false;
     }
+    // An acronym token of the form matches only the same token, same case
+    // ("cap" is not `CAP`, "join" is not `JOIN`).
+    for (var k = 0; k < f.tokens.length; k++) {
+      if (!_isAcronym(f.tokens[k])) continue;
+      if (k >= src.length || src[k] != f.tokens[k]) return false;
+    }
     return true;
   }
+
+  /// At least two letters, all upper case apart from a plural `s`/`es`
+  /// (`CAP`, `CA`, `APIs`).
+  static bool _isAcronym(String token) {
+    final core = token.replaceFirst(_pluralTail, '');
+    final letters = core.replaceAll(_nonLetter, '');
+    return letters.length >= 2 && _isCaps(core);
+  }
+
+  static final _pluralTail = RegExp(r'e?s$');
+  static final _nonLetter = RegExp(r'[^\p{L}]', unicode: true);
 }

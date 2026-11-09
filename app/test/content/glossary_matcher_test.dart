@@ -67,10 +67,19 @@ void main() {
   });
 
   test('ALL-CAPS token ≥ 3 letters only matches an all-caps entry', () {
-    expect(_terms(en, 'Run COMMIT; ask DNS; dns too.'), [
-      'dns:DNS',
-      'dns:dns',
-    ]);
+    expect(_terms(en, 'Run COMMIT; ask DNS; dns too.'), ['dns:DNS']);
+  });
+
+  test('an acronym form only matches the same letters in the same case', () {
+    final m = GlossaryMatcher([
+      _e('cap-theorem', 'CAP theorem', vi: 'định lý CAP', aliases: ['CAP']),
+      _e('api', 'API'),
+      _e('ca', 'certificate authority (CA)', aliases: ['CA']),
+    ], lang: ContentLang.vi);
+    expect(
+      _terms(m, 'A cap of 50, cap theorem, CAP theorem, CAP, APIs, apis, ca, CA.'),
+      ['cap-theorem:CAP theorem', 'cap-theorem:CAP', 'api:APIs', 'ca:CA'],
+    );
   });
 
   test('word boundaries: no match inside a longer word', () {
