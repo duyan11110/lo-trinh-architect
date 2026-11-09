@@ -15,7 +15,7 @@ vocab: [pipe]
 example_tag: stage-0
 versions_used: [shell, coreutils, busybox]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-11-09T18:00:00+07:00"
 ---

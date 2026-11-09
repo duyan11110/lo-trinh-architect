@@ -15,7 +15,7 @@ vocab: [certificate-authority, certificate-chain, pki]
 example_tag: stage-4
 versions_used: [dotnet, x509, tls]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-11-09T18:00:00+07:00"
 ---

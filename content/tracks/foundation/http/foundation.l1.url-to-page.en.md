@@ -15,7 +15,7 @@ vocab: [request, response]
 example_tag: stage-0
 versions_used: [http, tls, caddy, dns, html, tcp, shell, busybox]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-11-09T21:00:00+07:00"
 ---

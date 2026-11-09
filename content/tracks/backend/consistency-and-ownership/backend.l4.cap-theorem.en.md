@@ -15,7 +15,7 @@ vocab: [network-partition, cap-theorem]
 example_tag: stage-4
 versions_used: [postgresql, npgsql, redis, docker, cap_theorem]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-11-09T18:00:00+07:00"
 ---
