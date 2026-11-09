@@ -13,11 +13,11 @@ prereqs: [devops.l1.volumes, k8s.l1.deploying-don-hang, management.l2.non-functi
 related: [foundation.l1.shell-scripts, backend.l2.redis-key-value-store]
 vocab: [disaster-recovery, rpo, rto]
 example_tag: stage-2
-versions_used: [postgresql, docker, kubernetes, redis]
+versions_used: [postgresql, docker, kubernetes, redis, dr_glossary]
 content_version: 1
-status: published
-approved_by: owner
-reviewed_at: "2026-10-13T23:10:28+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-11-09T18:00:00+07:00"
 ---
 
 ## Before you start

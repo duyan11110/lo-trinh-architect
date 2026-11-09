@@ -13,11 +13,11 @@ prereqs: [backend.l1.creating-a-resource]
 related: []
 vocab: []
 example_tag: stage-1
-versions_used: [aspnetcore, http]
+versions_used: [aspnetcore, http, http_patch]
 content_version: 1
-status: published
-approved_by: owner
-reviewed_at: "2026-09-25T01:00:00+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-11-09T18:00:00+07:00"
 ---
 
 ## Before you start

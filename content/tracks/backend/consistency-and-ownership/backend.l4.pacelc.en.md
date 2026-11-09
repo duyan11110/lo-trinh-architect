@@ -13,11 +13,11 @@ prereqs: [backend.l4.cap-theorem, backend.l2.cache-invalidation, backend.l3.read
 related: [backend.l3.eventual-consistency, design.l4.quality-attribute-scenarios]
 vocab: [latency, pacelc]
 example_tag: stage-4
-versions_used: [postgresql, redis, stackexchange_redis, docker]
+versions_used: [postgresql, redis, stackexchange_redis, docker, pacelc]
 content_version: 1
-status: published
-approved_by: owner
-reviewed_at: "2026-10-28T08:47:26+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-11-09T18:00:00+07:00"
 ---
 
 ## Before you start

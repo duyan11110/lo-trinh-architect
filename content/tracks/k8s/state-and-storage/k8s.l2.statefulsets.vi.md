@@ -13,11 +13,11 @@ prereqs: [k8s.l2.reclaim-policy, k8s.l1.deployments, k8s.l2.config-repo-overlays
 related: [backend.l3.read-replicas]
 vocab: [statefulset]
 example_tag: stage-3
-versions_used: [kubernetes, kind, postgresql, argocd]
+versions_used: [kubernetes, kind, postgresql, argocd, postgres_image]
 content_version: 1
-status: published
-approved_by: owner
-reviewed_at: "2026-10-15T09:50:14+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-11-09T18:00:00+07:00"
 ---
 
 ## Bạn cần biết trước

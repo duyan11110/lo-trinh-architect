@@ -13,11 +13,11 @@ prereqs: [k8s.l2.storage-classes, devops.l3.self-heal, k8s.l1.namespaces]
 related: [devops.l3.restore-testing]
 vocab: [reclaim-policy]
 example_tag: stage-3
-versions_used: [kubernetes, kind, argocd]
+versions_used: [kubernetes, kind, argocd, local_path_provisioner]
 content_version: 1
-status: published
-approved_by: owner
-reviewed_at: "2026-10-15T08:41:11+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-11-09T18:00:00+07:00"
 ---
 
 ## Bạn cần biết trước

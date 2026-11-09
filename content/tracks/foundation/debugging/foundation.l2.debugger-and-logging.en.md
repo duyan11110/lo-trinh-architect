@@ -9,20 +9,21 @@ main_path: true
 title: "Debugger and logs: seeing inside while it runs"
 duration_min: 12
 skills: [foundation.debug.tools]
-prereqs: [foundation.l2.reading-stack-traces]
+prereqs: [foundation.l2.reading-stack-traces, foundation.l2.debugging-method]
 related: [backend.l1.structured-logging]
 vocab: []
 example_tag: stage-0
 versions_used: [dotnet]
 content_version: 1
-status: published
-approved_by: owner
-reviewed_at: "2026-09-28T13:00:00+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-11-09T21:00:00+07:00"
 ---
 
 ## Before you start
 
 - [[foundation.l2.reading-stack-traces]] — a trace hands you a type, a message and a line, and usually not the value that was wrong on that line. This lesson is the two ways to see the value itself.
+- [[foundation.l2.debugging-method]] — you know a hypothesis is one sentence a single check could prove false, and that a failure is narrowed by halving until you hold the earliest wrong value.
 
 ## The situation
 

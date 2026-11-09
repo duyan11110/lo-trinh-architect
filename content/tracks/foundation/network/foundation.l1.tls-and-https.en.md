@@ -13,11 +13,11 @@ prereqs: [foundation.l1.tcp-vs-udp, foundation.l1.dns]
 related: [devops.l1.reverse-proxy-and-tls, backend.l4.pki-and-signing]
 vocab: [tls]
 example_tag: stage-0
-versions_used: [caddy, docker, http, tls]
+versions_used: [caddy, docker, http, tls, x509, openssl]
 content_version: 1
-status: published
+status: approved
 approved_by: auto
-reviewed_at: "2026-11-08T16:00:00+07:00"
+reviewed_at: "2026-11-09T21:00:00+07:00"
 ---
 
 ## Before you start
@@ -111,7 +111,7 @@ what the two sides agreed to use:
     Cipher    : TLS_AES_128_GCM_SHA256
 ```
 
-`openssl s_client` opens a TLS connection to `donhang.local:8443` and prints what came back; `openssl x509 -noout` then prints only the fields named after it, and `grep -E` keeps only the `Protocol` and `Cipher` lines.
+`openssl s_client` connects over TLS, sends the `-servername` value at step 1, and prints the reply; `openssl x509 -noout` then prints only the fields named after it, and `grep -E` keeps only the `Protocol` and `Cipher` lines.
 
 The first part names the signer but no site: `subject=` (the field that once named the site) is empty, so the name lives in the second part, under `X509v3 Subject Alternative Name`, where `DNS:` marks a name, not a lookup. That field, not the subject, is what a browser matches the name against. The issuer is the authority `tls internal` created. The third part prints the version, `TLSv1.3`, agreed during the handshake, not assumed. You can pass over `echo |`, `2>/dev/null`, the trailing `critical`, the rest of the issuer's name and the `Cipher` line, which later lessons explain. The dates print as `...` because this printed copy masks values that change between runs.
 

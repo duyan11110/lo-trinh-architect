@@ -13,11 +13,11 @@ prereqs: [devops.l3.pinning-by-content, devops.l2.building-images-in-ci, devops.
 related: [devops.l1.multi-stage-builds]
 vocab: [sbom]
 example_tag: stage-3
-versions_used: [syft, docker, dotnet, github_actions]
+versions_used: [syft, docker, dotnet, github_actions, cyclonedx]
 content_version: 1
-status: published
-approved_by: owner
-reviewed_at: "2026-10-14T09:22:26+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-11-09T18:00:00+07:00"
 ---
 
 ## Bạn cần biết trước

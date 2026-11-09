@@ -13,11 +13,11 @@ prereqs: [foundation.l1.json-and-encoding]
 related: []
 vocab: []
 example_tag: stage-0
-versions_used: [dotnet, postgresql]
+versions_used: [dotnet, postgresql, tz_database, timestamps]
 content_version: 1
-status: published
-approved_by: owner
-reviewed_at: "2026-09-28T13:00:00+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-11-09T18:00:00+07:00"
 ---
 
 > Bỏ qua được nếu: bạn vẫn luôn lưu mọi thời điểm theo UTC và biết vì sao số đơn hàng mỗi ngày phụ thuộc vào múi giờ.

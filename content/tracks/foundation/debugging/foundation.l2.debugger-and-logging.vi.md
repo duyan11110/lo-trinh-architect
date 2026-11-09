@@ -9,20 +9,21 @@ main_path: true
 title: "Debugger và log: nhìn vào bên trong lúc chạy"
 duration_min: 12
 skills: [foundation.debug.tools]
-prereqs: [foundation.l2.reading-stack-traces]
+prereqs: [foundation.l2.reading-stack-traces, foundation.l2.debugging-method]
 related: [backend.l1.structured-logging]
 vocab: []
 example_tag: stage-0
 versions_used: [dotnet]
 content_version: 1
-status: published
-approved_by: owner
-reviewed_at: "2026-09-28T13:00:00+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-11-09T21:00:00+07:00"
 ---
 
 ## Bạn cần biết trước
 
 - [[foundation.l2.reading-stack-traces]] — một stack trace đưa cho bạn kiểu lỗi, thông báo và số dòng, nhưng thường không cho biết giá trị nào đã sai ở dòng đó. Bài này là hai cách để nhìn thấy chính giá trị ấy.
+- [[foundation.l2.debugging-method]] — bạn biết giả thuyết là một câu mà chỉ một lần kiểm tra có thể chứng minh sai, và lỗi được thu hẹp bằng cách cắt đôi tới khi bạn giữ được giá trị sớm nhất bị sai.
 
 ## Tình huống
 

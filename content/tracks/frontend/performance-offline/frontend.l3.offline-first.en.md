@@ -13,11 +13,11 @@ prereqs: [frontend.l2.futureprovider-and-asyncvalue, backend.l3.graceful-degrada
 related: [frontend.l3.rebuild-scope, foundation.l1.http-caching]
 vocab: [offline-first, local-storage]
 example_tag: stage-3
-versions_used: [flutter, riverpod]
+versions_used: [flutter, riverpod, html, storage, http_caching]
 content_version: 1
-status: published
-approved_by: owner
-reviewed_at: "2026-11-05T02:04:48+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-11-09T18:00:00+07:00"
 ---
 
 ## Before you start

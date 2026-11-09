@@ -13,11 +13,11 @@ prereqs: [backend.l3.eventual-consistency, backend.l3.read-replicas, backend.l3.
 related: [design.l4.trade-off-points, backend.l3.slow-dependencies, backend.l2.cache-aside]
 vocab: [network-partition, cap-theorem]
 example_tag: stage-4
-versions_used: [postgresql, npgsql, redis, docker]
+versions_used: [postgresql, npgsql, redis, docker, cap_theorem]
 content_version: 1
-status: published
-approved_by: owner
-reviewed_at: "2026-10-28T07:07:21+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-11-09T18:00:00+07:00"
 ---
 
 ## Before you start

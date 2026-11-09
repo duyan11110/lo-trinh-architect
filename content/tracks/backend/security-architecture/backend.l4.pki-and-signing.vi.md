@@ -13,11 +13,11 @@ prereqs: [backend.l4.signing-documents, k8s.l3.cert-manager, k8s.l2.tls-at-the-g
 related: [devops.l3.signing-images, backend.l2.validating-provider-tokens]
 vocab: [certificate-authority, certificate-chain, pki]
 example_tag: stage-4
-versions_used: [dotnet]
+versions_used: [dotnet, x509, tls]
 content_version: 1
-status: published
-approved_by: owner
-reviewed_at: "2026-10-29T03:13:15+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-11-09T18:00:00+07:00"
 ---
 
 ## Bạn cần biết trước

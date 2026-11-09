@@ -13,11 +13,11 @@ prereqs: [foundation.l1.files-and-permissions]
 related: []
 vocab: [shell]
 example_tag: stage-0
-versions_used: [git]
+versions_used: [git, shell, coreutils]
 content_version: 1
-status: published
-approved_by: owner
-reviewed_at: "2026-09-28T13:00:00+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-11-09T18:00:00+07:00"
 ---
 
 ## Before you start

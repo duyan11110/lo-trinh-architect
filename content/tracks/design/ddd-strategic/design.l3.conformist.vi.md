@@ -13,11 +13,11 @@ prereqs: [design.l3.context-map, backend.l2.role-based-access]
 related: [design.l2.testing-protected-endpoints]
 vocab: [conformist]
 example_tag: stage-2
-versions_used: [aspnetcore, keycloak]
+versions_used: [aspnetcore, keycloak, ddd_reference]
 content_version: 1
-status: published
-approved_by: owner
-reviewed_at: "2026-10-21T21:29:16+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-11-09T18:00:00+07:00"
 ---
 
 ## Bạn cần biết trước
