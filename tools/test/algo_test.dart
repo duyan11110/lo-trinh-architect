@@ -87,6 +87,32 @@ five.
       expect(terms, isNot(contains('commit'))); // commit entry's en is lowercase -> must not match COMMIT
     });
 
+    test('an acronym form only matches the same letters in the same case', () {
+      final cap = [
+        GlossaryEntry(
+            term: 'cap-theorem',
+            en: 'CAP theorem',
+            viKeep: false,
+            vi: 'định lý CAP',
+            shortVi: 'x',
+            shortEn: 'x',
+            introducedIn: 'x.l1.x',
+            aliases: const ['CAP']),
+        GlossaryEntry(
+            term: 'api',
+            en: 'API',
+            viKeep: true,
+            vi: 'API',
+            shortVi: 'x',
+            shortEn: 'x',
+            introducedIn: 'x.l1.x',
+            aliases: const []),
+      ];
+      const text = 'A cap of 50 and a cap theorem; the CAP theorem; CAP; two APIs, two apis.';
+      final got = findTermOccurrences(text, cap, lang: 'en').map((m) => m.matchedText).toList();
+      expect(got, ['CAP theorem', 'CAP', 'APIs']);
+    });
+
     test('skips fenced code, inline code and [[id]] links', () {
       final matches = findTermOccurrences('See `map` and [[map]] and\n```\nmap\n```\nbut not map here.', glossary);
       // Only the last, real prose "map" should match.

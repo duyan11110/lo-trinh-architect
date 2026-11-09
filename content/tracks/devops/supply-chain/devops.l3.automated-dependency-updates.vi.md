@@ -13,11 +13,11 @@ prereqs: [devops.l3.pinning-by-content, devops.l2.quality-gate, devops.l2.semant
 related: [management.l1.code-review-basics]
 vocab: [dependabot]
 example_tag: stage-3
-versions_used: [github_actions, dotnet, flutter, docker, semver]
+versions_used: [github_actions, dotnet, flutter, docker, semver, dependabot]
 content_version: 1
 status: published
-approved_by: owner
-reviewed_at: "2026-10-14T08:12:37+07:00"
+approved_by: auto
+reviewed_at: "2026-11-09T18:00:00+07:00"
 ---
 
 ## Bạn cần biết trước

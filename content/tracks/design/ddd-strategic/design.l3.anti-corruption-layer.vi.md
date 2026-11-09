@@ -13,11 +13,11 @@ prereqs: [design.l3.conformist, design.l2.adapter-pattern, backend.l2.resource-b
 related: [design.l2.ports-and-adapters, backend.l2.database-job-queue]
 vocab: [anti-corruption-layer]
 example_tag: stage-2
-versions_used: [aspnetcore, keycloak, mailkit]
+versions_used: [aspnetcore, keycloak, mailkit, ddd_reference]
 content_version: 1
 status: published
-approved_by: owner
-reviewed_at: "2026-10-21T22:22:33+07:00"
+approved_by: auto
+reviewed_at: "2026-11-09T18:00:00+07:00"
 ---
 
 ## Bạn cần biết trước

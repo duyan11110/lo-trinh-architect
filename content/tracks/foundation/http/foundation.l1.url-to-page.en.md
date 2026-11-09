@@ -13,11 +13,11 @@ prereqs: [foundation.l1.dns, foundation.l1.tcp-vs-udp, foundation.l1.tls-and-htt
 related: [backend.l1.request-lifecycle, frontend.l1.browser-rendering]
 vocab: [request, response]
 example_tag: stage-0
-versions_used: [http, tls, caddy]
+versions_used: [http, tls, caddy, dns, html, tcp, shell, busybox]
 content_version: 1
 status: published
-approved_by: owner
-reviewed_at: "2026-09-28T13:00:00+07:00"
+approved_by: auto
+reviewed_at: "2026-11-09T21:00:00+07:00"
 ---
 
 ## Before you start
@@ -28,7 +28,7 @@ reviewed_at: "2026-09-28T13:00:00+07:00"
 
 ## The situation
 
-You start the lab — the programs `scripts/up.sh` runs on your machine, with names and addresses of its own, so it behaves like a separate machine — and open `http://localhost:8080/index.html` in your browser; `localhost` is a name that always means the machine you are on, address `127.0.0.1`. The page appears at once. You then type `https://donhang.local:8443` and the browser stops with a message about the name. A day later a colleague says the site is slow, and you cannot say which part: the machine, the connection, or Caddy, the program serving the page. Pressing Enter feels like one action, so a failure feels like one failure. What actually happens between pressing Enter and the page appearing?
+You start the lab — the programs `scripts/up.sh` runs on your machine, with names and addresses of its own, so it behaves like a separate machine — and open `http://localhost:8080/index.html` in your browser; `localhost` is a name that always means the machine you are on, usually address `127.0.0.1`. The page appears at once. You then type `https://donhang.local:8443` and the browser stops with a message about the name. A day later a colleague says the site is slow, and you cannot say which part: the machine, the connection, or Caddy, the program serving the page. Pressing Enter feels like one action, so a failure feels like one failure. What actually happens between pressing Enter and the page appearing?
 
 ## Core concepts
 

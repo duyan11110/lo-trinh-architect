@@ -13,11 +13,11 @@ prereqs: [foundation.l1.dns, foundation.l1.tcp-vs-udp, foundation.l1.tls-and-htt
 related: [backend.l1.request-lifecycle, frontend.l1.browser-rendering]
 vocab: [request, response]
 example_tag: stage-0
-versions_used: [http, tls, caddy]
+versions_used: [http, tls, caddy, dns, html, tcp, shell, busybox]
 content_version: 1
 status: published
-approved_by: owner
-reviewed_at: "2026-09-28T13:00:00+07:00"
+approved_by: auto
+reviewed_at: "2026-11-09T21:00:00+07:00"
 ---
 
 ## Bạn cần biết trước
@@ -28,7 +28,7 @@ reviewed_at: "2026-09-28T13:00:00+07:00"
 
 ## Tình huống
 
-Bạn khởi động lab, tức các chương trình mà `scripts/up.sh` chạy trên máy bạn, có tên và địa chỉ riêng nên hoạt động như một máy tách biệt. Bạn mở `http://localhost:8080/index.html` trên trình duyệt. `localhost` là cái tên luôn chỉ chính máy bạn đang dùng, địa chỉ `127.0.0.1`. Trang hiện ra ngay. Sau đó bạn gõ `https://donhang.local:8443` và trình duyệt dừng lại với một thông báo về cái tên. Một hôm sau, đồng nghiệp bảo trang chạy chậm, còn bạn không nói được phần nào chậm: máy, kết nối, hay Caddy, chương trình phục vụ trang. Nhấn Enter có cảm giác là một thao tác, nên hỏng ở đâu cũng có cảm giác là một kiểu hỏng. Thật ra điều gì xảy ra giữa lúc nhấn Enter và lúc trang hiện ra?
+Bạn khởi động lab, tức các chương trình mà `scripts/up.sh` chạy trên máy bạn, có tên và địa chỉ riêng nên hoạt động như một máy tách biệt. Bạn mở `http://localhost:8080/index.html` trên trình duyệt. `localhost` là cái tên luôn chỉ chính máy bạn đang dùng, thường là địa chỉ `127.0.0.1`. Trang hiện ra ngay. Sau đó bạn gõ `https://donhang.local:8443` và trình duyệt dừng lại với một thông báo về cái tên. Một hôm sau, đồng nghiệp bảo trang chạy chậm, còn bạn không nói được phần nào chậm: máy, kết nối, hay Caddy, chương trình phục vụ trang. Nhấn Enter có cảm giác là một thao tác, nên hỏng ở đâu cũng có cảm giác là một kiểu hỏng. Thật ra điều gì xảy ra giữa lúc nhấn Enter và lúc trang hiện ra?
 
 ## Khái niệm cốt lõi
 

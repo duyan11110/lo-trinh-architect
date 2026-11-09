@@ -13,11 +13,11 @@ prereqs: [foundation.l1.terminal-basics]
 related: []
 vocab: [pipe]
 example_tag: stage-0
-versions_used: []
+versions_used: [shell, coreutils, busybox]
 content_version: 1
 status: published
-approved_by: owner
-reviewed_at: "2026-09-28T13:00:00+07:00"
+approved_by: auto
+reviewed_at: "2026-11-09T18:00:00+07:00"
 ---
 
 ## Bạn cần biết trước

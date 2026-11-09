@@ -16,8 +16,8 @@ example_tag: stage-1
 versions_used: [dotnet, efcore]
 content_version: 1
 status: published
-approved_by: owner
-reviewed_at: "2026-09-26T02:30:00+07:00"
+approved_by: auto
+reviewed_at: "2026-11-09T11:00:00+07:00"
 ---
 
 ## Bạn cần biết trước
@@ -31,7 +31,7 @@ reviewed_at: "2026-09-26T02:30:00+07:00"
 
 ## Khái niệm cốt lõi
 
-- **repository** — tầng che cách dữ liệu được lấy hay lưu sau một vài method mô tả cần gì, chứ không phải làm thế nào.
+- **tầng repository** (repository layer) — tầng che cách dữ liệu được lấy hay lưu sau một vài method mô tả cần gì, chứ không phải làm thế nào; mỗi class trong tầng ấy là một repository.
 - code truy cập dữ liệu — phần code thật sự nói chuyện với database: câu truy vấn, `Include`, `SaveChangesAsync`. Tầng dữ liệu là project dành để chứa code này — trong Đơn Hàng là `DonHang.Infrastructure`, nơi có `DonHangDbContext` và `EfOrderRepository`.
 - bản cài đặt — một class cung cấp các method mà một interface khai báo; `EfOrderRepository` và `FakeOrderRepository` là hai bản cài đặt của `IOrderRepository`.
 

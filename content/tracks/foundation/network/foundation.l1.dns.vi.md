@@ -13,11 +13,11 @@ prereqs: [foundation.l1.ip-and-ports]
 related: [k8s.l1.service-and-dns]
 vocab: [dns]
 example_tag: stage-0
-versions_used: [docker]
+versions_used: [docker, dns, dns_impl, busybox]
 content_version: 1
 status: published
-approved_by: owner
-reviewed_at: "2026-09-28T13:00:00+07:00"
+approved_by: auto
+reviewed_at: "2026-11-09T18:00:00+07:00"
 ---
 
 ## Bạn cần biết trước

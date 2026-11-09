@@ -13,11 +13,11 @@ prereqs: [foundation.l1.tcp-vs-udp, foundation.l1.dns]
 related: [devops.l1.reverse-proxy-and-tls, backend.l4.pki-and-signing]
 vocab: [tls]
 example_tag: stage-0
-versions_used: [caddy, docker, http, tls]
+versions_used: [caddy, docker, http, tls, x509, openssl]
 content_version: 1
 status: published
 approved_by: auto
-reviewed_at: "2026-11-08T16:00:00+07:00"
+reviewed_at: "2026-11-09T21:00:00+07:00"
 ---
 
 ## Bạn cần biết trước
@@ -111,7 +111,7 @@ what the two sides agreed to use:
     Cipher    : TLS_AES_128_GCM_SHA256
 ```
 
-`openssl s_client` mở một kết nối TLS tới `donhang.local:8443` và in ra những gì nhận về. Sau đó `openssl x509 -noout` chỉ in các trường được ghi phía sau nó, còn `grep -E` chỉ giữ lại hai dòng `Protocol` và `Cipher`.
+`openssl s_client` kết nối qua TLS, gửi giá trị ghi sau `-servername` ở bước 1, rồi in ra những gì nhận về. Sau đó `openssl x509 -noout` chỉ in các trường được ghi phía sau nó, còn `grep -E` chỉ giữ lại hai dòng `Protocol` và `Cipher`.
 
 Phần đầu có tên bên ký nhưng không có tên trang nào: `subject=` (trường trước đây dùng để ghi tên trang) để trống, nên cái tên nằm ở phần thứ hai, dưới `X509v3 Subject Alternative Name`, trong đó `DNS:` đánh dấu một cái tên chứ không phải một lần tra cứu. Trình duyệt so cái tên với trường này, không phải với subject. Issuer là đơn vị mà `tls internal` đã tạo ra. Phần thứ ba in phiên bản, `TLSv1.3`, được hai bên thống nhất trong handshake chứ không phải mặc định có sẵn. Bạn có thể bỏ qua `echo |`, `2>/dev/null`, chữ `critical` ở cuối dòng, phần còn lại trong tên của issuer và dòng `Cipher`, vì các bài sau sẽ giải thích. Các mốc ngày in ra là `...` vì bản in này che đi những giá trị thay đổi giữa các lần chạy.
 

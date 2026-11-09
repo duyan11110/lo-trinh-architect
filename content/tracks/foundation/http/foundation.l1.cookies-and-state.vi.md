@@ -13,11 +13,11 @@ prereqs: [foundation.l1.http-request-response]
 related: [backend.l1.sessions-vs-tokens]
 vocab: [cookie]
 example_tag: stage-0
-versions_used: [http, caddy]
+versions_used: [http, caddy, http_cookies, busybox]
 content_version: 1
 status: published
-approved_by: owner
-reviewed_at: "2026-09-28T13:00:00+07:00"
+approved_by: auto
+reviewed_at: "2026-11-09T18:00:00+07:00"
 ---
 
 ## Bạn cần biết trước
