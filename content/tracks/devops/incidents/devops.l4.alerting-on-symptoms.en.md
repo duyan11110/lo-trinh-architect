@@ -15,9 +15,9 @@ vocab: [alert, incident, alert-fatigue]
 example_tag: stage-4
 versions_used: [prometheus, grafana]
 content_version: 1
-status: published
-approved_by: owner
-reviewed_at: "2026-10-27T18:27:17+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-11-10T16:00:00+07:00"
 ---
 
 ## Before you start
@@ -59,7 +59,7 @@ Read the diagram from the left. Whatever the cause, if customers get errors or s
 
 Quiet matters as much as loud. Each alert that fires with nothing to do teaches the person who gets it that alerts can wait. That is alert fatigue, and it ends with the one alert that matters being read late or not at all.
 
-Causes do not disappear. They move to the dashboard, which a person opens after a symptom alert to find out why it fired. A few causes need a person even before any request fails, such as a message nobody can process. Those become a ticket, a task handled in working hours, not a call now.
+Causes do not disappear. Some show on the dashboard, which a person opens after a symptom alert to find out why it fired. A few causes need a person even before any request fails, such as a message nobody can process. Those become a ticket, a task handled in working hours, not a call now.
 
 ## In the Đơn Hàng system
 
@@ -165,4 +165,4 @@ Expected result: one proposal is a `page`, one a `ticket`, two get no alert, and
 2. An alert is an automatic check that tells a person to act; an incident is an unplanned loss or degradation of customers' service.
 3. Alerts on causes like CPU fire when nobody is hurt and miss causes nobody listed; alerts needing no action cause alert fatigue.
 4. `alerts.md` gives each SLI a `page` and a `ticket` alert, and plans cause alerts, like dead-lettered messages, only as tickets.
-5. Causes stay on the dashboard, where the person who receives a symptom alert looks for why it fired.
+5. Some causes show on the dashboard, where the person who receives a symptom alert looks for why it fired.

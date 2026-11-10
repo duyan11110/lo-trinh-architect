@@ -15,9 +15,9 @@ vocab: [service-level-indicator]
 example_tag: stage-4
 versions_used: [prometheus, prometheus_net, grafana, aspnetcore]
 content_version: 1
-status: published
-approved_by: owner
-reviewed_at: "2026-10-29T07:34:26+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-11-10T16:00:00+07:00"
 ---
 
 ## Bạn cần biết trước

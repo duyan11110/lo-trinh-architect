@@ -15,9 +15,9 @@ vocab: [release-train]
 example_tag: stage-4
 versions_used: []
 content_version: 1
-status: published
-approved_by: owner
-reviewed_at: "2026-10-29T15:38:20+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-11-10T16:00:00+07:00"
 ---
 
 ## Bạn cần biết trước
@@ -119,12 +119,12 @@ ghi chú phát hành của cả hai chuyến đó.
 
 ### Cái giá
 
-Chuyến đổi tốc độ lấy sự dễ đoán: một thay đổi đã xong có thể chờ tới hai tuần
-mới được bật. Cái giá đó hợp với thay đổi mà 1.000 cửa hàng (giả định) phải biết trước,
+Chuyến đổi tốc độ lấy sự dễ đoán: một thay đổi đã xong có thể chờ gần ba tuần
+mới được bật, nếu nó xong ngay sau khi ghi chú đã gửi. Cái giá đó hợp với thay đổi mà 1.000 cửa hàng (giả định) phải biết trước,
 không hợp với thay đổi bên trong, nên thay đổi bên trong không đi theo chuyến.
 ```
 
-Dòng 33–42 (mục "Ngoài lịch") lo các bản sửa ngoài lịch. Trong lúc có sự cố, người chỉ huy sự cố theo `incident-response.md` được phát hành. Với bản vá lỗ hổng không gắn với sự cố nào, trưởng nhóm được phát hành. Bản sửa của api vẫn đi qua canary của ADR `0019`, kể cả khi error budget trong `slo.md` đã hết. Cửa hàng bị ảnh hưởng được báo ngay trong ngày điều gì đã sửa và họ có phải làm gì không, và ghi chú của chuyến kế tiếp ghi lại thay đổi đó. Dòng 46–48 (mục "Đổi phá vỡ") thêm một quy tắc cho breaking change: cửa hàng được báo trước ít nhất hai chuyến, trong cả hai ghi chú. Dòng 52–54 (mục "Cái giá") gọi tên cái giá, mà file tính là tới hai tuần kể từ chuyến bị lỡ, và nói nó hợp với loại thay đổi nào.
+Dòng 33–42 (mục "Ngoài lịch") lo các bản sửa ngoài lịch. Trong lúc có sự cố, người chỉ huy sự cố theo `incident-response.md` được phát hành. Với bản vá lỗ hổng không gắn với sự cố nào, trưởng nhóm được phát hành. Bản sửa của api vẫn đi qua canary của ADR `0019`, kể cả khi error budget trong `slo.md` đã hết. Cửa hàng bị ảnh hưởng được báo ngay trong ngày điều gì đã sửa và họ có phải làm gì không, và ghi chú của chuyến kế tiếp ghi lại thay đổi đó. Dòng 46–48 (mục "Đổi phá vỡ") thêm một quy tắc cho breaking change: cửa hàng được báo trước ít nhất hai chuyến, trong cả hai ghi chú. Dòng 52–54 (mục "Cái giá") gọi tên cái giá, mà file tính là tới gần ba tuần với thay đổi xong ngay sau khi ghi chú đã gửi, và nói nó hợp với loại thay đổi nào.
 
 ## Đánh đổi
 

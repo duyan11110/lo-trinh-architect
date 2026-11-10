@@ -15,9 +15,9 @@ vocab: [alert, incident, alert-fatigue]
 example_tag: stage-4
 versions_used: [prometheus, grafana]
 content_version: 1
-status: published
-approved_by: owner
-reviewed_at: "2026-10-27T18:27:17+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-11-10T16:00:00+07:00"
 ---
 
 ## Bạn cần biết trước
@@ -59,7 +59,7 @@ Trong tình huống trên, mỗi điều kiện của đồng nghiệp là một
 
 Im lặng quan trọng không kém lúc kêu. Mỗi cảnh báo kêu mà không có gì để làm lại dạy người nhận rằng cảnh báo có thể chờ. Đó là nhờn cảnh báo, và kết cục là cảnh báo quan trọng duy nhất bị đọc muộn, hoặc không ai đọc.
 
-Nguyên nhân không biến mất. Chúng chuyển sang dashboard, nơi một người mở ra sau khi có cảnh báo theo triệu chứng để tìm vì sao nó kêu. Vài nguyên nhân cần người ngay cả trước khi có request nào lỗi, như một message không ai xử lý được. Những nguyên nhân đó thành một ticket, tức một việc làm trong giờ hành chính, chứ không phải một cuộc gọi ngay lúc đó.
+Nguyên nhân không biến mất. Một số nguyên nhân hiện trên dashboard, nơi một người mở ra sau khi có cảnh báo theo triệu chứng để tìm vì sao nó kêu. Vài nguyên nhân cần người ngay cả trước khi có request nào lỗi, như một message không ai xử lý được. Những nguyên nhân đó thành một ticket, tức một việc làm trong giờ hành chính, chứ không phải một cuộc gọi ngay lúc đó.
 
 ## Trong hệ thống Đơn Hàng
 
@@ -165,4 +165,4 @@ Kết quả mong đợi: một đề xuất là `page`, một là `ticket`, hai 
 2. Cảnh báo là một phép kiểm tự động báo cho người rằng cần hành động. Sự cố là một lần dịch vụ khách nhận được bị mất hoặc giảm chất lượng ngoài kế hoạch.
 3. Cảnh báo theo nguyên nhân như CPU kêu khi không ai bị ảnh hưởng và bỏ sót nguyên nhân không ai liệt kê. Cảnh báo không cần hành động gây ra nhờn cảnh báo.
 4. `alerts.md` cho mỗi SLI một cảnh báo `page` và một cảnh báo `ticket`, và chỉ dự kiến cảnh báo theo nguyên nhân, như message trong dead-letter queue, ở mức ticket.
-5. Nguyên nhân ở lại trên dashboard, nơi người nhận cảnh báo theo triệu chứng tìm vì sao nó kêu.
+5. Một số nguyên nhân hiện trên dashboard, nơi người nhận cảnh báo theo triệu chứng tìm vì sao nó kêu.

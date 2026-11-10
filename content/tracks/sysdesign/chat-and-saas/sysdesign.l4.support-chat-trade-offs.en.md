@@ -15,9 +15,9 @@ vocab: []
 example_tag: stage-4
 versions_used: [aspnetcore, redis, postgresql]
 content_version: 1
-status: published
-approved_by: owner
-reviewed_at: "2026-11-03T19:44:50+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-11-10T16:00:00+07:00"
 ---
 
 ## Before you start
@@ -71,13 +71,13 @@ The review's step on bottlenecks names the scarce resource and the relay's failu
   có tin; kế hoạch dung lượng của Support đếm kết nối ở giờ đông, không đếm
   request mỗi giây.
 - Kết nối chat không giữ kết nối database: Pod chỉ mở một kết nối khi lưu hay
-  đọc tin. `max_connections` giới hạn tốc độ ghi tin, không giới hạn số khách
+  đọc tin. `max_connections` giới hạn số lần lưu và đọc tin chạy cùng lúc, không giới hạn số khách
   đang nối.
 - Redis (1 bản): sập thì chỉ mất chuyển tiếp giữa Pod; tin vẫn lưu, app đọc lại
   khi nối lại.
 ```
 
-The first two bullets answer the first two replies; the second bullet's "tốc độ ghi tin" means how many saves and reads run at once, as above. Compare `capacity-plan.md`: for `api` it counts product reads and orders per second, because each request is short. Its rule for database connections still applies: `donhang_support` lives on the server `db`, as ADR `0032` decides, so each Support Pod adds its own database connections to the sum that `capacity-plan.md` keeps below `max_connections`. That sum grows with Support's Pods, not with screens. The third bullet is the relay's failure case.
+The first two bullets answer the first two replies. Compare `capacity-plan.md`: for `api` it counts product reads and orders per second, because each request is short. Its rule for database connections still applies: `donhang_support` lives on the server `db`, as ADR `0032` decides, so each Support Pod adds its own database connections to the sum that `capacity-plan.md` keeps below `max_connections`. That sum grows with Support's Pods, not with screens. The third bullet is the relay's failure case.
 
 The rejected options, among them SignalR, ASP.NET Core's real-time library, and the three trade-off points follow. The drivers they cite say: 1, a message reaches an open screen within seconds; 2, no message is lost when the relay fails; 4, chat never takes capacity that ordering needs.
 

@@ -15,9 +15,9 @@ vocab: []
 example_tag: stage-4
 versions_used: [kubernetes, argocd, postgresql, rabbitmq, sealed_secrets]
 content_version: 1
-status: published
-approved_by: owner
-reviewed_at: "2026-10-29T04:24:32+07:00"
+status: approved
+approved_by: auto
+reviewed_at: "2026-11-10T16:00:00+07:00"
 ---
 
 ## Before you start
@@ -95,7 +95,7 @@ The data section shows how writes stop without losing an order:
 
 ```markdown file=docs/design/cluster-migration-plan.md tag=stage-4 lines=31-44
 - PostgreSQL: khôi phục base backup mới nhất vào database ở cluster mới rồi
-  cho nó đọc tiếp WAL từ bản lưu trữ, cùng cách `pitr.sh` khôi phục. Khi nó đã
+  cho nó đọc tiếp WAL từ bản lưu trữ, cả WAL mới được ghi thêm. Khi nó đã
   đuổi kịp, dừng ghi một lúc ngắn (15 phút, giả định): một commit đặt số
   replica của `api` ở cluster cũ về 0, nên không đơn và không message mới nào
   được tạo. Đổi bằng commit chứ không bằng `kubectl scale`, vì self-heal của
