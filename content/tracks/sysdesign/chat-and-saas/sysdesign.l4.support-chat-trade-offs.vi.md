@@ -16,8 +16,8 @@ example_tag: stage-4
 versions_used: [aspnetcore, redis, postgresql]
 content_version: 1
 status: published
-approved_by: owner
-reviewed_at: "2026-11-03T19:44:50+07:00"
+approved_by: auto
+reviewed_at: "2026-11-10T16:00:00+07:00"
 ---
 
 ## Bạn cần biết trước
@@ -71,13 +71,13 @@ Bước về nút cổ chai trong bản review gọi tên tài nguyên khan hi�
   có tin; kế hoạch dung lượng của Support đếm kết nối ở giờ đông, không đếm
   request mỗi giây.
 - Kết nối chat không giữ kết nối database: Pod chỉ mở một kết nối khi lưu hay
-  đọc tin. `max_connections` giới hạn tốc độ ghi tin, không giới hạn số khách
+  đọc tin. `max_connections` giới hạn số lần lưu và đọc tin chạy cùng lúc, không giới hạn số khách
   đang nối.
 - Redis (1 bản): sập thì chỉ mất chuyển tiếp giữa Pod; tin vẫn lưu, app đọc lại
   khi nối lại.
 ```
 
-Hai gạch đầu dòng đầu trả lời hai phản hồi đầu. "tốc độ ghi tin" ở gạch thứ hai nghĩa là số lần lưu và đọc chạy cùng lúc, như đã nói ở trên. So với `capacity-plan.md`: với `api`, file này đếm lượt đọc sản phẩm và số đơn mỗi giây, vì mỗi request đều ngắn. Quy tắc về kết nối database của nó vẫn áp dụng. `donhang_support` nằm trên server `db`, như ADR `0032` quyết định, nên mỗi Pod Support cộng thêm kết nối database của mình vào tổng mà `capacity-plan.md` giữ dưới `max_connections`. Tổng đó tăng theo số Pod của Support, không theo số màn hình. Gạch thứ ba là trường hợp hỏng của kênh chuyển tiếp.
+Hai gạch đầu dòng đầu trả lời hai phản hồi đầu. So với `capacity-plan.md`: với `api`, file này đếm lượt đọc sản phẩm và số đơn mỗi giây, vì mỗi request đều ngắn. Quy tắc về kết nối database của nó vẫn áp dụng. `donhang_support` nằm trên server `db`, như ADR `0032` quyết định, nên mỗi Pod Support cộng thêm kết nối database của mình vào tổng mà `capacity-plan.md` giữ dưới `max_connections`. Tổng đó tăng theo số Pod của Support, không theo số màn hình. Gạch thứ ba là trường hợp hỏng của kênh chuyển tiếp.
 
 Tiếp theo là các phương án bị loại, trong đó có SignalR, thư viện real-time của ASP.NET Core, và ba điểm đánh đổi. Các yếu tố được viện dẫn là: yếu tố 1, tin tới một màn hình đang mở trong vài giây, yếu tố 2, không mất tin khi kênh chuyển tiếp hỏng, và yếu tố 4, chat không bao giờ lấy phần năng lực mà đặt đơn cần.
 

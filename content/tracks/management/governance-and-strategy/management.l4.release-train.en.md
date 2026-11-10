@@ -16,8 +16,8 @@ example_tag: stage-4
 versions_used: []
 content_version: 1
 status: published
-approved_by: owner
-reviewed_at: "2026-10-29T15:38:20+07:00"
+approved_by: auto
+reviewed_at: "2026-11-10T16:00:00+07:00"
 ---
 
 ## Before you start
@@ -119,12 +119,12 @@ ghi chú phát hành của cả hai chuyến đó.
 
 ### Cái giá
 
-Chuyến đổi tốc độ lấy sự dễ đoán: một thay đổi đã xong có thể chờ tới hai tuần
-mới được bật. Cái giá đó hợp với thay đổi mà 1.000 cửa hàng (giả định) phải biết trước,
+Chuyến đổi tốc độ lấy sự dễ đoán: một thay đổi đã xong có thể chờ gần ba tuần
+mới được bật, nếu nó xong ngay sau khi ghi chú đã gửi. Cái giá đó hợp với thay đổi mà 1.000 cửa hàng (giả định) phải biết trước,
 không hợp với thay đổi bên trong, nên thay đổi bên trong không đi theo chuyến.
 ```
 
-Lines 33–42 (under "Ngoài lịch") cover fixes outside the calendar. During an incident the incident commander of `incident-response.md` may release; for a vulnerability fix not tied to an incident, the team lead may. An api fix still goes through the canary of ADR `0019`, even when the error budget in `slo.md` is spent. Affected shops hear the same day what was fixed and whether they must do anything, and the next train's note records it. Lines 46–48 (under "Đổi phá vỡ") add one rule for a breaking change: shops hear of it at least two trains ahead, in both notes. Lines 52–54 (under "Cái giá") name the price, which the file counts as up to two weeks from the missed train, and which changes it suits.
+Lines 33–42 (under "Ngoài lịch") cover fixes outside the calendar. During an incident the incident commander of `incident-response.md` may release; for a vulnerability fix not tied to an incident, the team lead may. An api fix still goes through the canary of ADR `0019`, even when the error budget in `slo.md` is spent. Affected shops hear the same day what was fixed and whether they must do anything, and the next train's note records it. Lines 46–48 (under "Đổi phá vỡ") add one rule for a breaking change: shops hear of it at least two trains ahead, in both notes. Lines 52–54 (under "Cái giá") name the price, which the file counts as up to nearly three weeks for a change finished just after the note went out, and which changes it suits.
 
 ## Trade-offs
 

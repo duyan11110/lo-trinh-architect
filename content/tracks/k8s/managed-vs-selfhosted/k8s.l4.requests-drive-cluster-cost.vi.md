@@ -16,8 +16,8 @@ example_tag: stage-4
 versions_used: [kubernetes]
 content_version: 1
 status: published
-approved_by: owner
-reviewed_at: "2026-10-28T23:44:02+07:00"
+approved_by: auto
+reviewed_at: "2026-11-10T16:00:00+07:00"
 ---
 
 ## Bạn cần biết trước
@@ -89,7 +89,7 @@ Chỉ `api` đặt request, `250m` và `256Mi` cho mỗi replica trong 2 replica
 Ngay trên đoạn trích tiếp theo, cũng file đó liệt kê phần nền cố định của platform: Argo CD với mọi thành phần của nó, Git server, Traefik (phục vụ Gateway của cluster), controller Sealed Secrets và, chỉ riêng staging, Prometheus, cộng lại `950m` và `1984Mi` (giả định). Bên dưới là các đòn bẩy:
 
 ```markdown file=docs/design/cluster-cost.md tag=stage-4 lines=62-83
-Các manifest của những thành phần này cũng chưa đặt request. Với tổng
+Các manifest của những thành phần này cũng chưa đặt request, trừ Prometheus (100m / 128Mi). Với tổng
 workload và phần nền (2670m / 5248Mi), staging vừa một node theo cách tính
 trên: một node cho 2,8 CPU và 5,6 GiB ở mức lấp đầy 70%.
 
