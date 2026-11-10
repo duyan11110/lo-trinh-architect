@@ -513,3 +513,4 @@ ghi vào mục "Mặc định agent đã chọn" ở cuối file (kèm lý do m�
   - service-level-indicators: mục slo-report code="500".
   - moving-to-a-new-cluster: mục số replica.
   - Các minor junior mới (platform-engineering q3 option b; requests-drive-cluster-cost: câu văn chưa nói Prometheus là ngoại lệ; alerting-on-symptoms: "Some causes" chưa nói phần còn lại đi đâu, node `F` của diagram và dòng Connections vẫn ghi "the causes").
+- (2026-11-10, `tools/build --publish` lần 7) content_version 15: bước 4, theo dõi repo ví dụ stage-4 (tag `stage-4` đẩy lại lên remote ở 608cb60 theo lệnh của chủ). 13 bài → `published`.

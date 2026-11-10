@@ -15,7 +15,7 @@ vocab: [opentelemetry, instrumentation, otlp]
 example_tag: stage-3
 versions_used: [dotnet, aspnetcore, opentelemetry_dotnet, npgsql_opentelemetry, alloy, tempo]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-11-10T16:00:00+07:00"
 ---

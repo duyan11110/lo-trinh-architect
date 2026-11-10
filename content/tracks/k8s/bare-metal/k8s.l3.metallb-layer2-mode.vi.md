@@ -15,7 +15,7 @@ vocab: [arp, failover]
 example_tag: stage-3
 versions_used: [kubernetes, kind, docker, metallb]
 content_version: 1
-status: approved
+status: published
 approved_by: auto
 reviewed_at: "2026-11-10T16:00:00+07:00"
 ---
