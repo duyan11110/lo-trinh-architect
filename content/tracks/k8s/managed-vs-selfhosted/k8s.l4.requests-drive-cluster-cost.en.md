@@ -17,7 +17,7 @@ versions_used: [kubernetes]
 content_version: 1
 status: published
 approved_by: auto
-reviewed_at: "2026-11-10T16:00:00+07:00"
+reviewed_at: "2026-11-11T12:00:00+07:00"
 ---
 
 ## Before you start
@@ -113,11 +113,11 @@ Các đòn bẩy giảm số node; không đòn bẩy nào giảm phần nền c
 một cluster hay một môi trường.
 ```
 
-The first paragraph adds workloads and platform, `2670m` and `5248Mi`, and finds that they fit one node: at 70% fill, one node offers 2.8 CPU and 5.6 GiB. More than a third of that CPU is the platform, before a single order arrives.
+The first paragraph starts with an exception: of the platform, only Prometheus's manifest sets requests, `100m` and `128Mi`; the `950m` and `1984Mi` are proposed figures, not what the manifests set. It then adds workloads and platform, `2670m` and `5248Mi`, and finds that they fit one node: at 70% fill, one node offers 2.8 CPU and 5.6 GiB. More than a third of that CPU is the platform, before a single order arrives.
 
 The first lever is rightsizing. Too low, and a Pod is slowed down when the node is busy, is killed for lack of memory, or crowds the Pods next to it, the noisy neighbor problem. The kill comes from the sum: memory requests below real use let kube-scheduler place more Pods on a node than its memory holds, and when it runs short, Pods using more than they requested are stopped first. Too high, and capacity sits reserved on a node, paid for and idle.
 
-The second lever lets the replica count fall to the HPA's `minReplicas` when few customers are shopping, instead of a fixed count in Git. The third stops staging outside working hours: node hours fall with the hours it is off, and it is rebuilt with the timed steps of `dr-drill.sh`. The fourth is how long Tempo keeps traces and what share of traces `api` keeps: fewer traces, kept for less time, are less data on Tempo's disk. Tempo is in neither sum above: it runs in the lab, not in a cluster, so in the repository this lever saves disk, not nodes. Choosing those numbers is left to `cost-per-shop.md`. The last sentence says that the levers lower the node count, and that none reduces the fixed platform share, except removing a cluster or an environment.
+The second lever lets the replica count fall to the HPA's `minReplicas` when few customers are shopping, instead of a fixed count in Git. The third stops staging outside working hours: node hours fall with the hours it is off, and it is rebuilt with the timed steps of `dr-drill.sh`. The fourth is how long Tempo keeps traces and what share of traces `api` keeps: fewer traces, kept for less time, are less data on Tempo's disk. Tempo is in neither sum above: it runs as a Compose service on your machine, not in any cluster, so in the repository this lever saves disk, not nodes. Choosing those numbers is left to `cost-per-shop.md`. The last sentence says that the levers lower the node count (in the repository, all but the telemetry lever), and that none reduces the fixed platform share, except removing a cluster or an environment.
 
 ## Trade-offs
 

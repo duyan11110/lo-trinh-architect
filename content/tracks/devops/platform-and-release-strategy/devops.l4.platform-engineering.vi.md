@@ -17,7 +17,7 @@ versions_used: [git, shell, kubernetes, argocd, opentofu, gateway_api, sealed_se
 content_version: 1
 status: published
 approved_by: auto
-reviewed_at: "2026-11-10T16:00:00+07:00"
+reviewed_at: "2026-11-11T12:00:00+07:00"
 ---
 
 ## Bạn cần biết trước
@@ -62,7 +62,7 @@ Người dùng của một platform là các nhóm khác, nên nó được vậ
 
 ## Trong hệ thống Đơn Hàng
 
-`scripts/devops/service-footprint.sh` tính gần đúng dấu chân: nó liệt kê mọi file ngoài code của service có nhắc tên service, xếp theo khu vực. Phần lớn số file đó phải sửa thì service mới chạy được. Vài file, như `keycloak.yaml`, chỉ nhắc tên trong một comment.
+`scripts/devops/service-footprint.sh` tính gần đúng dấu chân: nó liệt kê mọi file có nhắc tên service ở những nơi chứa phần dựng của một service mới (CI, `deploy/`, Compose, Caddyfile và các script), xếp theo khu vực. Phần lớn số file đó phải sửa thì service mới chạy được. Vài file, như `keycloak.yaml`, chỉ nhắc tên trong một comment.
 
 ```bash file=scripts/devops/service-footprint.sh tag=stage-4 lines=13-27
 # lesson: devops.l4.platform-engineering
@@ -118,7 +118,7 @@ script: 2
 total: 23 files
 ```
 
-Comment ở đầu nói cái gì được tính: mọi file nhắc tên service, viết hoa hay thường đều được. Ngoài đoạn trích, một lệnh `find` quyết định script tìm ở đâu: CI, `deploy/`, Compose và phần dựng database của nó, Caddyfile, các script của lab và của devops, nên tài liệu và test không bao giờ bị đọc. Các nhánh `case` xếp mỗi file vào một khu vực theo đường dẫn. Một file dưới `deploy/` được tính là NetworkPolicy khi nó khai báo một NetworkPolicy. Output cho ra 23 file với Payments, và chỉ `payments.yaml` mang tên của nó. Nhiều file khác thuộc về những thành phần mọi service đều dùng, như `db.yaml`, `rabbitmq.yaml` và `keycloak.yaml`. `OpenTofu: none` nghĩa là không file OpenTofu nào nhắc tên Payments: cluster và namespace `donhang` phục vụ nó mà không phải đổi gì.
+Comment ở đầu nói cái gì được tính: mọi file nhắc tên service, viết hoa hay thường đều được. Ngoài đoạn trích, một lệnh `find` giới hạn việc tìm trong những nơi đó: Compose cùng phần dựng database của nó, và các script của lab `up.sh`, `dev-secrets.sh` cùng các script trong `scripts/devops/`, nên tài liệu và test không bao giờ bị đọc. Các nhánh `case` xếp mỗi file vào một khu vực theo đường dẫn. Một file dưới `deploy/` được tính là NetworkPolicy khi nó khai báo một NetworkPolicy; dưới `deploy/gitops/`, `config-repo/envs/` chứa manifest đầy đủ của từng môi trường, còn `config-repo-kustomize/` chứa base và các overlay Kustomize dựng từ chúng. Output cho ra 23 file với Payments, và chỉ `payments.yaml` mang tên của nó. Nhiều file khác thuộc về những thành phần mọi service đều dùng, như `db.yaml`, `rabbitmq.yaml` và `keycloak.yaml`. `OpenTofu: none` nghĩa là không file OpenTofu nào nhắc tên Payments: cluster và namespace `donhang` phục vụ nó mà không phải đổi gì.
 
 `docs/team/platform-capabilities.md` liệt kê platform mà Đơn Hàng đang có:
 

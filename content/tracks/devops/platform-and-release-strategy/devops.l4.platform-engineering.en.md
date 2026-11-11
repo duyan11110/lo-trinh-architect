@@ -17,7 +17,7 @@ versions_used: [git, shell, kubernetes, argocd, opentofu, gateway_api, sealed_se
 content_version: 1
 status: published
 approved_by: auto
-reviewed_at: "2026-11-10T16:00:00+07:00"
+reviewed_at: "2026-11-11T12:00:00+07:00"
 ---
 
 ## Before you start
@@ -62,7 +62,7 @@ Because the users of a platform are other teams, it is run as a product for them
 
 ## In the Đơn Hàng system
 
-`scripts/devops/service-footprint.sh` approximates the footprint: it lists every file outside the service's code that names it, sorted into an area. Most of them had to change for the service to run; a few, such as `keycloak.yaml`, only mention it in a comment.
+`scripts/devops/service-footprint.sh` approximates the footprint: it lists every file that names the service where a new service's setup lives (CI, `deploy/`, Compose, the Caddyfile and scripts), sorted into an area. Most of them had to change for the service to run; a few, such as `keycloak.yaml`, only mention it in a comment.
 
 ```bash file=scripts/devops/service-footprint.sh tag=stage-4 lines=13-27
 # lesson: devops.l4.platform-engineering
@@ -118,7 +118,7 @@ script: 2
 total: 23 files
 ```
 
-The comment at the top says what counts: any file that names the service, in any letter case. Outside the excerpt, a `find` decides where the script looks: CI, `deploy/`, Compose and its database setup, the Caddyfile and the lab and devops scripts, so docs and tests are never read. The `case` arms put each file in one area by its path; a file under `deploy/` counts as a NetworkPolicy when it declares one. The output gives 23 files for Payments, and only `payments.yaml` is named after it. Many of the others belong to components every service uses, such as `db.yaml`, `rabbitmq.yaml` and `keycloak.yaml`. `OpenTofu: none` means no OpenTofu file names Payments: the cluster and the `donhang` namespace serve it as they are.
+The comment at the top says what counts: any file that names the service, in any letter case. Outside the excerpt, a `find` limits the search to those places: Compose with its database setup, and the lab scripts `up.sh` and `dev-secrets.sh` and those in `scripts/devops/`, so docs and tests are never read. The `case` arms put each file in one area by its path; a file under `deploy/` counts as a NetworkPolicy when it declares one; under `deploy/gitops/`, `config-repo/envs/` holds each environment's full manifests, and `config-repo-kustomize/` the Kustomize base and overlays made from them. The output gives 23 files for Payments, and only `payments.yaml` is named after it. Many of the others belong to components every service uses, such as `db.yaml`, `rabbitmq.yaml` and `keycloak.yaml`. `OpenTofu: none` means no OpenTofu file names Payments: the cluster and the `donhang` namespace serve it as they are.
 
 `docs/team/platform-capabilities.md` lists the platform Đơn Hàng already has:
 
