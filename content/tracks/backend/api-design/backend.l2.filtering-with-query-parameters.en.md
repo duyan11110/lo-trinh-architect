@@ -16,8 +16,8 @@ example_tag: stage-2
 versions_used: [aspnetcore, efcore, postgresql]
 content_version: 1
 status: published
-approved_by: owner
-reviewed_at: "2026-09-28T07:34:11+07:00"
+approved_by: auto
+reviewed_at: "2026-11-08T16:00:00+07:00"
 ---
 
 ## Before you start
@@ -91,8 +91,8 @@ The filter sits in the same method as the page:
 
 ## Beginners often think…
 
-- **"Each filter needs its own endpoint, like `/api/v1/products/cheap`."** → Actually a filter narrows the same collection, so it belongs on the collection's URL as a query parameter. One endpoint per filter multiplies quickly and does not combine: each copy repeats the paging code, and "cheap" plus another condition needs yet another endpoint. You notice this when the controller fills with near-copies of `List()` that differ in one `Where`.
-- **"Loading all products and filtering them in C# is fine, because the product list is small."** → Actually the cost grows with the table, not with the result: the server reads and turns into objects every product before throwing most away. If instead SQL cuts the page and C# filters that page, paging breaks too. `offset` then counts rows the C# filter later drops. You notice this when a filtered page returns fewer rows than `limit` even though more matching products exist.
+- **"Each filter needs its own endpoint, like `/api/v1/products/cheap`."** → Actually a filter narrows the same collection, so it belongs on the collection's URL as a query parameter. One endpoint per filter multiplies quickly and does not combine: each copy repeats the pagination code, and "cheap" plus another condition needs yet another endpoint. You notice this when the controller fills with near-copies of `List()` that differ in one `Where`.
+- **"Loading all products and filtering them in C# is fine, because the product list is small."** → Actually the cost grows with the table, not with the result: the server reads and turns into objects every product before throwing most away. If instead SQL cuts the page and C# filters that page, pagination breaks too. `offset` then counts rows the C# filter later drops. You notice this when a filtered page returns fewer rows than `limit` even though more matching products exist.
 
 ## Try it (3 minutes)
 

@@ -13,11 +13,11 @@ prereqs: [foundation.l1.small-functions]
 related: [design.l1.unit-test-first-look]
 vocab: [code-smell, refactoring]
 example_tag: stage-0
-versions_used: [dotnet]
+versions_used: [dotnet, busybox]
 content_version: 1
 status: published
-approved_by: owner
-reviewed_at: "2026-09-28T13:00:00+07:00"
+approved_by: auto
+reviewed_at: "2026-11-09T18:00:00+07:00"
 ---
 
 ## Before you start

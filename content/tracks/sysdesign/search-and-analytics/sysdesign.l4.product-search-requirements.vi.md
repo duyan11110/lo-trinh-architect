@@ -16,13 +16,13 @@ example_tag: stage-4
 versions_used: [aspnetcore, postgresql]
 content_version: 1
 status: published
-approved_by: owner
-reviewed_at: "2026-11-03T05:12:40+07:00"
+approved_by: auto
+reviewed_at: "2026-11-08T16:00:00+07:00"
 ---
 
 ## Bạn cần biết trước
 
-- [[sysdesign.l4.bank-signing-challenges]] — bạn đã đưa một bài toán đi hết quy trình, kết thúc bằng một buổi review thiết kế trả lời từng câu chất vấn bằng một yếu tố định hình kiến trúc hoặc một ADR. Module này bắt đầu lại quy trình từ bước 1.
+- [[sysdesign.l4.bank-signing-challenges]] — bạn đã đưa một bài toán đi hết quy trình, kết thúc bằng một buổi review thiết kế trả lời từng câu chất vấn bằng một yếu tố định hình kiến trúc, một ADR hoặc một rủi ro có người phụ trách. Module này bắt đầu lại quy trình từ bước 1.
 - [[frontend.l4.pages-for-search]] — bạn biết ADR `0017` giữ việc đặt hàng trong app Flutter, còn trang sản phẩm công khai cho máy tìm kiếm thì để cho một ADR riêng.
 - [[backend.l2.filtering-with-query-parameters]] — bạn biết bộ lọc là một query parameter trên URL của collection, thêm bằng `Where` trước khi câu truy vấn chạy.
 - [[backend.l4.capacity-planning]] — bạn biết `capacity-plan.md` dự kiến khoảng 133 lượt đọc sản phẩm mỗi giây vào giờ đông nhất.

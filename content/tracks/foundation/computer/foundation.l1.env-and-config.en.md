@@ -13,11 +13,11 @@ prereqs: [foundation.l1.program-to-process]
 related: [devops.l1.config-and-env]
 vocab: [environment-variable]
 example_tag: stage-0
-versions_used: [dotnet, docker]
+versions_used: [dotnet, docker, shell, coreutils]
 content_version: 1
 status: published
-approved_by: owner
-reviewed_at: "2026-09-28T13:00:00+07:00"
+approved_by: auto
+reviewed_at: "2026-11-09T18:00:00+07:00"
 ---
 
 ## Before you start

@@ -13,11 +13,11 @@ prereqs: [devops.l3.signing-images, devops.l3.software-bill-of-materials, devops
 related: [devops.l2.continuous-integration]
 vocab: [attestation, build-provenance, slsa]
 example_tag: stage-3
-versions_used: [github_actions, ghcr, cosign]
+versions_used: [github_actions, ghcr, cosign, slsa]
 content_version: 1
 status: published
-approved_by: owner
-reviewed_at: "2026-10-14T13:08:26+07:00"
+approved_by: auto
+reviewed_at: "2026-11-09T21:00:00+07:00"
 ---
 
 ## Before you start
@@ -63,7 +63,7 @@ The action signs the statement keyless, the way Cosign signed the image: it trad
 
 Verifying has two halves. First the attestation's signature must carry the identity you trust, as for the image. Then you read what it states and check the fields you care about. A valid attestation from the wrong repository is still the wrong answer.
 
-SLSA names what this setup reaches. GitHub states that its attestations alone reach SLSA Build Level 2, and that Level 3 needs more isolation of the build. Đơn Hàng's is L2: any step in the `publish` job could ask for the same ID token, so a harmful step there could sign a statement with false contents, and it would still verify.
+SLSA names what this setup reaches. In SLSA v1.0, Build L1 means provenance exists; L3 requires a build platform that stops runs from affecting one another and keeps the signing material out of reach of the build steps. GitHub states that its attestations alone reach SLSA v1.0 Build Level 2, and that Level 3 needs more isolation of the build. Đơn Hàng's is L2: any step in the `publish` job could ask for the same ID token, so a harmful step there could sign a statement with false contents, and it would still verify.
 
 ## In the Đơn Hàng system
 
@@ -171,4 +171,4 @@ The script never reaches the excerpt: their image's signature names their `ci.ym
 2. An attestation adds a statement to a signature: who vouches for the digest, and what they state about it.
 3. The `publish` job attests provenance and the SBOM for each pushed digest, with `id-token: write` and `attestations: write`, and pushes both beside the image.
 4. `verify-image.sh` checks the attestation's signer, then that it names Đơn Hàng's repository and `ci.yml`; `1.0.0` has neither and is refused.
-5. SLSA grades builds in levels by their provenance; GitHub states its attestations alone reach Build L2, which is where Đơn Hàng stands.
+5. SLSA grades builds in levels by their provenance; GitHub states its attestations alone reach SLSA v1.0 Build Level 2, which is where Đơn Hàng stands.

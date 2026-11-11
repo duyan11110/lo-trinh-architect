@@ -13,11 +13,11 @@ prereqs: [foundation.l2.good-commits, foundation.l1.reading-code]
 related: [design.l1.solid-srp]
 vocab: [code-review, pull-request]
 example_tag: stage-0
-versions_used: [git]
+versions_used: [git, github]
 content_version: 1
 status: published
-approved_by: owner
-reviewed_at: "2026-09-28T13:00:00+07:00"
+approved_by: auto
+reviewed_at: "2026-11-09T18:00:00+07:00"
 ---
 
 ## Bạn cần biết trước

@@ -16,8 +16,8 @@ example_tag: stage-3
 versions_used: [flutter]
 content_version: 1
 status: published
-approved_by: owner
-reviewed_at: "2026-10-22T00:15:54+07:00"
+approved_by: auto
+reviewed_at: "2026-11-08T16:00:00+07:00"
 ---
 
 ## Before you start
@@ -118,7 +118,7 @@ The test creates 10 000 `Product` objects, then places the catalog in a box 360 
 
 ## Seniors often assume…
 
-- **"A list of a few thousand rows is slow in Flutter whatever you do, so long lists always need paging."** → Actually with a builder the tiles built depend on the rows near the screen, not on the length of the list, so length alone is no reason to page. Paging is worth it when fetching or holding the whole list costs too much, which is a question about the data. You notice this when a `print` in `ProductTile`'s `build` runs only for the first rows after the catalog receives 10 000 products.
+- **"A list of a few thousand rows is slow in Flutter whatever you do, so long lists always need pagination."** → Actually with a builder the tiles built depend on the rows near the screen, not on the length of the list, so length alone is no reason to paginate. Pagination is worth it when fetching or holding the whole list costs too much, which is a question about the data. You notice this when a `print` in `ProductTile`'s `build` runs only for the first rows after the catalog receives 10 000 products.
 - **"ListView with a children list and ListView.builder do the same work; builder is only shorter to write."** → Actually `children` needs every row's widget created before the list exists, while `itemBuilder` is called only for rows near the screen. You notice this when a `print` in the code that creates each row runs once per product with `children`, but only for the first rows with `itemBuilder`.
 - **"Once a row has scrolled off screen, its widget stays built in case the user scrolls back."** → Actually rows that move well past the edge are removed, and `itemBuilder` builds them again when they return. You notice this when a `print` in `ProductTile`'s `build` shows the first products again after you scroll a long way down and back to the top.
 

@@ -16,8 +16,8 @@ example_tag: stage-3
 versions_used: [kubernetes, kind, docker, metallb]
 content_version: 1
 status: published
-approved_by: owner
-reviewed_at: "2026-10-20T04:03:19+07:00"
+approved_by: auto
+reviewed_at: "2026-11-10T16:00:00+07:00"
 ---
 
 ## Bạn cần biết trước

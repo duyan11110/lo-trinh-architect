@@ -16,8 +16,8 @@ example_tag: stage-4
 versions_used: [git, shell, kubernetes, argocd, opentofu, gateway_api, sealed_secrets, github_actions]
 content_version: 1
 status: published
-approved_by: owner
-reviewed_at: "2026-10-27T14:54:00+07:00"
+approved_by: auto
+reviewed_at: "2026-11-10T16:00:00+07:00"
 ---
 
 ## Before you start
@@ -68,7 +68,7 @@ Because the users of a platform are other teams, it is run as a product for them
 # lesson: devops.l4.platform-engineering
 # Every file that names the service, ignoring case (payments, donhang_payments,
 # DonHang.Payments), sorted into the area it belongs to. Docs, tests and the
-# lessons' own scripts are left out: they did not have to change to run it.
+# scripts other than up.sh, dev-secrets.sh and scripts/devops/ are left out: they did not have to change to run it.
 area() {
   case "$1" in
     .github/*) echo "CI" ;;

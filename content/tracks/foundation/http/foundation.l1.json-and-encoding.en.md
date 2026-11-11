@@ -13,11 +13,11 @@ prereqs: [foundation.l1.http-request-response]
 related: [backend.l1.dtos-and-serialization]
 vocab: [json, encoding]
 example_tag: stage-0
-versions_used: [http, dotnet, caddy]
+versions_used: [http, dotnet, caddy, json, coreutils]
 content_version: 1
 status: published
-approved_by: owner
-reviewed_at: "2026-09-28T13:00:00+07:00"
+approved_by: auto
+reviewed_at: "2026-11-09T18:00:00+07:00"
 ---
 
 ## Before you start

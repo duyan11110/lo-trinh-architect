@@ -13,11 +13,11 @@ prereqs: [devops.l3.signing-images, devops.l3.software-bill-of-materials, devops
 related: [devops.l2.continuous-integration]
 vocab: [attestation, build-provenance, slsa]
 example_tag: stage-3
-versions_used: [github_actions, ghcr, cosign]
+versions_used: [github_actions, ghcr, cosign, slsa]
 content_version: 1
 status: published
-approved_by: owner
-reviewed_at: "2026-10-14T13:08:26+07:00"
+approved_by: auto
+reviewed_at: "2026-11-09T21:00:00+07:00"
 ---
 
 ## Bạn cần biết trước
@@ -63,7 +63,7 @@ Action ký tuyên bố theo kiểu keyless, giống cách Cosign đã ký image:
 
 Xác minh gồm hai nửa. Đầu tiên, chữ ký của attestation phải mang danh tính bạn tin, giống như với image. Sau đó bạn đọc nội dung nó khẳng định và kiểm những trường bạn quan tâm. Một attestation hợp lệ nhưng đến từ sai repository thì vẫn là câu trả lời sai.
 
-SLSA gọi tên mức mà cách thiết lập này đạt được. GitHub tuyên bố riêng attestation của họ đạt SLSA Build Level 2, còn Level 3 cần cô lập quá trình build nhiều hơn. Đơn Hàng đang ở L2: bước nào trong job `publish` cũng xin được cùng ID token đó, nên một bước độc hại ở đây có thể ký một tuyên bố với nội dung sai, và tuyên bố đó vẫn xác minh qua.
+SLSA gọi tên mức mà cách thiết lập này đạt được. Trong SLSA v1.0, Build L1 nghĩa là có provenance. L3 đòi hỏi một nền tảng build ngăn các lần chạy ảnh hưởng lẫn nhau và giữ thứ dùng để ký ngoài tầm với của các bước build. GitHub tuyên bố riêng attestation của họ đạt SLSA v1.0 Build Level 2, còn Level 3 cần cô lập quá trình build nhiều hơn. Đơn Hàng đang ở L2: bước nào trong job `publish` cũng xin được cùng ID token đó, nên một bước độc hại ở đây có thể ký một tuyên bố với nội dung sai, và tuyên bố đó vẫn xác minh qua.
 
 ## Trong hệ thống Đơn Hàng
 
@@ -171,4 +171,4 @@ Script không bao giờ tới được đoạn trích: chữ ký trên image c�
 2. Attestation thêm một tuyên bố vào chữ ký: ai đứng ra bảo đảm cho digest, và họ khẳng định điều gì về nó.
 3. Job `publish` tạo attestation provenance và SBOM cho mỗi digest đã push, với `id-token: write` và `attestations: write`, rồi push cả hai lên cạnh image.
 4. `verify-image.sh` kiểm người ký attestation, rồi kiểm nó ghi đúng repository của Đơn Hàng và `ci.yml`. `1.0.0` không có chữ ký lẫn attestation nên bị từ chối.
-5. SLSA chấm các quy trình build theo level dựa trên provenance. GitHub tuyên bố riêng attestation của họ đạt Build L2, đúng mức Đơn Hàng đang đứng.
+5. SLSA chấm các quy trình build theo level dựa trên provenance. GitHub tuyên bố riêng attestation của họ đạt SLSA v1.0 Build Level 2, đúng mức Đơn Hàng đang đứng.

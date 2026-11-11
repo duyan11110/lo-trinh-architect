@@ -13,11 +13,11 @@ prereqs: [foundation.l1.terminal-basics]
 related: [foundation.l1.tls-and-https, devops.l1.what-is-deploy]
 vocab: []
 example_tag: stage-0
-versions_used: [docker, http]
+versions_used: [docker, http, openssh, coreutils, shell]
 content_version: 1
 status: published
-approved_by: owner
-reviewed_at: "2026-09-28T13:00:00+07:00"
+approved_by: auto
+reviewed_at: "2026-11-09T18:00:00+07:00"
 ---
 
 ## Before you start

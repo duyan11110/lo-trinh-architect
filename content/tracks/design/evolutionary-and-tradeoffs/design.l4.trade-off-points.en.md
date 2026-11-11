@@ -16,8 +16,8 @@ example_tag: stage-3
 versions_used: [aspnetcore, npgsql]
 content_version: 1
 status: published
-approved_by: owner
-reviewed_at: "2026-10-28T00:54:04+07:00"
+approved_by: auto
+reviewed_at: "2026-11-08T16:00:00+07:00"
 ---
 
 ## Before you start

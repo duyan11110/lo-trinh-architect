@@ -1,7 +1,7 @@
 # 05 — Thiết kế UI/UX cho app Flutter V1
 
 App V1 là **trình đọc giáo trình + làm quiz + theo dõi tiến độ** cho một người dùng (bạn, đọc như một junior), chạy trên
-Android và web, offline-first, không tài khoản. Tài liệu này chốt: nguyên tắc, kiến trúc thông tin, luồng, đặc tả từng màn hình
+Android (offline-first) và web (V1 cần mạng, xem P5), không tài khoản. Tài liệu này chốt: nguyên tắc, kiến trúc thông tin, luồng, đặc tả từng màn hình
 với mọi trạng thái, hệ thống thiết kế ánh xạ sang Flutter, thư viện component, tương tác quiz cho 6 loại câu, microcopy, khả năng
 tiếp cận, responsive, và thứ tự triển khai. Mockup các màn hình chính nằm trong design canvas đi kèm (chỉnh trực tiếp được).
 
@@ -15,7 +15,7 @@ tiếp cận, responsive, và thứ tự triển khai. Mockup các màn hình ch
 | P2 | **Luôn có đúng một bước tiếp theo.** Junior không nên phải chọn. | Trang chủ = một nút "Học tiếp" + vị trí trên lộ trình. Cây track là tab phụ để tra cứu. Cuối bài luôn có một hành động chính. "Học tiếp" bỏ qua bài đã `read` (đánh dấu đã đọc, quiz sau) — các bài đó nằm trong ô "Quiz đang chờ". |
 | P3 | **Tiến độ theo kỹ năng, không theo thời gian.** | Không streak, không XP, không badge. Chỉ có: bài đã qua, điểm quiz, "còn N bài tới cổng", cổng đã qua. Sự tiến bộ hiện bằng vị trí trên 5 giai đoạn. |
 | P4 | **Song ngữ là công dân hạng nhất.** | Nút VI/EN trên mọi màn đọc, đổi tức thì, giữ vị trí cuộn; thuật ngữ tiếng Anh có tooltip tiếng Việt; câu quiz đổi ngôn ngữ nhưng đáp án đã chọn giữ nguyên. |
-| P5 | **Offline không phải trạng thái lỗi.** | Nội dung là asset; mọi màn hoạt động không mạng; "cập nhật nội dung" là hành động chủ động trong Cài đặt, không phải điều kiện để dùng. |
+| P5 | **Offline không phải trạng thái lỗi.** | Nội dung là asset; trên Android mọi màn hoạt động không mạng; "cập nhật nội dung" là hành động chủ động trong Cài đặt, không phải điều kiện để dùng. **Web V1 cần mạng để mở app** (không service worker). UI web không hứa chạy offline. |
 | P6 | **Sai là thông tin.** | Câu sai hiện giải thích ngay, có nút "Đọc lại mục N"; câu sai đi vào Ôn tập. Không màu đỏ chói, không âm thanh, không "Sai rồi!". |
 | P7 | **Yên tĩnh.** | Motion ≤ 250 ms, chỉ để giữ ngữ cảnh (chuyển trang, mở panel). Không confetti, không rung trừ khi người dùng bật haptic. |
 
