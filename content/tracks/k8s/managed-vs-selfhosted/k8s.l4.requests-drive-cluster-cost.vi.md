@@ -17,7 +17,7 @@ versions_used: [kubernetes]
 content_version: 1
 status: published
 approved_by: auto
-reviewed_at: "2026-11-10T16:00:00+07:00"
+reviewed_at: "2026-11-11T12:00:00+07:00"
 ---
 
 ## Bạn cần biết trước
@@ -113,11 +113,11 @@ Các đòn bẩy giảm số node; không đòn bẩy nào giảm phần nền c
 một cluster hay một môi trường.
 ```
 
-Đoạn đầu cộng workload với platform, được `2670m` và `5248Mi`, và thấy chúng vừa một node: ở mức lấp đầy 70%, một node cho 2,8 CPU và 5,6 GiB. Hơn một phần ba số CPU đó thuộc về platform, trước khi có đơn hàng nào tới.
+Đoạn đầu mở bằng một ngoại lệ: trong platform, chỉ manifest của Prometheus đặt request, `100m` và `128Mi`; `950m` và `1984Mi` là con số đề xuất, không phải những gì manifest đang đặt. Sau đó nó cộng workload với platform, được `2670m` và `5248Mi`, và thấy chúng vừa một node: ở mức lấp đầy 70%, một node cho 2,8 CPU và 5,6 GiB. Hơn một phần ba số CPU đó thuộc về platform, trước khi có đơn hàng nào tới.
 
 Đòn bẩy đầu tiên là chỉnh request cho vừa. Thấp quá thì Pod bị chậm khi node bận, bị giết vì thiếu bộ nhớ, hoặc chen lấn các Pod bên cạnh, tức vấn đề noisy neighbor. Chuyện bị giết đến từ chính phép cộng: request bộ nhớ thấp hơn mức dùng thật khiến kube-scheduler đặt lên một node nhiều Pod hơn số bộ nhớ node đó chứa nổi, và khi bộ nhớ cạn, các Pod dùng vượt phần đã xin bị dừng trước. Cao quá thì dung lượng nằm giữ chỗ trên node, vẫn tốn tiền mà không làm gì.
 
-Đòn bẩy thứ hai cho số replica giảm về `minReplicas` của HPA khi ít khách mua hàng, thay cho một con số cố định trong Git. Đòn bẩy thứ ba tắt staging ngoài giờ làm việc: số giờ node giảm theo số giờ tắt, và staging được dựng lại theo các bước đã đo thời gian của `dr-drill.sh`. Đòn bẩy thứ tư là Tempo giữ trace bao lâu và `api` giữ lại bao nhiêu phần trace: ít trace hơn, giữ ngắn hơn, nghĩa là ít dữ liệu hơn trên đĩa của Tempo. Tempo không nằm trong tổng nào ở trên: nó chạy trong lab, không chạy trong cluster, nên trong repo đòn bẩy này tiết kiệm đĩa, không tiết kiệm node. Chọn các con số đó là phần của `cost-per-shop.md`. Câu cuối nói các đòn bẩy làm giảm số node, nhưng không đòn bẩy nào giảm phần nền cố định của platform, trừ khi bớt một cluster hay một môi trường.
+Đòn bẩy thứ hai cho số replica giảm về `minReplicas` của HPA khi ít khách mua hàng, thay cho một con số cố định trong Git. Đòn bẩy thứ ba tắt staging ngoài giờ làm việc: số giờ node giảm theo số giờ tắt, và staging được dựng lại theo các bước đã đo thời gian của `dr-drill.sh`. Đòn bẩy thứ tư là Tempo giữ trace bao lâu và `api` giữ lại bao nhiêu phần trace: ít trace hơn, giữ ngắn hơn, nghĩa là ít dữ liệu hơn trên đĩa của Tempo. Tempo không nằm trong tổng nào ở trên: nó chạy như một service Compose trên máy bạn, không chạy trong cluster nào, nên trong repo đòn bẩy này tiết kiệm đĩa, không tiết kiệm node. Chọn các con số đó là phần của `cost-per-shop.md`. Câu cuối nói các đòn bẩy làm giảm số node (trong repo thì trừ đòn bẩy telemetry), nhưng không đòn bẩy nào giảm phần nền cố định của platform, trừ khi bớt một cluster hay một môi trường.
 
 ## Đánh đổi
 

@@ -17,7 +17,7 @@ versions_used: [prometheus, grafana]
 content_version: 1
 status: published
 approved_by: auto
-reviewed_at: "2026-11-10T16:00:00+07:00"
+reviewed_at: "2026-11-11T12:00:00+07:00"
 ---
 
 ## Bạn cần biết trước
@@ -48,18 +48,18 @@ flowchart LR
   B --> C[SLIs S1 to S4 of slo.md get worse]
   C --> D[Symptom alert]
   D --> E[A person must act]
-  E -->|opens to find why| F[Dashboard with the causes]
+  E -->|opens to find why| F[Dashboard with some causes]
   G[Order emails waiting in RabbitMQ, customers not yet affected] -.->|no alert, shown on| F
   H[Cause that needs a person but hurts no request yet] -->|ticket, working hours| E
 ```
 
 Trong tình huống trên, mỗi điều kiện của đồng nghiệp là một cảnh báo theo nguyên nhân. Cách này hỏng theo hai hướng. Nó kêu khi khách không thấy gì, như CPU trong đợt kiểm thử tải. Và nó im khi một nguyên nhân không ai liệt kê làm hỏng dịch vụ, như `503` của canary, vì không ai liệt kê hết được mọi cách một hệ thống có thể hỏng.
 
-Đọc sơ đồ từ trái sang. Dù nguyên nhân là gì, hễ khách gặp lỗi hay nhận câu trả lời chậm thì các SLI xấu đi. S1 đếm các lượt `POST /api/v1/orders` lỗi, S2 đếm các lượt chậm, S3 đếm các lượt đọc sản phẩm lỗi, còn S4 đếm các yêu cầu hoàn tiền chậm. S3 tính mọi `5xx` của `GET /api/v1/products` và `GET /api/v1/products/{id:int}` là xấu, kể cả `503`. Vì vậy cảnh báo theo SLI bắt được lỗi của canary mà không cần ai gọi tên nó trước, và sự cố do đội tự phát hiện chứ không phải do một cửa hàng báo. Nguyên nhân không làm ai bị ảnh hưởng, mũi tên nét chấm, không chạm tới SLI, nên cảnh báo theo triệu chứng vẫn im.
+Đọc sơ đồ từ trái sang. Dù nguyên nhân là gì, hễ khách gặp lỗi hay nhận câu trả lời chậm thì các SLI xấu đi. S1 đếm các lượt `POST /api/v1/orders` và `POST /api/v2/orders` lỗi, S2 đếm các lượt chậm, S3 đếm các lượt đọc sản phẩm lỗi, còn S4 đếm các yêu cầu hoàn tiền chậm. S3 tính mọi `5xx` của `GET /api/v1/products` và `GET /api/v1/products/{id:int}` là xấu, kể cả `503`. Vì vậy cảnh báo theo SLI bắt được lỗi của canary mà không cần ai gọi tên nó trước, và sự cố do đội tự phát hiện chứ không phải do một cửa hàng báo. Nguyên nhân chưa làm ai bị ảnh hưởng, như email đơn hàng đang chờ trong RabbitMQ, mũi tên nét chấm, không chạm tới SLI, nên cảnh báo theo triệu chứng vẫn im.
 
 Im lặng quan trọng không kém lúc kêu. Mỗi cảnh báo kêu mà không có gì để làm lại dạy người nhận rằng cảnh báo có thể chờ. Đó là nhờn cảnh báo, và kết cục là cảnh báo quan trọng duy nhất bị đọc muộn, hoặc không ai đọc.
 
-Nguyên nhân không biến mất. Một số nguyên nhân hiện trên dashboard, nơi một người mở ra sau khi có cảnh báo theo triệu chứng để tìm vì sao nó kêu. Vài nguyên nhân cần người ngay cả trước khi có request nào lỗi, như một message không ai xử lý được. Những nguyên nhân đó thành một ticket, tức một việc làm trong giờ hành chính, chứ không phải một cuộc gọi ngay lúc đó.
+Nguyên nhân không biến mất. Một số nguyên nhân hiện trên dashboard, nơi một người mở ra sau khi có cảnh báo theo triệu chứng để tìm vì sao nó kêu. Một số nguyên nhân khác, như CPU hay Pod khởi động lại, không có cảnh báo; nếu chúng làm khách bị ảnh hưởng, một cảnh báo theo SLI sẽ kêu. Vài nguyên nhân cần người ngay cả trước khi có request nào lỗi, như một message không ai xử lý được. Những nguyên nhân đó thành một ticket, tức một việc làm trong giờ hành chính, chứ không phải một cuộc gọi ngay lúc đó.
 
 ## Trong hệ thống Đơn Hàng
 
@@ -74,7 +74,7 @@ cấu hình sai) cũng làm SLI xấu đi, nên alert theo SLI bắt được c�
 nhân không ai liệt kê trước. Nguyên nhân không chạm tới khách thì alert im.
 ```
 
-Dòng 10–13 nói cảnh báo gọi người theo thứ khách cảm thấy, tức các SLI S1–S4. Nguyên nhân nào làm khách gặp lỗi hay chậm cũng làm một SLI xấu đi, nên các cảnh báo này bắt được cả những nguyên nhân không ai liệt kê trước. Đoạn kế tiếp của tài liệu không đặt cảnh báo nào trên CPU, bộ nhớ hay số lần Pod khởi động lại: các con số đó dao động trong khi khách không thấy gì, và cảnh báo theo chúng dạy người trực bỏ qua cảnh báo. Người nhận cảnh báo theo triệu chứng mở dashboard để tìm vì sao.
+Dòng 10–13 nói cảnh báo gọi người theo thứ khách cảm thấy, tức các SLI S1–S4, nên chúng bắt được cả những nguyên nhân không ai liệt kê trước. Đoạn kế tiếp của tài liệu không đặt cảnh báo nào trên CPU, bộ nhớ hay số lần Pod khởi động lại: các con số đó dao động trong khi khách không thấy gì, và cảnh báo theo chúng dạy người trực bỏ qua cảnh báo.
 
 Xuống dưới, bảng của tài liệu cho mỗi SLI hai cảnh báo. Một cảnh báo có mức `page`, dùng để gọi người trực ngay, cảnh báo kia có mức `ticket`, một việc cho giờ hành chính. (Ở tag này chưa có gì thực sự gửi cuộc gọi, xem bên dưới.) Ví dụ, `ProductReadsFastBurn` theo dõi S3, chính SLI mà canary trong tình huống sẽ làm xấu đi. Mỗi cảnh báo chỉ kêu khi phần request xấu đủ cao trong đủ lâu. Các ngưỡng đó đến từ tốc độ tiêu error budget ra sao, tức chữ "burn" trong tên, là chủ đề của các bài kế tiếp.
 
@@ -100,7 +100,7 @@ trạng thái object của cluster; đội không làm ở V1.
 
 Dòng 69–70 nói một số nguyên nhân không làm SLI xấu ngay nhưng cần người xem, nên chúng chỉ ở mức `ticket`, và hiện chưa cái nào chạy. Bảng nêu ba nguyên nhân: một message chờ trong dead-letter queue suốt 10 phút (điều kiện đếm các message sẵn sàng trong mọi queue có tên kết thúc bằng `.dead`), một lần kiểm thử khôi phục thất bại, và một Job migration hay backup kết thúc lỗi. Mỗi dòng ghi vì sao nó chưa chạy: Prometheus của staging chỉ scrape các Pod api, kiểm thử khôi phục chỉ chạy tay, và staging không thu thập trạng thái các object của cluster. Một message đơn hàng rơi vào dead-letter queue là trường hợp rõ nhất: đơn đã đặt xong, khách đã nhận câu trả lời thành công, vậy mà email sẽ không bao giờ được gửi nếu không có người can thiệp.
 
-Dashboard `donhang-api.json`, mà Grafana nạp trong Compose profile `monitoring`, giữ cho các nguyên nhân luôn nhìn thấy được: bên cạnh số request theo status code, số `5xx` mỗi giây, p95 và số đơn đã đặt, nó có số email đơn hàng đang chờ trong RabbitMQ và số message đơn hàng đã vào dead-letter queue.
+Dashboard `donhang-api.json`, mà Grafana nạp trong Compose profile `monitoring`, hiện số email đơn hàng đang chờ trong RabbitMQ và số message đơn hàng đã vào dead-letter queue, bên cạnh số request theo status code, số `5xx` mỗi giây, p95 và số đơn đã đặt.
 
 Ở tag này còn hai khoảng trống. Staging không chạy Grafana, nên dashboard này chỉ có trong Compose. Và Prometheus giữ trạng thái của cảnh báo nhưng tự nó không gửi thông báo, staging cũng không chạy thành phần nào làm điều đó, như mục cuối của tài liệu ghi lại. Trên thực tế, các cảnh báo đã được định nghĩa và trạng thái của chúng xem được trong Prometheus, nhưng không ai bị gọi cho tới khi có thêm một thành phần như vậy.
 
@@ -143,7 +143,7 @@ Kết quả mong đợi: một đề xuất là `page`, một là `ticket`, hai 
 
 <details><summary>Gợi ý đáp án</summary>
 
-(a) là `page`: đó là triệu chứng, chính phần request xấu mà S1 đếm, và cảnh báo nhanh của nó có mức `page`. (b) không có cảnh báo: bộ nhớ là nguyên nhân, và tài liệu không đặt cảnh báo nào trên nó. Nếu có lúc nó làm request lỗi, S1 hay S3 sẽ xấu đi và cảnh báo đó kêu. (c) là `ticket`: đó là dòng đầu của bảng nguyên nhân (dự kiến, chưa chạy ở tag này), vì một email bị mất làm khách bị ảnh hưởng mà không request nào lỗi. (d) không có cảnh báo, cùng lý do với (b).
+(a) là `page`: đó là triệu chứng, chính phần request xấu mà S1 đếm, và S1 có một cảnh báo ở mức `page`. (b) không có cảnh báo: bộ nhớ là nguyên nhân, và tài liệu không đặt cảnh báo nào trên nó. Nếu có lúc nó làm request lỗi, S1 hay S3 sẽ xấu đi và cảnh báo đó kêu. (c) là `ticket`: đó là dòng đầu của bảng nguyên nhân (dự kiến, chưa chạy ở tag này), vì một email bị mất làm khách bị ảnh hưởng mà không request nào lỗi. (d) không có cảnh báo, cùng lý do với (b).
 
 </details>
 
@@ -151,7 +151,7 @@ Kết quả mong đợi: một đề xuất là `page`, một là `ticket`, hai 
 
 - [[backend.l4.service-level-indicators]] — các SLI S1–S4 mà mọi cảnh báo theo triệu chứng ở đây theo dõi.
 - [[backend.l4.error-budget]] — thứ mà các cảnh báo bảo vệ. Các bài kế tiếp biến budget đó thành ngưỡng của chúng.
-- [[devops.l2.grafana-dashboards]] — nơi các nguyên nhân ở lại, để đọc sau khi một cảnh báo theo triệu chứng kêu.
+- [[devops.l2.grafana-dashboards]] — nơi một số nguyên nhân hiện ra, để đọc sau khi một cảnh báo theo triệu chứng kêu.
 - [[devops.l4.canary-release]] — vì sao các request lỗi của canary được tính trong cùng SLI với các request khác.
 - [[devops.l2.why-monitoring]] — cùng ý đó, tiến thêm một bước: monitoring làm vấn đề hiện ra, cảnh báo khiến vấn đề được phát hiện mà không cần ai đang nhìn.
 - [[backend.l3.queue-backlog-metrics]] — một nguyên nhân mà không SLI nào thấy, hiện trên dashboard.

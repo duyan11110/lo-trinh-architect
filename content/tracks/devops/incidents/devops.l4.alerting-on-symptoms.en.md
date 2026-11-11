@@ -17,7 +17,7 @@ versions_used: [prometheus, grafana]
 content_version: 1
 status: published
 approved_by: auto
-reviewed_at: "2026-11-10T16:00:00+07:00"
+reviewed_at: "2026-11-11T12:00:00+07:00"
 ---
 
 ## Before you start
@@ -48,18 +48,18 @@ flowchart LR
   B --> C[SLIs S1 to S4 of slo.md get worse]
   C --> D[Symptom alert]
   D --> E[A person must act]
-  E -->|opens to find why| F[Dashboard with the causes]
+  E -->|opens to find why| F[Dashboard with some causes]
   G[Order emails waiting in RabbitMQ, customers not yet affected] -.->|no alert, shown on| F
   H[Cause that needs a person but hurts no request yet] -->|ticket, working hours| E
 ```
 
 In the situation above, each of the colleague's conditions is an alert on a cause. It fails in two directions. It fires when customers notice nothing, as with CPU during the load test. And it stays silent when a cause nobody listed breaks the service, as with the canary's `503`, because nobody can list every way a system can break.
 
-Read the diagram from the left. Whatever the cause, if customers get errors or slow answers, the SLIs get worse. S1 counts failed `POST /api/v1/orders`, S2 slow ones, S3 failed product reads, and S4 slow refund requests. S3 counts every `5xx` of `GET /api/v1/products` and `GET /api/v1/products/{id:int}` as bad, including `503`. An alert on the SLI therefore catches the canary's fault without anyone having named it, and an incident is noticed by the team rather than reported by a shop. A cause that hurts nobody, the dotted arrow, does not reach the SLIs, so the symptom alert stays quiet.
+Read the diagram from the left. Whatever the cause, if customers get errors or slow answers, the SLIs get worse. S1 counts failed `POST /api/v1/orders` and `POST /api/v2/orders`, S2 slow ones, S3 failed product reads, and S4 slow refund requests. S3 counts every `5xx` of `GET /api/v1/products` and `GET /api/v1/products/{id:int}` as bad, including `503`. An alert on the SLI therefore catches the canary's fault without anyone having named it, and an incident is noticed by the team rather than reported by a shop. A cause that hurts nobody yet, such as order emails waiting in RabbitMQ, the dotted arrow, does not reach the SLIs, so the symptom alert stays quiet.
 
 Quiet matters as much as loud. Each alert that fires with nothing to do teaches the person who gets it that alerts can wait. That is alert fatigue, and it ends with the one alert that matters being read late or not at all.
 
-Causes do not disappear. Some show on the dashboard, which a person opens after a symptom alert to find out why it fired. A few causes need a person even before any request fails, such as a message nobody can process. Those become a ticket, a task handled in working hours, not a call now.
+Causes do not disappear. Some show on the dashboard, which a person opens after a symptom alert to find out why it fired. Others, like CPU or Pod restarts, get no alert; if they hurt customers, an SLI alert fires. A few causes need a person even before any request fails, such as a message nobody can process. Those become a ticket, a task handled in working hours, not a call now.
 
 ## In the Đơn Hàng system
 
@@ -74,7 +74,7 @@ cấu hình sai) cũng làm SLI xấu đi, nên alert theo SLI bắt được c�
 nhân không ai liệt kê trước. Nguyên nhân không chạm tới khách thì alert im.
 ```
 
-Lines 10–13 say that alerts call a person on what customers feel, the SLIs S1–S4. Any cause that gives customers errors or slow answers makes an SLI worse, so these alerts also catch causes nobody listed in advance. The next paragraph of the document sets no alert on CPU, memory or Pod restarts: those numbers move while customers see nothing, and alerts on them teach the person on duty to ignore alerts. The person who receives a symptom alert opens the dashboard to find out why.
+Lines 10–13 say that alerts call a person on what customers feel, the SLIs S1–S4, so they also catch causes nobody listed in advance. The next paragraph of the document sets no alert on CPU, memory or Pod restarts: those numbers move while customers see nothing, and alerts on them teach the person on duty to ignore alerts.
 
 Further down, the document's table gives each SLI two alerts. One has the level `page`, meant to call the person on duty at once; the other has the level `ticket`, a task for working hours. (At this tag nothing yet sends the call, see below.) `ProductReadsFastBurn`, for example, watches S3, the SLI the canary in the situation would make worse. Each fires only when the share of bad requests is high enough for long enough; how those thresholds come from how fast the error budget is spent, the "burn" in the name, is the subject of the next lessons.
 
@@ -100,7 +100,7 @@ trạng thái object của cluster; đội không làm ở V1.
 
 Lines 69–70 say some causes do not make an SLI worse at once but need someone to look, so they are only `ticket`, and none runs yet. The table names three: a message waiting in a dead-letter queue for 10 minutes (the condition counts ready messages in every queue whose name ends in `.dead`), a failed restore test, and a migration or backup Job that ended in an error. Each row says why it is not running: staging's Prometheus scrapes only the api Pods, the restore test is run by hand, and staging does not collect the state of cluster objects. A dead-lettered order message is the clearest case: the order was placed and the customer got a success answer, yet the email will never be sent unless a person acts.
 
-The dashboard `donhang-api.json`, which Grafana loads in the Compose profile `monitoring`, keeps the causes visible: next to requests by status code, `5xx` per second, p95 and orders placed, it has order emails waiting in RabbitMQ and dead-lettered order messages.
+The dashboard `donhang-api.json`, which Grafana loads in the Compose profile `monitoring`, shows order emails waiting in RabbitMQ and dead-lettered order messages next to requests by status code, `5xx` per second, p95 and orders placed.
 
 Two gaps remain at this tag. Staging runs no Grafana, so this dashboard exists only in Compose. And Prometheus keeps an alert's state but sends no notification itself, and staging runs no component that does, as the document's last section records. In practice, the alerts are defined and their state is visible in Prometheus, but nobody is called until such a component is added.
 
@@ -143,7 +143,7 @@ Expected result: one proposal is a `page`, one a `ticket`, two get no alert, and
 
 <details><summary>Suggested answer</summary>
 
-(a) is a `page`: it is a symptom, the bad share S1 counts, and its fast alert has the level `page`. (b) gets no alert: memory is a cause, and the document sets no alert on it; if it ever makes requests fail, S1 or S3 gets worse and that alert fires. (c) is a `ticket`: it is the first row of the cause table (planned, not running at this tag), because a lost email hurts a customer without any request failing. (d) gets no alert, for the same reason as (b).
+(a) is a `page`: it is a symptom, the bad share S1 counts, and S1 has an alert at the level `page`. (b) gets no alert: memory is a cause, and the document sets no alert on it; if it ever makes requests fail, S1 or S3 gets worse and that alert fires. (c) is a `ticket`: it is the first row of the cause table (planned, not running at this tag), because a lost email hurts a customer without any request failing. (d) gets no alert, for the same reason as (b).
 
 </details>
 
@@ -151,7 +151,7 @@ Expected result: one proposal is a `page`, one a `ticket`, two get no alert, and
 
 - [[backend.l4.service-level-indicators]] — the SLIs S1–S4 that every symptom alert here watches.
 - [[backend.l4.error-budget]] — what the alerts protect; the next lessons turn the budget into their thresholds.
-- [[devops.l2.grafana-dashboards]] — where the causes stay, read after a symptom alert fires.
+- [[devops.l2.grafana-dashboards]] — where some causes show, read after a symptom alert fires.
 - [[devops.l4.canary-release]] — why a canary's failed requests count in the same SLI as the others.
 - [[devops.l2.why-monitoring]] — the same idea one step further: monitoring makes problems visible, alerts make noticing them not depend on someone looking.
 - [[backend.l3.queue-backlog-metrics]] — a cause no SLI sees, shown on the dashboard.
